@@ -33,6 +33,25 @@ else()
 endif()
 set(HYPREDRV_LSAN_OPTIONS "${_hypredrv_lsan_options_default}" CACHE STRING
     "LeakSanitizer runtime options applied to CTest tests")
+
+# GPU regression tests explicitly exercise the lazy initialization path through
+# the command-line override. CPU tests use the YAML default without adding a
+# GPU-specific argument.
+set(_hypredrv_gpu_device_lazy_init_target_args "")
+set(_hypredrv_gpu_device_lazy_init_overrides "")
+if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+    set(_hypredrv_gpu_device_lazy_init_target_args
+        "-a|--general:device_lazy_init|on")
+    set(_hypredrv_gpu_device_lazy_init_overrides
+        "--general:device_lazy_init;on")
+endif()
+set(_hypredrv_gpu_device_lazy_init_override_arg "")
+if(_hypredrv_gpu_device_lazy_init_overrides)
+    string(JOIN "|" _hypredrv_gpu_device_lazy_init_overrides_encoded
+        ${_hypredrv_gpu_device_lazy_init_overrides})
+    set(_hypredrv_gpu_device_lazy_init_override_arg
+        "-DTARGET_ARGS:STRING=${_hypredrv_gpu_device_lazy_init_overrides_encoded}")
+endif()
 unset(_hypredrv_asan_options_default)
 unset(_hypredrv_ubsan_options_default)
 unset(_hypredrv_lsan_options_default)
@@ -205,8 +224,18 @@ function(add_hypredrive_test test_name num_procs config_file)
     )
 
     # System info is quiet by default; opt in for coverage of the info path.
+    set(_target_args "")
+    if(_hypredrv_gpu_device_lazy_init_target_args)
+        string(REPLACE "|" ";" _device_lazy_init_args
+            "${_hypredrv_gpu_device_lazy_init_target_args}")
+        list(APPEND _target_args ${_device_lazy_init_args})
+    endif()
     if(TEST_OPTS_INFO)
-        list(APPEND _cmd_args "-DTARGET_ARGS=-i")
+        list(APPEND _target_args -i)
+    endif()
+    if(_target_args)
+        string(JOIN "|" _encoded_target_args ${_target_args})
+        list(APPEND _cmd_args "-DTARGET_ARGS:STRING=${_encoded_target_args}")
     endif()
 
     add_test(NAME ${full_test_name}
@@ -251,6 +280,9 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
     endif()
     if(TEST_OPTS_EXTRA_ARGS)
         list(APPEND _cli_args ${TEST_OPTS_EXTRA_ARGS})
+    endif()
+    if(_hypredrv_gpu_device_lazy_init_overrides)
+        list(APPEND _cli_args ${_hypredrv_gpu_device_lazy_init_overrides})
     endif()
 
     # Encode args for the run script (uses '|' as separator)
@@ -372,6 +404,8 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
     set(OUTPUT_FILE "${CMAKE_BINARY_DIR}/test_output_${test_name}.txt")
     set(REFERENCE_FILE "${CMAKE_SOURCE_DIR}/examples/refOutput/ex${example_id}.txt")
 
+    set(_target_args "${_hypredrv_gpu_device_lazy_init_target_args}")
+
     add_test(NAME ${test_name}
         COMMAND ${CMAKE_COMMAND}
                 -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
@@ -382,6 +416,7 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
                 -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                 -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                 -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${config_file}
+                -DTARGET_ARGS:STRING=${_target_args}
                 -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     )
@@ -558,6 +593,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7.yml
+                        ${_hypredrv_gpu_device_lazy_init_override_arg}
                         "-DREQUIRE_CONTAINS:STRING=Solving linear system #2"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_PackAndRunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -795,6 +831,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                             -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                             -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                             -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/${_cfg}
+                            ${_hypredrv_gpu_device_lazy_init_override_arg}
                             "-DREQUIRE_CONTAINS:STRING=Solving linear system #4"
                             -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -839,6 +876,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
+                        ${_hypredrv_gpu_device_lazy_init_override_arg}
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -863,6 +901,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-grelax-reuse.yml
+                        ${_hypredrv_gpu_device_lazy_init_override_arg}
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|grelax=1|MGR G-relax setup reuse at level 2: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -887,6 +926,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-coarse-reuse.yml
+                        ${_hypredrv_gpu_device_lazy_init_override_arg}
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|coarse=1|MGR coarsest setup reuse: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -911,6 +951,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-ilu-reuse.yml
+                        ${_hypredrv_gpu_device_lazy_init_override_arg}
                         "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|frelax=1|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}

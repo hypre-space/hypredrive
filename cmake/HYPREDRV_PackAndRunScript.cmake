@@ -37,6 +37,10 @@ set(_target_args
   -a
   --linear_system:sequence_filename "${SEQ_OUTPUT}"
 )
+if(DEFINED TARGET_ARGS AND NOT TARGET_ARGS STREQUAL "")
+  string(REPLACE "|" ";" _extra_target_args "${TARGET_ARGS}")
+  list(APPEND _target_args ${_extra_target_args})
+endif()
 
 if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
   execute_process(

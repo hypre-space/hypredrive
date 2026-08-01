@@ -63,6 +63,11 @@ The ``general`` section contains global settings that apply to the entire execut
 - ``use_millisec`` - Show timings on the statistics summary table in milliseconds. The
   default value is `no`, which uses seconds instead.
 
+- ``device_lazy_init`` - Defer GPU device and vendor-library initialization until the
+  first device operation. Values: ``yes`` / ``no``. The default is ``no``. Set this
+  to ``yes`` when an application needs device initialization deferred until the first
+  device operation.
+
 - ``print_config_params`` - Print the parsed YAML tree to stdout on rank 0 after input
   parsing. Values: ``yes`` / ``no``. Default: ``yes`` in driver mode and ``no`` in
   library mode.
@@ -103,6 +108,7 @@ This example shows the ``general`` section:
       warmup: no
       statistics: yes
       use_millisec: no
+      device_lazy_init: no
       print_config_params: yes
       num_repetitions: 1
       dev_pool_size: 8.0

@@ -906,6 +906,8 @@ static const HelpKeyDoc GeneralKeyDocs[] = {
    {"statistics", "Statistics reporting level"},
    {"print_config_params", "Print parsed YAML configuration after parsing"},
    {"use_millisec", "Print timing values in milliseconds"},
+   {"device_lazy_init",
+    "Defer GPU device initialization until the first device operation"},
    {"exec_policy", "Execution policy for hypre operations"},
    {"use_vendor_spgemm", "Use vendor sparse matrix-matrix kernels when available"},
    {"use_vendor_spmv", "Use vendor sparse matrix-vector kernels when available"},

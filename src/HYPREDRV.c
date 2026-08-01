@@ -327,6 +327,32 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
    return ERROR_NONE;
 }
 
+static uint32_t
+ApplyConfiguredDeviceInitialization(HYPREDRV_t hypredrv)
+{
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(23100, 0)
+   if (hypredrv && hypredrv->iargs && hypredrv->iargs->general.exec_policy &&
+       !hypredrv->iargs->general.device_lazy_init)
+   {
+      uint32_t code = ApplyGlobalRuntimeSettings(hypredrv);
+      if (code != ERROR_NONE)
+      {
+         return code;
+      }
+
+      HYPREDRV_LOG_OBJECTF(
+         1, hypredrv,
+         "eager device initialization requested by "
+         "general.device_lazy_init=off");
+      HYPRE_DeviceInitialize();
+   }
+#else
+   (void)hypredrv;
+#endif
+
+   return hypredrv_ErrorCodeGet();
+}
+
 /*-----------------------------------------------------------------------------
  * Migrate a user-supplied matrix/vector to the memory space of the exec policy
  *-----------------------------------------------------------------------------*/
@@ -1239,6 +1265,8 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
 #endif
+
+   HYPREDRV_SAFE_CALL(ApplyConfiguredDeviceInitialization(hypredrv));
 
    ReportExecutionPolicy(hypredrv);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");

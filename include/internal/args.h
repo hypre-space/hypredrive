@@ -27,6 +27,7 @@ typedef struct General_args_struct
    int    statistics;
    int    print_config_params;
    int    use_millisec;
+   int    device_lazy_init;
    int    exec_policy;
    int    use_vendor_spgemm;
    int    use_vendor_spmv;
