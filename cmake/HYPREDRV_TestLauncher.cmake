@@ -68,13 +68,31 @@ function(hypredrv_prepare_test_launcher out_command out_postflags)
       "HYPREDRV_GPU_TEST_LAUNCHER must be AUTO, MPIEXEC, or FLUX")
   endif()
 
+  set(_use_mpiexec_for_single_rank FALSE)
+  if(DEFINED ENV{HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS})
+    string(TOUPPER "$ENV{HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS}"
+      _use_mpiexec_for_single_rank_env)
+    if(_use_mpiexec_for_single_rank_env MATCHES "^(1|ON|TRUE|YES)$")
+      set(_use_mpiexec_for_single_rank TRUE)
+    endif()
+  endif()
+
+  set(_bypass_single_rank_launcher FALSE)
+  if(DEFINED MPI_NUMPROCS AND MPI_NUMPROCS STREQUAL "1" AND
+     NOT _use_mpiexec_for_single_rank)
+    set(_bypass_single_rank_launcher TRUE)
+    message(STATUS
+      "[test] MPIEXEC single-rank bypass enabled; running target directly")
+  endif()
+
   set(_has_ctest_gpu_resources FALSE)
   if(DEFINED ENV{CTEST_RESOURCE_GROUP_COUNT} AND
      NOT "x$ENV{CTEST_RESOURCE_GROUP_COUNT}" STREQUAL "x")
     set(_has_ctest_gpu_resources TRUE)
   endif()
 
-  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "" AND
+     NOT _bypass_single_rank_launcher)
     get_filename_component(_mpiexec_name "${MPIEXEC}" NAME)
     set(_select_flux FALSE)
     if(_has_ctest_gpu_resources)

@@ -1705,9 +1705,13 @@ if(TARGET HYPRE::HYPRE)
         set(${out_var} "${_dirs}" PARENT_SCOPE)
     endfunction()
 
-    list(APPEND _hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
     _hypredrv_collect_lib_dirs_from_items(_hypredrv_hypre_lib_dirs ${HYPRE_LIBRARY_FILE})
     list(APPEND _hypredrv_test_runtime_lib_dirs ${_hypredrv_hypre_lib_dirs})
+    if(IS_DIRECTORY "${CMAKE_BINARY_DIR}/_deps/hypre-build/lib")
+        list(APPEND _hypredrv_test_runtime_lib_dirs
+            "${CMAKE_BINARY_DIR}/_deps/hypre-build/lib")
+    endif()
+    list(APPEND _hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
 
     get_target_property(_hypredrv_hypre_link_libs HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
     if(_hypredrv_hypre_link_libs)

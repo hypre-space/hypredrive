@@ -14,6 +14,7 @@
 #   MPI_PREFLAGS     : extra flags before program
 #   MPI_POSTFLAGS    : extra flags after program
 #   CONFIG_FILE      : optional YAML config (enables dataset checks)
+#   CONFIG_FILES     : optional '|' separated YAML configs for one batched run
 #   TARGET_ARGS      : optional '|' separated list of extra arguments
 #   REQUIRE_CONTAINS : optional '|' separated list of substrings that must appear in output
 #   REQUIRE_PATHS    : optional '|' separated list of files/directories that must exist after run
@@ -33,9 +34,22 @@ endif()
 include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_TestLauncher.cmake")
 hypredrv_prepare_test_launcher(_launcher_command _launcher_postflags)
 
-# Parse CONFIG_FILE to detect referenced dataset directories under 'data/<name>/...'
+set(_config_files "")
 if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
-  file(READ "${CONFIG_FILE}" _cfg_text)
+  list(APPEND _config_files "${CONFIG_FILE}")
+endif()
+if(DEFINED CONFIG_FILES AND NOT CONFIG_FILES STREQUAL "")
+  string(REPLACE "|" ";" _config_files_from_batch "${CONFIG_FILES}")
+  foreach(_config_file IN LISTS _config_files_from_batch)
+    if(NOT _config_file STREQUAL "")
+      list(APPEND _config_files "${_config_file}")
+    endif()
+  endforeach()
+endif()
+
+# Parse configs to detect referenced dataset directories under 'data/<name>/...'
+foreach(_config_file IN LISTS _config_files)
+  file(READ "${_config_file}" _cfg_text)
   set(_matches "")
   # Match strings like data/ps3d10pt7 or data/compflow6k (first two path components)
   string(REGEX MATCHALL "data/[A-Za-z0-9_.-]+" _raw_matches "${_cfg_text}")
@@ -63,7 +77,7 @@ if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
       return()
     endif()
   endif()
-endif()
+endforeach()
 
 # Optionally prepare a packed linear-system sequence before launching the test.
 if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "")
@@ -103,9 +117,7 @@ if(DEFINED TARGET_ARGS AND NOT TARGET_ARGS STREQUAL "")
     list(APPEND _target_args "${_arg}")
   endforeach()
 endif()
-if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
-  list(APPEND _target_args "${CONFIG_FILE}")
-endif()
+list(APPEND _target_args ${_config_files})
 
 # For debugging purposes only
 message(STATUS "[test] TARGET_BIN=${TARGET_BIN}")

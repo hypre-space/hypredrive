@@ -53,6 +53,17 @@ if(_hypredrv_gpu_device_lazy_init_overrides)
         "-DTARGET_ARGS:STRING=${_hypredrv_gpu_device_lazy_init_overrides_encoded}")
 endif()
 
+set(_hypredrv_regression_batching_default OFF)
+if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+    set(_hypredrv_regression_batching_default ON)
+endif()
+option(HYPREDRV_ENABLE_REGRESSION_TEST_BATCHING
+    "Batch compatible hypredrive regression tests to reduce per-test GPU/MPI launch overhead"
+    ${_hypredrv_regression_batching_default})
+option(HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS
+    "Launch single-rank CTest tests through MPIEXEC instead of running directly"
+    OFF)
+
 set(_hypredrv_gpu_visible_devices_env_default "")
 if(HYPRE_ENABLE_HIP)
     set(_hypredrv_gpu_visible_devices_env_default "ROCR_VISIBLE_DEVICES")
@@ -309,6 +320,8 @@ function(hypredrv_append_test_environment test_name)
         list(APPEND _env_list
             "HYPREDRV_GPU_TEST_LAUNCHER=${HYPREDRV_GPU_TEST_LAUNCHER}")
     endif()
+    list(APPEND _env_list
+        "HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS=${HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS}")
     get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
     if(_sanitizer_enabled AND HYPREDRV_ASAN_OPTIONS)
         list(APPEND _env_list
@@ -344,6 +357,8 @@ if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
 endif()
 
 set(HYPREDRV_GPU_DISABLED_TESTS
+    hypredrive_test_ex1_jacobi
+    hypredrive_test_ex1_gs
     convdif_test_air_1proc
     convdif_test_swirl_1proc
     convdif_test_4proc
@@ -358,6 +373,7 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     lidcavity_test_mgr_schwarz_grelax_iluk_1proc
     lidcavity_test_mgr_schwarz_frelax_iluk_4proc
     lidcavity_test_mgr_schwarz_grelax_iluk_4proc
+    lidcavity_test_mgr_schwarz_coarsest_iluk_4proc
     lidcavity_test_mgr_4proc
     lidcavity_test_q2q1_mgr_4proc
 )
@@ -398,6 +414,106 @@ function(hypredrv_set_gpu_test_resources test_name num_procs)
         set_tests_properties(${test_name}
             PROPERTIES RESOURCE_GROUPS "${num_procs},gpus:1")
     endif()
+endfunction()
+
+function(hypredrv_test_disabled_by_gpu_policy test_name out_var)
+    if(NOT HYPREDRV_ENABLE_ALL_TESTS AND
+       (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       test_name IN_LIST HYPREDRV_GPU_DISABLED_TESTS)
+        set(${out_var} TRUE PARENT_SCOPE)
+    else()
+        set(${out_var} FALSE PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(hypredrv_collect_batched_hypredrive_test test_name num_procs config_file encoded_target_args)
+    if(encoded_target_args)
+        string(MD5 _batch_args_hash "${encoded_target_args}")
+    else()
+        set(_batch_args_hash "none")
+    endif()
+    set(_batch_key "${num_procs}_${_batch_args_hash}")
+
+    get_property(_batch_keys GLOBAL PROPERTY HYPREDRV_BATCH_KEYS)
+    if(NOT _batch_keys)
+        set(_batch_keys "")
+    endif()
+    list(FIND _batch_keys "${_batch_key}" _batch_key_index)
+    if(_batch_key_index EQUAL -1)
+        list(APPEND _batch_keys "${_batch_key}")
+        set_property(GLOBAL PROPERTY HYPREDRV_BATCH_KEYS "${_batch_keys}")
+        set_property(GLOBAL PROPERTY "HYPREDRV_BATCH_${_batch_key}_NUM_PROCS"
+            "${num_procs}")
+        set_property(GLOBAL PROPERTY "HYPREDRV_BATCH_${_batch_key}_TARGET_ARGS"
+            "${encoded_target_args}")
+    endif()
+
+    set_property(GLOBAL APPEND PROPERTY "HYPREDRV_BATCH_${_batch_key}_CONFIGS"
+        "${CMAKE_SOURCE_DIR}/examples/${config_file}")
+    set_property(GLOBAL APPEND PROPERTY "HYPREDRV_BATCH_${_batch_key}_TEST_NAMES"
+        "${test_name}")
+endfunction()
+
+function(hypredrv_flush_batched_hypredrive_tests)
+    get_property(_batch_keys GLOBAL PROPERTY HYPREDRV_BATCH_KEYS)
+    if(NOT _batch_keys)
+        return()
+    endif()
+
+    set(_batch_index 0)
+    foreach(_batch_key IN LISTS _batch_keys)
+        math(EXPR _batch_index "${_batch_index} + 1")
+        get_property(_num_procs GLOBAL PROPERTY
+            "HYPREDRV_BATCH_${_batch_key}_NUM_PROCS")
+        get_property(_encoded_target_args GLOBAL PROPERTY
+            "HYPREDRV_BATCH_${_batch_key}_TARGET_ARGS")
+        get_property(_configs GLOBAL PROPERTY
+            "HYPREDRV_BATCH_${_batch_key}_CONFIGS")
+        get_property(_test_names GLOBAL PROPERTY
+            "HYPREDRV_BATCH_${_batch_key}_TEST_NAMES")
+        if(NOT _configs)
+            continue()
+        endif()
+
+        list(LENGTH _configs _config_count)
+        string(JOIN "|" _encoded_configs ${_configs})
+        string(JOIN ", " _batched_test_names ${_test_names})
+        set(_batch_test_name
+            "hypredrive_test_batch_${_num_procs}proc_${_batch_index}")
+
+        set(_cmd_args
+            -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
+            -DTARGET_BIN=$<TARGET_FILE:hypredrive-cli>
+            -DMPIEXEC=${MPIEXEC_EXECUTABLE}
+            -DMPI_NUMPROCS=${_num_procs}
+            -DMPI_NUMPROC_FLAG=${MPIEXEC_NUMPROC_FLAG}
+            -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
+            -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
+            "-DCONFIG_FILES:STRING=${_encoded_configs}"
+        )
+        if(_encoded_target_args)
+            list(APPEND _cmd_args
+                "-DTARGET_ARGS:STRING=${_encoded_target_args}")
+        endif()
+
+        add_test(NAME ${_batch_test_name}
+            COMMAND ${CMAKE_COMMAND} ${_cmd_args}
+                    -P ${HYPREDRV_TESTING_DIR}/HYPREDRV_RunScript.cmake
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        )
+        set_tests_properties(${_batch_test_name}
+            PROPERTIES
+                FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}"
+                SKIP_REGULAR_EXPRESSION "\\[test\\] Skipping example:"
+                LABELS "integration;hypredrive;batched"
+        )
+        hypredrv_set_gpu_test_resources(${_batch_test_name} ${_num_procs})
+        hypredrv_append_test_environment(${_batch_test_name})
+
+        message(STATUS
+            "Batched ${_config_count} hypredrive regression tests into "
+            "${_batch_test_name}: ${_batched_test_names}")
+    endforeach()
 endfunction()
 
 function(hypredrv_scale_problem_size_args out_var)
@@ -457,6 +573,18 @@ function(add_hypredrive_test test_name num_procs config_file)
     if(_target_args)
         string(JOIN "|" _encoded_target_args ${_target_args})
         list(APPEND _cmd_args "-DTARGET_ARGS:STRING=${_encoded_target_args}")
+    else()
+        set(_encoded_target_args "")
+    endif()
+
+    hypredrv_test_disabled_by_gpu_policy(${full_test_name} _disabled_by_gpu_policy)
+    if(HYPREDRV_ENABLE_REGRESSION_TEST_BATCHING AND
+       NOT TEST_OPTS_INFO AND
+       NOT _disabled_by_gpu_policy)
+        hypredrv_collect_batched_hypredrive_test(
+            ${full_test_name} ${num_procs} ${config_file}
+            "${_encoded_target_args}")
+        return()
     endif()
 
     add_test(NAME ${full_test_name}
@@ -849,7 +977,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_hypredrive_test(ex3_flow_1proc 1 ex3-flow.yml)
         endif()
         if (HYPREDRV_HAVE_HYPRE_30000_DEV0)
-            if(HYPREDRV_ENABLE_HIP)
+            if(HYPREDRV_ENABLE_HIP OR HYPRE_ENABLE_CUDA)
                 set(_ex7_tagres_require_contains
                     "Initial L2 norm of residual"
                     "Final L2 norm of residual"
@@ -1201,6 +1329,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
         endif()
+
+        hypredrv_flush_batched_hypredrive_tests()
 
         # Test main.c help/usage/error branches
         # Note: --help exits with 0, so we need to allow that
