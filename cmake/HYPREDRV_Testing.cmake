@@ -344,10 +344,6 @@ if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
 endif()
 
 set(HYPREDRV_GPU_DISABLED_TESTS
-    laplacian_7pt_test_4proc
-    laplacian_19pt_test_4proc
-    laplacian_27pt_test_4proc
-    laplacian_125pt_test_4proc
     convdif_test_air_1proc
     convdif_test_swirl_1proc
     convdif_test_4proc
