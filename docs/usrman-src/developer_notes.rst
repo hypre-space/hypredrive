@@ -195,6 +195,15 @@ The test launcher maps each allocation to ``ROCR_VISIBLE_DEVICES`` by default.
 To use another visibility variable, configure with, for example,
 ``-DHYPREDRV_GPU_VISIBLE_DEVICES_ENV=HIP_VISIBLE_DEVICES``.
 
+When the configured MPI launcher is ``srun`` and tests run inside a Flux
+allocation, the ``AUTO`` launcher policy uses packed
+``flux run -N 1 -n <ranks> --gpus-per-task=1`` job steps.  This permits CTest
+workers to run on separate GPUs instead of being serialized by an ``srun``
+compatibility wrapper that requests exclusive nodes.  Configure with
+``-DHYPREDRV_GPU_TEST_LAUNCHER=MPIEXEC`` to retain the configured MPI launcher,
+or ``-DHYPREDRV_GPU_TEST_LAUNCHER=FLUX`` to require Flux for allocated GPU
+tests.
+
 
 Code Analysis
 -------------

@@ -7,7 +7,12 @@ if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN OR NOT DEFINED PACKER_BIN OR
   message(FATAL_ERROR "HYPREDRV_PackAndRunScript.cmake: required variables are missing")
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_PrepareTestLauncher.cmake")
+hypredrv_prepare_test_launcher(
+  _launcher_command _launcher_postflags _launcher_uses_flux)
+if(NOT _launcher_uses_flux)
+  include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+endif()
 
 if(NOT EXISTS "${LAUNCH_DIR}/data/poromech2k")
   message(STATUS "[test] Skipping example: required dataset not available: data/poromech2k")
@@ -44,10 +49,10 @@ if(DEFINED TARGET_ARGS AND NOT TARGET_ARGS STREQUAL "")
   list(APPEND _target_args ${_extra_target_args})
 endif()
 
-if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+if(_launcher_command)
   execute_process(
-    COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS}
-            "${TARGET_BIN}" ${_target_args} "${CONFIG_FILE}" ${MPI_POSTFLAGS}
+    COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args}
+            "${CONFIG_FILE}" ${_launcher_postflags}
     WORKING_DIRECTORY "${LAUNCH_DIR}"
     RESULT_VARIABLE _run_ret
     OUTPUT_VARIABLE _run_out

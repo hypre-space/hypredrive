@@ -22,7 +22,15 @@ if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_RunScript.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
 endif()
 
-include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_PrepareTestLauncher.cmake")
+hypredrv_prepare_test_launcher(
+  _launcher_command _launcher_postflags _launcher_uses_flux)
+
+# Flux owns GPU assignment for packed regression-test job steps.  Other
+# launchers use the device IDs allocated by CTest directly.
+if(NOT _launcher_uses_flux)
+  include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+endif()
 
 # Parse CONFIG_FILE to detect referenced dataset directories under 'data/<name>/...'
 if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
@@ -70,7 +78,7 @@ endif()
 
 # For debugging purposes only
 message(STATUS "[test] TARGET_BIN=${TARGET_BIN}")
-if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+if(_launcher_command)
   message(STATUS "[test] MPIEXEC=${MPIEXEC} MPI_NUMPROC_FLAG=${MPI_NUMPROC_FLAG} MPI_NUMPROCS=${MPI_NUMPROCS}")
 else()
   message(STATUS "[test] MPIEXEC not defined; running serially")
@@ -84,9 +92,9 @@ if(DEFINED REQUIRE_CONTAINS AND NOT REQUIRE_CONTAINS STREQUAL "")
 endif()
 
 if(_capture_output)
-  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+  if(_launcher_command)
     execute_process(
-      COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
+      COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args} ${_launcher_postflags}
       WORKING_DIRECTORY "${LAUNCH_DIR}"
       RESULT_VARIABLE _ret
       OUTPUT_VARIABLE _out
@@ -119,9 +127,9 @@ if(_capture_output)
     endif()
   endforeach()
 else()
-  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+  if(_launcher_command)
     execute_process(
-      COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
+      COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args} ${_launcher_postflags}
       WORKING_DIRECTORY "${LAUNCH_DIR}"
       RESULT_VARIABLE _ret
     )

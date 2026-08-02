@@ -64,6 +64,17 @@ if(_hypredrv_gpu_visible_devices_env_default)
         "${_hypredrv_gpu_visible_devices_env_default}"
         CACHE STRING
         "GPU visibility environment variable used by CTest resource allocation")
+
+    set(HYPREDRV_GPU_TEST_LAUNCHER "AUTO" CACHE STRING
+        "GPU test launcher policy: AUTO, MPIEXEC, or FLUX")
+    set_property(CACHE HYPREDRV_GPU_TEST_LAUNCHER PROPERTY STRINGS
+        AUTO MPIEXEC FLUX)
+    string(TOUPPER "${HYPREDRV_GPU_TEST_LAUNCHER}"
+        HYPREDRV_GPU_TEST_LAUNCHER)
+    if(NOT HYPREDRV_GPU_TEST_LAUNCHER MATCHES "^(AUTO|MPIEXEC|FLUX)$")
+        message(FATAL_ERROR
+            "HYPREDRV_GPU_TEST_LAUNCHER must be AUTO, MPIEXEC, or FLUX")
+    endif()
 endif()
 
 # Make the generated CMake `test` target self-contained for GPU builds.  CTest
@@ -293,6 +304,10 @@ function(hypredrv_append_test_environment test_name)
     if(HYPREDRV_GPU_VISIBLE_DEVICES_ENV)
         list(APPEND _env_list
             "HYPREDRV_GPU_VISIBLE_DEVICES_ENV=${HYPREDRV_GPU_VISIBLE_DEVICES_ENV}")
+    endif()
+    if(HYPREDRV_GPU_TEST_LAUNCHER)
+        list(APPEND _env_list
+            "HYPREDRV_GPU_TEST_LAUNCHER=${HYPREDRV_GPU_TEST_LAUNCHER}")
     endif()
     get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
     if(_sanitizer_enabled AND HYPREDRV_ASAN_OPTIONS)
