@@ -3,15 +3,27 @@
 #
 # SPDX-License-Identifier: MIT
 
-# Configure compiler/linker instrumentation early so it also applies to
-# dependencies built via add_subdirectory()/FetchContent (not just hypredrive
-# targets created later in the configure step).
+# Configure compiler/linker instrumentation early. By default this also applies
+# to dependencies built via add_subdirectory()/FetchContent, but HIP sanitizer
+# runs keep dependencies uninstrumented because HYPRE/Umpire/ROCm sanitizer
+# reports otherwise dominate the HypreDrive signal.
 
 set(_hypredrv_instrumentation_compile_flags "")
 set(_hypredrv_instrumentation_link_flags "")
 set(_hypredrv_sanitizer_link_flags "")
 set(_hypredrv_sanitizer_enabled OFF)
 set(_hypredrv_coverage_runtime_library "")
+set(_hypredrv_instrument_dependencies_default ON)
+
+if(HYPREDRV_ENABLE_ANALYSIS AND NOT HYPREDRV_ENABLE_COVERAGE AND
+   (HYPREDRV_ENABLE_HIP OR HYPRE_ENABLE_HIP OR CMAKE_HIP_COMPILER))
+    set(_hypredrv_instrument_dependencies_default OFF)
+endif()
+
+option(HYPREDRV_INSTRUMENT_DEPENDENCIES
+    "Apply analysis/coverage instrumentation to fetched dependencies"
+    ${_hypredrv_instrument_dependencies_default})
+mark_as_advanced(HYPREDRV_INSTRUMENT_DEPENDENCIES)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     if(HYPREDRV_ENABLE_COVERAGE)
@@ -82,10 +94,10 @@ set(HYPREDRV_COVERAGE_RUNTIME_LIBRARY
 set_property(GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED ${_hypredrv_sanitizer_enabled})
 set_property(GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS ${_hypredrv_sanitizer_link_flags})
 
-if(_hypredrv_instrumentation_compile_flags)
+if(HYPREDRV_INSTRUMENT_DEPENDENCIES AND _hypredrv_instrumentation_compile_flags)
     add_compile_options(${_hypredrv_instrumentation_compile_flags})
 endif()
 
-if(_hypredrv_instrumentation_link_flags)
+if(HYPREDRV_INSTRUMENT_DEPENDENCIES AND _hypredrv_instrumentation_link_flags)
     add_link_options(${_hypredrv_instrumentation_link_flags})
 endif()

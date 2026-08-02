@@ -77,6 +77,7 @@ test_InputArgsCreate_general_vendor_defaults(void)
 #endif
    ASSERT_STREQ(args->general.name, "");
    ASSERT_STREQ(args->general.statistics_filename, "");
+   ASSERT_EQ(args->general.device_lazy_init, 0);
 
    hypredrv_InputArgsDestroy(&args);
 }
@@ -90,6 +91,7 @@ test_InputArgsParseGeneral_flags(void)
                             "  warmup: yes\n"
                             "  statistics: off\n"
                             "  use_millisec: yes\n"
+                            "  device_lazy_init: no\n"
                             "  print_config_params: no\n"
                             "  use_vendor_spgemm: yes\n"
                             "  use_vendor_spmv: yes\n"
@@ -112,6 +114,7 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.warmup, 1);
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.print_config_params, 0);
+   ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
@@ -1042,10 +1045,10 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
       "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
       "--general:statistics",  "off", "--general:use_vendor_spgemm",      "on",
       "--general:use_vendor_spmv", "on", "--general:statistics_filename",
-      "stats_cli.out",
+      "stats_cli.out", "--general:device_lazy_init", "off",
    };
 
-   input_args *args = parse_config_with_overrides(yaml_text, 12, overrides);
+   input_args *args = parse_config_with_overrides(yaml_text, 14, overrides);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
    ASSERT_EQ(args->solver.pcg.max_iter, 50);
@@ -1054,6 +1057,7 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+   ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_STREQ(args->general.statistics_filename, "stats_cli.out");
 
    hypredrv_InputArgsDestroy(&args);

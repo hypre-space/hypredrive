@@ -44,6 +44,15 @@ test_HelpPrint_root_sections(void)
 }
 
 static void
+test_HelpPrint_general_device_lazy_init(void)
+{
+   char *out = capture_help("general");
+   assert_contains(out, "device_lazy_init");
+   assert_contains(out, "Defer GPU device initialization");
+   free(out);
+}
+
+static void
 test_HelpPrint_solver_types(void)
 {
    char *out = capture_help("solver");
@@ -156,6 +165,7 @@ int
 main(void)
 {
    RUN_TEST(test_HelpPrint_root_sections);
+   RUN_TEST(test_HelpPrint_general_device_lazy_init);
    RUN_TEST(test_HelpPrint_solver_types);
    RUN_TEST(test_HelpPrint_solver_key);
    RUN_TEST(test_HelpPrint_solver_boolean_aliases_grouped);
