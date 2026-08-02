@@ -1259,6 +1259,10 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
                                          &hypredrv->precon_reuse_timesteps.ids,
                                          &hypredrv->precon_reuse_timesteps.starts);
    }
+   if (hypredrv_ErrorCodeGet())
+   {
+      return hypredrv_ErrorCodeGet();
+   }
 
 #ifdef HYPRE_USING_GPU
    hypredrv->preferred_exec_policy = hypredrv->iargs->general.exec_policy;

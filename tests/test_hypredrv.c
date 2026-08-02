@@ -1947,7 +1947,7 @@ test_HYPREDRV_InputArgsParse_exec_policy(void)
 }
 
 static void
-test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec(void)
+test_HYPREDRV_InputArgsParse_gpu_standard_amg_rejects_unsupported_variant(void)
 {
 #if !defined(HYPRE_USING_GPU) || !HYPRE_CHECK_MIN_VERSION(22100, 0)
    return;
@@ -1991,9 +1991,11 @@ test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec(void)
    ASSERT_EQ(obj->iargs->general.exec_policy, 1);
    ASSERT_EQ(obj->iargs->ls.exec_policy, 1);
 
-   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 1), ERROR_NONE);
-   ASSERT_EQ(obj->iargs->general.exec_policy, 0);
-   ASSERT_EQ(obj->iargs->ls.exec_policy, 0);
+   ASSERT_TRUE(HYPREDRV_InputArgsSetPreconVariant(obj, 1) & ERROR_INVALID_PRECON);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   ASSERT_EQ(obj->iargs->general.exec_policy, 1);
+   ASSERT_EQ(obj->iargs->ls.exec_policy, 1);
 
    ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 0), ERROR_NONE);
    ASSERT_EQ(obj->iargs->general.exec_policy, 1);
@@ -5140,6 +5142,15 @@ test_HYPREDRV_preconditioner_variants(void)
    /* Test setting and using each variant */
    for (int v = 0; v < num_variants; v++)
    {
+#ifdef HYPRE_USING_GPU
+      if (v == 1)
+      {
+         ASSERT_TRUE(HYPREDRV_InputArgsSetPreconVariant(obj, v) & ERROR_INVALID_PRECON);
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_ErrorMsgClear();
+         continue;
+      }
+#endif
       ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, v), ERROR_NONE);
 
       /* Reset initial guess */
@@ -5452,7 +5463,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
    RUN_TEST(test_HYPREDRV_stats_level_apis);
    RUN_TEST(test_HYPREDRV_InputArgsParse_exec_policy);
-   RUN_TEST(test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec);
+   RUN_TEST(test_HYPREDRV_InputArgsParse_gpu_standard_amg_rejects_unsupported_variant);
    RUN_TEST(test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled);
    RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);

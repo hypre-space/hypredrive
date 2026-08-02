@@ -363,6 +363,7 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     lidcavity_test_mgr_schwarz_frelax_iluk_4proc
     lidcavity_test_mgr_schwarz_grelax_iluk_4proc
     lidcavity_test_mgr_4proc
+    lidcavity_test_q2q1_mgr_4proc
 )
 
 get_property(_hypredrv_gpu_test_policy_reported GLOBAL

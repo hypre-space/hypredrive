@@ -2044,6 +2044,20 @@ YAMLargsFindConfigFileIndex(int argc, char **argv)
    return -1;
 }
 
+static bool
+YAMLargsTokenEndsOverrideList(const char *arg)
+{
+   if (!arg)
+   {
+      return false;
+   }
+
+   return hypredrv_IsYAMLFilename(arg) || !strcmp(arg, "-h") ||
+          !strcmp(arg, "--help") || !strcmp(arg, "-i") ||
+          !strcmp(arg, "--info") || !strcmp(arg, "-p") ||
+          !strcmp(arg, "--prec-preset");
+}
+
 /*-----------------------------------------------------------------------------
  * Helpers for hypredrv_YAMLtreeUpdate (must be file-scope for Clang; no nested functions)
  *-----------------------------------------------------------------------------*/
@@ -2182,7 +2196,6 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
     *      if it appears after -a (some test harnesses append it at the end).
     */
    int  args_flag_idx  = YAMLargsFindFlagIndex(argc, argv, "-a", "--args");
-   int  cfg_idx        = YAMLargsFindConfigFileIndex(argc, argv);
    int  override_start = 0;
    int  override_end   = argc;
    bool full_argv_mode = (args_flag_idx >= 0);
@@ -2190,9 +2203,13 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    if (full_argv_mode)
    {
       override_start = args_flag_idx + 1;
-      if (cfg_idx >= 0 && cfg_idx >= override_start)
+      for (int i = override_start; i < argc; i += 2)
       {
-         override_end = cfg_idx;
+         if (YAMLargsTokenEndsOverrideList(argv[i]))
+         {
+            override_end = i;
+            break;
+         }
       }
       /* GCOVR_EXCL_BR_START */
       if (override_start >= override_end) /* GCOVR_EXCL_BR_STOP */
