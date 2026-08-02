@@ -1999,8 +1999,15 @@ void
 hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* A rank may legitimately own no rows, in which case its local dofmap is empty.
+    * Such a rank must still tag its vector: hypre reductions over tagged vectors
+    * (e.g. hypre_ParVectorInnerProdTagged) exchange num_tags + 1 values, so leaving
+    * one rank untagged makes it enter the collective with a different length than
+    * its peers, which deadlocks the solve and corrupts unrelated reductions.
+    * num_tags is derived below from the globally reduced label set, which every
+    * rank holds, so it is consistent even where the local dofmap is empty. */
    /* GCOVR_EXCL_BR_START */
-   if (!vec || !dofmap || !dofmap->data || dofmap->size == 0) /* GCOVR_EXCL_BR_STOP */
+   if (!vec || !dofmap || !dofmap->data) /* GCOVR_EXCL_BR_STOP */
    {
       return;
    }
@@ -2291,15 +2298,14 @@ hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector vec, const char *norm_type
    }
 
    data = hypre_VectorData(seq_vec);
-   if (!data)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      *norm = -1.0;
-      return;
-   }
-
    size = hypre_VectorSize(seq_vec);
-   if (size < 0)
+
+   /* An empty local vector is not an error: a rank that owns no rows legitimately has
+    * size 0, and hypre leaves its data pointer NULL in that case. Every norm computed
+    * below finishes with a reduction over the vector's communicator, so such a rank
+    * must still reach that reduction and contribute zero. Returning early here would
+    * leave the remaining ranks blocked in MPI_Allreduce for the rest of the run. */
+   if (size < 0 || (size > 0 && !data))
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *norm = -1.0;

@@ -649,7 +649,11 @@ LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
-   if (!hypredrv->dofmap || !hypredrv->dofmap->data || hypredrv->dofmap->size == 0)
+   /* Tagging must not be skipped where the local dofmap is empty. A rank that owns no
+    * rows still takes part in every reduction over the tagged vectors, and those
+    * reductions exchange num_tags + 1 values, so an untagged rank would enter the
+    * collective with a different length than its peers and hang the solve. */
+   if (!hypredrv->dofmap || !hypredrv->dofmap->data)
    {
       return hypredrv_ErrorCodeGet();
    }
