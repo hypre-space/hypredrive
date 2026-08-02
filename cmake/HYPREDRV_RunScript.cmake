@@ -22,6 +22,8 @@ if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_RunScript.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+
 # Parse CONFIG_FILE to detect referenced dataset directories under 'data/<name>/...'
 if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
   file(READ "${CONFIG_FILE}" _cfg_text)

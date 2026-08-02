@@ -7,6 +7,8 @@ if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN OR NOT DEFINED PACKER_BIN OR
   message(FATAL_ERROR "HYPREDRV_PackAndRunScript.cmake: required variables are missing")
 endif()
 
+include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+
 if(NOT EXISTS "${LAUNCH_DIR}/data/poromech2k")
   message(STATUS "[test] Skipping example: required dataset not available: data/poromech2k")
   return()

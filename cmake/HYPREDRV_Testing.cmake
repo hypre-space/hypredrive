@@ -52,6 +52,199 @@ if(_hypredrv_gpu_device_lazy_init_overrides)
     set(_hypredrv_gpu_device_lazy_init_override_arg
         "-DTARGET_ARGS:STRING=${_hypredrv_gpu_device_lazy_init_overrides_encoded}")
 endif()
+
+set(_hypredrv_gpu_visible_devices_env_default "")
+if(HYPRE_ENABLE_HIP)
+    set(_hypredrv_gpu_visible_devices_env_default "ROCR_VISIBLE_DEVICES")
+elseif(HYPRE_ENABLE_CUDA)
+    set(_hypredrv_gpu_visible_devices_env_default "CUDA_VISIBLE_DEVICES")
+endif()
+if(_hypredrv_gpu_visible_devices_env_default)
+    set(HYPREDRV_GPU_VISIBLE_DEVICES_ENV
+        "${_hypredrv_gpu_visible_devices_env_default}"
+        CACHE STRING
+        "GPU visibility environment variable used by CTest resource allocation")
+endif()
+
+# Make the generated CMake `test` target self-contained for GPU builds.  CTest
+# only activates resource scheduling when given a resource specification file,
+# so generate one in the build tree and append the corresponding arguments to
+# CMAKE_CTEST_ARGUMENTS.  The device IDs are taken from the scheduler/runtime
+# environment at configure time and can be overridden for unusual mappings.
+if(HYPREDRV_ENABLE_TESTING AND
+   (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP))
+    get_property(_hypredrv_ctest_gpu_resources_configured GLOBAL
+        PROPERTY HYPREDRV_CTEST_GPU_RESOURCES_CONFIGURED)
+    if(NOT _hypredrv_ctest_gpu_resources_configured)
+        set(_hypredrv_gpu_device_ids_default "")
+        if(HYPRE_ENABLE_HIP)
+            foreach(_device_env IN ITEMS ROCR_VISIBLE_DEVICES HIP_VISIBLE_DEVICES)
+                if(DEFINED ENV{${_device_env}} AND
+                   NOT "$ENV{${_device_env}}" STREQUAL "")
+                    set(_hypredrv_gpu_device_ids_default "$ENV{${_device_env}}")
+                    break()
+                endif()
+            endforeach()
+        elseif(HYPRE_ENABLE_CUDA AND
+               DEFINED ENV{CUDA_VISIBLE_DEVICES} AND
+               NOT "$ENV{CUDA_VISIBLE_DEVICES}" STREQUAL "")
+            set(_hypredrv_gpu_device_ids_default "$ENV{CUDA_VISIBLE_DEVICES}")
+        endif()
+
+        # A command-line/cache value is an explicit override.  Otherwise use
+        # the current environment on every configure, which allows the same
+        # build tree to be reused under a different scheduler allocation.
+        if(DEFINED HYPREDRV_GPU_TEST_DEVICE_IDS AND
+           NOT "${HYPREDRV_GPU_TEST_DEVICE_IDS}" STREQUAL "")
+            set(_hypredrv_gpu_device_ids "${HYPREDRV_GPU_TEST_DEVICE_IDS}")
+        else()
+            set(_hypredrv_gpu_device_ids "${_hypredrv_gpu_device_ids_default}")
+        endif()
+        string(REPLACE "," ";" _hypredrv_gpu_device_ids
+            "${_hypredrv_gpu_device_ids}")
+        list(FILTER _hypredrv_gpu_device_ids EXCLUDE REGEX "^$")
+
+        # If the scheduler did not provide a visibility list, use rocminfo to
+        # discover the number of HIP GPU agents.  The IDs are then the usual
+        # zero-based ROCr IDs.  A conservative one-device fallback keeps the
+        # generated test target usable on systems without rocminfo.
+        if(NOT _hypredrv_gpu_device_ids AND HYPRE_ENABLE_HIP)
+            find_program(_hypredrv_rocminfo_executable rocminfo)
+            if(_hypredrv_rocminfo_executable)
+                execute_process(
+                    COMMAND "${_hypredrv_rocminfo_executable}"
+                    RESULT_VARIABLE _hypredrv_rocminfo_result
+                    OUTPUT_VARIABLE _hypredrv_rocminfo_output
+                    ERROR_QUIET
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                )
+                if(_hypredrv_rocminfo_result EQUAL 0)
+                    string(REGEX MATCHALL
+                        "Name:[ \\t]+gfx[0-9A-Za-z_]+"
+                        _hypredrv_gpu_agents "${_hypredrv_rocminfo_output}")
+                    list(LENGTH _hypredrv_gpu_agents _hypredrv_gpu_agent_count)
+                    if(_hypredrv_gpu_agent_count GREATER 0)
+                        math(EXPR _hypredrv_gpu_last_id
+                            "${_hypredrv_gpu_agent_count} - 1")
+                        foreach(_device_id RANGE 0 ${_hypredrv_gpu_last_id})
+                            list(APPEND _hypredrv_gpu_device_ids "${_device_id}")
+                        endforeach()
+                    endif()
+                endif()
+            endif()
+        endif()
+
+        if(NOT _hypredrv_gpu_device_ids)
+            set(_hypredrv_gpu_device_ids "0")
+            message(STATUS
+                "GPU test resource detection found no device list; defaulting to GPU ID 0. "
+                "Set HYPREDRV_GPU_TEST_DEVICE_IDS to override this.")
+        endif()
+
+        set(_hypredrv_normalized_gpu_device_ids "")
+        foreach(_device_id IN LISTS _hypredrv_gpu_device_ids)
+            string(STRIP "${_device_id}" _device_id)
+            if(NOT _device_id MATCHES "^[a-z0-9_]+$")
+                message(FATAL_ERROR
+                    "Invalid GPU resource ID '${_device_id}'. "
+                    "CTest resource IDs must contain lowercase letters, digits, or underscores.")
+            endif()
+            list(APPEND _hypredrv_normalized_gpu_device_ids "${_device_id}")
+        endforeach()
+        list(REMOVE_DUPLICATES _hypredrv_normalized_gpu_device_ids)
+        set(_hypredrv_gpu_device_ids "${_hypredrv_normalized_gpu_device_ids}")
+        list(LENGTH _hypredrv_gpu_device_ids _hypredrv_gpu_device_count)
+
+        if(DEFINED HYPREDRV_GPU_TEST_PARALLEL_LEVEL AND
+           NOT "${HYPREDRV_GPU_TEST_PARALLEL_LEVEL}" STREQUAL "")
+            set(_hypredrv_gpu_parallel_level
+                "${HYPREDRV_GPU_TEST_PARALLEL_LEVEL}")
+        else()
+            set(_hypredrv_gpu_parallel_level
+                "${_hypredrv_gpu_device_count}")
+        endif()
+        if(NOT _hypredrv_gpu_parallel_level MATCHES "^[1-9][0-9]*$")
+            message(FATAL_ERROR
+                "HYPREDRV_GPU_TEST_PARALLEL_LEVEL must be a positive integer")
+        endif()
+
+        set(HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE
+            "${CMAKE_BINARY_DIR}/hypredrive-ctest-gpus.json"
+            CACHE FILEPATH
+            "Generated CTest GPU resource specification file")
+
+        string(CONCAT _hypredrv_gpu_resource_spec
+            "{\n"
+            "  \"version\": { \"major\": 1, \"minor\": 0 },\n"
+            "  \"local\": [\n"
+            "    {\n"
+            "      \"gpus\": [\n")
+        set(_hypredrv_gpu_resource_index 0)
+        foreach(_device_id IN LISTS _hypredrv_gpu_device_ids)
+            if(_hypredrv_gpu_resource_index GREATER 0)
+                string(APPEND _hypredrv_gpu_resource_spec ",\n")
+            endif()
+            string(APPEND _hypredrv_gpu_resource_spec
+                "        { \"id\": \"${_device_id}\", \"slots\": 1 }")
+            math(EXPR _hypredrv_gpu_resource_index
+                "${_hypredrv_gpu_resource_index} + 1")
+        endforeach()
+        string(APPEND _hypredrv_gpu_resource_spec
+            "\n      ]\n"
+            "    }\n"
+            "  ]\n"
+            "}\n")
+        file(GENERATE
+            OUTPUT "${HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE}"
+            CONTENT "${_hypredrv_gpu_resource_spec}")
+
+        set(_hypredrv_ctest_arguments "${CMAKE_CTEST_ARGUMENTS}")
+        list(FIND _hypredrv_ctest_arguments
+            "--resource-spec-file" _hypredrv_resource_spec_arg_index)
+        if(_hypredrv_resource_spec_arg_index EQUAL -1)
+            list(APPEND _hypredrv_ctest_arguments
+                "--resource-spec-file" "${HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE}")
+        endif()
+
+        set(_hypredrv_has_ctest_parallel_arg FALSE)
+        foreach(_ctest_arg IN LISTS _hypredrv_ctest_arguments)
+            if(_ctest_arg STREQUAL "-j" OR
+               _ctest_arg MATCHES "^-j[0-9]+$" OR
+               _ctest_arg STREQUAL "--parallel" OR
+               _ctest_arg MATCHES "^--parallel=[0-9]+$")
+                set(_hypredrv_has_ctest_parallel_arg TRUE)
+            endif()
+        endforeach()
+        if(NOT _hypredrv_has_ctest_parallel_arg)
+            list(APPEND _hypredrv_ctest_arguments
+                "-j${_hypredrv_gpu_parallel_level}")
+        endif()
+        set(CMAKE_CTEST_ARGUMENTS "${_hypredrv_ctest_arguments}")
+
+        message(STATUS
+            "CTest GPU resources: IDs=${_hypredrv_gpu_device_ids}; "
+            "parallel level=${_hypredrv_gpu_parallel_level}; "
+            "spec=${HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE}")
+        set_property(GLOBAL PROPERTY HYPREDRV_CTEST_GPU_RESOURCES_CONFIGURED TRUE)
+
+        unset(_hypredrv_rocminfo_executable)
+        unset(_hypredrv_rocminfo_result)
+        unset(_hypredrv_rocminfo_output)
+        unset(_hypredrv_gpu_agents)
+        unset(_hypredrv_gpu_agent_count)
+        unset(_hypredrv_gpu_last_id)
+        unset(_hypredrv_gpu_resource_spec)
+        unset(_hypredrv_gpu_resource_index)
+        unset(_hypredrv_normalized_gpu_device_ids)
+        unset(_hypredrv_ctest_arguments)
+        unset(_hypredrv_resource_spec_arg_index)
+        unset(_hypredrv_has_ctest_parallel_arg)
+        unset(_hypredrv_gpu_parallel_level)
+        unset(_device_env)
+        unset(_device_id)
+    endif()
+    unset(_hypredrv_ctest_gpu_resources_configured)
+endif()
 unset(_hypredrv_asan_options_default)
 unset(_hypredrv_ubsan_options_default)
 unset(_hypredrv_lsan_options_default)
@@ -96,6 +289,10 @@ function(hypredrv_append_test_environment test_name)
     endif()
     if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
         list(APPEND _env_list "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+    endif()
+    if(HYPREDRV_GPU_VISIBLE_DEVICES_ENV)
+        list(APPEND _env_list
+            "HYPREDRV_GPU_VISIBLE_DEVICES_ENV=${HYPREDRV_GPU_VISIBLE_DEVICES_ENV}")
     endif()
     get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
     if(_sanitizer_enabled AND HYPREDRV_ASAN_OPTIONS)
@@ -179,6 +376,18 @@ function(hypredrv_maybe_disable_gpu_test test_name)
     endif()
 endfunction()
 
+# Declare the GPU resources consumed by a test.  The resource specification is
+# intentionally supplied at test time because the number and IDs of devices
+# vary by machine.  One CTest resource group is created per MPI rank so the
+# run script can expose one distinct device to each rank.
+function(hypredrv_set_gpu_test_resources test_name num_procs)
+    if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       NOT "${num_procs}" STREQUAL "" AND num_procs GREATER 0)
+        set_tests_properties(${test_name}
+            PROPERTIES RESOURCE_GROUPS "${num_procs},gpus:1")
+    endif()
+endfunction()
+
 function(hypredrv_scale_problem_size_args out_var)
     set(_scaled_args "")
     set(_scaling_n_dims FALSE)
@@ -251,6 +460,7 @@ function(add_hypredrive_test test_name num_procs config_file)
         LABELS "integration;hypredrive"
     )
     hypredrv_maybe_disable_gpu_test(${full_test_name})
+    hypredrv_set_gpu_test_resources(${full_test_name} ${num_procs})
     hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
@@ -328,6 +538,7 @@ function(add_hypredrive_cli_test test_name num_procs config_file)
         LABELS "integration;hypredrive"
     )
     hypredrv_maybe_disable_gpu_test(${full_test_name})
+    hypredrv_set_gpu_test_resources(${full_test_name} ${num_procs})
     hypredrv_append_test_environment(${full_test_name})
 endfunction()
 
@@ -381,6 +592,11 @@ function(add_executable_test test_name target num_procs)
             FAIL_REGULAR_EXPRESSION "${EXEC_TEST_FAIL_REGULAR_EXPRESSION}"
     )
     hypredrv_maybe_disable_gpu_test(${test_name})
+    # The MPI example drivers use HYPRE's device binding.  The MPI unit-test
+    # drivers are host-only and should not consume GPU resources.
+    if(NOT target MATCHES "^test_")
+        hypredrv_set_gpu_test_resources(${test_name} ${num_procs})
+    endif()
     hypredrv_append_test_environment(${test_name})
 
     if(target STREQUAL "hypredrive-cli")
@@ -428,6 +644,7 @@ function(add_hypredrive_test_with_output test_name num_procs config_file example
         LABELS "integration;hypredrive"
     )
     hypredrv_maybe_disable_gpu_test(${test_name})
+    hypredrv_set_gpu_test_resources(${test_name} ${num_procs})
     hypredrv_append_test_environment(${test_name})
 
     # Optional output comparison if script and reference exist
@@ -605,6 +822,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 LABELS "integration;hypredrive"
             )
             hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_sequence_pack)
+            hypredrv_set_gpu_test_resources(hypredrive_test_ex7_sequence_pack 1)
             hypredrv_append_test_environment(hypredrive_test_ex7_sequence_pack)
         endif()
         if (HYPREDRV_HAVE_HYPRE_23000_DEV0)
@@ -843,6 +1061,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     LABELS "integration;hypredrive"
                 )
                 hypredrv_maybe_disable_gpu_test(${_tname})
+                hypredrv_set_gpu_test_resources(${_tname} 1)
                 hypredrv_append_test_environment(${_tname})
             endforeach()
             unset(_cycle_case)
@@ -888,6 +1107,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 LABELS "integration;hypredrive"
             )
             hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_reuse_1proc)
+            hypredrv_set_gpu_test_resources(hypredrive_test_ex7_mgr_frelax_reuse_1proc 1)
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
 
@@ -913,6 +1133,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 LABELS "integration;hypredrive"
             )
             hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_grelax_reuse_1proc)
+            hypredrv_set_gpu_test_resources(hypredrive_test_ex7_mgr_grelax_reuse_1proc 1)
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_grelax_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
 
@@ -938,6 +1159,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 LABELS "integration;hypredrive"
             )
             hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_coarse_reuse_1proc)
+            hypredrv_set_gpu_test_resources(hypredrive_test_ex7_mgr_coarse_reuse_1proc 1)
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_coarse_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
 
@@ -963,6 +1185,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 LABELS "integration;hypredrive"
             )
             hypredrv_maybe_disable_gpu_test(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc)
+            hypredrv_set_gpu_test_resources(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc 1)
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
         endif()
