@@ -827,7 +827,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
                         "-DREQUIRE_CONTAINS:STRING=Solving linear system #2"
-                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_PackAndRunScript.cmake
+                        -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
             set_tests_properties(hypredrive_test_ex7_sequence_pack

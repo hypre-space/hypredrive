@@ -17,20 +17,21 @@
 #   TARGET_ARGS      : optional '|' separated list of extra arguments
 #   REQUIRE_CONTAINS : optional '|' separated list of substrings that must appear in output
 #   REQUIRE_PATHS    : optional '|' separated list of files/directories that must exist after run
+#   PACKER_BIN       : optional linear-system sequence packer to run first
+#   SEQ_OUTPUT       : output file required when PACKER_BIN is set
 #
 if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_RunScript.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
 endif()
-
-include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_PrepareTestLauncher.cmake")
-hypredrv_prepare_test_launcher(
-  _launcher_command _launcher_postflags _launcher_uses_flux)
-
-# Flux owns GPU assignment for packed regression-test job steps.  Other
-# launchers use the device IDs allocated by CTest directly.
-if(NOT _launcher_uses_flux)
-  include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ApplyGPUResource.cmake")
+if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "" AND
+   (NOT DEFINED SEQ_OUTPUT OR SEQ_OUTPUT STREQUAL "" OR
+    NOT DEFINED CONFIG_FILE OR CONFIG_FILE STREQUAL ""))
+  message(FATAL_ERROR
+    "HYPREDRV_RunScript.cmake: PACKER_BIN requires SEQ_OUTPUT and CONFIG_FILE")
 endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_TestLauncher.cmake")
+hypredrv_prepare_test_launcher(_launcher_command _launcher_postflags)
 
 # Parse CONFIG_FILE to detect referenced dataset directories under 'data/<name>/...'
 if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
@@ -64,8 +65,38 @@ if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
   endif()
 endif()
 
+# Optionally prepare a packed linear-system sequence before launching the test.
+if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "")
+  message(STATUS "[test] Packing sequence into ${SEQ_OUTPUT}")
+  execute_process(
+    COMMAND "${PACKER_BIN}"
+            --dirname "${LAUNCH_DIR}/data/poromech2k/np1/ls"
+            --matrix-filename "IJ.out.A"
+            --rhs-filename "IJ.out.b"
+            --dofmap-filename "dofmap.out"
+            --init-suffix "0"
+            --last-suffix "2"
+            --digits-suffix "5"
+            --algo "none"
+            --output "${SEQ_OUTPUT}"
+    WORKING_DIRECTORY "${LAUNCH_DIR}"
+    RESULT_VARIABLE _pack_ret
+    OUTPUT_VARIABLE _pack_out
+    ERROR_VARIABLE _pack_err
+  )
+  if(NOT _pack_ret EQUAL 0)
+    message(FATAL_ERROR
+      "Packer failed with exit code ${_pack_ret}\n\nstdout:\n${_pack_out}\n\nstderr:\n${_pack_err}")
+  endif()
+endif()
+
 # Build argument list
 set(_target_args "")
+if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "")
+  list(APPEND _target_args
+    -a
+    --linear_system:sequence_filename "${SEQ_OUTPUT}")
+endif()
 if(DEFINED TARGET_ARGS AND NOT TARGET_ARGS STREQUAL "")
   string(REPLACE "|" ";" _target_args_joined "${TARGET_ARGS}")
   foreach(_arg IN LISTS _target_args_joined)
