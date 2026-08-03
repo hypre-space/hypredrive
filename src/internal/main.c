@@ -135,7 +135,7 @@ CountConfigFiles(int argc, char **argv)
 static int
 BuildConfigArgv(int argc, char **argv, int config_index, char **config_argv)
 {
-   int config_argc = 0;
+   int config_argc            = 0;
    config_argv[config_argc++] = argv[0];
 
    for (int i = 1; i < argc; i++)
@@ -322,7 +322,8 @@ main(int argc, char **argv)
 
       if (config_count > 1 && !myid)
       {
-         printf("\n=== hypredrive case %d/%d: %s ===\n", case_number, config_count, argv[i]);
+         printf("\n=== hypredrive case %d/%d: %s ===\n", case_number, config_count,
+                argv[i]);
       }
 
       RunOneConfig(comm, myid, config_argc, config_argv, case_number == 1,

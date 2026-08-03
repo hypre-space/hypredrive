@@ -602,8 +602,8 @@ hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solve
    /* Allocate at least one element so the attached dof_func pointer is non-NULL even
     * on a rank that owns no rows; hypre only tests the pointer, never reads past the
     * local row count. */
-   HYPRE_Int *h_dof_func =
-      hypre_TAlloc(HYPRE_Int, (num_local_rows > 0) ? num_local_rows : 1, HYPRE_MEMORY_HOST);
+   HYPRE_Int *h_dof_func = hypre_TAlloc(
+      HYPRE_Int, (num_local_rows > 0) ? num_local_rows : 1, HYPRE_MEMORY_HOST);
    for (HYPRE_Int i = 0; i < num_local_rows; i++)
    {
       h_dof_func[i] = (HYPRE_Int)dofmap->data[i];

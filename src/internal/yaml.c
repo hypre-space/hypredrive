@@ -2052,9 +2052,8 @@ YAMLargsTokenEndsOverrideList(const char *arg)
       return false;
    }
 
-   return hypredrv_IsYAMLFilename(arg) || !strcmp(arg, "-h") ||
-          !strcmp(arg, "--help") || !strcmp(arg, "-i") ||
-          !strcmp(arg, "--info") || !strcmp(arg, "-p") ||
+   return hypredrv_IsYAMLFilename(arg) || !strcmp(arg, "-h") || !strcmp(arg, "--help") ||
+          !strcmp(arg, "-i") || !strcmp(arg, "--info") || !strcmp(arg, "-p") ||
           !strcmp(arg, "--prec-preset");
 }
 

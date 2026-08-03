@@ -56,8 +56,7 @@ hypredrv_GeneralGetValidValues(const char *key)
 {
    if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
        !strcmp(key, "use_millisec") || !strcmp(key, "device_lazy_init") ||
-       !strcmp(key, "use_vendor_spgemm") ||
-       !strcmp(key, "use_vendor_spmv"))
+       !strcmp(key, "use_vendor_spgemm") || !strcmp(key, "use_vendor_spmv"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }

@@ -340,10 +340,9 @@ ApplyConfiguredDeviceInitialization(HYPREDRV_t hypredrv)
          return code;
       }
 
-      HYPREDRV_LOG_OBJECTF(
-         1, hypredrv,
-         "eager device initialization requested by "
-         "general.device_lazy_init=off");
+      HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                           "eager device initialization requested by "
+                           "general.device_lazy_init=off");
       HYPRE_DeviceInitialize();
    }
 #else
