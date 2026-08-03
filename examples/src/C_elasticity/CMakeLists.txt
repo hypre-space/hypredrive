@@ -17,6 +17,7 @@ endif()
 # Common build configuration
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
+hypredrv_add_hypre_build_dependency(elasticity)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(elasticity)
 endif()

@@ -17,6 +17,7 @@ endif()
 # Common build configuration
 add_executable(maxwell maxwell.c)
 target_link_libraries(maxwell PRIVATE HYPREDRV::HYPREDRV)
+hypredrv_add_hypre_build_dependency(maxwell)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(maxwell)
 endif()

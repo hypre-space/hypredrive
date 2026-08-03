@@ -14,6 +14,7 @@ endif()
 
 add_executable(darcy darcy.c)
 target_link_libraries(darcy PRIVATE HYPREDRV::HYPREDRV m)
+hypredrv_add_hypre_build_dependency(darcy)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(darcy)
 endif()

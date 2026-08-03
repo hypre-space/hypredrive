@@ -14,9 +14,12 @@ function(_hypredrv_apply_gpu_resource)
   endif()
 
   set(_group_count "$ENV{CTEST_RESOURCE_GROUP_COUNT}")
-  if(NOT _group_count MATCHES "^[0-9]+$" OR _group_count LESS 1)
+  if(NOT _group_count MATCHES "^[0-9]+$")
     message(FATAL_ERROR
       "Invalid CTEST_RESOURCE_GROUP_COUNT='${_group_count}'")
+  endif()
+  if(_group_count LESS 1)
+    return()
   endif()
 
   set(_gpu_ids "")
@@ -87,7 +90,8 @@ function(hypredrv_prepare_test_launcher out_command out_postflags)
 
   set(_has_ctest_gpu_resources FALSE)
   if(DEFINED ENV{CTEST_RESOURCE_GROUP_COUNT} AND
-     NOT "x$ENV{CTEST_RESOURCE_GROUP_COUNT}" STREQUAL "x")
+     "$ENV{CTEST_RESOURCE_GROUP_COUNT}" MATCHES "^[0-9]+$" AND
+     "$ENV{CTEST_RESOURCE_GROUP_COUNT}" GREATER 0)
     set(_has_ctest_gpu_resources TRUE)
   endif()
 

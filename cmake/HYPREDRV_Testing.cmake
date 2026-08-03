@@ -829,6 +829,19 @@ endfunction()
 
 function(hypredrv_check_hypre_version release develop)
     set(_hypredrv_out_var "HYPREDRV_HAVE_HYPRE_${release}_DEV${develop}")
+    if(DEFINED HYPREDRV_HYPRE_RELEASE_NUMBER)
+        if(HYPREDRV_HYPRE_RELEASE_NUMBER GREATER release OR
+           (HYPREDRV_HYPRE_RELEASE_NUMBER EQUAL release AND
+            HYPREDRV_HYPRE_DEVELOP_NUMBER GREATER_EQUAL develop))
+            set(${_hypredrv_out_var} TRUE CACHE INTERNAL
+                "HYPRE version satisfies ${release}+${develop}")
+        else()
+            set(${_hypredrv_out_var} FALSE CACHE INTERNAL
+                "HYPRE version satisfies ${release}+${develop}")
+        endif()
+        return()
+    endif()
+
     # Determine hypre version checks for selecting which tests to run.
     #set(CMAKE_MESSAGE_LOG_LEVEL DEBUG) # or TRACE for maximum noise
     # Include Hypre headers (from find_package) and HypreDrive headers (for utils.h)

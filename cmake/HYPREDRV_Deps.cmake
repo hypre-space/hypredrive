@@ -1242,6 +1242,8 @@ if(NOT HYPRE_FOUND)
             endif()
         endif()
 
+        find_program(_hypre_autotools_make_program NAMES gmake make REQUIRED)
+
         ExternalProject_Add(hypre_autotools
             SOURCE_DIR ${_hypre_autotools_src}
             CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
@@ -1250,8 +1252,9 @@ if(NOT HYPRE_FOUND)
                 LDFLAGS=${_hypre_autotools_ldflags}
                 ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
                 ${_hypre_autotools_configure_extra}
-            BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM}
-            INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM} install
+            BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${_hypre_autotools_make_program}
+            BUILD_BYPRODUCTS "${_hypre_autotools_prefix}/lib/libHYPRE.a"
+            INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${_hypre_autotools_make_program} install
             BUILD_IN_SOURCE 1
         )
 
@@ -1269,6 +1272,7 @@ if(NOT HYPRE_FOUND)
         )
         _hypredrv_link_mpi_interface(HYPRE::HYPRE)
         add_dependencies(HYPRE::HYPRE hypre_autotools)
+        set(HYPREDRV_HYPRE_BUILD_DEPENDENCY hypre_autotools)
 
         set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
         set(HYPREDRV_HYPRE_AUTOTOOLS TRUE)
@@ -1280,6 +1284,7 @@ if(NOT HYPRE_FOUND)
         unset(_hypre_autotools_cflags)
         unset(_hypre_autotools_ldflags)
         unset(_hypre_autotools_configure_extra)
+        unset(_hypre_autotools_make_program)
         unset(_hypre_instrumentation_cflags)
         unset(_hypre_instrumentation_ldflags)
         unset(_hypre_cuda_arch)
