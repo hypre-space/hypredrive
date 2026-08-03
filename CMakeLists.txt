@@ -101,6 +101,12 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # Find and configure dependencies
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Deps.cmake)
 
+function(hypredrv_add_hypre_build_dependency target_name)
+    if(HYPREDRV_HYPRE_BUILD_DEPENDENCY)
+        add_dependencies(${target_name} ${HYPREDRV_HYPRE_BUILD_DEPENDENCY})
+    endif()
+endfunction()
+
 # Check for headers, functions, and libraries
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Checks.cmake)
 
@@ -178,6 +184,8 @@ set(SOURCE_FILES
 add_library(HYPREDRV_objects OBJECT ${SOURCE_FILES})
 add_library(HYPREDRV $<TARGET_OBJECTS:HYPREDRV_objects>)
 add_library(HYPREDRV::HYPREDRV ALIAS HYPREDRV)
+hypredrv_add_hypre_build_dependency(HYPREDRV_objects)
+hypredrv_add_hypre_build_dependency(HYPREDRV)
 
 # Set library properties
 set_target_properties(HYPREDRV PROPERTIES
@@ -397,10 +405,12 @@ endif()
 # Define the main executable (hypredrive-cli)
 add_executable(hypredrive-cli src/internal/main.c)
 target_link_libraries(hypredrive-cli PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
+hypredrv_add_hypre_build_dependency(hypredrive-cli)
 
 if(HYPREDRV_ENABLE_COMPRESSION)
     add_executable(hypredrive-lsseq utils/lsseq_driver.c)
     target_link_libraries(hypredrive-lsseq PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
+    hypredrv_add_hypre_build_dependency(hypredrive-lsseq)
 endif()
 
 # Ensure dataset-driven examples/tests have data available before running hypredrive-cli.

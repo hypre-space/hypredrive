@@ -124,7 +124,13 @@ hypredrv_RuntimeInitialize(void)
             "GPU-aware MPI disabled (no recognized environment variable is set to 1)");
       }
 
-      HYPRE_DeviceInitialize();
+      /*
+       * HYPRE_DeviceInitialize() is optional.  Leave device initialization
+       * lazy so that HYPREDRV_Initialize() does not eagerly create HIP and
+       * vendor-library state before the input configuration has selected the
+       * execution policy.  HYPRE initializes the device state on the first
+       * device operation.
+       */
 #endif
 #endif
 

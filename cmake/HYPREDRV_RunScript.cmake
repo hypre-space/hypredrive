@@ -14,17 +14,42 @@
 #   MPI_PREFLAGS     : extra flags before program
 #   MPI_POSTFLAGS    : extra flags after program
 #   CONFIG_FILE      : optional YAML config (enables dataset checks)
+#   CONFIG_FILES     : optional '|' separated YAML configs for one batched run
 #   TARGET_ARGS      : optional '|' separated list of extra arguments
 #   REQUIRE_CONTAINS : optional '|' separated list of substrings that must appear in output
 #   REQUIRE_PATHS    : optional '|' separated list of files/directories that must exist after run
+#   PACKER_BIN       : optional linear-system sequence packer to run first
+#   SEQ_OUTPUT       : output file required when PACKER_BIN is set
 #
 if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_RunScript.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
 endif()
+if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "" AND
+   (NOT DEFINED SEQ_OUTPUT OR SEQ_OUTPUT STREQUAL "" OR
+    NOT DEFINED CONFIG_FILE OR CONFIG_FILE STREQUAL ""))
+  message(FATAL_ERROR
+    "HYPREDRV_RunScript.cmake: PACKER_BIN requires SEQ_OUTPUT and CONFIG_FILE")
+endif()
 
-# Parse CONFIG_FILE to detect referenced dataset directories under 'data/<name>/...'
+include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_TestLauncher.cmake")
+hypredrv_prepare_test_launcher(_launcher_command _launcher_postflags)
+
+set(_config_files "")
 if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
-  file(READ "${CONFIG_FILE}" _cfg_text)
+  list(APPEND _config_files "${CONFIG_FILE}")
+endif()
+if(DEFINED CONFIG_FILES AND NOT CONFIG_FILES STREQUAL "")
+  string(REPLACE "|" ";" _config_files_from_batch "${CONFIG_FILES}")
+  foreach(_config_file IN LISTS _config_files_from_batch)
+    if(NOT _config_file STREQUAL "")
+      list(APPEND _config_files "${_config_file}")
+    endif()
+  endforeach()
+endif()
+
+# Parse configs to detect referenced dataset directories under 'data/<name>/...'
+foreach(_config_file IN LISTS _config_files)
+  file(READ "${_config_file}" _cfg_text)
   set(_matches "")
   # Match strings like data/ps3d10pt7 or data/compflow6k (first two path components)
   string(REGEX MATCHALL "data/[A-Za-z0-9_.-]+" _raw_matches "${_cfg_text}")
@@ -52,23 +77,51 @@ if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
       return()
     endif()
   endif()
+endforeach()
+
+# Optionally prepare a packed linear-system sequence before launching the test.
+if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "")
+  message(STATUS "[test] Packing sequence into ${SEQ_OUTPUT}")
+  execute_process(
+    COMMAND "${PACKER_BIN}"
+            --dirname "${LAUNCH_DIR}/data/poromech2k/np1/ls"
+            --matrix-filename "IJ.out.A"
+            --rhs-filename "IJ.out.b"
+            --dofmap-filename "dofmap.out"
+            --init-suffix "0"
+            --last-suffix "2"
+            --digits-suffix "5"
+            --algo "none"
+            --output "${SEQ_OUTPUT}"
+    WORKING_DIRECTORY "${LAUNCH_DIR}"
+    RESULT_VARIABLE _pack_ret
+    OUTPUT_VARIABLE _pack_out
+    ERROR_VARIABLE _pack_err
+  )
+  if(NOT _pack_ret EQUAL 0)
+    message(FATAL_ERROR
+      "Packer failed with exit code ${_pack_ret}\n\nstdout:\n${_pack_out}\n\nstderr:\n${_pack_err}")
+  endif()
 endif()
 
 # Build argument list
 set(_target_args "")
+if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "")
+  list(APPEND _target_args
+    -a
+    --linear_system:sequence_filename "${SEQ_OUTPUT}")
+endif()
 if(DEFINED TARGET_ARGS AND NOT TARGET_ARGS STREQUAL "")
   string(REPLACE "|" ";" _target_args_joined "${TARGET_ARGS}")
   foreach(_arg IN LISTS _target_args_joined)
     list(APPEND _target_args "${_arg}")
   endforeach()
 endif()
-if(DEFINED CONFIG_FILE AND NOT CONFIG_FILE STREQUAL "")
-  list(APPEND _target_args "${CONFIG_FILE}")
-endif()
+list(APPEND _target_args ${_config_files})
 
 # For debugging purposes only
 message(STATUS "[test] TARGET_BIN=${TARGET_BIN}")
-if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+if(_launcher_command)
   message(STATUS "[test] MPIEXEC=${MPIEXEC} MPI_NUMPROC_FLAG=${MPI_NUMPROC_FLAG} MPI_NUMPROCS=${MPI_NUMPROCS}")
 else()
   message(STATUS "[test] MPIEXEC not defined; running serially")
@@ -82,9 +135,9 @@ if(DEFINED REQUIRE_CONTAINS AND NOT REQUIRE_CONTAINS STREQUAL "")
 endif()
 
 if(_capture_output)
-  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+  if(_launcher_command)
     execute_process(
-      COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
+      COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args} ${_launcher_postflags}
       WORKING_DIRECTORY "${LAUNCH_DIR}"
       RESULT_VARIABLE _ret
       OUTPUT_VARIABLE _out
@@ -117,9 +170,9 @@ if(_capture_output)
     endif()
   endforeach()
 else()
-  if(DEFINED MPIEXEC AND NOT MPIEXEC STREQUAL "")
+  if(_launcher_command)
     execute_process(
-      COMMAND "${MPIEXEC}" "${MPI_NUMPROC_FLAG}" "${MPI_NUMPROCS}" ${MPI_PREFLAGS} "${TARGET_BIN}" ${_target_args} ${MPI_POSTFLAGS}
+      COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args} ${_launcher_postflags}
       WORKING_DIRECTORY "${LAUNCH_DIR}"
       RESULT_VARIABLE _ret
     )

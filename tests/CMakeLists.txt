@@ -21,6 +21,7 @@ function(setup_test_executable target_name source_file)
 
     # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
     target_link_libraries(${target_name} PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
+    hypredrv_add_hypre_build_dependency(${target_name})
 
     # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
     if(HYPREDRV_ENABLE_CALIPER)

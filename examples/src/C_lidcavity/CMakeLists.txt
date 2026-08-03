@@ -17,6 +17,7 @@ endif()
 # Common build configuration
 add_executable(lidcavity lidcavity.c)
 target_link_libraries(lidcavity PRIVATE HYPREDRV::HYPREDRV m)
+hypredrv_add_hypre_build_dependency(lidcavity)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(lidcavity)
 endif()

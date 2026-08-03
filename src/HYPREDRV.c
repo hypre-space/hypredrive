@@ -327,6 +327,31 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
    return ERROR_NONE;
 }
 
+static uint32_t
+ApplyConfiguredDeviceInitialization(HYPREDRV_t hypredrv)
+{
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(23100, 0)
+   if (hypredrv && hypredrv->iargs && hypredrv->iargs->general.exec_policy &&
+       !hypredrv->iargs->general.device_lazy_init)
+   {
+      uint32_t code = ApplyGlobalRuntimeSettings(hypredrv);
+      if (code != ERROR_NONE)
+      {
+         return code;
+      }
+
+      HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                           "eager device initialization requested by "
+                           "general.device_lazy_init=off");
+      HYPRE_DeviceInitialize();
+   }
+#else
+   (void)hypredrv;
+#endif
+
+   return hypredrv_ErrorCodeGet();
+}
+
 /*-----------------------------------------------------------------------------
  * Migrate a user-supplied matrix/vector to the memory space of the exec policy
  *-----------------------------------------------------------------------------*/
@@ -649,7 +674,11 @@ LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
-   if (!hypredrv->dofmap || !hypredrv->dofmap->data || hypredrv->dofmap->size == 0)
+   /* Tagging must not be skipped where the local dofmap is empty. A rank that owns no
+    * rows still takes part in every reduction over the tagged vectors, and those
+    * reductions exchange num_tags + 1 values, so an untagged rank would enter the
+    * collective with a different length than its peers and hang the solve. */
+   if (!hypredrv->dofmap || !hypredrv->dofmap->data)
    {
       return hypredrv_ErrorCodeGet();
    }
@@ -1229,6 +1258,10 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
                                          &hypredrv->precon_reuse_timesteps.ids,
                                          &hypredrv->precon_reuse_timesteps.starts);
    }
+   if (hypredrv_ErrorCodeGet())
+   {
+      return hypredrv_ErrorCodeGet();
+   }
 
 #ifdef HYPRE_USING_GPU
    hypredrv->preferred_exec_policy = hypredrv->iargs->general.exec_policy;
@@ -1239,6 +1272,8 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
 #endif
+
+   HYPREDRV_SAFE_CALL(ApplyConfiguredDeviceInitialization(hypredrv));
 
    ReportExecutionPolicy(hypredrv);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");

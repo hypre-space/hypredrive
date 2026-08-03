@@ -48,19 +48,11 @@ if(HYPREDRV_ENABLE_ANALYSIS)
     # Note: Sanitizers are disabled when coverage is enabled to avoid conflicts
     # Coverage and sanitizers both use compiler instrumentation and can conflict
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT HYPREDRV_ENABLE_COVERAGE)
-        # Sanitizer flags - ASan and UBSan are most commonly used
-        # Note: -O1 is recommended for sanitizers, but we respect CMAKE_BUILD_TYPE's optimization
-        # if it's set. We only add -fno-omit-frame-pointer for better stack traces.
-        set(_sanitizer_flags "-fno-omit-frame-pointer")
-        set(_sanitizer_link_flags "")
-
-        # AddressSanitizer (detects memory errors, use-after-free, buffer overflows)
-        list(APPEND _sanitizer_flags "-fsanitize=address")
-        list(APPEND _sanitizer_link_flags "-fsanitize=address")
-
-        # UndefinedBehaviorSanitizer (detects undefined behavior)
-        list(APPEND _sanitizer_flags "-fsanitize=undefined")
-        list(APPEND _sanitizer_link_flags "-fsanitize=undefined")
+        # Reuse the instrumentation flags configured before dependencies were
+        # added.  For HIP, that configuration keeps UBSan on the host action;
+        # passing it to the AMDGPU action is unsupported.
+        set(_sanitizer_flags "${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS}")
+        set(_sanitizer_link_flags "${HYPREDRV_SANITIZER_LINK_FLAGS}")
 
         # MemorySanitizer (detects uninitialized memory reads) - Clang only, experimental
         # Note: MSan is very slow and may not work with all libraries (e.g., MPI)
@@ -97,9 +89,7 @@ if(HYPREDRV_ENABLE_ANALYSIS)
         set_property(GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED ON)
 
         message(STATUS "AddressSanitizer and UndefinedBehaviorSanitizer enabled")
-        message(STATUS "Set ASAN_OPTIONS and UBSAN_OPTIONS environment variables to control behavior")
-        message(STATUS "Recommended ASAN_OPTIONS for better stack traces:")
-        message(STATUS "  ASAN_OPTIONS=symbolize=1:print_stacktrace=1:abort_on_error=1")
+        message(STATUS "CTest sanitizer runtime options are configured through HYPREDRV_ASAN_OPTIONS, HYPREDRV_UBSAN_OPTIONS, and HYPREDRV_LSAN_OPTIONS")
         message(STATUS "  Note: 'symbolize=1' requires 'llvm-symbolizer' or 'addr2line' to be available")
     elseif(HYPREDRV_ENABLE_COVERAGE)
         message(STATUS "Sanitizers disabled because coverage is enabled (they conflict)")
@@ -553,9 +543,7 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
     message(STATUS "")
     message(STATUS "Code analysis configuration:")
     message(STATUS "  Sanitizers: AddressSanitizer and UndefinedBehaviorSanitizer")
-    message(STATUS "  Recommended environment variables for better stack traces:")
-    message(STATUS "    ASAN_OPTIONS=symbolize=1:print_stacktrace=1:abort_on_error=1:detect_leaks=1")
-    message(STATUS "    UBSAN_OPTIONS=symbolize=1:print_stacktrace=1:abort_on_error=1")
+    message(STATUS "  CTest runtime options are configured by HYPREDRV_ASAN_OPTIONS, HYPREDRV_UBSAN_OPTIONS, and HYPREDRV_LSAN_OPTIONS")
     message(STATUS "  Note: 'symbolize=1' requires 'llvm-symbolizer' or 'addr2line' to be available")
     message(STATUS "")
 endif()

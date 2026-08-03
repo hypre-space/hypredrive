@@ -562,8 +562,11 @@ hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solve
    void     *vA            = NULL;
    HYPRE_Int num_functions = args->coarsening.num_functions;
 
-   if (!precon || !ij_A || !dofmap || !dofmap->data || dofmap->size == 0 ||
-       num_functions <= 1)
+   /* An empty local dofmap (a rank that owns no rows) is not a reason to skip this:
+    * whether dof_func is attached changes the collective sequence of the AMG setup,
+    * so the decision has to be the same on every rank. The remaining conditions below
+    * are evaluated from globally reduced data and are rank-consistent by construction. */
+   if (!precon || !ij_A || !dofmap || !dofmap->data || num_functions <= 1)
    {
       return;
    }
@@ -596,7 +599,11 @@ hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solve
       return;
    }
 
-   HYPRE_Int *h_dof_func = hypre_TAlloc(HYPRE_Int, num_local_rows, HYPRE_MEMORY_HOST);
+   /* Allocate at least one element so the attached dof_func pointer is non-NULL even
+    * on a rank that owns no rows; hypre only tests the pointer, never reads past the
+    * local row count. */
+   HYPRE_Int *h_dof_func = hypre_TAlloc(
+      HYPRE_Int, (num_local_rows > 0) ? num_local_rows : 1, HYPRE_MEMORY_HOST);
    for (HYPRE_Int i = 0; i < num_local_rows; i++)
    {
       h_dof_func[i] = (HYPRE_Int)dofmap->data[i];

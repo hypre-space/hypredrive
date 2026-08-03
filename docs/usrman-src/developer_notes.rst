@@ -8,6 +8,7 @@ This chapter collects practical guidance for contributing to hypredrive with a f
 - Continuous Integration (CI)
 - Static code analysis (cppcheck, clang-tidy)
 - Code coverage (gcov/gcovr, CTest)
+- GPU test scheduling and resource allocation
 - Fuzzing replay and live fuzz campaigns
 
 It explains the CI structure, local checks, and the CMake options for these
@@ -142,6 +143,66 @@ On macOS (Apple clang):
      -DCMAKE_PREFIX_PATH=$(brew --prefix hypre)
    cmake --build build --parallel
    ctest --test-dir build --output-on-failure
+
+
+GPU Test Scheduling
+-------------------
+
+GPU tests can be scheduled concurrently through the generated ``test`` target.
+For CUDA and HIP builds, configuration creates a CTest resource specification
+from the scheduler's GPU visibility variable and sets the parallel level to the
+number of listed devices.  The generated target can then be run with:
+
+.. code-block:: bash
+
+   cmake --build build --target test
+
+For HIP, the configuration checks ``ROCR_VISIBLE_DEVICES`` and then
+``HIP_VISIBLE_DEVICES``.  For CUDA it checks ``CUDA_VISIBLE_DEVICES``.  If the
+scheduler does not provide a visibility variable, HIP configuration tries
+``rocminfo`` and otherwise conservatively uses one device.  Device IDs can be
+set explicitly during configuration with
+``-DHYPREDRV_GPU_TEST_DEVICE_IDS=0,1,2,3``.
+
+The generated resource file has this form, with one ``gpus`` entry per visible
+device:
+
+.. code-block:: json
+
+   {
+     "version": { "major": 1, "minor": 0 },
+     "local": [
+       {
+         "gpus": [
+           { "id": "0", "slots": 1 },
+           { "id": "1", "slots": 1 },
+           { "id": "2", "slots": 1 },
+           { "id": "3", "slots": 1 }
+         ]
+       }
+     ]
+   }
+
+Direct CTest invocations can use the generated file explicitly:
+
+.. code-block:: bash
+
+   ctest --test-dir build \
+       --resource-spec-file build/hypredrive-ctest-gpus.json \
+       --output-on-failure
+
+The test launcher maps each allocation to ``ROCR_VISIBLE_DEVICES`` by default.
+To use another visibility variable, configure with, for example,
+``-DHYPREDRV_GPU_VISIBLE_DEVICES_ENV=HIP_VISIBLE_DEVICES``.
+
+When the configured MPI launcher is ``srun`` and tests run inside a Flux
+allocation, the ``AUTO`` launcher policy uses packed
+``flux run -N 1 -n <ranks> --gpus-per-task=1`` job steps.  This permits CTest
+workers to run on separate GPUs instead of being serialized by an ``srun``
+compatibility wrapper that requests exclusive nodes.  Configure with
+``-DHYPREDRV_GPU_TEST_LAUNCHER=MPIEXEC`` to retain the configured MPI launcher,
+or ``-DHYPREDRV_GPU_TEST_LAUNCHER=FLUX`` to require Flux for allocated GPU
+tests.
 
 
 Code Analysis

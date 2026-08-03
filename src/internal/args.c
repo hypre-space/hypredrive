@@ -35,6 +35,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, device_lazy_init, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spgemm, hypredrv_FieldTypeIntSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spmv, hypredrv_FieldTypeIntSet)        \
@@ -54,8 +55,8 @@ StrIntMapArray
 hypredrv_GeneralGetValidValues(const char *key)
 {
    if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
-       !strcmp(key, "use_millisec") || !strcmp(key, "use_vendor_spgemm") ||
-       !strcmp(key, "use_vendor_spmv"))
+       !strcmp(key, "use_millisec") || !strcmp(key, "device_lazy_init") ||
+       !strcmp(key, "use_vendor_spgemm") || !strcmp(key, "use_vendor_spmv"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
@@ -85,6 +86,7 @@ hypredrv_GeneralSetDefaultArgs(General_args *args)
    args->statistics             = 1;
    args->print_config_params    = 1;
    args->use_millisec           = 0;
+   args->device_lazy_init       = 0;
 #ifdef HYPRE_USING_GPU
    args->exec_policy       = 1;
    args->use_vendor_spgemm = 1;

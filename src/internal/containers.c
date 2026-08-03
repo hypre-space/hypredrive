@@ -624,7 +624,13 @@ hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap,
    IntArray *int_array = NULL;
 
    int_array = hypredrv_IntArrayCreate((size_t)size);
-   memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
+   /* A rank may legitimately own no rows, in which case the caller passes an empty
+    * (possibly NULL) dofmap. Still take part in the collective below so the global
+    * label set is built consistently across all ranks. */
+   if (size > 0 && dofmap)
+   {
+      memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
+   }
    hypredrv_IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
