@@ -53,6 +53,9 @@ hypredrv_ScalingGetValidValues(const char *key)
          {"rhs_l2", (int)SCALING_RHS_L2},
          {"dofmap_mag", (int)SCALING_DOFMAP_MAG},
          {"dofmap_custom", (int)SCALING_DOFMAP_CUSTOM},
+         {"dofmap_row_custom", (int)SCALING_DOFMAP_ROW_CUSTOM},
+         {"dofmap_col_custom", (int)SCALING_DOFMAP_COL_CUSTOM},
+         {"dofmap_similarity_custom", (int)SCALING_DOFMAP_SIMILARITY_CUSTOM},
       };
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -366,14 +369,14 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    if (!dofmap || !dofmap->data)
    {
       hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
-      hypredrv_ErrorMsgAdd("dofmap_custom scaling requires a dofmap to be set");
+      hypredrv_ErrorMsgAdd("custom dofmap scaling requires a dofmap to be set");
       return;
    }
 
    if (!args->custom_values || args->custom_values->size == 0)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap_custom scaling requires custom_values to be set");
+      hypredrv_ErrorMsgAdd("custom dofmap scaling requires custom_values to be set");
       return;
    }
 
@@ -569,6 +572,9 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
          break;
 
       case SCALING_DOFMAP_CUSTOM:
+      case SCALING_DOFMAP_ROW_CUSTOM:
+      case SCALING_DOFMAP_COL_CUSTOM:
+      case SCALING_DOFMAP_SIMILARITY_CUSTOM:
          ScalingComputeDofmapCustom(comm, args, ctx, mat_A, dofmap);
          break;
 
@@ -732,6 +738,33 @@ ScalingTransformVector(const Scaling_context *ctx, HYPRE_IJVector vec,
          ScalingTransformVectorDofmap(ctx, vec, kind, apply);
          break;
 
+      case SCALING_DOFMAP_ROW_CUSTOM:
+         if (kind == SCALING_VECTOR_RHS)
+         {
+            ScalingTransformVectorDofmap(ctx, vec, kind, apply);
+         }
+         break;
+
+      case SCALING_DOFMAP_COL_CUSTOM:
+         if (kind == SCALING_VECTOR_UNKNOWN)
+         {
+            ScalingTransformVectorDofmap(ctx, vec, kind, apply);
+         }
+         break;
+
+      case SCALING_DOFMAP_SIMILARITY_CUSTOM:
+         if (kind == SCALING_VECTOR_RHS)
+         {
+            /* c = S^-1 b */
+            ScalingTransformVectorDofmap(ctx, vec, kind, !apply);
+         }
+         else
+         {
+            /* y = S^-1 x on apply; x = S y on undo */
+            ScalingTransformVectorDofmap(ctx, vec, kind, apply);
+         }
+         break;
+
       default:
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd(apply
@@ -828,6 +861,9 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
 
       case SCALING_DOFMAP_MAG:
       case SCALING_DOFMAP_CUSTOM:
+      case SCALING_DOFMAP_ROW_CUSTOM:
+      case SCALING_DOFMAP_COL_CUSTOM:
+      case SCALING_DOFMAP_SIMILARITY_CUSTOM:
          if (!ctx->scaling_vector)
          {
             hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -883,6 +919,36 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
          {
             hypre_ParCSRMatrixScale(par_M, s2);
          }
+      }
+      else if (ctx->type == SCALING_DOFMAP_ROW_CUSTOM)
+      {
+         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
+         hypre_ParCSRMatrixDiagScale(par_A, par_scaling, NULL);
+         if (par_M != par_A)
+         {
+            hypre_ParCSRMatrixDiagScale(par_M, par_scaling, NULL);
+         }
+      }
+      else if (ctx->type == SCALING_DOFMAP_COL_CUSTOM)
+      {
+         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
+         hypre_ParCSRMatrixDiagScale(par_A, NULL, par_scaling);
+         if (par_M != par_A)
+         {
+            hypre_ParCSRMatrixDiagScale(par_M, NULL, par_scaling);
+         }
+      }
+      else if (ctx->type == SCALING_DOFMAP_SIMILARITY_CUSTOM)
+      {
+         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
+         hypre_ParVector *inv_scaling = NULL;
+         hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
+         hypre_ParCSRMatrixDiagScale(par_A, inv_scaling, par_scaling);
+         if (par_M != par_A)
+         {
+            hypre_ParCSRMatrixDiagScale(par_M, inv_scaling, par_scaling);
+         }
+         hypre_ParVectorDestroy(inv_scaling);
       }
       else
       {
@@ -944,10 +1010,28 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
          hypre_ParVector *inv_scaling = NULL;
 
          hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
-         hypre_ParCSRMatrixDiagScale(par_A, inv_scaling, inv_scaling);
+         if (ctx->type == SCALING_DOFMAP_SIMILARITY_CUSTOM)
+         {
+            hypre_ParCSRMatrixDiagScale(par_A, par_scaling, inv_scaling);
+         }
+         else
+         {
+            hypre_ParCSRMatrixDiagScale(
+               par_A, ctx->type == SCALING_DOFMAP_COL_CUSTOM ? NULL : inv_scaling,
+               ctx->type == SCALING_DOFMAP_ROW_CUSTOM ? NULL : inv_scaling);
+         }
          if (par_M != par_A)
          {
-            hypre_ParCSRMatrixDiagScale(par_M, inv_scaling, inv_scaling);
+            if (ctx->type == SCALING_DOFMAP_SIMILARITY_CUSTOM)
+            {
+               hypre_ParCSRMatrixDiagScale(par_M, par_scaling, inv_scaling);
+            }
+            else
+            {
+               hypre_ParCSRMatrixDiagScale(
+                  par_M, ctx->type == SCALING_DOFMAP_COL_CUSTOM ? NULL : inv_scaling,
+                  ctx->type == SCALING_DOFMAP_ROW_CUSTOM ? NULL : inv_scaling);
+            }
          }
          hypre_ParVectorDestroy(inv_scaling);
       }

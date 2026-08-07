@@ -23,6 +23,9 @@ typedef enum scaling_type_enum
    SCALING_RHS_L2,
    SCALING_DOFMAP_MAG,
    SCALING_DOFMAP_CUSTOM,
+   SCALING_DOFMAP_ROW_CUSTOM,
+   SCALING_DOFMAP_COL_CUSTOM,
+   SCALING_DOFMAP_SIMILARITY_CUSTOM,
 } scaling_type_t;
 
 typedef enum scaling_vector_kind_enum
