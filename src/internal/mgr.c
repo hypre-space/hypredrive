@@ -1661,7 +1661,8 @@ hypredrv_MGRlvlGetValidValues(const char *key)
    if (!strcmp(key, "restriction_type"))
    {
       static StrIntMap map[] = {
-         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},        {"blk-jacobi", 12},
+         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},
+         {"pair-1", 4},    {"pair-2", 5},    {"blk-jacobi", 12},
          {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
       };
 
