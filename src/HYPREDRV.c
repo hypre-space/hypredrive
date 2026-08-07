@@ -2954,6 +2954,12 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
    hypredrv_HypreConsumeErrors();
+   if (hypredrv_ErrorCodeGet())
+   {
+      hypredrv->precon_is_setup = false;
+      HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup failed");
+      return hypredrv_ErrorCodeGet();
+   }
    if (hypredrv->precon) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->precon_is_setup = true;
@@ -3054,6 +3060,15 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
 
    hypredrv_HypreConsumeErrors();
+   if (hypredrv_ErrorCodeGet())
+   {
+      if (hypredrv->precon)
+      {
+         hypredrv->precon_is_setup = false;
+      }
+      HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup failed");
+      return hypredrv_ErrorCodeGet();
+   }
    if (hypredrv->precon && !skip_precon_setup)
    {
       hypredrv->precon_is_setup = true;
@@ -3084,6 +3099,17 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
    HYPREDRV_CHECK_ARGS();
+
+   if (hypredrv->iargs->precon_method != PRECON_NONE &&
+       (!hypredrv->precon || !hypredrv->precon_is_setup))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Linear solver apply requires a successfully set up "
+                           "preconditioner; check the preceding setup error");
+      HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                           "HYPREDRV_LinearSolverApply failed: preconditioner is not set up");
+      return hypredrv_ErrorCodeGet();
+   }
 
    double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
    double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;

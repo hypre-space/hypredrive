@@ -40,11 +40,53 @@ hypredrv_HypreConsumeErrors(void)
       return;
    }
 
-   /* Public setup/solve boundaries historically cleared hypre's sticky flag
-    * unconditionally so a prior soft failure could not poison the next call.
-    * Prefer hypredrv_HypreClearConvergenceErrors() when only HYPRE_ERROR_CONV
-    * should be discarded and harder bits must remain visible. */
-   (void)hypre_error;
+   /* Diagnostic escape hatch for determining whether a generic HYPRE setup
+    * warning is recoverable. Hard errors remain fatal by default, and memory,
+    * argument, and convergence errors are never covered by this override. */
+   const char *allow_generic = getenv("HYPREDRV_ALLOW_HYPRE_GENERIC_WARNINGS");
+   if ((hypre_error & ~HYPRE_ERROR_CONV) == HYPRE_ERROR_GENERIC && allow_generic &&
+       strcmp(allow_generic, "0") && strcmp(allow_generic, "false") &&
+       strcmp(allow_generic, "off"))
+   {
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+#endif
+      fprintf(stderr,
+              "[HYPREDRV] continuing after HYPRE generic error 0x%x because "
+              "HYPREDRV_ALLOW_HYPRE_GENERIC_WARNINGS is enabled\n",
+              (unsigned)hypre_error);
+      fflush(stderr);
+      HYPRE_ClearAllErrors();
+      return;
+   }
+
+   if (hypre_error & ~HYPRE_ERROR_CONV)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      fprintf(stderr, "[HYPREDRV] HYPRE hard error flags=0x%x, argument=%d\n",
+              (unsigned)hypre_error, (int)HYPRE_GetErrorArg());
+      fflush(stderr);
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      /* HYPRE's detailed diagnostics include the source file, line, and the
+       * message passed by the failing routine. Emit them before clearing the
+       * sticky error state so applications do not see only "Generic error". */
+      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+      fflush(stderr);
+#endif
+      HYPRE_DescribeError(hypre_error, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAddUnique("HYPRE reported error 0x%x: %s", (unsigned)hypre_error,
+                                 hypre_err_msg);
+   }
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+   else
+   {
+      HYPRE_ClearErrorMessages();
+   }
+#endif
+
+   /* Consume the sticky hypre state after preserving every hard error in
+    * HypreDrive's error state. A convergence-only error remains a soft result. */
    HYPRE_ClearAllErrors();
 }
 
