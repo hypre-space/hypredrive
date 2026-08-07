@@ -960,12 +960,8 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=boomeramg");
             /* GCOVR_EXCL_STOP */
-            for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
-            {
-               HYPRE_ParVectorDestroy(args->amg.rbms[i]);
-               args->amg.rbms[i] = NULL;
-            }
             HYPRE_BoomerAMGDestroy(precon->main);
+            hypredrv_AMGDestroyRBMs(&args->amg);
             break;
 
          case PRECON_MGR:

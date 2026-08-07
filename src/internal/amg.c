@@ -458,6 +458,22 @@ hypredrv_AMGsmtGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
+hypredrv_AMGDestroyRBMs(AMG_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   {
+      HYPRE_ParVectorDestroy(args->rbms[i]);
+      args->rbms[i] = NULL;
+   }
+   args->num_rbms = 0;
+}
+
+void
 hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
    HYPRE_BigInt   jlower = 0, jupper = 0;
@@ -490,11 +506,7 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    }
 
    /* Reset any previous RBMs */
-   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
-   {
-      HYPRE_ParVectorDestroy(args->rbms[i]);
-      args->rbms[i] = NULL;
-   }
+   hypredrv_AMGDestroyRBMs(args);
 
    /* Create three RBMs */
    args->num_rbms = 3;
@@ -529,6 +541,136 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 #else
    (void)vec_nn;
    return;
+#endif
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_AMGSetProjectedRBMs
+ *
+ * MGR F-relaxation acts on a row-filtered submatrix. Project the full-system
+ * rigid-body modes onto the selected F labels while preserving each rank's row
+ * order, which is also the ordering used by hypre's extracted F block.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
+                             const IntArray *dofmap,
+                             const StackIntArray *f_dofs)
+{
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   HYPRE_BigInt   jlower = 0, jupper = -1;
+   HYPRE_Int      num_entries = 0;
+   HYPRE_Int      num_components = 0;
+   HYPRE_Complex *values = NULL;
+   unsigned char *selected = NULL;
+   uint64_t       projected_local = 0;
+   uint64_t       projected_global = 0;
+   uint64_t       projected_scan = 0;
+   void          *par_obj = NULL;
+   MPI_Comm       comm = MPI_COMM_NULL;
+
+   if (!args || !args->coarsening.nodal)
+   {
+      return;
+   }
+   if (args->num_rbms > 0)
+   {
+      return;
+   }
+   if (!vec_nn || !dofmap || !f_dofs || f_dofs->size == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Near null space vectors and a nonempty dofmap/F-label set are required "
+         "for nodal MGR F-relaxation AMG");
+      return;
+   }
+
+   num_components = hypre_IJVectorNumComponents(vec_nn);
+   if (num_components < 6)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Elasticity near null space requires 6 modes, but only %d were provided",
+         (int)num_components);
+      return;
+   }
+
+   HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
+   num_entries = (jupper >= jlower) ? (HYPRE_Int)(jupper - jlower + 1) : 0;
+   if ((size_t)num_entries != dofmap->size)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Near null space local size (%d) does not match the MGR dofmap size (%d)",
+         (int)num_entries, (int)dofmap->size);
+      return;
+   }
+
+   selected = (unsigned char *)calloc((size_t)num_entries, sizeof(unsigned char));
+   values = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   if ((num_entries > 0 && !selected) || (num_entries > 0 && !values))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd(
+         "Failed to allocate projected near-null-space buffers (%d entries)",
+         (int)num_entries);
+      free(selected);
+      free(values);
+      return;
+   }
+
+   for (HYPRE_Int i = 0; i < num_entries; i++)
+   {
+      for (size_t j = 0; j < f_dofs->size; j++)
+      {
+         if (dofmap->data[i] == f_dofs->data[j])
+         {
+            selected[i] = 1;
+            projected_local++;
+            break;
+         }
+      }
+   }
+
+   HYPRE_IJVectorGetObject(vec_nn, &par_obj);
+   comm = hypre_ParVectorComm((HYPRE_ParVector)par_obj);
+   MPI_Allreduce(&projected_local, &projected_global, 1, MPI_UINT64_T, MPI_SUM, comm);
+   MPI_Scan(&projected_local, &projected_scan, 1, MPI_UINT64_T, MPI_SUM, comm);
+
+   args->num_rbms = 3;
+   for (HYPRE_Int mode = 0; mode < args->num_rbms; mode++)
+   {
+      HYPRE_BigInt *partitioning =
+         hypre_TAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
+      partitioning[0] = (HYPRE_BigInt)(projected_scan - projected_local);
+      partitioning[1] = (HYPRE_BigInt)projected_scan;
+
+      HYPRE_ParVectorCreate(comm, (HYPRE_BigInt)projected_global, partitioning,
+                            &args->rbms[mode]);
+      hypre_ParVectorInitialize_v2(args->rbms[mode], HYPRE_MEMORY_HOST);
+
+      HYPRE_IJVectorSetComponent(vec_nn, 3 + mode);
+      HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
+
+      hypre_Vector  *local_vec = hypre_ParVectorLocalVector(args->rbms[mode]);
+      HYPRE_Complex *data = hypre_VectorData(local_vec);
+      for (HYPRE_Int i = 0, projected_i = 0; i < num_entries; i++)
+      {
+         if (selected[i])
+         {
+            data[projected_i++] = values[i];
+         }
+      }
+   }
+
+   free(selected);
+   free(values);
+#else
+   (void)args;
+   (void)vec_nn;
+   (void)dofmap;
+   (void)f_dofs;
 #endif
 }
 
@@ -753,11 +895,11 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       enough sweeps to do so. hypre takes ownership of the array. */
    if (args->relaxation.points == 1)
    {
-      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
-                               ? args->relaxation.down_sweeps
-                               : args->relaxation.num_sweeps;
-      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
-                                                              : args->relaxation.num_sweeps;
+      HYPRE_Int ns_down = (args->relaxation.down_sweeps > -1)
+                             ? args->relaxation.down_sweeps
+                             : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up   = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                            : args->relaxation.num_sweeps;
       HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
                                ? args->relaxation.coarse_sweeps
                                : args->relaxation.num_sweeps;
@@ -785,11 +927,7 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetNumFunctions(precon, 3);
       HYPRE_BoomerAMGSetNodal(precon, 4); // Nodal coarsening based on row-sum norm
       HYPRE_BoomerAMGSetNodalDiag(precon, 1);
-      HYPRE_BoomerAMGSetInterpVecVariant(precon, 2); // GM-2
-      HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-      HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
-#endif
+      HYPRE_BoomerAMGSetInterpVecVariant(precon, 1); // GM-1 near-null interpolation
       HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
                                       (HYPRE_ParVector *)args->rbms);
    }

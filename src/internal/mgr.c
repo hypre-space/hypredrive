@@ -36,8 +36,7 @@ typedef struct MGRFRelaxWrapper_struct
 enum
 {
    MGR_HYPRE_SOLVER_IS_SETUP_OFFSET = sizeof(HYPRE_PtrToSolverFcn) +
-                                      sizeof(HYPRE_PtrToSolverFcn) +
-                                      sizeof(MGRHyprePtrToDestroyFcn),
+      sizeof(HYPRE_PtrToSolverFcn) + sizeof(MGRHyprePtrToDestroyFcn),
 };
 
 typedef char MGRNestedKrylovLayoutCheck
@@ -2495,7 +2494,8 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args)
  *-----------------------------------------------------------------------------*/
 
 static HYPRE_Solver
-MGRFRelaxSolverCreateByType(MGRfrlx_args *f_relaxation, int active_lvl)
+MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
+                            const StackIntArray *f_dofs, int active_lvl)
 {
    HYPRE_Solver solver = NULL;
 
@@ -2505,6 +2505,12 @@ MGRFRelaxSolverCreateByType(MGRfrlx_args *f_relaxation, int active_lvl)
 
    if (f_relaxation->type == 2)
    {
+      hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn,
+                                   args->dofmap, f_dofs);
+      if (hypredrv_ErrorCodeActive())
+      {
+         return NULL;
+      }
       hypredrv_AMGCreate(&f_relaxation->amg, &solver);
    }
 #if defined(HYPRE_USING_DSUPERLU)
@@ -2778,7 +2784,8 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
 
    HYPRE_Solver old_fsolver = args->frelax[orig_lvl];
    HYPRE_Solver fsolver =
-      MGRFRelaxSolverCreateByType(&level_args->f_relaxation, active_lvl);
+      MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
+                                  &level_args->f_dofs, active_lvl);
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -3362,6 +3369,10 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       if (drop_frelax)
       {
          args->frelax[i] = NULL;
+         if (args->level[i].f_relaxation.type == 2)
+         {
+            hypredrv_AMGDestroyRBMs(&args->level[i].f_relaxation.amg);
+         }
       }
 
       if (args->level[i].g_relaxation.use_krylov && args->level[i].g_relaxation.krylov)
@@ -3863,7 +3874,8 @@ MGRConfigManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int active_lvl
 
    if (!frelax)
    {
-      frelax = MGRFRelaxSolverCreateByType(&level_args->f_relaxation, active_lvl);
+      frelax = MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
+                                           &level_args->f_dofs, active_lvl);
       if (hypredrv_ErrorCodeActive() || !frelax)
       {
          return 0;
