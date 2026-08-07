@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "internal/amg.h"
+#include <stdlib.h>
+#include <string.h>
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
 #include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
@@ -475,18 +477,137 @@ hypredrv_AMGDestroyRBMs(AMG_args *args)
    args->num_rbms = 0;
 }
 
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+enum
+{
+   AMG_NUM_RBMS            = 3,
+   AMG_FIRST_RBM_COMPONENT = 3,
+};
+
+static int
+AMGIntCompare(const void *lhs, const void *rhs)
+{
+   int left  = *(const int *)lhs;
+   int right = *(const int *)rhs;
+   return (left > right) - (left < right);
+}
+
+/* Copy the complete multivector to host memory. HYPRE_IJVectorGetValues()
+ * expects its output buffer in the vector's execution memory on GPU builds,
+ * so passing a malloc'ed buffer to it is not portable. Keeping the original
+ * strides also handles both supported multivector storage layouts. */
+static HYPRE_Complex *
+AMGNearNullDataToHost(HYPRE_IJVector vec_nn, HYPRE_Int num_entries,
+                      HYPRE_Int *vector_stride, HYPRE_Int *index_stride)
+{
+   void            *object     = NULL;
+   hypre_ParVector *par_vector = NULL;
+   hypre_Vector    *local      = NULL;
+
+   HYPRE_IJVectorGetObject(vec_nn, &object);
+   par_vector = (hypre_ParVector *)object;
+   if (!par_vector || !(local = hypre_ParVectorLocalVector(par_vector)) ||
+       hypre_VectorSize(local) != num_entries ||
+       hypre_VectorNumVectors(local) < AMG_FIRST_RBM_COMPONENT + AMG_NUM_RBMS)
+   {
+      return NULL;
+   }
+
+   size_t total_entries = (size_t)num_entries * (size_t)hypre_VectorNumVectors(local);
+   HYPRE_Complex *host_values =
+      hypre_TAlloc(HYPRE_Complex, total_entries, HYPRE_MEMORY_HOST);
+   if (total_entries > 0 && !host_values)
+   {
+      return NULL;
+   }
+
+   if (total_entries > 0)
+   {
+      HYPRE_Complex *source = hypre_VectorData(local);
+      if (!source)
+      {
+         hypre_TFree(host_values, HYPRE_MEMORY_HOST);
+         return NULL;
+      }
+      hypre_TMemcpy(host_values, source, HYPRE_Complex, total_entries, HYPRE_MEMORY_HOST,
+                    hypre_VectorMemoryLocation(local));
+   }
+
+   *vector_stride = hypre_VectorVectorStride(local);
+   *index_stride  = hypre_VectorIndexStride(local);
+   return host_values;
+}
+
+/* Build the three displacement RBMs from a host copy of the near-null-space
+ * multivector. A NULL selection mask copies every local row. */
+static int
+AMGCreateRBMsFromHost(AMG_args *args, MPI_Comm comm, HYPRE_BigInt global_size,
+                      HYPRE_BigInt local_start, HYPRE_Int local_size,
+                      HYPRE_Int source_size, const unsigned char *selected,
+                      const HYPRE_Complex *host_values, HYPRE_Int vector_stride,
+                      HYPRE_Int index_stride)
+{
+   hypredrv_AMGDestroyRBMs(args);
+
+   for (HYPRE_Int mode = 0; mode < AMG_NUM_RBMS; mode++)
+   {
+      /* hypre_ParVectorCreate copies these two entries. */
+      HYPRE_BigInt partitioning[2] = {local_start, local_start + local_size};
+      HYPRE_ParVectorCreate(comm, global_size, partitioning, &args->rbms[mode]);
+      int local_ok = args->rbms[mode] != NULL;
+      if (local_ok)
+      {
+         hypre_ParVectorInitialize_v2(args->rbms[mode], HYPRE_MEMORY_HOST);
+         hypre_Vector *local = hypre_ParVectorLocalVector(args->rbms[mode]);
+         local_ok            = local && (local_size == 0 || hypre_VectorData(local));
+      }
+
+      int global_ok = 0;
+      MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+      if (!global_ok)
+      {
+         if (args->rbms[mode])
+         {
+            HYPRE_ParVectorDestroy(args->rbms[mode]);
+            args->rbms[mode] = NULL;
+         }
+         hypredrv_AMGDestroyRBMs(args);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to create rigid-body-mode vectors");
+         return 0;
+      }
+
+      args->num_rbms++;
+      HYPRE_Complex *data =
+         hypre_VectorData(hypre_ParVectorLocalVector(args->rbms[mode]));
+      HYPRE_Int projected_i = 0;
+      for (HYPRE_Int i = 0; i < source_size; i++)
+      {
+         if (!selected || selected[i])
+         {
+            size_t source_index =
+               ((size_t)(AMG_FIRST_RBM_COMPONENT + mode) * (size_t)vector_stride) +
+               ((size_t)i * (size_t)index_stride);
+            data[projected_i++] = host_values[source_index];
+         }
+      }
+   }
+
+   return 1;
+}
+#endif
+
 void
 hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
-   HYPRE_BigInt   jlower = 0, jupper = 0;
-   HYPRE_Int      num_entries = 0;
-   HYPRE_Complex *values      = NULL;
+   HYPRE_BigInt jlower = 0, jupper = 0;
+   HYPRE_Int    num_entries = 0;
 
    /* Sanity: check if the near null space vector is set
       We do not error out when NOT using nodal coarsening. */
-   if (!vec_nn || !args->coarsening.nodal)
+   if (!args || !vec_nn || !args->coarsening.nodal)
    {
-      if (args->coarsening.nodal)
+      if (args && args->coarsening.nodal)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("Near null space vectors (RBMs) required"
@@ -497,49 +618,26 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
-   num_entries = (HYPRE_Int)(jupper - jlower + 1);
-   values      = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
-   if (!values)
+   num_entries                  = (HYPRE_Int)(jupper - jlower + 1);
+   HYPRE_Int      vector_stride = 0, index_stride = 0;
+   HYPRE_Complex *host_values =
+      AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
+   int      local_ok  = num_entries == 0 || host_values != NULL;
+   int      global_ok = 0;
+   MPI_Comm comm      = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate near-null-space read buffer (%d entries)",
-                           (int)num_entries);
+      hypredrv_ErrorMsgAdd("Failed to access near-null-space components on host");
+      hypre_TFree(host_values, HYPRE_MEMORY_HOST);
       return;
    }
 
-   /* Reset any previous RBMs */
-   hypredrv_AMGDestroyRBMs(args);
-
-   /* Create three RBMs */
-   args->num_rbms = 3;
-   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
-   {
-      /* Allocate single-component parallel vector for this RBM */
-      /* HYPRE_ParVectorCreate takes ownership of the partitioning array. */
-      HYPRE_BigInt *partitioning = hypre_TAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
-      partitioning[0]            = jlower;
-      partitioning[1]            = jupper + 1;
-
-      HYPRE_ParVectorCreate(hypre_ParVectorComm(vec_nn),
-                            hypre_IJVectorGlobalNumRows(vec_nn), partitioning,
-                            &args->rbms[i]);
-      hypre_ParVectorInitialize_v2(args->rbms[i], HYPRE_MEMORY_HOST);
-
-      /* Copy component data into host buffer */
-      HYPRE_IJVectorSetComponent(vec_nn, 3 + i);
-      HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
-
-      /* Fill entries */
-      hypre_Vector  *seq_vec = hypre_ParVectorLocalVector(args->rbms[i]);
-      HYPRE_Complex *data    = hypre_VectorData(seq_vec);
-      for (HYPRE_Int j = 0; j < num_entries; j++)
-      {
-         data[j] = values[j];
-      }
-   }
-
-   /* Free memory */
-   free(values);
+   AMGCreateRBMsFromHost(args, comm, hypre_IJVectorGlobalNumRows(vec_nn), jlower,
+                         num_entries, num_entries, NULL, host_values, vector_stride,
+                         index_stride);
+   hypre_TFree(host_values, HYPRE_MEMORY_HOST);
 #else
    (void)vec_nn;
    return;
@@ -562,12 +660,10 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    HYPRE_BigInt   jlower = 0, jupper = -1;
    HYPRE_Int      num_entries      = 0;
    HYPRE_Int      num_components   = 0;
-   HYPRE_Complex *values           = NULL;
    unsigned char *selected         = NULL;
    uint64_t       projected_local  = 0;
    uint64_t       projected_global = 0;
    uint64_t       projected_scan   = 0;
-   void          *par_obj          = NULL;
    MPI_Comm       comm             = MPI_COMM_NULL;
 
    if (!args || !args->coarsening.nodal)
@@ -587,85 +683,72 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
       return;
    }
 
+   comm           = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
    num_components = hypre_IJVectorNumComponents(vec_nn);
-   if (num_components < 6)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "Elasticity near null space requires 6 modes, but only %d were provided",
-         (int)num_components);
-      return;
-   }
-
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
-   num_entries = (jupper >= jlower) ? (HYPRE_Int)(jupper - jlower + 1) : 0;
-   if ((size_t)num_entries != dofmap->size)
+   num_entries     = (jupper >= jlower) ? (HYPRE_Int)(jupper - jlower + 1) : 0;
+   int local_valid = num_components >= AMG_FIRST_RBM_COMPONENT + AMG_NUM_RBMS &&
+                     (size_t)num_entries == dofmap->size;
+   int global_valid = 0;
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
-         "Near null space local size (%d) does not match the MGR dofmap size (%d)",
-         (int)num_entries, (int)dofmap->size);
+         "Elasticity near null space requires 6 components and a local size matching "
+         "the MGR dofmap on every rank");
       return;
    }
 
    selected = (unsigned char *)calloc((size_t)num_entries, sizeof(unsigned char));
-   values   = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
-   if ((num_entries > 0 && !selected) || (num_entries > 0 && !values))
+   HYPRE_Int      vector_stride = 0, index_stride = 0;
+   HYPRE_Complex *host_values =
+      AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
+   int local_ok  = num_entries == 0 || (selected && host_values);
+   int global_ok = 0;
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd(
          "Failed to allocate projected near-null-space buffers (%d entries)",
          (int)num_entries);
       free(selected);
-      free(values);
+      hypre_TFree(host_values, HYPRE_MEMORY_HOST);
       return;
    }
 
+   int selected_labels[MAX_STACK_ARRAY_LENGTH];
+   memcpy(selected_labels, f_dofs->data, f_dofs->size * sizeof(selected_labels[0]));
+   qsort(selected_labels, f_dofs->size, sizeof(selected_labels[0]), AMGIntCompare);
    for (HYPRE_Int i = 0; i < num_entries; i++)
    {
-      for (size_t j = 0; j < f_dofs->size; j++)
+      if (bsearch(&dofmap->data[i], selected_labels, f_dofs->size,
+                  sizeof(selected_labels[0]), AMGIntCompare))
       {
-         if (dofmap->data[i] == f_dofs->data[j])
-         {
-            selected[i] = 1;
-            projected_local++;
-            break;
-         }
+         selected[i] = 1;
+         projected_local++;
       }
    }
 
-   HYPRE_IJVectorGetObject(vec_nn, &par_obj);
-   comm = hypre_ParVectorComm((HYPRE_ParVector)par_obj);
    MPI_Allreduce(&projected_local, &projected_global, 1, MPI_UINT64_T, MPI_SUM, comm);
    MPI_Scan(&projected_local, &projected_scan, 1, MPI_UINT64_T, MPI_SUM, comm);
 
-   args->num_rbms = 3;
-   for (HYPRE_Int mode = 0; mode < args->num_rbms; mode++)
+   if (projected_global == 0)
    {
-      HYPRE_BigInt *partitioning = hypre_TAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
-      partitioning[0]            = (HYPRE_BigInt)(projected_scan - projected_local);
-      partitioning[1]            = (HYPRE_BigInt)projected_scan;
-
-      HYPRE_ParVectorCreate(comm, (HYPRE_BigInt)projected_global, partitioning,
-                            &args->rbms[mode]);
-      hypre_ParVectorInitialize_v2(args->rbms[mode], HYPRE_MEMORY_HOST);
-
-      HYPRE_IJVectorSetComponent(vec_nn, 3 + mode);
-      HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
-
-      hypre_Vector  *local_vec = hypre_ParVectorLocalVector(args->rbms[mode]);
-      HYPRE_Complex *data      = hypre_VectorData(local_vec);
-      for (HYPRE_Int i = 0, projected_i = 0; i < num_entries; i++)
-      {
-         if (selected[i])
-         {
-            data[projected_i++] = values[i];
-         }
-      }
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("MGR F-label set selects no near-null-space entries");
+   }
+   else
+   {
+      AMGCreateRBMsFromHost(args, comm, (HYPRE_BigInt)projected_global,
+                            (HYPRE_BigInt)(projected_scan - projected_local),
+                            (HYPRE_Int)projected_local, num_entries, selected,
+                            host_values, vector_stride, index_stride);
    }
 
    free(selected);
-   free(values);
+   hypre_TFree(host_values, HYPRE_MEMORY_HOST);
 #else
    (void)args;
    (void)vec_nn;

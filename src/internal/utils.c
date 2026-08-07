@@ -40,26 +40,6 @@ hypredrv_HypreConsumeErrors(void)
       return;
    }
 
-   /* Diagnostic escape hatch for determining whether a generic HYPRE setup
-    * warning is recoverable. Hard errors remain fatal by default, and memory,
-    * argument, and convergence errors are never covered by this override. */
-   const char *allow_generic = getenv("HYPREDRV_ALLOW_HYPRE_GENERIC_WARNINGS");
-   if ((hypre_error & ~HYPRE_ERROR_CONV) == HYPRE_ERROR_GENERIC && allow_generic &&
-       strcmp(allow_generic, "0") != 0 && strcmp(allow_generic, "false") != 0 &&
-       strcmp(allow_generic, "off") != 0)
-   {
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
-#endif
-      fprintf(stderr,
-              "[HYPREDRV] continuing after HYPRE generic error 0x%x because "
-              "HYPREDRV_ALLOW_HYPRE_GENERIC_WARNINGS is enabled\n",
-              (unsigned)hypre_error);
-      fflush(stderr);
-      HYPRE_ClearAllErrors();
-      return;
-   }
-
    if (hypre_error & ~HYPRE_ERROR_CONV)
    {
       char hypre_err_msg[HYPRE_MAX_MSG_LEN];

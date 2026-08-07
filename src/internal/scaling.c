@@ -83,14 +83,15 @@ void
 hypredrv_ScalingContextCreate(MPI_Comm comm, Scaling_context **ctx_ptr)
 {
    /* GCOVR_EXCL_BR_START */
-   Scaling_context *ctx = (Scaling_context *)malloc(sizeof(Scaling_context));
-   ctx->enabled         = 0;
-   ctx->type            = SCALING_RHS_L2;
-   ctx->is_applied      = 0;
-   ctx->scalar_factor   = 1.0;
-   ctx->scaling_vector  = NULL;
-   ctx->scaling_ijvec   = NULL;
-   *ctx_ptr             = ctx;
+   Scaling_context *ctx        = (Scaling_context *)malloc(sizeof(Scaling_context));
+   ctx->enabled                = 0;
+   ctx->type                   = SCALING_RHS_L2;
+   ctx->is_applied             = 0;
+   ctx->scalar_factor          = 1.0;
+   ctx->scaling_vector         = NULL;
+   ctx->inverse_scaling_vector = NULL;
+   ctx->scaling_ijvec          = NULL;
+   *ctx_ptr                    = ctx;
    HYPREDRV_LOG_COMMF(3, comm, NULL, 0, "scaling context created");
    /* GCOVR_EXCL_BR_STOP */
 }
@@ -108,6 +109,11 @@ ScalingContextFreeVector(Scaling_context *ctx)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    /* GCOVR_EXCL_BR_START */
+   if (ctx->inverse_scaling_vector)
+   {
+      HYPRE_SAFE_CALL(HYPRE_ParVectorDestroy(ctx->inverse_scaling_vector));
+      ctx->inverse_scaling_vector = NULL;
+   }
    if (ctx->scaling_ijvec)
    {
       HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
@@ -120,6 +126,29 @@ ScalingContextFreeVector(Scaling_context *ctx)
       ctx->scaling_vector = NULL;
    }
    /* GCOVR_EXCL_BR_STOP */
+#endif
+}
+
+static int
+ScalingContextCacheInverse(Scaling_context *ctx)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   if (!ctx || !ctx->scaling_vector)
+   {
+      return 0;
+   }
+   if (ctx->inverse_scaling_vector)
+   {
+      HYPRE_ParVectorDestroy(ctx->inverse_scaling_vector);
+      ctx->inverse_scaling_vector = NULL;
+   }
+   hypre_ParVector *inverse = NULL;
+   hypre_ParVectorPointwiseInverse((hypre_ParVector *)ctx->scaling_vector, &inverse);
+   ctx->inverse_scaling_vector = (HYPRE_ParVector)inverse;
+   return inverse != NULL;
+#else
+   (void)ctx;
+   return 0;
 #endif
 }
 
@@ -598,6 +627,22 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                        (int)args->type);
          break;
    }
+   if (args->type != SCALING_RHS_L2)
+   {
+      int inverse_ok        = !hypredrv_ErrorCodeGet() && ScalingContextCacheInverse(ctx);
+      int global_inverse_ok = 0;
+      MPI_Allreduce(&inverse_ok, &global_inverse_ok, 1, MPI_INT, MPI_MIN, comm);
+      if (!global_inverse_ok)
+      {
+         if (ctx->inverse_scaling_vector)
+         {
+            HYPRE_ParVectorDestroy(ctx->inverse_scaling_vector);
+            ctx->inverse_scaling_vector = NULL;
+         }
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to cache the inverse scaling vector");
+      }
+   }
 #else
    (void)mat_A;
    (void)vec_b;
@@ -711,10 +756,15 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
 #else
       /* hypre_ParVectorPointwiseDivision(x, y, z) computes z=y/x on host but z=x/y on
        * device (GPU bug). Use inverse+product to get z=y/x=vec/scaling consistently. */
-      hypre_ParVector *inv_scaling = NULL;
-      hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
+      hypre_ParVector *inv_scaling = (hypre_ParVector *)ctx->inverse_scaling_vector;
+      if (!inv_scaling)
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd(
+            "ScalingTransformVectorDofmap: inverse scaling vector not computed");
+         return;
+      }
       hypre_ParVectorPointwiseProduct(inv_scaling, par_vec, &par_vec);
-      hypre_ParVectorDestroy(inv_scaling);
 #endif
    }
 #else
@@ -830,6 +880,62 @@ hypredrv_ScalingUndoOnVector(const Scaling_context *ctx, HYPRE_IJVector vec,
  * System scaling helpers
  *-----------------------------------------------------------------------------*/
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+static void
+ScalingDiagScaleMatrices(HYPRE_ParCSRMatrix par_A, HYPRE_ParCSRMatrix par_M,
+                         hypre_ParVector *left, hypre_ParVector *right)
+{
+   hypre_ParCSRMatrixDiagScale(par_A, left, right);
+   if (par_M != par_A)
+   {
+      hypre_ParCSRMatrixDiagScale(par_M, left, right);
+   }
+}
+
+static void
+ScalingDofmapMatrixFactors(const Scaling_context *ctx, int apply,
+                           hypre_ParVector **left_ptr, hypre_ParVector **right_ptr)
+{
+   hypre_ParVector *scaling = (hypre_ParVector *)ctx->scaling_vector;
+   hypre_ParVector *inverse = (hypre_ParVector *)ctx->inverse_scaling_vector;
+
+   switch (ctx->type)
+   {
+      case SCALING_DOFMAP_ROW_CUSTOM:
+         *left_ptr  = apply ? scaling : inverse;
+         *right_ptr = NULL;
+         break;
+      case SCALING_DOFMAP_COL_CUSTOM:
+         *left_ptr  = NULL;
+         *right_ptr = apply ? scaling : inverse;
+         break;
+      case SCALING_DOFMAP_SIMILARITY_CUSTOM:
+         *left_ptr  = apply ? inverse : scaling;
+         *right_ptr = apply ? scaling : inverse;
+         break;
+      default:
+         *left_ptr = *right_ptr = apply ? scaling : inverse;
+         break;
+   }
+}
+#endif
+
+/* Cleanup must not mistake an error from the failed setup/solve for an error
+ * raised by the inverse transforms themselves. Keep queued messages intact,
+ * temporarily remove the saved bits, then merge them back after restoration. */
+static void
+ScalingRestoreErrorCode(uint32_t saved_error)
+{
+   for (uint32_t i = 0; i < 32; i++)
+   {
+      uint32_t bit = UINT32_C(1) << i;
+      if (saved_error & bit)
+      {
+         hypredrv_ErrorCodeSet((hypredrv_error_t)bit);
+      }
+   }
+}
+
 static void
 ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                        HYPRE_IJVector vec_b, HYPRE_IJVector vec_x, int apply)
@@ -850,6 +956,13 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
    {
       HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply skipped (already applied)");
       return;
+   }
+
+   uint32_t saved_error = ERROR_NONE;
+   if (!apply)
+   {
+      saved_error = hypredrv_ErrorCodeGet();
+      hypredrv_ErrorCodeReset(saved_error);
    }
 
    if (apply)
@@ -876,15 +989,15 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
       case SCALING_DOFMAP_ROW_CUSTOM:
       case SCALING_DOFMAP_COL_CUSTOM:
       case SCALING_DOFMAP_SIMILARITY_CUSTOM:
-         if (!ctx->scaling_vector)
+         if (!ctx->scaling_vector || !ctx->inverse_scaling_vector)
          {
             hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
             hypredrv_ErrorMsgAdd(apply
-                                    ? "ScalingApplyDofmap: scaling vector not computed"
-                                    : "ScalingUndoDofmap: scaling vector not computed");
+                                    ? "ScalingApplyDofmap: scaling vectors not computed"
+                                    : "ScalingUndoDofmap: scaling vectors not computed");
             HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          apply ? "scaling apply failed: scaling vector not computed"
-                                : "scaling undo failed: scaling vector not computed");
+                          apply ? "scaling apply failed: scaling vectors not computed"
+                                : "scaling undo failed: scaling vectors not computed");
             goto done;
          }
          break;
@@ -932,44 +1045,11 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
             hypre_ParCSRMatrixScale(par_M, s2);
          }
       }
-      else if (ctx->type == SCALING_DOFMAP_ROW_CUSTOM)
-      {
-         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
-         hypre_ParCSRMatrixDiagScale(par_A, par_scaling, NULL);
-         if (par_M != par_A)
-         {
-            hypre_ParCSRMatrixDiagScale(par_M, par_scaling, NULL);
-         }
-      }
-      else if (ctx->type == SCALING_DOFMAP_COL_CUSTOM)
-      {
-         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
-         hypre_ParCSRMatrixDiagScale(par_A, NULL, par_scaling);
-         if (par_M != par_A)
-         {
-            hypre_ParCSRMatrixDiagScale(par_M, NULL, par_scaling);
-         }
-      }
-      else if (ctx->type == SCALING_DOFMAP_SIMILARITY_CUSTOM)
-      {
-         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
-         hypre_ParVector *inv_scaling = NULL;
-         hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
-         hypre_ParCSRMatrixDiagScale(par_A, inv_scaling, par_scaling);
-         if (par_M != par_A)
-         {
-            hypre_ParCSRMatrixDiagScale(par_M, inv_scaling, par_scaling);
-         }
-         hypre_ParVectorDestroy(inv_scaling);
-      }
       else
       {
-         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
-         hypre_ParCSRMatrixDiagScale(par_A, par_scaling, par_scaling);
-         if (par_M != par_A)
-         {
-            hypre_ParCSRMatrixDiagScale(par_M, par_scaling, par_scaling);
-         }
+         hypre_ParVector *left = NULL, *right = NULL;
+         ScalingDofmapMatrixFactors(ctx, 1, &left, &right);
+         ScalingDiagScaleMatrices(par_A, par_M, left, right);
       }
 
       ScalingTransformVector(ctx, vec_b, SCALING_VECTOR_RHS, 1);
@@ -1018,34 +1098,9 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
       }
       else
       {
-         hypre_ParVector *par_scaling = (hypre_ParVector *)ctx->scaling_vector;
-         hypre_ParVector *inv_scaling = NULL;
-
-         hypre_ParVectorPointwiseInverse(par_scaling, &inv_scaling);
-         if (ctx->type == SCALING_DOFMAP_SIMILARITY_CUSTOM)
-         {
-            hypre_ParCSRMatrixDiagScale(par_A, par_scaling, inv_scaling);
-         }
-         else
-         {
-            hypre_ParCSRMatrixDiagScale(
-               par_A, ctx->type == SCALING_DOFMAP_COL_CUSTOM ? NULL : inv_scaling,
-               ctx->type == SCALING_DOFMAP_ROW_CUSTOM ? NULL : inv_scaling);
-         }
-         if (par_M != par_A)
-         {
-            if (ctx->type == SCALING_DOFMAP_SIMILARITY_CUSTOM)
-            {
-               hypre_ParCSRMatrixDiagScale(par_M, par_scaling, inv_scaling);
-            }
-            else
-            {
-               hypre_ParCSRMatrixDiagScale(
-                  par_M, ctx->type == SCALING_DOFMAP_COL_CUSTOM ? NULL : inv_scaling,
-                  ctx->type == SCALING_DOFMAP_ROW_CUSTOM ? NULL : inv_scaling);
-            }
-         }
-         hypre_ParVectorDestroy(inv_scaling);
+         hypre_ParVector *left = NULL, *right = NULL;
+         ScalingDofmapMatrixFactors(ctx, 0, &left, &right);
+         ScalingDiagScaleMatrices(par_A, par_M, left, right);
       }
 
       ctx->is_applied = 0;
@@ -1068,6 +1123,10 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
 #endif
 
 done:
+   if (!apply)
+   {
+      ScalingRestoreErrorCode(saved_error);
+   }
    if (apply)
    {
       HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply end (is_applied=%d)",

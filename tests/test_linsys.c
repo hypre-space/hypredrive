@@ -4807,6 +4807,56 @@ test_hypredrv_Scaling_rhs_l2_apply_undo(void)
 }
 
 static void
+test_hypredrv_Scaling_undo_preserves_preexisting_error(void)
+{
+   TEST_HYPRE_INIT();
+   HYPRE_ClearAllErrors();
+
+   HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(MPI_COMM_SELF, 4.0);
+   const HYPRE_Complex rhs_v[1] = {9.0};
+   const HYPRE_Complex x_v[1]   = {1.0};
+   HYPRE_IJVector      rhs      = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
+   HYPRE_IJVector      x        = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_v);
+
+   Scaling_args     sargs;
+   Scaling_context *ctx = NULL;
+   hypredrv_ScalingSetDefaultArgs(&sargs);
+   sargs.enabled = 1;
+   sargs.type    = SCALING_RHS_L2;
+   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_A, rhs, x);
+   ASSERT_TRUE(ctx->is_applied);
+
+   hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+   hypredrv_ErrorMsgAdd("injected solve failure");
+   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_A, rhs, x);
+
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
+   ASSERT_FALSE(ctx->is_applied);
+
+   HYPRE_Int     ncols = 1;
+   HYPRE_BigInt  index = 0;
+   HYPRE_Complex matrix_after = 0.0, rhs_after = 0.0, x_after = 0.0;
+   ASSERT_EQ(HYPRE_IJMatrixGetValues(mat_A, 1, &ncols, &index, &index, &matrix_after),
+             0);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 1, &index, &rhs_after), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(x, 1, &index, &x_after), 0);
+   ASSERT_EQ_DOUBLE((double)matrix_after, 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE((double)rhs_after, 9.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE((double)x_after, 1.0, 1.0e-12);
+
+   hypredrv_ErrorStateReset();
+   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   HYPRE_IJVectorDestroy(rhs);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJMatrixDestroy(mat_A);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_hypredrv_Scaling_dofmap_custom_1x1(void)
 {
    TEST_HYPRE_INIT();
@@ -6014,6 +6064,7 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_zero_norm);
    RUN_TEST(test_hypredrv_Scaling_valid_values_and_defaults);
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_apply_undo);
+   RUN_TEST(test_hypredrv_Scaling_undo_preserves_preexisting_error);
    RUN_TEST(test_hypredrv_Scaling_system_comm_resolve_fallbacks);
    RUN_TEST(test_hypredrv_Scaling_unknown_type_apply_undo_vector_and_system);
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_apply_fails_zero_scalar);

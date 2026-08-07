@@ -257,7 +257,7 @@ def _print_table_matrix(
         if integer
         else [[f"{value:.{precision}e}" for value in row] for row in matrix]
     )
-    width = max(3, *(len(value) for row in values for value in row))
+    width = max((len(value) for row in values for value in row), default=3)
     print(title)
     print("id".rjust(3), *(str(block_id).rjust(width) for block_id in ids))
     for block_id, row in zip(ids, values):

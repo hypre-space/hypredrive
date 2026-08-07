@@ -2052,19 +2052,10 @@ YAMLargsTokenEndsOverrideList(const char *arg)
       return false;
    }
 
-   if (hypredrv_IsYAMLFilename(arg))
-   {
-      return true;
-   }
-
-   if (strcmp(arg, "-h") == 0 || strcmp(arg, "--help") == 0 || strcmp(arg, "-i") == 0 ||
-       strcmp(arg, "--info") == 0 || strcmp(arg, "-p") == 0 ||
-       strcmp(arg, "--prec-preset") == 0)
-   {
-      return true;
-   }
-
-   return false;
+   return hypredrv_IsYAMLFilename(arg) || strcmp(arg, "-h") == 0 ||
+          strcmp(arg, "--help") == 0 || strcmp(arg, "-i") == 0 ||
+          strcmp(arg, "--info") == 0 || strcmp(arg, "-p") == 0 ||
+          strcmp(arg, "--prec-preset") == 0;
 }
 
 /*-----------------------------------------------------------------------------

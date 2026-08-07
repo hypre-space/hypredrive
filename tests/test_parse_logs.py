@@ -61,6 +61,24 @@ block Frobenius row 0: 0=1(nnz=1)
         self.assertIn("row/column,0", result.stdout)
         self.assertIn("0,1.000000e+00", result.stdout)
 
+    def test_empty_matrix_table(self) -> None:
+        log = "matrix block Frobenius norms: blocks=0 matrix_norm=0 ignored_nnz=0\n"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS_DIR / "parse_logs.py"),
+                "--mode",
+                "block_norms",
+                "-",
+            ],
+            input=log,
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        self.assertIn("blocks=0", result.stdout)
+        self.assertIn("frobenius (rows x columns):", result.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()

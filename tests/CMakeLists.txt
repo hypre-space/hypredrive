@@ -171,5 +171,8 @@ add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
 setup_test_executable(test_args_mpi test_args_mpi.c)
 add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)
 
+setup_test_executable(test_hypredrv_mpi test_hypredrv_mpi.c)
+add_executable_test(hypredrv_mpi_2proc test_hypredrv_mpi 2 RUN_SERIAL)
+
 setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)
 add_executable_test(setmatrix_from_csr_mpi_2proc test_setmatrix_from_csr_mpi 2 RUN_SERIAL)

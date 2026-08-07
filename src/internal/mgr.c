@@ -2039,6 +2039,12 @@ MGRGRelaxUsesManagedHandle(const MGRgrlx_args *args)
 }
 
 static int
+MGRGRelaxUsesUserSmoother(const MGRgrlx_args *args)
+{
+   return args && (args->use_krylov || MGRGRelaxUsesManagedHandle(args));
+}
+
+static int
 MGRGRelaxConfiguredReuseSupported(const MGRgrlx_args *args)
 {
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
@@ -3763,17 +3769,7 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
    HYPRE_MGRSetPMaxElmts(precon, args->pmax);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
-   /* A patched hypre can provide its own Frobenius report. Keep that
-    * unreleased integration opt-in; HypreDrive's driver-side block diagnostics
-    * remain available at log level 3 with an unmodified upstream hypre. */
-   HYPRE_Int print_level = args->print_level;
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL) && defined(HYPRE_MGR_PRINT_INFO_FROBENIUS)
-   if (hypredrv_LogEnabled(3))
-   {
-      print_level |= HYPRE_MGR_PRINT_INFO_FROBENIUS;
-   }
-#endif
-   HYPRE_MGRSetPrintLevel(precon, print_level);
+   HYPRE_MGRSetPrintLevel(precon, args->print_level);
 #if HYPRE_CHECK_MIN_VERSION(30100, 50)
    {
       HYPRE_MGRSetCycleType(precon, args->cycle);
@@ -3848,13 +3844,7 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
        * built-in type first makes upstream hypre raise HYPRE_ERROR_GENERIC
        * while harmlessly resetting it, which must not turn a valid setup into
        * a HypreDrive failure. */
-      if (level_args->g_relaxation.use_krylov || level_args->g_relaxation.type == 20 ||
-          level_args->g_relaxation.type == 16 || level_args->g_relaxation.type == 29 ||
-          level_args->g_relaxation.type == 33
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-          || level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ
-#endif
-      )
+      if (MGRGRelaxUsesUserSmoother(&level_args->g_relaxation))
       {
          level_grelax_type[i] = MGR_GRLX_TYPE_USER_SMOOTHER;
       }

@@ -135,6 +135,27 @@ SetSolverRefSolution(HYPREDRV_t hypredrv)
    }
 }
 
+/* Restore every caller-owned object after a scaled operation, even when an
+ * earlier error is still active. ScalingUndoOnSystem preserves that error
+ * around its inverse transforms; the final synchronization also propagates a
+ * rank-local cleanup failure without creating a second divergent return. */
+static bool
+RestoreScaledSystemState(HYPREDRV_t hypredrv, int reference_is_scaled)
+{
+   if (hypredrv->scaling_ctx && hypredrv->scaling_ctx->is_applied)
+   {
+      hypredrv_ScalingUndoOnSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
+                                   hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
+   }
+   if (reference_is_scaled && hypredrv->vec_xref)
+   {
+      hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                                   SCALING_VECTOR_UNKNOWN);
+   }
+
+   return hypredrv_DistributedErrorStateSync(hypredrv->comm);
+}
+
 /*-----------------------------------------------------------------------------
  * Resolve the object name used in log prefixes, generating obj-<id> when unset
  *-----------------------------------------------------------------------------*/
@@ -2954,7 +2975,7 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
    hypredrv_HypreConsumeErrors();
-   if (hypredrv_ErrorCodeGet())
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
    {
       hypredrv->precon_is_setup = false;
       HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup failed");
@@ -2999,16 +3020,13 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
                         "skip_precon_setup=%d",
                         should_rebuild, rerun_mgr_component_setup, skip_precon_setup);
 
-   if (hypredrv_LogEnabled(3))
-   {
-      char default_object_name[32];
-      default_object_name[0] = '\0';
-      const char *object_name =
-         ResolveLogObjectName(hypredrv, default_object_name, sizeof(default_object_name));
-      hypredrv_LinearSystemLogBlockFrobenius(
-         hypredrv->comm, hypredrv->mat_A, hypredrv->dofmap,
-         hypredrv->iargs->ls.dof_labels, object_name, next_ls_id);
-   }
+   char diagnostic_object_name[32];
+   diagnostic_object_name[0]     = '\0';
+   const char *setup_object_name = ResolveLogObjectName(hypredrv, diagnostic_object_name,
+                                                        sizeof(diagnostic_object_name));
+   hypredrv_LinearSystemLogBlockFrobenius(
+      hypredrv->comm, hypredrv->mat_A, hypredrv->dofmap, hypredrv->iargs->ls.dof_labels,
+      setup_object_name, next_ls_id);
 
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
    /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
@@ -3029,8 +3047,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    {
       hypredrv_ScalingCompute(hypredrv->comm, &hypredrv->iargs->scaling,
                               hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->vec_b,
-                              hypredrv->dofmap); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_ErrorCodeGet())               /* GCOVR_EXCL_BR_LINE */
+                              hypredrv->dofmap);              /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
       {
          return hypredrv_ErrorCodeGet();
       }
@@ -3041,9 +3059,10 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    {
       hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
                                     hypredrv->mat_M, hypredrv->vec_b,
-                                    hypredrv->vec_x); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_ErrorCodeGet())                    /* GCOVR_EXCL_BR_LINE */
+                                    hypredrv->vec_x);         /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
       {
+         RestoreScaledSystemState(hypredrv, 0);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -3055,8 +3074,13 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       hypredrv_MGRRefreshComponentsForSetup(
          &hypredrv->iargs->precon.mgr, hypredrv->precon->main,
          hypredrv->precon_reuse_timesteps.starts, hypredrv->stats, next_ls_id);
-      if (hypredrv_ErrorCodeGet())
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
       {
+         if (hypredrv->precon)
+         {
+            hypredrv->precon_is_setup = false;
+         }
+         RestoreScaledSystemState(hypredrv, 0);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -3071,12 +3095,13 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
 
    hypredrv_HypreConsumeErrors();
-   if (hypredrv_ErrorCodeGet())
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
    {
       if (hypredrv->precon)
       {
          hypredrv->precon_is_setup = false;
       }
+      RestoreScaledSystemState(hypredrv, 0);
       HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup failed");
       return hypredrv_ErrorCodeGet();
    }
@@ -3139,9 +3164,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
                            "applying deferred system scaling"); /* GCOVR_EXCL_BR_LINE */
       hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
                                     hypredrv->mat_M, hypredrv->vec_b,
-                                    hypredrv->vec_x); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_ErrorCodeGet())                    /* GCOVR_EXCL_BR_LINE */
+                                    hypredrv->vec_x);         /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
       {
+         RestoreScaledSystemState(hypredrv, 0);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -3156,13 +3182,20 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* Compute initial residual norm before solve (on current system state) */
       hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
                                                hypredrv->vec_x, "L2", &r0_norm);
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+      {
+         RestoreScaledSystemState(hypredrv, 0);
+         return hypredrv_ErrorCodeGet();
+      }
 
       if (hypredrv->vec_xref)
       {
          hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
                                        SCALING_VECTOR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
-         if (hypredrv_ErrorCodeGet())                           /* GCOVR_EXCL_BR_LINE */
+         xref_scaled = !hypredrv_ErrorCodeActive();
+         if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
          {
+            RestoreScaledSystemState(hypredrv, xref_scaled);
             return hypredrv_ErrorCodeGet();
          }
          xref_scaled = 1;
@@ -3176,18 +3209,19 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       HYPRE_Int iters =
          hypredrv_SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
                                   hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_LINE */ /* solver failure requires hypre injection */
-      if (iters < 0)           /* GCOVR_EXCL_BR_LINE */
+      if (iters < 0 && !hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */
       {
-         solve_succeeded = 0; /* GCOVR_EXCL_BR_LINE */ /* paired with iters<0 path */
-         if (xref_scaled)                              /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                         SCALING_VECTOR_UNKNOWN);
-         }
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Scaled solver returned a negative iteration count");
+      }
+      if (hypredrv_DistributedErrorStateSync(
+             hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */ /* solver failure injection */
+      {
+         solve_succeeded = 0; /* GCOVR_EXCL_BR_LINE */
          hypredrv_StatsIterSet(hypredrv->stats, 0);
          hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END,
                                 "solve"); /* GCOVR_EXCL_BR_LINE */
+         RestoreScaledSystemState(hypredrv, xref_scaled);
          if (hypredrv->iargs &&
              hypredrv->iargs->precon_reuse.enabled && /* GCOVR_EXCL_BR_LINE */
              hypredrv->iargs->precon_reuse.policy ==
@@ -3206,29 +3240,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       hypredrv_StatsIterSet(hypredrv->stats, (int)iters);
       hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "solve");
 
-      /* Undo scaling on solution and restore original system */
-      hypredrv_ScalingUndoOnSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
-                                   hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_LINE */     /* undo failure needs injection */
-      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
-      {                            /* GCOVR_EXCL_BR_LINE */
-         if (xref_scaled)          /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                         SCALING_VECTOR_UNKNOWN);
-         }
-         return hypredrv_ErrorCodeGet();
-      }
-
-      if (xref_scaled)
+      /* Undo scaling on the solution/reference and restore the caller's system. */
+      if (RestoreScaledSystemState(hypredrv, xref_scaled)) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                      SCALING_VECTOR_UNKNOWN);
-         /* GCOVR_EXCL_BR_LINE */     /* xref undo failure */
-         if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
-         {
-            return hypredrv_ErrorCodeGet();
-         }
+         return hypredrv_ErrorCodeGet();
       }
 
       /* Compute residual norms on original (now restored) system */
@@ -3258,6 +3273,20 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
    }
 
    hypredrv_HypreConsumeErrors();
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
+   {
+      solve_succeeded = 0;
+      if (hypredrv->iargs && hypredrv->iargs->precon_reuse.enabled &&
+          hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE)
+      {
+         PreconReuseObservation obs;
+         hypredrv_PreconReuseBuildObservation(
+            hypredrv, hypredrv->precon_reuse_timesteps.starts, &obs);
+         obs.solve_succeeded = solve_succeeded;
+         hypredrv_PreconReuseStateRecordObservation(&hypredrv->precon_reuse_state, &obs);
+      }
+      return hypredrv_ErrorCodeGet();
+   }
 
    /* Fix the solution gauge when exact null space modes are set */
    if (hypredrv->vec_ns && hypredrv->num_ns > 0)
@@ -3266,17 +3295,14 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
                                                hypredrv->vec_x);
    }
 
-   if (hypredrv_LogEnabled(3))
-   {
-      char default_object_name[32];
-      default_object_name[0] = '\0';
-      const char *object_name =
-         ResolveLogObjectName(hypredrv, default_object_name, sizeof(default_object_name));
-      hypredrv_LinearSystemLogBlockResidualNorms(
-         hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
-         hypredrv->dofmap, hypredrv->iargs->ls.dof_labels, object_name,
-         hypredrv_StatsGetLinearSystemID(hypredrv->stats));
-   }
+   char residual_object_name[32];
+   residual_object_name[0] = '\0';
+   const char *solve_object_name =
+      ResolveLogObjectName(hypredrv, residual_object_name, sizeof(residual_object_name));
+   hypredrv_LinearSystemLogBlockResidualNorms(
+      hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x, hypredrv->dofmap,
+      hypredrv->iargs->ls.dof_labels, solve_object_name,
+      hypredrv_StatsGetLinearSystemID(hypredrv->stats));
 
    if (hypredrv->vec_xref)
    {

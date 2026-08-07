@@ -56,7 +56,8 @@ typedef struct Scaling_context_struct
    int             is_applied;     /* 1 if scaling is currently applied to system */
    HYPRE_Complex   scalar_factor;  /* for rhs_l2 */
    HYPRE_ParVector scaling_vector; /* for dofmap */
-   HYPRE_IJVector  scaling_ijvec;  /* IJ wrapper for scaling_vector */
+   HYPRE_ParVector inverse_scaling_vector;
+   HYPRE_IJVector  scaling_ijvec; /* IJ wrapper for scaling_vector */
 } Scaling_context;
 
 /*--------------------------------------------------------------------------
