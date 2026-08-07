@@ -3117,8 +3117,8 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("Linear solver apply requires a successfully set up "
                            "preconditioner; check the preceding setup error");
-      HYPREDRV_LOG_OBJECTF(1, hypredrv,
-                           "HYPREDRV_LinearSolverApply failed: preconditioner is not set up");
+      HYPREDRV_LOG_OBJECTF(
+         1, hypredrv, "HYPREDRV_LinearSolverApply failed: preconditioner is not set up");
       return hypredrv_ErrorCodeGet();
    }
 

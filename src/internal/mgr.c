@@ -36,7 +36,8 @@ typedef struct MGRFRelaxWrapper_struct
 enum
 {
    MGR_HYPRE_SOLVER_IS_SETUP_OFFSET = sizeof(HYPRE_PtrToSolverFcn) +
-      sizeof(HYPRE_PtrToSolverFcn) + sizeof(MGRHyprePtrToDestroyFcn),
+                                      sizeof(HYPRE_PtrToSolverFcn) +
+                                      sizeof(MGRHyprePtrToDestroyFcn),
 };
 
 typedef char MGRNestedKrylovLayoutCheck
@@ -1660,11 +1661,18 @@ hypredrv_MGRlvlGetValidValues(const char *key)
    }
    if (!strcmp(key, "restriction_type"))
    {
+#if HYPRE_CHECK_MIN_VERSION(23200, 0)
       static StrIntMap map[] = {
          {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},
          {"pair-1", 4},    {"pair-2", 5},    {"blk-jacobi", 12},
          {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
       };
+#else
+      static StrIntMap map[] = {
+         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},        {"blk-jacobi", 12},
+         {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
+      };
+#endif
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -2506,8 +2514,8 @@ MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
 
    if (f_relaxation->type == 2)
    {
-      hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn,
-                                   args->dofmap, f_dofs);
+      hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn, args->dofmap,
+                                   f_dofs);
       if (hypredrv_ErrorCodeActive())
       {
          return NULL;
@@ -2784,9 +2792,8 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    }
 
    HYPRE_Solver old_fsolver = args->frelax[orig_lvl];
-   HYPRE_Solver fsolver =
-      MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
-                                  &level_args->f_dofs, active_lvl);
+   HYPRE_Solver fsolver     = MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
+                                                          &level_args->f_dofs, active_lvl);
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -3756,13 +3763,16 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
    HYPRE_MGRSetPMaxElmts(precon, args->pmax);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
-   /* HYPREDRV_LOG_LEVEL=3 requests compact block diagnostics without enabling
-    * HYPRE's much larger setup/iteration reports. */
+   /* A patched hypre can provide its own Frobenius report. Keep that
+    * unreleased integration opt-in; HypreDrive's driver-side block diagnostics
+    * remain available at log level 3 with an unmodified upstream hypre. */
    HYPRE_Int print_level = args->print_level;
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL) && defined(HYPRE_MGR_PRINT_INFO_FROBENIUS)
    if (hypredrv_LogEnabled(3))
    {
       print_level |= HYPRE_MGR_PRINT_INFO_FROBENIUS;
    }
+#endif
    HYPRE_MGRSetPrintLevel(precon, print_level);
 #if HYPRE_CHECK_MIN_VERSION(30100, 50)
    {
@@ -3832,8 +3842,19 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
       }
       level_frelax_sweeps[i] = level_args->f_relaxation.num_sweeps;
       level_grelax_type[i]   = level_args->g_relaxation.type;
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+      /* HYPRE_MGRSetGlobalSmootherAtLevel below installs these user-owned
+       * solvers and determines their effective type. Advertising a concrete
+       * built-in type first makes upstream hypre raise HYPRE_ERROR_GENERIC
+       * while harmlessly resetting it, which must not turn a valid setup into
+       * a HypreDrive failure. */
+      if (level_args->g_relaxation.use_krylov || level_args->g_relaxation.type == 20 ||
+          level_args->g_relaxation.type == 16 || level_args->g_relaxation.type == 29 ||
+          level_args->g_relaxation.type == 33
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      if (level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+          || level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ
+#endif
+      )
       {
          level_grelax_type[i] = MGR_GRLX_TYPE_USER_SMOOTHER;
       }

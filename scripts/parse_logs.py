@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Extract block Frobenius norm matrices from a HypreDrive log.
+"""Parse and analyze HypreDrive logs.
 
-HypreDrive emits these diagnostics when ``HYPREDRV_LOG_LEVEL=3``.  A log may
-contain several solver objects and several linear-system setups, so every
-``matrix block Frobenius norms`` record is treated as a separate snapshot.
+The ``block_norms`` mode extracts diagnostics emitted at
+``HYPREDRV_LOG_LEVEL=3``. A log may contain several solver objects and linear
+system setups, so every ``matrix block Frobenius norms`` record is a snapshot.
 """
 
 from __future__ import annotations
@@ -25,10 +25,12 @@ _SUMMARY = re.compile(
     re.IGNORECASE,
 )
 _ROW = re.compile(
-    r"block Frobenius row\s+(?P<label>.+?)\(id=(?P<id>-?\d+)\):\s*(?P<entries>.*)"
+    r"block Frobenius row\s+"
+    r"(?:(?P<label>.*?)\(id=(?P<id>-?\d+)\)|(?P<bare_id>-?\d+)):"
+    r"\s*(?P<entries>.*)"
 )
 _ENTRY = re.compile(
-    rf"(?P<label>\S+?)\(id=(?P<id>-?\d+)\)="
+    rf"(?:^|\s)(?:(?P<label>.*?)\(id=(?P<id>-?\d+)\)|(?P<bare_id>-?\d+))="
     rf"(?P<norm>{_NUMBER})\(nnz=(?P<nnz>\d+)\)",
     re.IGNORECASE,
 )
@@ -73,9 +75,15 @@ class Snapshot:
         ]
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Extract block Frobenius norm matrices from a HypreDrive log.",
+        description="Parse and analyze HypreDrive logs.",
+    )
+    parser.add_argument(
+        "--mode",
+        required=True,
+        choices=("block_norms",),
+        help="Log analysis mode",
     )
     parser.add_argument("log", help="HypreDrive log file, or '-' for standard input")
     parser.add_argument(
@@ -107,7 +115,7 @@ def parse_args() -> argparse.Namespace:
         default=6,
         help="Digits after the decimal in Frobenius values (default: 6)",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     if args.precision < 0:
         parser.error("--precision must be nonnegative")
     if args.snapshot and any(index < 1 for index in args.snapshot):
@@ -176,7 +184,13 @@ def parse_snapshots(stream: TextIO, source: str) -> list[Snapshot]:
         if row_match is None or current is None:
             continue
 
-        row_id = int(row_match.group("id"))
+        row_id_text = row_match.group("id") or row_match.group("bare_id")
+        row_id = int(row_id_text)
+        row_label = (
+            row_match.group("label").strip()
+            if row_match.group("id") is not None
+            else row_id_text
+        )
         entries = list(_ENTRY.finditer(row_match.group("entries")))
         if len(entries) != current.blocks:
             raise ValueError(
@@ -189,11 +203,24 @@ def parse_snapshots(stream: TextIO, source: str) -> list[Snapshot]:
                 f"in snapshot {current.index}"
             )
 
+        entry_ids = [int(item.group("id") or item.group("bare_id")) for item in entries]
+        entry_labels = [
+            item.group("label").strip()
+            if item.group("id") is not None
+            else item.group("bare_id")
+            for item in entries
+        ]
         current.rows[row_id] = BlockRow(
-            label=row_match.group("label").strip(),
-            norms={int(item.group("id")): float(item.group("norm")) for item in entries},
-            nonzeros={int(item.group("id")): int(item.group("nnz")) for item in entries},
-            column_labels={int(item.group("id")): item.group("label") for item in entries},
+            label=row_label,
+            norms={
+                block_id: float(item.group("norm"))
+                for block_id, item in zip(entry_ids, entries)
+            },
+            nonzeros={
+                block_id: int(item.group("nnz"))
+                for block_id, item in zip(entry_ids, entries)
+            },
+            column_labels=dict(zip(entry_ids, entry_labels)),
         )
 
     _finish_snapshot(current, source)
@@ -306,8 +333,8 @@ def print_csv(snapshot: Snapshot, precision: int, include_nnz: bool) -> None:
             writer.writerow([label, *row])
 
 
-def main() -> None:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> None:
+    args = parse_args(argv)
     source = "<stdin>" if args.log == "-" else args.log
     try:
         if args.log == "-":

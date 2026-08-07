@@ -380,6 +380,18 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       return;
    }
 
+   for (size_t i = 0; i < args->custom_values->size; i++)
+   {
+      if (args->custom_values->data[i] == 0.0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "custom dofmap scaling requires nonzero custom_values (entry %zu is zero)",
+            i);
+         return;
+      }
+   }
+
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
 

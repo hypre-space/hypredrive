@@ -45,8 +45,8 @@ hypredrv_HypreConsumeErrors(void)
     * argument, and convergence errors are never covered by this override. */
    const char *allow_generic = getenv("HYPREDRV_ALLOW_HYPRE_GENERIC_WARNINGS");
    if ((hypre_error & ~HYPRE_ERROR_CONV) == HYPRE_ERROR_GENERIC && allow_generic &&
-       strcmp(allow_generic, "0") && strcmp(allow_generic, "false") &&
-       strcmp(allow_generic, "off"))
+       strcmp(allow_generic, "0") != 0 && strcmp(allow_generic, "false") != 0 &&
+       strcmp(allow_generic, "off") != 0)
    {
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_PrintErrorMessages(MPI_COMM_WORLD);

@@ -777,18 +777,18 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    ops->setup(prec, par_A, par_b, par_x);
 
    hypredrv_HypreConsumeErrors();
-   if (hypredrv_ErrorCodeActive())
-   {
-      precon->is_setup = 0;
-      return;
-   }
-
 #if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
    if (par_b)
    {
       HYPRE_ParVectorDestroy(par_b);
    }
 #endif
+
+   if (hypredrv_ErrorCodeActive())
+   {
+      precon->is_setup = 0;
+      return;
+   }
 
    precon->is_setup = 1;
 

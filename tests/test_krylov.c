@@ -391,6 +391,7 @@ test_nested_krylov_destroy_clears_mgr_runtime_state(void)
    nk.precon.mgr.level[0].f_dofs.size    = 1;
    nk.precon.mgr.level[0].f_dofs.data[0] = 0;
    nk.precon.mgr.level[0].f_relaxation.type = 2;
+   hypredrv_AMGSetDefaultArgs(&nk.precon.mgr.level[0].f_relaxation.amg);
    nk.precon.mgr.level[0].g_relaxation.type = -1;
    nk.precon.mgr.coarsest_level.type = 0;
    nk.precon.mgr.coarsest_level.amg.max_iter = 1;

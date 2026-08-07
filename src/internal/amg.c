@@ -556,20 +556,19 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 
 void
 hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
-                             const IntArray *dofmap,
-                             const StackIntArray *f_dofs)
+                             const IntArray *dofmap, const StackIntArray *f_dofs)
 {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_BigInt   jlower = 0, jupper = -1;
-   HYPRE_Int      num_entries = 0;
-   HYPRE_Int      num_components = 0;
-   HYPRE_Complex *values = NULL;
-   unsigned char *selected = NULL;
-   uint64_t       projected_local = 0;
+   HYPRE_Int      num_entries      = 0;
+   HYPRE_Int      num_components   = 0;
+   HYPRE_Complex *values           = NULL;
+   unsigned char *selected         = NULL;
+   uint64_t       projected_local  = 0;
    uint64_t       projected_global = 0;
-   uint64_t       projected_scan = 0;
-   void          *par_obj = NULL;
-   MPI_Comm       comm = MPI_COMM_NULL;
+   uint64_t       projected_scan   = 0;
+   void          *par_obj          = NULL;
+   MPI_Comm       comm             = MPI_COMM_NULL;
 
    if (!args || !args->coarsening.nodal)
    {
@@ -610,7 +609,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    }
 
    selected = (unsigned char *)calloc((size_t)num_entries, sizeof(unsigned char));
-   values = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
+   values   = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
    if ((num_entries > 0 && !selected) || (num_entries > 0 && !values))
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
@@ -643,10 +642,9 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    args->num_rbms = 3;
    for (HYPRE_Int mode = 0; mode < args->num_rbms; mode++)
    {
-      HYPRE_BigInt *partitioning =
-         hypre_TAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
-      partitioning[0] = (HYPRE_BigInt)(projected_scan - projected_local);
-      partitioning[1] = (HYPRE_BigInt)projected_scan;
+      HYPRE_BigInt *partitioning = hypre_TAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
+      partitioning[0]            = (HYPRE_BigInt)(projected_scan - projected_local);
+      partitioning[1]            = (HYPRE_BigInt)projected_scan;
 
       HYPRE_ParVectorCreate(comm, (HYPRE_BigInt)projected_global, partitioning,
                             &args->rbms[mode]);
@@ -656,7 +654,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
       HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
 
       hypre_Vector  *local_vec = hypre_ParVectorLocalVector(args->rbms[mode]);
-      HYPRE_Complex *data = hypre_VectorData(local_vec);
+      HYPRE_Complex *data      = hypre_VectorData(local_vec);
       for (HYPRE_Int i = 0, projected_i = 0; i < num_entries; i++)
       {
          if (selected[i])
@@ -898,11 +896,11 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       enough sweeps to do so. hypre takes ownership of the array. */
    if (args->relaxation.points == 1)
    {
-      HYPRE_Int ns_down = (args->relaxation.down_sweeps > -1)
-                             ? args->relaxation.down_sweeps
-                             : args->relaxation.num_sweeps;
-      HYPRE_Int ns_up   = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
-                                                            : args->relaxation.num_sweeps;
+      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
+                               ? args->relaxation.down_sweeps
+                               : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                              : args->relaxation.num_sweeps;
       HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
                                ? args->relaxation.coarse_sweeps
                                : args->relaxation.num_sweeps;

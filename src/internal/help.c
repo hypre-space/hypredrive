@@ -968,7 +968,7 @@ static const HelpKeyDoc EigSpecKeyDocs[] = {
 };
 
 static const HelpKeyDoc ScalingKeyDocs[] = {
-   {"custom_values", "Custom per-DOF scaling values"},
+   {"custom_values", "Nonzero diagonal weights for custom dofmap scaling"},
 };
 
 static const HelpKeyDoc SolverSectionKeyDocs[] = {

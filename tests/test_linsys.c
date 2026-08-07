@@ -1,12 +1,12 @@
-#include <mpi.h>
+#include <limits.h>
 #include <math.h>
+#include <mpi.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 #include <sys/stat.h>
-#include <stdio.h>
-#include <limits.h>
+#include <unistd.h>
 
 #include "HYPRE.h"
 #include "internal/containers.h"
@@ -4677,6 +4677,65 @@ test_hypredrv_linsys_branch_logs(void)
    TEST_HYPRE_FINALIZE();
 }
 
+struct BlockResidualLogContext
+{
+   HYPRE_IJMatrix mat;
+   HYPRE_IJVector rhs;
+   HYPRE_IJVector x;
+   IntArray      *dofmap;
+};
+
+static void
+run_block_residual_log_capture(void *opaque)
+{
+   struct BlockResidualLogContext *context = opaque;
+   hypredrv_LinearSystemLogBlockResidualNorms(MPI_COMM_SELF, context->mat, context->rhs,
+                                              context->x, context->dofmap, NULL, "test",
+                                              1);
+}
+
+static void
+test_hypredrv_block_residual_rejects_unbounded_labels(void)
+{
+   TEST_HYPRE_INIT();
+   HYPRE_ClearAllErrors();
+   setenv("HYPREDRV_LOG_LEVEL", "3", 1);
+   hypredrv_LogInitializeFromEnv();
+
+   int                            local_label  = 0;
+   int                            global_label = -1;
+   IntArray                       dofmap       = {.data          = &local_label,
+                                                  .size          = 1,
+                                                  .g_unique_data = &global_label,
+                                                  .g_unique_size = 1};
+   const HYPRE_Complex            rhs_value[1] = {1.0};
+   const HYPRE_Complex            x_value[1]   = {0.0};
+   struct BlockResidualLogContext context      = {
+      .mat    = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0),
+      .rhs    = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_value),
+      .x      = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_value),
+      .dofmap = &dofmap,
+   };
+
+   char output[4096];
+   capture_stderr_output(run_block_residual_log_capture, &context, output,
+                         sizeof(output));
+   ASSERT_NOT_NULL(strstr(output, "invalid dofmap labels"));
+
+   global_label = 1048576;
+   capture_stderr_output(run_block_residual_log_capture, &context, output,
+                         sizeof(output));
+   ASSERT_NOT_NULL(strstr(output, "invalid dofmap labels"));
+
+   HYPRE_IJVectorDestroy(context.rhs);
+   HYPRE_IJVectorDestroy(context.x);
+   HYPRE_IJMatrixDestroy(context.mat);
+   HYPRE_ClearAllErrors();
+   hypredrv_LogReset();
+   unsetenv("HYPREDRV_LOG_LEVEL");
+   TEST_HYPRE_FINALIZE();
+}
+
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
 static void
 test_hypredrv_Scaling_valid_values_and_defaults(void)
@@ -4925,6 +4984,23 @@ test_hypredrv_Scaling_dofmap_custom_error_paths(void)
       hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       hypredrv_DoubleArrayDestroy(&empty);
+      hypredrv_IntArrayDestroy(&dofmap);
+   }
+
+   /* Every custom transform can require an inverse during apply or undo. */
+   {
+      HYPRE_Int dm_data[1] = {0};
+      IntArray *dofmap     = NULL;
+      hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, dm_data, &dofmap);
+      DoubleArray *cv     = hypredrv_DoubleArrayCreate(1);
+      cv->data[0]         = 0.0;
+      sargs.type          = SCALING_DOFMAP_SIMILARITY_CUSTOM;
+      sargs.custom_values = cv;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      ASSERT_NULL(ctx->scaling_vector);
+      hypredrv_DoubleArrayDestroy(&cv);
       hypredrv_IntArrayDestroy(&dofmap);
    }
    hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
@@ -5930,6 +6006,7 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths);
    RUN_TEST(test_hypredrv_linsys_branch_logs);
+   RUN_TEST(test_hypredrv_block_residual_rejects_unbounded_labels);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    RUN_TEST(test_hypredrv_Scaling_context_destroy_null_safe);
    RUN_TEST(test_hypredrv_Scaling_compute_null_args_disabled_and_unknown_type);

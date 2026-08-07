@@ -147,6 +147,15 @@ foreach(_case IN LISTS _hypredrv_unit_test_cases)
     endif()
 endforeach()
 
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME unit_test_parse_logs
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_parse_logs.py
+    )
+    set_tests_properties(unit_test_parse_logs PROPERTIES LABELS "unit")
+endif()
+
 setup_test_executable(test_linsys_print_mpi test_linsys_print_mpi.c)
 add_executable_test(linsys_print_mpi_2proc test_linsys_print_mpi 2 RUN_SERIAL)
 

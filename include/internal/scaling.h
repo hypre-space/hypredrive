@@ -42,7 +42,7 @@ typedef struct Scaling_args_struct
 {
    int            enabled;
    scaling_type_t type;
-   DoubleArray   *custom_values; /* Array of custom scaling values for dofmap_custom */
+   DoubleArray   *custom_values; /* Diagonal weights for custom dofmap scaling */
 } Scaling_args;
 
 /*--------------------------------------------------------------------------
