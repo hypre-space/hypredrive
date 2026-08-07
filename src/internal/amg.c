@@ -32,6 +32,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, hypredrv_FieldTypeIntSet)         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, hypredrv_FieldTypeIntSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, sabs, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, hypredrv_FieldTypeIntSet)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, hypredrv_FieldTypeIntSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, nodal, hypredrv_FieldTypeIntSet)            \
@@ -142,6 +143,7 @@ hypredrv_AMGcsnSetDefaultArgs(AMGcsn_args *args)
    args->type           = 10;
 #endif
    args->num_functions    = 1;
+   args->sabs             = 0;
    args->filter_functions = 0;
    args->nodal            = 0;
    args->seq_amg_th       = 0;
@@ -783,6 +785,7 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetFilterThresholdR(precon, args->interpolation.restrict_filter_th);
 #endif
    HYPRE_BoomerAMGSetCoarsenType(precon, args->coarsening.type);
+   HYPRE_BoomerAMGSetSabs(precon, args->coarsening.sabs);
    HYPRE_BoomerAMGSetTol(precon, args->tolerance);
    HYPRE_BoomerAMGSetStrongThreshold(precon, args->coarsening.strong_th);
    HYPRE_BoomerAMGSetSeqThreshold(precon, args->coarsening.seq_amg_th);

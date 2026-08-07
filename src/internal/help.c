@@ -1013,6 +1013,7 @@ static const HelpKeyDoc AMGCoarseningKeyDocs[] = {
    {"rap2", "Use two-stage RAP construction"},
    {"mod_rap2", "Use modified two-stage RAP construction"},
    {"keep_transpose", "Keep transpose data structures when available"},
+   {"sabs", "Use absolute-value strength of connection"},
    {"nodal", "Use nodal coarsening mode"},
    {"seq_amg_th", "Threshold for using sequential AMG on coarse levels"},
    {"min_coarse_size", "Minimum coarse-grid size"},

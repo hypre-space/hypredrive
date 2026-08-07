@@ -75,6 +75,7 @@ typedef struct AMGcsn_args_struct
    HYPRE_Int  rap2;
    HYPRE_Int  mod_rap2;
    HYPRE_Int  keep_transpose;
+   HYPRE_Int  sabs;
    HYPRE_Int  num_functions;
    HYPRE_Int  filter_functions;
    HYPRE_Int  nodal;
