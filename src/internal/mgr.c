@@ -3744,7 +3744,14 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
    HYPRE_MGRSetPMaxElmts(precon, args->pmax);
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
-   HYPRE_MGRSetPrintLevel(precon, args->print_level);
+   /* HYPREDRV_LOG_LEVEL=3 requests compact block diagnostics without enabling
+    * HYPRE's much larger setup/iteration reports. */
+   HYPRE_Int print_level = args->print_level;
+   if (hypredrv_LogEnabled(3))
+   {
+      print_level |= HYPRE_MGR_PRINT_INFO_FROBENIUS;
+   }
+   HYPRE_MGRSetPrintLevel(precon, print_level);
 #if HYPRE_CHECK_MIN_VERSION(30100, 50)
    {
       HYPRE_MGRSetCycleType(precon, args->cycle);

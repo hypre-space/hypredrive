@@ -2999,6 +2999,17 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
                         "skip_precon_setup=%d",
                         should_rebuild, rerun_mgr_component_setup, skip_precon_setup);
 
+   if (hypredrv_LogEnabled(3))
+   {
+      char default_object_name[32];
+      default_object_name[0] = '\0';
+      const char *object_name =
+         ResolveLogObjectName(hypredrv, default_object_name, sizeof(default_object_name));
+      hypredrv_LinearSystemLogBlockFrobenius(
+         hypredrv->comm, hypredrv->mat_A, hypredrv->dofmap,
+         hypredrv->iargs->ls.dof_labels, object_name, next_ls_id);
+   }
+
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
    /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
    HYPREDRV_SAFE_CALL(
@@ -3253,6 +3264,18 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
    {
       hypredrv_LinearSystemProjectOutNullSpace(hypredrv->vec_ns, hypredrv->num_ns,
                                                hypredrv->vec_x);
+   }
+
+   if (hypredrv_LogEnabled(3))
+   {
+      char default_object_name[32];
+      default_object_name[0] = '\0';
+      const char *object_name =
+         ResolveLogObjectName(hypredrv, default_object_name, sizeof(default_object_name));
+      hypredrv_LinearSystemLogBlockResidualNorms(
+         hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
+         hypredrv->dofmap, hypredrv->iargs->ls.dof_labels, object_name,
+         hypredrv_StatsGetLinearSystemID(hypredrv->stats));
    }
 
    if (hypredrv->vec_xref)

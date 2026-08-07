@@ -33,6 +33,10 @@
 
 #define HYPREDRV_HAVE_MEMORY_APIS (HYPREDRV_HYPRE_RELEASE_NUMBER >= 22000)
 
+/* Limit diagnostics to a sensible number of physics blocks. This prevents a
+ * malformed dofmap from turning level-3 logging into an unbounded allocation. */
+#define HYPREDRV_BLOCK_NORM_MAX_LABELS 128
+
 /* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
 static void
@@ -49,6 +53,118 @@ LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
    {
       hypredrv_StrToIntArray(val, ptr);
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * DofLabelName
+ *-----------------------------------------------------------------------------*/
+
+static const char *
+DofLabelName(const DofLabelMap *labels, int value)
+{
+   if (labels)
+   {
+      for (size_t i = 0; i < labels->size; i++)
+      {
+         if (labels->data[i].value == value)
+         {
+            return labels->data[i].name;
+         }
+      }
+   }
+   return NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * CopyCSRToHost
+ *-----------------------------------------------------------------------------*/
+
+static int
+CopyCSRToHost(hypre_CSRMatrix *matrix, HYPRE_MemoryLocation memory_location,
+              HYPRE_Int **row_ptr, HYPRE_Int **col_ind, HYPRE_Complex **values)
+{
+   HYPRE_Int num_rows = hypre_CSRMatrixNumRows(matrix);
+   HYPRE_Int num_nnz  = hypre_CSRMatrixNumNonzeros(matrix);
+
+   *row_ptr = hypre_TAlloc(HYPRE_Int, num_rows + 1, HYPRE_MEMORY_HOST);
+   *col_ind = hypre_TAlloc(HYPRE_Int, num_nnz, HYPRE_MEMORY_HOST);
+   *values  = hypre_TAlloc(HYPRE_Complex, num_nnz, HYPRE_MEMORY_HOST);
+   if (!*row_ptr || (num_nnz > 0 && (!*col_ind || !*values)))
+   {
+      hypre_TFree(*row_ptr, HYPRE_MEMORY_HOST);
+      hypre_TFree(*col_ind, HYPRE_MEMORY_HOST);
+      hypre_TFree(*values, HYPRE_MEMORY_HOST);
+      *row_ptr = NULL;
+      *col_ind = NULL;
+      *values  = NULL;
+      return 0;
+   }
+
+   hypre_TMemcpy(*row_ptr, hypre_CSRMatrixI(matrix), HYPRE_Int, num_rows + 1,
+                 HYPRE_MEMORY_HOST, memory_location);
+   if (num_nnz > 0)
+   {
+      hypre_TMemcpy(*col_ind, hypre_CSRMatrixJ(matrix), HYPRE_Int, num_nnz,
+                    HYPRE_MEMORY_HOST, memory_location);
+      hypre_TMemcpy(*values, hypre_CSRMatrixData(matrix), HYPRE_Complex, num_nnz,
+                    HYPRE_MEMORY_HOST, memory_location);
+   }
+   return 1;
+}
+
+/*-----------------------------------------------------------------------------
+ * AccumulateBlockNorms
+ *-----------------------------------------------------------------------------*/
+
+static HYPRE_BigInt
+AccumulateBlockNorms(HYPRE_Int num_rows, const HYPRE_Int *row_ptr,
+                     const HYPRE_Int *col_ind, const HYPRE_Complex *values,
+                     const int *row_labels, const int *col_labels,
+                     const int *label_to_pos, int num_label_slots, int num_blocks,
+                     double *norm_sq, double *sum, double *abs_sum,
+                     long long *block_nnz, long long *positive_nnz,
+                     long long *negative_nnz, long long *zero_nnz)
+{
+   HYPRE_BigInt ignored = 0;
+   for (HYPRE_Int row = 0; row < num_rows; row++)
+   {
+      int row_label = row_labels[row];
+      int row_pos =
+         (row_label >= 0 && row_label < num_label_slots) ? label_to_pos[row_label] : -1;
+      for (HYPRE_Int entry = row_ptr[row]; entry < row_ptr[row + 1]; entry++)
+      {
+         int col_label = col_labels[col_ind[entry]];
+         int col_pos   = (col_label >= 0 && col_label < num_label_slots)
+                            ? label_to_pos[col_label]
+                            : -1;
+         if (row_pos < 0 || col_pos < 0)
+         {
+            ignored++;
+            continue;
+         }
+
+         size_t index     = (size_t)row_pos * (size_t)num_blocks + (size_t)col_pos;
+         double magnitude = (double)hypre_cabs(values[entry]);
+         double value     = (double)hypre_creal(values[entry]);
+         norm_sq[index] += magnitude * magnitude;
+         sum[index] += value;
+         abs_sum[index] += magnitude;
+         block_nnz[index]++;
+         if (value > 0.0)
+         {
+            positive_nnz[index]++;
+         }
+         else if (value < 0.0)
+         {
+            negative_nnz[index]++;
+         }
+         else
+         {
+            zero_nnz[index]++;
+         }
+      }
+   }
+   return ignored;
 }
 
 static const FieldOffsetMap ls_field_offset_map[] = {
@@ -2064,6 +2180,356 @@ hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemLogBlockFrobenius
+ *
+ * Compute ||A_ij||_F for every pair of dofmap labels. Off-process column labels
+ * are exchanged with the matrix communication package, so every ParCSR entry is
+ * included exactly once. This intentionally runs only at log level 3 or above.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
+                                       const IntArray    *dofmap,
+                                       const DofLabelMap *dof_labels,
+                                       const char *log_object_name, int ls_id)
+{
+   if (!hypredrv_LogEnabled(3))
+   {
+      return;
+   }
+
+   void                   *object         = NULL;
+   hypre_ParCSRMatrix     *par_matrix     = NULL;
+   hypre_CSRMatrix        *diag           = NULL;
+   hypre_CSRMatrix        *offd           = NULL;
+   hypre_ParCSRCommPkg    *comm_pkg       = NULL;
+   hypre_ParCSRCommHandle *comm_handle    = NULL;
+   HYPRE_Int              *diag_i         = NULL;
+   HYPRE_Int              *diag_j         = NULL;
+   HYPRE_Complex          *diag_a         = NULL;
+   HYPRE_Int              *offd_i         = NULL;
+   HYPRE_Int              *offd_j         = NULL;
+   HYPRE_Complex          *offd_a         = NULL;
+   HYPRE_Int              *send_labels    = NULL;
+   HYPRE_Int              *offd_labels    = NULL;
+   int                    *block_labels   = NULL;
+   int                    *label_to_pos   = NULL;
+   double                 *local_norm_sq  = NULL;
+   double                 *global_norm_sq = NULL;
+   double                 *local_sum      = NULL;
+   double                 *global_sum     = NULL;
+   double                 *local_abs_sum  = NULL;
+   double                 *global_abs_sum = NULL;
+   long long              *local_nnz      = NULL;
+   long long              *global_nnz     = NULL;
+   long long              *local_positive = NULL;
+   long long              *global_positive = NULL;
+   long long              *local_negative = NULL;
+   long long              *global_negative = NULL;
+   long long              *local_zero     = NULL;
+   long long              *global_zero    = NULL;
+   char                   *line           = NULL;
+
+   int local_valid = matrix && dofmap;
+   if (local_valid)
+   {
+      HYPRE_IJMatrixGetObject(matrix, &object);
+      local_valid = object != NULL;
+   }
+   int global_valid = 0;
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "block Frobenius diagnostics skipped: matrix or dofmap missing");
+      return;
+   }
+
+   par_matrix = (hypre_ParCSRMatrix *)object;
+   diag       = hypre_ParCSRMatrixDiag(par_matrix);
+   offd       = hypre_ParCSRMatrixOffd(par_matrix);
+
+   HYPRE_Int num_rows      = hypre_CSRMatrixNumRows(diag);
+   HYPRE_Int num_cols_diag = hypre_CSRMatrixNumCols(diag);
+   HYPRE_Int num_cols_offd = hypre_CSRMatrixNumCols(offd);
+   local_valid             = dofmap->size == (size_t)num_rows &&
+                             dofmap->size == (size_t)num_cols_diag &&
+                             (num_rows == 0 || dofmap->data != NULL) &&
+                             dofmap->g_unique_data != NULL && dofmap->g_unique_size > 0 &&
+                             dofmap->g_unique_size <= HYPREDRV_BLOCK_NORM_MAX_LABELS;
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
+   {
+      HYPREDRV_LOG_COMMF(
+         3, comm, log_object_name, ls_id,
+         "block Frobenius diagnostics skipped: incompatible matrix/dofmap layout");
+      return;
+   }
+
+   int num_blocks      = (int)dofmap->g_unique_size;
+   int max_label       = dofmap->g_unique_data[num_blocks - 1];
+   int num_label_slots = max_label + 1;
+   local_valid         = max_label >= 0 && num_label_slots <= 1048576;
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "block Frobenius diagnostics skipped: invalid dofmap labels");
+      return;
+   }
+
+   size_t num_block_pairs = (size_t)num_blocks * (size_t)num_blocks;
+   block_labels           = hypre_TAlloc(int, num_blocks, HYPRE_MEMORY_HOST);
+   label_to_pos           = hypre_TAlloc(int, num_label_slots, HYPRE_MEMORY_HOST);
+   local_norm_sq          = hypre_CTAlloc(double, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_norm_sq         = hypre_CTAlloc(double, num_block_pairs, HYPRE_MEMORY_HOST);
+   local_sum              = hypre_CTAlloc(double, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_sum             = hypre_CTAlloc(double, num_block_pairs, HYPRE_MEMORY_HOST);
+   local_abs_sum          = hypre_CTAlloc(double, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_abs_sum         = hypre_CTAlloc(double, num_block_pairs, HYPRE_MEMORY_HOST);
+   local_nnz              = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_nnz             = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   local_positive         = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_positive        = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   local_negative         = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_negative        = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   local_zero             = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   global_zero            = hypre_CTAlloc(long long, num_block_pairs, HYPRE_MEMORY_HOST);
+   if (!block_labels || !label_to_pos || !local_norm_sq || !global_norm_sq || !local_sum ||
+       !global_sum || !local_abs_sum || !global_abs_sum || !local_nnz || !global_nnz ||
+       !local_positive || !global_positive || !local_negative || !global_negative ||
+       !local_zero || !global_zero)
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "block Frobenius diagnostics skipped: allocation failed");
+      goto cleanup;
+   }
+
+   for (int i = 0; i < num_label_slots; i++)
+   {
+      label_to_pos[i] = -1;
+   }
+   for (int i = 0; i < num_blocks; i++)
+   {
+      int label       = dofmap->g_unique_data[i];
+      block_labels[i] = label;
+      if (label >= 0 && label < num_label_slots)
+      {
+         label_to_pos[label] = i;
+      }
+   }
+
+   if (!hypre_ParCSRMatrixCommPkg(par_matrix))
+   {
+      hypre_MatvecCommPkgCreate(par_matrix);
+   }
+   comm_pkg = hypre_ParCSRMatrixCommPkg(par_matrix);
+   if (comm_pkg)
+   {
+      HYPRE_Int num_sends = hypre_ParCSRCommPkgNumSends(comm_pkg);
+      HYPRE_Int send_size = hypre_ParCSRCommPkgSendMapStart(comm_pkg, num_sends);
+      send_labels         = hypre_TAlloc(HYPRE_Int, send_size, HYPRE_MEMORY_HOST);
+      offd_labels         = hypre_TAlloc(HYPRE_Int, num_cols_offd, HYPRE_MEMORY_HOST);
+      if ((send_size > 0 && !send_labels) || (num_cols_offd > 0 && !offd_labels))
+      {
+         HYPREDRV_LOG_COMMF(
+            3, comm, log_object_name, ls_id,
+            "block Frobenius diagnostics skipped: halo allocation failed");
+         goto cleanup;
+      }
+      for (HYPRE_Int i = 0; i < send_size; i++)
+      {
+         HYPRE_Int local_col = hypre_ParCSRCommPkgSendMapElmt(comm_pkg, i);
+         send_labels[i]      = (HYPRE_Int)dofmap->data[local_col];
+      }
+      comm_handle = hypre_ParCSRCommHandleCreate(11, comm_pkg, send_labels, offd_labels);
+      hypre_ParCSRCommHandleDestroy(comm_handle);
+      comm_handle = NULL;
+   }
+   else if (num_cols_offd > 0)
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "block Frobenius diagnostics skipped: matrix halo unavailable");
+      goto cleanup;
+   }
+
+   HYPRE_MemoryLocation memory_location = hypre_ParCSRMatrixMemoryLocation(par_matrix);
+   local_valid = CopyCSRToHost(diag, memory_location, &diag_i, &diag_j, &diag_a) &&
+                 CopyCSRToHost(offd, memory_location, &offd_i, &offd_j, &offd_a);
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "block Frobenius diagnostics skipped: CSR host copy failed");
+      goto cleanup;
+   }
+
+   HYPRE_BigInt local_ignored = AccumulateBlockNorms(
+      num_rows, diag_i, diag_j, diag_a, dofmap->data, dofmap->data, label_to_pos,
+      num_label_slots, num_blocks, local_norm_sq, local_sum, local_abs_sum, local_nnz,
+      local_positive, local_negative, local_zero);
+   if (num_cols_offd > 0)
+   {
+      local_ignored += AccumulateBlockNorms(
+         num_rows, offd_i, offd_j, offd_a, dofmap->data, offd_labels, label_to_pos,
+         num_label_slots, num_blocks, local_norm_sq, local_sum, local_abs_sum, local_nnz,
+         local_positive, local_negative, local_zero);
+   }
+
+   MPI_Allreduce(local_norm_sq, global_norm_sq, (int)num_block_pairs, MPI_DOUBLE, MPI_SUM,
+                 comm);
+   MPI_Allreduce(local_sum, global_sum, (int)num_block_pairs, MPI_DOUBLE, MPI_SUM, comm);
+   MPI_Allreduce(local_abs_sum, global_abs_sum, (int)num_block_pairs, MPI_DOUBLE, MPI_SUM,
+                 comm);
+   MPI_Allreduce(local_nnz, global_nnz, (int)num_block_pairs, MPI_LONG_LONG, MPI_SUM,
+                 comm);
+   MPI_Allreduce(local_positive, global_positive, (int)num_block_pairs, MPI_LONG_LONG,
+                 MPI_SUM, comm);
+   MPI_Allreduce(local_negative, global_negative, (int)num_block_pairs, MPI_LONG_LONG,
+                 MPI_SUM, comm);
+   MPI_Allreduce(local_zero, global_zero, (int)num_block_pairs, MPI_LONG_LONG, MPI_SUM,
+                 comm);
+   long long ignored        = (long long)local_ignored;
+   long long global_ignored = 0;
+   MPI_Allreduce(&ignored, &global_ignored, 1, MPI_LONG_LONG, MPI_SUM, comm);
+
+   double matrix_norm_sq = 0.0;
+   for (size_t i = 0; i < num_block_pairs; i++)
+   {
+      matrix_norm_sq += global_norm_sq[i];
+      global_norm_sq[i] = sqrt(global_norm_sq[i]);
+   }
+   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                      "matrix block Frobenius norms: blocks=%d matrix_norm=%.6e "
+                      "ignored_nnz=%lld",
+                      num_blocks, sqrt(matrix_norm_sq), global_ignored);
+
+   size_t line_capacity = 128 + (size_t)num_blocks * 128;
+   line                 = hypre_TAlloc(char, line_capacity, HYPRE_MEMORY_HOST);
+   if (!line)
+   {
+      goto cleanup;
+   }
+   for (int row = 0; row < num_blocks; row++)
+   {
+      const char *row_name = DofLabelName(dof_labels, block_labels[row]);
+      char        row_label[96];
+      if (row_name)
+      {
+         snprintf(row_label, sizeof(row_label), "%s(id=%d)", row_name, block_labels[row]);
+      }
+      else
+      {
+         snprintf(row_label, sizeof(row_label), "%d", block_labels[row]);
+      }
+      size_t offset =
+         (size_t)snprintf(line, line_capacity, "block Frobenius row %s:", row_label);
+      for (int col = 0; col < num_blocks && offset < line_capacity; col++)
+      {
+         size_t      index    = (size_t)row * (size_t)num_blocks + (size_t)col;
+         const char *col_name = DofLabelName(dof_labels, block_labels[col]);
+         char        col_label[96];
+         if (col_name)
+         {
+            snprintf(col_label, sizeof(col_label), "%s(id=%d)", col_name,
+                     block_labels[col]);
+         }
+         else
+         {
+            snprintf(col_label, sizeof(col_label), "%d", block_labels[col]);
+         }
+         offset +=
+            (size_t)snprintf(line + offset, line_capacity - offset, " %s=%.6e(nnz=%lld)",
+                             col_label, global_norm_sq[index], global_nnz[index]);
+      }
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "%s", line);
+
+      offset = (size_t)snprintf(line, line_capacity, "block signed-sum row %s:",
+                                row_label);
+      for (int col = 0; col < num_blocks && offset < line_capacity; col++)
+      {
+         size_t      index    = (size_t)row * (size_t)num_blocks + (size_t)col;
+         const char *col_name = DofLabelName(dof_labels, block_labels[col]);
+         char        col_label[96];
+         if (col_name)
+         {
+            snprintf(col_label, sizeof(col_label), "%s(id=%d)", col_name,
+                     block_labels[col]);
+         }
+         else
+         {
+            snprintf(col_label, sizeof(col_label), "%d", block_labels[col]);
+         }
+         offset += (size_t)snprintf(
+            line + offset, line_capacity - offset,
+            " %s=sum:%.6e/abs:%.6e(pos=%lld,neg=%lld,zero=%lld)", col_label,
+            global_sum[index], global_abs_sum[index], global_positive[index],
+            global_negative[index], global_zero[index]);
+      }
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "%s", line);
+
+      offset          = (size_t)snprintf(line, line_capacity,
+                                         "block relative-coupling row %s:", row_label);
+      double row_diag = global_norm_sq[(size_t)row * (size_t)num_blocks + (size_t)row];
+      for (int col = 0; col < num_blocks && offset < line_capacity; col++)
+      {
+         const char *col_name = DofLabelName(dof_labels, block_labels[col]);
+         char        col_label[96];
+         if (col_name)
+         {
+            snprintf(col_label, sizeof(col_label), "%s(id=%d)", col_name,
+                     block_labels[col]);
+         }
+         else
+         {
+            snprintf(col_label, sizeof(col_label), "%d", block_labels[col]);
+         }
+         double col_diag = global_norm_sq[(size_t)col * (size_t)num_blocks + (size_t)col];
+         double denominator = sqrt(row_diag * col_diag);
+         double relative =
+            denominator > 0.0
+               ? global_norm_sq[(size_t)row * (size_t)num_blocks + (size_t)col] /
+                    denominator
+               : 0.0;
+         offset += (size_t)snprintf(line + offset, line_capacity - offset, " %s=%.6e",
+                                    col_label, relative);
+      }
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "%s", line);
+   }
+
+cleanup:
+   if (comm_handle)
+   {
+      hypre_ParCSRCommHandleDestroy(comm_handle);
+   }
+   hypre_TFree(diag_i, HYPRE_MEMORY_HOST);
+   hypre_TFree(diag_j, HYPRE_MEMORY_HOST);
+   hypre_TFree(diag_a, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_i, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_j, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_a, HYPRE_MEMORY_HOST);
+   hypre_TFree(send_labels, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_labels, HYPRE_MEMORY_HOST);
+   hypre_TFree(block_labels, HYPRE_MEMORY_HOST);
+   hypre_TFree(label_to_pos, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_norm_sq, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_norm_sq, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_sum, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_sum, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_abs_sum, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_abs_sum, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_nnz, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_nnz, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_positive, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_positive, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_negative, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_negative, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_zero, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_zero, HYPRE_MEMORY_HOST);
+   hypre_TFree(line, HYPRE_MEMORY_HOST);
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
@@ -2472,6 +2938,142 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
    hypredrv_LinearSystemComputeVectorNorm(vec_r, norm_type, res_norm);
 
    /* Free memory */
+   HYPRE_IJVectorDestroy(vec_r);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemLogBlockResidualNorms
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm comm, HYPRE_IJMatrix mat_A,
+                                           HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
+                                           const IntArray    *dofmap,
+                                           const DofLabelMap *dof_labels,
+                                           const char *log_object_name, int ls_id)
+{
+   if (!hypredrv_LogEnabled(3) || !mat_A || !vec_b || !vec_x || !dofmap ||
+       !dofmap->g_unique_data || dofmap->g_unique_size == 0)
+   {
+      return;
+   }
+
+   void               *obj_A = NULL, *obj_b = NULL, *obj_x = NULL;
+   hypre_ParCSRMatrix *par_A = NULL;
+   hypre_ParVector    *par_b = NULL, *par_x = NULL, *par_r = NULL;
+   HYPRE_IJVector      vec_r  = NULL;
+   HYPRE_BigInt        jlower = 0, jupper = -1;
+
+   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
+   HYPRE_IJVectorGetObject(vec_b, &obj_b);
+   HYPRE_IJVectorGetObject(vec_x, &obj_x);
+   if (!obj_A || !obj_b || !obj_x)
+   {
+      return;
+   }
+
+   par_A = (hypre_ParCSRMatrix *)obj_A;
+   par_b = (hypre_ParVector *)obj_b;
+   par_x = (hypre_ParVector *)obj_x;
+   HYPRE_IJVectorGetLocalRange(vec_b, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, &vec_r);
+   HYPRE_IJVectorSetObjectType(vec_r, HYPRE_PARCSR);
+#if HYPREDRV_HAVE_MEMORY_APIS
+   HYPRE_IJVectorInitialize_v2(vec_r, hypre_IJVectorMemoryLocation(vec_b));
+#else
+   HYPRE_IJVectorInitialize_v2(vec_r, HYPRE_MEMORY_HOST);
+#endif
+   void *obj_r = NULL;
+   HYPRE_IJVectorGetObject(vec_r, &obj_r);
+   par_r = (hypre_ParVector *)obj_r;
+   if (!par_r)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+      return;
+   }
+
+   HYPRE_ParVectorCopy(par_b, par_r);
+   HYPRE_ParCSRMatrixMatvec(-1.0, par_A, par_x, 1.0, par_r);
+
+   hypre_Vector *local_b      = hypre_ParVectorLocalVector(par_b);
+   hypre_Vector *local_r      = hypre_ParVectorLocalVector(par_r);
+   HYPRE_Int     size         = hypre_VectorSize(local_r);
+   int           local_valid  = size >= 0 && dofmap->size == (size_t)size;
+   int           global_valid = 0;
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+      return;
+   }
+
+   int            num_blocks      = (int)dofmap->g_unique_size;
+   int            max_label       = dofmap->g_unique_data[num_blocks - 1];
+   int            num_label_slots = max_label + 1;
+   int           *label_to_pos    = hypre_TAlloc(int, num_label_slots, HYPRE_MEMORY_HOST);
+   double        *local_r2        = hypre_CTAlloc(double, num_blocks, HYPRE_MEMORY_HOST);
+   double        *global_r2       = hypre_CTAlloc(double, num_blocks, HYPRE_MEMORY_HOST);
+   double        *local_b2        = hypre_CTAlloc(double, num_blocks, HYPRE_MEMORY_HOST);
+   double        *global_b2       = hypre_CTAlloc(double, num_blocks, HYPRE_MEMORY_HOST);
+   HYPRE_Complex *host_r          = hypre_TAlloc(HYPRE_Complex, size, HYPRE_MEMORY_HOST);
+   HYPRE_Complex *host_b          = hypre_TAlloc(HYPRE_Complex, size, HYPRE_MEMORY_HOST);
+   if (!label_to_pos || !local_r2 || !global_r2 || !local_b2 || !global_b2 ||
+       (size > 0 && (!host_r || !host_b)))
+   {
+      goto cleanup;
+   }
+
+   for (int i = 0; i < num_label_slots; i++)
+   {
+      label_to_pos[i] = -1;
+   }
+   for (int i = 0; i < num_blocks; i++)
+   {
+      label_to_pos[dofmap->g_unique_data[i]] = i;
+   }
+
+   hypre_TMemcpy(host_r, hypre_VectorData(local_r), HYPRE_Complex, size,
+                 HYPRE_MEMORY_HOST, hypre_VectorMemoryLocation(local_r));
+   hypre_TMemcpy(host_b, hypre_VectorData(local_b), HYPRE_Complex, size,
+                 HYPRE_MEMORY_HOST, hypre_VectorMemoryLocation(local_b));
+   for (HYPRE_Int i = 0; i < size; i++)
+   {
+      int label = dofmap->data[i];
+      if (label < 0 || label >= num_label_slots || label_to_pos[label] < 0)
+      {
+         continue;
+      }
+      int    pos = label_to_pos[label];
+      double r   = (double)host_r[i];
+      double b   = (double)host_b[i];
+      local_r2[pos] += r * r;
+      local_b2[pos] += b * b;
+   }
+
+   MPI_Allreduce(local_r2, global_r2, num_blocks, MPI_DOUBLE, MPI_SUM, comm);
+   MPI_Allreduce(local_b2, global_b2, num_blocks, MPI_DOUBLE, MPI_SUM, comm);
+   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "block residual L2 norms begin");
+   for (int i = 0; i < num_blocks; i++)
+   {
+      int         label = dofmap->g_unique_data[i];
+      const char *name  = DofLabelName(dof_labels, label);
+      double      rnorm = sqrt(global_r2[i]);
+      double      bnorm = sqrt(global_b2[i]);
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "  %s%s%d%s: ||r_i||_2=%.6e ||b_i||_2=%.6e rel=%.6e",
+                         name ? name : "id=", name ? " (id=" : "", label, name ? ")" : "",
+                         rnorm, bnorm, bnorm > 0.0 ? rnorm / bnorm : rnorm);
+   }
+   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "block residual L2 norms end");
+
+cleanup:
+   hypre_TFree(label_to_pos, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_r2, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_r2, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_b2, HYPRE_MEMORY_HOST);
+   hypre_TFree(global_b2, HYPRE_MEMORY_HOST);
+   hypre_TFree(host_r, HYPRE_MEMORY_HOST);
+   hypre_TFree(host_b, HYPRE_MEMORY_HOST);
    HYPRE_IJVectorDestroy(vec_r);
 }
 
