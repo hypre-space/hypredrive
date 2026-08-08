@@ -126,6 +126,30 @@ test_LinearSolverSetup_synchronizes_rank_local_hypre_error(void)
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 }
 
+static void
+test_reused_precon_remains_setup_after_solver_setup_error(void)
+{
+   HYPREDRV_t obj = create_distributed_test_object(0);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_TRUE(state->precon_is_setup);
+
+   /* With no timestep metadata this policy reuses the already-setup
+    * preconditioner, while the outer solver setup still executes. */
+   state->iargs->precon_reuse.enabled      = 1;
+   state->iargs->precon_reuse.per_timestep = 1;
+   inject_rank_local_hypre_error(0);
+   uint32_t code = HYPREDRV_LinearSolverSetup(obj);
+   assert_collective_hypre_failure(code);
+   ASSERT_TRUE(state->precon_is_setup);
+
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+}
+
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
 static void
 test_scaled_setup_restores_system_after_rank_local_hypre_error(void)
@@ -181,6 +205,7 @@ main(int argc, char **argv)
    {
       RUN_TEST(test_PreconSetup_synchronizes_rank_local_hypre_error);
       RUN_TEST(test_LinearSolverSetup_synchronizes_rank_local_hypre_error);
+      RUN_TEST(test_reused_precon_remains_setup_after_solver_setup_error);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
       RUN_TEST(test_scaled_setup_restores_system_after_rank_local_hypre_error);
       RUN_TEST(test_scaled_solve_restores_system_after_rank_local_hypre_error);

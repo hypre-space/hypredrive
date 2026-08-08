@@ -1949,7 +1949,10 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    /* Reset scaling state for new system */
    if (hypredrv->scaling_ctx)
    {
-      hypredrv->scaling_ctx->is_applied = 0;
+      hypredrv->scaling_ctx->is_applied          = 0;
+      hypredrv->scaling_ctx->matrices_are_scaled = 0;
+      hypredrv->scaling_ctx->rhs_is_scaled       = 0;
+      hypredrv->scaling_ctx->x_is_scaled         = 0;
    }
 
    long long int num_rows = hypredrv_LinearSystemMatrixGetNumRows(hypredrv->mat_A);
@@ -3097,7 +3100,7 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    hypredrv_HypreConsumeErrors();
    if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
    {
-      if (hypredrv->precon)
+      if (hypredrv->precon && !skip_precon_setup)
       {
          hypredrv->precon_is_setup = false;
       }

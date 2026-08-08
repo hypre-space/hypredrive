@@ -1582,8 +1582,11 @@ preconditioner:
                 coarsest_level:
                   amg:
 
-  - ``restriction_type`` - algorithm for computing the restriction operator. For available
-    options, see `HYPRE_MGRSetRestrictType
+  - ``restriction_type`` - algorithm for computing the restriction operator. Accepted values
+    are ``injection``, ``jacobi``, ``approx-inv``, ``blk-jacobi``, ``cpr-like``,
+    ``columped``, and ``columped-partial``. With HYPRE 2.32 or newer, ``air_1`` and
+    ``air_1.5`` select distance-1 and distance-1.5 approximate ideal restriction,
+    respectively. See `HYPRE_MGRSetRestrictType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv424HYPRE_MGRSetRestrictType12HYPRE_Solver9HYPRE_Int>`_. Default
     value is `0` (Injection).
 

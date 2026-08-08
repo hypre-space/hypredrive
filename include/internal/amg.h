@@ -117,6 +117,7 @@ typedef struct AMG_args_struct
    HYPRE_Int  print_level;
    HYPRE_Real tolerance;
 
+   HYPRE_Int       interp_vec_variant;
    HYPRE_Int       num_rbms;
    HYPRE_ParVector rbms[3];
 } AMG_args;

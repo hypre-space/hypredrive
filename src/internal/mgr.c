@@ -1071,6 +1071,11 @@ MGRUnionApplyTypeDefaults(void *union_base, HYPRE_Int type, HYPRE_Int old_type,
       return;
    }
 
+   if (old_type == amg_type)
+   {
+      hypredrv_AMGDestroyRBMs((AMG_args *)union_base);
+   }
+
    if (type == amg_type)
    {
       hypredrv_AMGSetDefaultArgs((AMG_args *)union_base);
@@ -1249,8 +1254,9 @@ hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
    args->krylov     = NULL;
    args->mgr        = NULL;
    MGRComponentReuseSetDefaultArgs(&args->reuse);
-   /* Solver-specific args live in a union. We only (re)initialize them if/when a
-    * specific solver type is selected during YAML parsing. */
+   /* Initialize the union for embedders that select AMG by assigning type=2
+    * directly instead of transitioning through the YAML parser. */
+   hypredrv_AMGSetDefaultArgs(&args->amg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1664,7 +1670,7 @@ hypredrv_MGRlvlGetValidValues(const char *key)
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)
       static StrIntMap map[] = {
          {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},
-         {"pair-1", 4},    {"pair-2", 5},    {"blk-jacobi", 12},
+         {"air_1", 4},     {"air_1.5", 5},   {"blk-jacobi", 12},
          {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
       };
 #else
@@ -3419,6 +3425,17 @@ hypredrv_MGRForgetCachedSolvers(MGR_args *args)
    if (!args)
    {
       return;
+   }
+
+   int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
+                       ? (int)args->num_levels - 1
+                       : 0;
+   for (int i = 0; i < max_levels; i++)
+   {
+      if (args->level[i].f_relaxation.type == 2)
+      {
+         hypredrv_AMGDestroyRBMs(&args->level[i].f_relaxation.amg);
+      }
    }
 
    args->csolver      = NULL;

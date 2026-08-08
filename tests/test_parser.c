@@ -1084,18 +1084,20 @@ test_relaxation_values_use_canonical_l1_jacobi_spelling(void)
 }
 
 static void
-test_mgr_pair_restriction_values_require_hypre_232(void)
+test_mgr_air_restriction_values_require_hypre_232(void)
 {
    StrIntMapArray map = hypredrv_MGRlvlGetValidValues("restriction_type");
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-1"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-2"));
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "pair-1"), 4);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "pair-2"), 5);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1"), 4);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1.5"), 5);
 #else
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
+#endif
    ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-1"));
    ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-2"));
-#endif
 }
 
 static void
@@ -1150,7 +1152,7 @@ main(int argc, char **argv)
    RUN_TEST(test_nested_krylov_solver_switch_pc_fgmres_bicgstab);
    RUN_TEST(test_mgr_nested_krylov_accepts_mgr_precon);
    RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);
-   RUN_TEST(test_mgr_pair_restriction_values_require_hypre_232);
+   RUN_TEST(test_mgr_air_restriction_values_require_hypre_232);
    RUN_TEST(test_amg_relaxation_values_accept_forward_and_backward_hl1gs);
 
    MPI_Finalize();

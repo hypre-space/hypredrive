@@ -2269,28 +2269,31 @@ hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
    }
    /* GCOVR_EXCL_STOP */
 
+   /* Convert the application's fixed-width int labels to HYPRE_Int. This is
+    * required for bigint builds, where HYPRE_Int is 64-bit. Mode 2 transfers
+    * the allocation to the vector and also lets repeated tagging replace the
+    * vector's previous owned array safely. */
    /* GCOVR_EXCL_START */
+   HYPRE_MemoryLocation vec_memloc = HYPRE_MEMORY_HOST;
 #if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
-   HYPRE_MemoryLocation vec_memloc = hypre_IJVectorMemoryLocation((hypre_IJVector *)vec);
+   vec_memloc = hypre_IJVectorMemoryLocation((hypre_IJVector *)vec);
+#endif
+   HYPRE_Int *host_tags = hypre_TAlloc(HYPRE_Int, dofmap->size, HYPRE_MEMORY_HOST);
+   for (size_t i = 0; i < dofmap->size; i++)
+   {
+      host_tags[i] = (HYPRE_Int)dofmap->data[i];
+   }
 
-   /* In CUDA/HIP builds, library-mode vectors may still be host-backed.
-    * Only migrate tags when the vector itself is not host-backed; otherwise,
-    * keep the existing host aliasing path and avoid mismatched frees. */
+   HYPRE_Int *tags = host_tags;
    if (hypre_GetActualMemLocation(vec_memloc) !=
        hypre_GetActualMemLocation(HYPRE_MEMORY_HOST))
    {
-      HYPRE_Int *tags = hypre_TAlloc(HYPRE_Int, dofmap->size, vec_memloc);
-      hypre_TMemcpy(tags, dofmap->data, HYPRE_Int, dofmap->size, vec_memloc,
+      tags = hypre_TAlloc(HYPRE_Int, dofmap->size, vec_memloc);
+      hypre_TMemcpy(tags, host_tags, HYPRE_Int, dofmap->size, vec_memloc,
                     HYPRE_MEMORY_HOST);
-      HYPRE_IJVectorSetTags(vec, 2, num_tags, tags);
+      hypre_TFree(host_tags, HYPRE_MEMORY_HOST);
    }
-   else
-   {
-      HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
-   }
-#else
-   HYPRE_IJVectorSetTags(vec, 0, num_tags, dofmap->data);
-#endif
+   HYPRE_IJVectorSetTags(vec, 2, num_tags, tags);
    /* GCOVR_EXCL_STOP */
 #else
    (void)vec;
@@ -2319,29 +2322,30 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
       return;
    }
 
-   void                   *object         = NULL;
-   hypre_ParCSRMatrix     *par_matrix     = NULL;
-   hypre_CSRMatrix        *diag           = NULL;
-   hypre_CSRMatrix        *offd           = NULL;
-   hypre_ParCSRCommPkg    *comm_pkg       = NULL;
-   hypre_ParCSRCommHandle *comm_handle    = NULL;
-   HYPRE_Int              *diag_i         = NULL;
-   HYPRE_Int              *diag_j         = NULL;
-   HYPRE_Complex          *diag_a         = NULL;
-   HYPRE_Int              *offd_i         = NULL;
-   HYPRE_Int              *offd_j         = NULL;
-   HYPRE_Complex          *offd_a         = NULL;
-   int                     owns_diag_copy = 0;
-   int                     owns_offd_copy = 0;
-   HYPRE_Int              *send_labels    = NULL;
-   HYPRE_Int              *offd_labels    = NULL;
-   int                    *block_labels   = NULL;
-   int                    *label_to_pos   = NULL;
-   double                 *local_stats    = NULL;
-   double                 *global_stats   = NULL;
-   long long              *local_counts   = NULL;
-   long long              *global_counts  = NULL;
-   char                   *line           = NULL;
+   void                   *object            = NULL;
+   hypre_ParCSRMatrix     *par_matrix        = NULL;
+   hypre_CSRMatrix        *diag              = NULL;
+   hypre_CSRMatrix        *offd              = NULL;
+   hypre_ParCSRCommPkg    *comm_pkg          = NULL;
+   hypre_ParCSRCommHandle *comm_handle       = NULL;
+   HYPRE_Int              *diag_i            = NULL;
+   HYPRE_Int              *diag_j            = NULL;
+   HYPRE_Complex          *diag_a            = NULL;
+   HYPRE_Int              *offd_i            = NULL;
+   HYPRE_Int              *offd_j            = NULL;
+   HYPRE_Complex          *offd_a            = NULL;
+   int                     owns_diag_copy    = 0;
+   int                     owns_offd_copy    = 0;
+   HYPRE_Int              *send_labels       = NULL;
+   HYPRE_Int              *offd_labels       = NULL;
+   int                    *offd_block_labels = NULL;
+   int                    *block_labels      = NULL;
+   int                    *label_to_pos      = NULL;
+   double                 *local_stats       = NULL;
+   double                 *global_stats      = NULL;
+   long long              *local_counts      = NULL;
+   long long              *global_counts     = NULL;
+   char                   *line              = NULL;
 
    int local_valid = matrix && dofmap;
    if (local_valid)
@@ -2454,8 +2458,10 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
       send_size           = hypre_ParCSRCommPkgSendMapStart(comm_pkg, num_sends);
       send_labels         = hypre_TAlloc(HYPRE_Int, send_size, HYPRE_MEMORY_HOST);
       offd_labels         = hypre_TAlloc(HYPRE_Int, num_cols_offd, HYPRE_MEMORY_HOST);
+      offd_block_labels   = hypre_TAlloc(int, num_cols_offd, HYPRE_MEMORY_HOST);
    }
-   local_valid = (send_size == 0 || send_labels) && (num_cols_offd == 0 || offd_labels);
+   local_valid = (send_size == 0 || send_labels) &&
+                 (num_cols_offd == 0 || (offd_labels && offd_block_labels));
    MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
    if (!global_valid)
    {
@@ -2474,6 +2480,10 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
       comm_handle = hypre_ParCSRCommHandleCreate(11, comm_pkg, send_labels, offd_labels);
       hypre_ParCSRCommHandleDestroy(comm_handle);
       comm_handle = NULL;
+      for (HYPRE_Int i = 0; i < num_cols_offd; i++)
+      {
+         offd_block_labels[i] = (int)offd_labels[i];
+      }
    }
 
    local_valid = GetCSRHostView(diag, &diag_i, &diag_j, &diag_a, &owns_diag_copy) &&
@@ -2493,7 +2503,7 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
    if (num_cols_offd > 0)
    {
       local_ignored += AccumulateBlockNorms(
-         num_rows, offd_i, offd_j, offd_a, dofmap->data, offd_labels, label_to_pos,
+         num_rows, offd_i, offd_j, offd_a, dofmap->data, offd_block_labels, label_to_pos,
          num_label_slots, num_blocks, local_norm_sq, local_sum, local_abs_sum, local_nnz,
          local_positive, local_negative, local_zero);
    }
@@ -2594,6 +2604,7 @@ cleanup:
    }
    hypre_TFree(send_labels, HYPRE_MEMORY_HOST);
    hypre_TFree(offd_labels, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_block_labels, HYPRE_MEMORY_HOST);
    hypre_TFree(block_labels, HYPRE_MEMORY_HOST);
    hypre_TFree(label_to_pos, HYPRE_MEMORY_HOST);
    hypre_TFree(local_stats, HYPRE_MEMORY_HOST);

@@ -53,7 +53,10 @@ typedef struct Scaling_context_struct
 {
    int             enabled;
    scaling_type_t  type;
-   int             is_applied;     /* 1 if scaling is currently applied to system */
+   int             is_applied; /* 1 if any caller-owned system object is scaled */
+   int             matrices_are_scaled;
+   int             rhs_is_scaled;
+   int             x_is_scaled;
    HYPRE_Complex   scalar_factor;  /* for rhs_l2 */
    HYPRE_ParVector scaling_vector; /* for dofmap */
    HYPRE_ParVector inverse_scaling_vector;

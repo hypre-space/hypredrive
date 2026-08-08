@@ -240,9 +240,10 @@ test_AMGSetRBMs_full_and_projected_modes(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_AMGSetRBMs(&args, vec_nn);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.interp_vec_variant, 2);
    assert_amg_rbm_values(&args, 4, expected_full);
 
-   /* Existing full-system modes take precedence over a projected rebuild. */
+   /* A component refresh must replace full-system modes with current F modes. */
    int           labels[4] = {2, 1, 2, 0};
    IntArray      dofmap    = {.data = labels, .size = 4};
    StackIntArray f_dofs    = STACK_INTARRAY_CREATE();
@@ -250,15 +251,16 @@ test_AMGSetRBMs_full_and_projected_modes(void)
    f_dofs.data[1]          = 0;
    f_dofs.size             = 2;
    hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
-   assert_amg_rbm_values(&args, 4, expected_full);
-
-   hypredrv_AMGDestroyRBMs(&args);
-   ASSERT_EQ(args.num_rbms, 0);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.interp_vec_variant, 1);
    assert_amg_rbm_values(&args, 3, expected_projected);
+
+   /* Rebuilding in the other direction also replaces the cached vectors. */
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetRBMs(&args, vec_nn);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.interp_vec_variant, 2);
+   assert_amg_rbm_values(&args, 4, expected_full);
 
    hypredrv_AMGDestroyRBMs(&args);
    HYPRE_IJVectorDestroy(vec_nn);
@@ -294,7 +296,7 @@ test_AMGSetRBMs_validation_paths(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_AMGSetProjectedRBMs(&args, NULL, NULL, NULL);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(args.num_rbms, 0);
 
    int           labels[4] = {0, 1, 0, 1};
@@ -3479,6 +3481,7 @@ test_AMGCreate_grid_relax_points_air(void)
    precon_args args;
    hypredrv_PreconSetDefaultArgs(&args);
    hypredrv_AMGSetDefaultArgs(&args.amg);
+   args.amg.coarsening.nodal       = 4;
    args.amg.relaxation.points      = 1;
    args.amg.relaxation.down_sweeps = 1;
    args.amg.relaxation.up_sweeps   = 3;
@@ -3488,6 +3491,11 @@ test_AMGCreate_grid_relax_points_air(void)
    ASSERT_NOT_NULL(precon);
 
    hypre_ParAMGData *amg_data = (hypre_ParAMGData *)precon->main;
+   ASSERT_EQ(hypre_ParAMGInterpVecVariant(amg_data), 2);
+   ASSERT_EQ(hypre_ParAMGInterpVecQMax(amg_data), 4);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   ASSERT_EQ(hypre_ParAMGSmoothInterpVectors(amg_data), 1);
+#endif
    HYPRE_Int **points = hypre_ParAMGDataGridRelaxPoints(amg_data);
    ASSERT_NOT_NULL(points);
    ASSERT_EQ(points[1][0], 0);  /* down cycle: all points */
@@ -3499,17 +3507,24 @@ test_AMGCreate_grid_relax_points_air(void)
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
 
    /* With up to two up sweeps, every up sweep stays on the F-points */
+   args.amg.interp_vec_variant    = 1;
    args.amg.relaxation.up_sweeps = 2;
-   hypredrv_PreconCreate(PRECON_BOOMERAMG, &args, NULL, NULL, &precon, NULL, 0, NULL);
-   ASSERT_NOT_NULL(precon);
+   HYPRE_Solver amg = NULL;
+   hypredrv_AMGCreate(&args.amg, &amg);
+   ASSERT_NOT_NULL(amg);
 
-   amg_data = (hypre_ParAMGData *)precon->main;
+   amg_data = (hypre_ParAMGData *)amg;
+   ASSERT_EQ(hypre_ParAMGInterpVecVariant(amg_data), 1);
+   ASSERT_EQ(hypre_ParAMGInterpVecQMax(amg_data), 0);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   ASSERT_EQ(hypre_ParAMGSmoothInterpVectors(amg_data), 0);
+#endif
    points   = hypre_ParAMGDataGridRelaxPoints(amg_data);
    ASSERT_NOT_NULL(points);
    ASSERT_EQ(points[2][0], -1);
    ASSERT_EQ(points[2][1], -1);
 
-   hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);
+   HYPRE_BoomerAMGDestroy(amg);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -4383,6 +4398,36 @@ test_MGRCreate_coarsest_level_fsai_destroyed(void)
 }
 
 static void
+test_MGRForgetCachedSolvers_destroys_projected_rbms(void)
+{
+   TEST_HYPRE_INIT();
+
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   mgr.num_levels                         = 2;
+   mgr.level[0].f_relaxation.type         = 2;
+   mgr.level[0].f_relaxation.amg.num_rbms = 1;
+
+   ASSERT_EQ(HYPRE_ParVectorCreate(MPI_COMM_SELF, 1, NULL,
+                                   &mgr.level[0].f_relaxation.amg.rbms[0]),
+             0);
+   ASSERT_EQ(HYPRE_ParVectorInitialize(mgr.level[0].f_relaxation.amg.rbms[0]), 0);
+
+   mgr.csolver   = (HYPRE_Solver)(uintptr_t)1;
+   mgr.frelax[0] = (HYPRE_Solver)(uintptr_t)1;
+   mgr.grelax[0] = (HYPRE_Solver)(uintptr_t)1;
+   hypredrv_MGRForgetCachedSolvers(&mgr);
+
+   ASSERT_EQ(mgr.level[0].f_relaxation.amg.num_rbms, 0);
+   ASSERT_NULL(mgr.level[0].f_relaxation.amg.rbms[0]);
+   ASSERT_NULL(mgr.csolver);
+   ASSERT_NULL(mgr.frelax[0]);
+   ASSERT_NULL(mgr.grelax[0]);
+
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(30100, 2)
@@ -4652,10 +4697,7 @@ test_PreconCreate_mgr_nested_krylov_inner_mgr_recreate_without_reuse(void)
    inner->level[0].f_dofs.data[0]            = 0;
    inner->level[0].f_dofs.data[1]            = 1;
    inner->level[0].f_dofs.data[2]            = 2;
-   inner->level[0].f_relaxation.type = 2;
-   /* The f_relaxation solver args live in an uninitialized union until a type is
-      selected; default them before overriding fields, or AMGCreate reads garbage. */
-   hypredrv_AMGSetDefaultArgs(&inner->level[0].f_relaxation.amg);
+   inner->level[0].f_relaxation.type         = 2;
    inner->level[0].f_relaxation.amg.max_iter = 1;
    inner->level[0].g_relaxation.type         = -1;
    inner->coarsest_level.type                = 0;
@@ -6751,6 +6793,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_amg_log_dispatch_no_rbms);
    RUN_TEST(test_MGRCreate_coarsest_level_branches);
    RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
+   RUN_TEST(test_MGRForgetCachedSolvers_destroys_projected_rbms);
    RUN_TEST(test_PreconCreate_mgr_coarsest_level_krylov_nested);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
    RUN_TEST(test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr);

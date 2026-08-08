@@ -34,13 +34,20 @@ void
 hypredrv_HypreConsumeErrors(void)
 {
    HYPRE_Int hypre_error = HYPRE_GetError();
+   HYPRE_Int hard_error  = hypre_error & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
 
    if (!hypre_error)
    {
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+      /* HYPRE routines can raise and then clear an error internally. Discard
+       * any diagnostics retained by print mode 1 even when no sticky flag is
+       * left for us to consume. */
+      HYPRE_ClearErrorMessages();
+#endif
       return;
    }
 
-   if (hypre_error & ~HYPRE_ERROR_CONV)
+   if (hard_error)
    {
       char hypre_err_msg[HYPRE_MAX_MSG_LEN];
       fprintf(stderr, "[HYPREDRV] HYPRE hard error flags=0x%x, argument=%d\n",
@@ -58,15 +65,15 @@ hypredrv_HypreConsumeErrors(void)
       hypredrv_ErrorMsgAddUnique("HYPRE reported error 0x%x: %s", (unsigned)hypre_error,
                                  hypre_err_msg);
    }
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-   else
-   {
-      HYPRE_ClearErrorMessages();
-   }
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+   /* HYPRE_ClearErrorMessages was added in 2.33.0. Clear both soft-warning
+    * diagnostics and the hard-error messages printed above. */
+   HYPRE_ClearErrorMessages();
 #endif
 
    /* Consume the sticky hypre state after preserving every hard error in
-    * HypreDrive's error state. A convergence-only error remains a soft result. */
+    * HypreDrive's error state. Convergence failures and argument-flag warnings
+    * (for example ILUT's usable zero-row factorization) remain soft results. */
    HYPRE_ClearAllErrors();
 }
 

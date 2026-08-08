@@ -221,13 +221,14 @@ hypredrv_AMGsmtSetDefaultArgs(AMGsmt_args *args)
 void
 hypredrv_AMGSetDefaultArgs(AMG_args *args)
 {
-   args->max_iter    = 1;
-   args->print_level = 0;
-   args->tolerance   = 0.0;
-   args->num_rbms    = 0;
-   args->rbms[0]     = NULL;
-   args->rbms[1]     = NULL;
-   args->rbms[2]     = NULL;
+   args->max_iter           = 1;
+   args->print_level        = 0;
+   args->tolerance          = 0.0;
+   args->interp_vec_variant = 2;
+   args->num_rbms           = 0;
+   args->rbms[0]            = NULL;
+   args->rbms[1]            = NULL;
+   args->rbms[2]            = NULL;
 
    hypredrv_AMGintSetDefaultArgs(&args->interpolation);
    hypredrv_AMGaggSetDefaultArgs(&args->aggressive);
@@ -603,11 +604,18 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    HYPRE_BigInt jlower = 0, jupper = 0;
    HYPRE_Int    num_entries = 0;
 
+   if (!args)
+   {
+      return;
+   }
+   args->interp_vec_variant = 2;
+   hypredrv_AMGDestroyRBMs(args);
+
    /* Sanity: check if the near null space vector is set
       We do not error out when NOT using nodal coarsening. */
-   if (!args || !vec_nn || !args->coarsening.nodal)
+   if (!vec_nn || !args->coarsening.nodal)
    {
-      if (args && args->coarsening.nodal)
+      if (args->coarsening.nodal)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
          hypredrv_ErrorMsgAdd("Near null space vectors (RBMs) required"
@@ -666,20 +674,20 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    uint64_t       projected_scan   = 0;
    MPI_Comm       comm             = MPI_COMM_NULL;
 
-   if (!args || !args->coarsening.nodal)
+   if (!args)
    {
       return;
    }
-   if (args->num_rbms > 0)
+   args->interp_vec_variant = 1;
+   hypredrv_AMGDestroyRBMs(args);
+   if (!args->coarsening.nodal)
    {
       return;
    }
    if (!vec_nn || !dofmap || !f_dofs || f_dofs->size == 0)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "Near null space vectors and a nonempty dofmap/F-label set are required "
-         "for nodal MGR F-relaxation AMG");
+      /* Nodal AMG is valid without user interpolation vectors. Passing zero
+       * vectors below preserves hypre's standard nodal-coarsening behavior. */
       return;
    }
 
@@ -1011,7 +1019,14 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetNumFunctions(precon, 3);
       HYPRE_BoomerAMGSetNodal(precon, 4); // Nodal coarsening based on row-sum norm
       HYPRE_BoomerAMGSetNodalDiag(precon, 1);
-      HYPRE_BoomerAMGSetInterpVecVariant(precon, 1); // GM-1 near-null interpolation
+      HYPRE_BoomerAMGSetInterpVecVariant(precon, args->interp_vec_variant);
+      if (args->interp_vec_variant == 2)
+      {
+         HYPRE_BoomerAMGSetInterpVecQMax(precon, 4);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+         HYPRE_BoomerAMGSetSmoothInterpVectors(precon, 1);
+#endif
+      }
       HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
                                       (HYPRE_ParVector *)args->rbms);
    }

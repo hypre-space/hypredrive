@@ -868,9 +868,10 @@ function(hypredrv_check_hypre_version release develop)
     endif()
     check_c_source_compiles("
       #include \"HYPRE_config.h\"
-      #define HYPRE_SEQUENTIAL
-      #include \"internal/utils.h\"
-      #if !HYPRE_CHECK_MIN_VERSION(${release}, ${develop})
+      #ifndef HYPRE_DEVELOP_NUMBER
+      #define HYPRE_DEVELOP_NUMBER 0
+      #endif
+      #if HYPRE_RELEASE_NUMBER < ${release} || (HYPRE_RELEASE_NUMBER == ${release} && HYPRE_DEVELOP_NUMBER < ${develop})
       #error \"need HYPRE >= ${release} + develop >= ${develop}\"
       #endif
       int main(void) { return 0; }
