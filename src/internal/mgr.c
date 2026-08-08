@@ -1071,6 +1071,11 @@ MGRUnionApplyTypeDefaults(void *union_base, HYPRE_Int type, HYPRE_Int old_type,
       return;
    }
 
+   if (old_type == amg_type)
+   {
+      hypredrv_AMGDestroyRBMs((AMG_args *)union_base);
+   }
+
    if (type == amg_type)
    {
       hypredrv_AMGSetDefaultArgs((AMG_args *)union_base);
@@ -1249,8 +1254,9 @@ hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *args)
    args->krylov     = NULL;
    args->mgr        = NULL;
    MGRComponentReuseSetDefaultArgs(&args->reuse);
-   /* Solver-specific args live in a union. We only (re)initialize them if/when a
-    * specific solver type is selected during YAML parsing. */
+   /* Initialize the union for embedders that select AMG by assigning type=2
+    * directly instead of transitioning through the YAML parser. */
+   hypredrv_AMGSetDefaultArgs(&args->amg);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1661,10 +1667,18 @@ hypredrv_MGRlvlGetValidValues(const char *key)
    }
    if (!strcmp(key, "restriction_type"))
    {
+#if HYPRE_CHECK_MIN_VERSION(23200, 0)
+      static StrIntMap map[] = {
+         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},
+         {"air_1", 4},     {"air_1.5", 5},   {"blk-jacobi", 12},
+         {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
+      };
+#else
       static StrIntMap map[] = {
          {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},        {"blk-jacobi", 12},
          {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
       };
+#endif
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -2028,6 +2042,12 @@ MGRGRelaxUsesManagedHandle(const MGRgrlx_args *args)
           || args->type == MGR_SOLVER_TYPE_SCHWARZ
 #endif
       ;
+}
+
+static int
+MGRGRelaxUsesUserSmoother(const MGRgrlx_args *args)
+{
+   return args && (args->use_krylov || MGRGRelaxUsesManagedHandle(args));
 }
 
 static int
@@ -2495,7 +2515,8 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args)
  *-----------------------------------------------------------------------------*/
 
 static HYPRE_Solver
-MGRFRelaxSolverCreateByType(MGRfrlx_args *f_relaxation, int active_lvl)
+MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
+                            const StackIntArray *f_dofs, int active_lvl)
 {
    HYPRE_Solver solver = NULL;
 
@@ -2505,6 +2526,12 @@ MGRFRelaxSolverCreateByType(MGRfrlx_args *f_relaxation, int active_lvl)
 
    if (f_relaxation->type == 2)
    {
+      hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn, args->dofmap,
+                                   f_dofs);
+      if (hypredrv_ErrorCodeActive())
+      {
+         return NULL;
+      }
       hypredrv_AMGCreate(&f_relaxation->amg, &solver);
    }
 #if defined(HYPRE_USING_DSUPERLU)
@@ -2777,8 +2804,8 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    }
 
    HYPRE_Solver old_fsolver = args->frelax[orig_lvl];
-   HYPRE_Solver fsolver =
-      MGRFRelaxSolverCreateByType(&level_args->f_relaxation, active_lvl);
+   HYPRE_Solver fsolver     = MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
+                                                          &level_args->f_dofs, active_lvl);
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -3362,6 +3389,10 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       if (drop_frelax)
       {
          args->frelax[i] = NULL;
+         if (args->level[i].f_relaxation.type == 2)
+         {
+            hypredrv_AMGDestroyRBMs(&args->level[i].f_relaxation.amg);
+         }
       }
 
       if (args->level[i].g_relaxation.use_krylov && args->level[i].g_relaxation.krylov)
@@ -3394,6 +3425,17 @@ hypredrv_MGRForgetCachedSolvers(MGR_args *args)
    if (!args)
    {
       return;
+   }
+
+   int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
+                       ? (int)args->num_levels - 1
+                       : 0;
+   for (int i = 0; i < max_levels; i++)
+   {
+      if (args->level[i].f_relaxation.type == 2)
+      {
+         hypredrv_AMGDestroyRBMs(&args->level[i].f_relaxation.amg);
+      }
    }
 
    args->csolver      = NULL;
@@ -3813,8 +3855,13 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
       }
       level_frelax_sweeps[i] = level_args->f_relaxation.num_sweeps;
       level_grelax_type[i]   = level_args->g_relaxation.type;
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      if (level_args->g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+      /* HYPRE_MGRSetGlobalSmootherAtLevel below installs these user-owned
+       * solvers and determines their effective type. Advertising a concrete
+       * built-in type first makes upstream hypre raise HYPRE_ERROR_GENERIC
+       * while harmlessly resetting it, which must not turn a valid setup into
+       * a HypreDrive failure. */
+      if (MGRGRelaxUsesUserSmoother(&level_args->g_relaxation))
       {
          level_grelax_type[i] = MGR_GRLX_TYPE_USER_SMOOTHER;
       }
@@ -3856,7 +3903,8 @@ MGRConfigManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int active_lvl
 
    if (!frelax)
    {
-      frelax = MGRFRelaxSolverCreateByType(&level_args->f_relaxation, active_lvl);
+      frelax = MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
+                                           &level_args->f_dofs, active_lvl);
       if (hypredrv_ErrorCodeActive() || !frelax)
       {
          return 0;

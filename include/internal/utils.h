@@ -62,6 +62,7 @@ bool  hypredrv_IsYAMLFilename(const char *);
 bool  hypredrv_PathIsUnderRoot(const char *, const char *);
 
 /* Clear hypre's sticky error flag after a public setup/solve boundary call.
+ * Convergence and argument-flag warnings are treated as soft results.
  * Use this at API edges that previously called HYPRE_ClearAllErrors(). For
  * nested/inexact solvers that should only discard HYPRE_ERROR_CONV, call
  * hypredrv_HypreClearConvergenceErrors() instead. */

@@ -440,9 +440,53 @@ Scaling
 ~~~~~~~
 
 The ``scaling`` subsection enables optional diagonal scaling before setup and
-solve. hypredrive transforms the system as :math:`B = M A M` and
-:math:`c = M b`. It solves :math:`B y = c` and recovers the solution as
-:math:`x = M y`.
+solve. Most scaling types use congruence scaling: for a diagonal matrix
+:math:`D`, hypredrive solves
+:math:`(D A D)y = D b` and recovers :math:`x = D y`. This form preserves a
+symmetric matrix and is therefore the appropriate default for solvers and
+preconditioners that require symmetry.
+
+The custom dofmap variants also provide left, right, and similarity scaling.
+They are mathematically different operations, not aliases for
+``dofmap_custom``. Let :math:`D_{ii}` be the entry from ``custom_values``
+selected by the dofmap tag of unknown :math:`i`. The transformed systems are:
+
+.. list-table:: Custom dofmap transformations
+   :header-rows: 1
+   :widths: 24 26 22 38
+
+   * - Type
+     - Transformed system
+     - Solution recovery
+     - Intended use
+   * - ``dofmap_custom``
+     - :math:`(D A D)y = D b`
+     - :math:`x = D y`
+     - Congruence scaling that preserves symmetry. Use this for symmetric or
+       positive-definite systems.
+   * - ``dofmap_row_custom``
+     - :math:`(D A)y = D b`
+     - :math:`x = y`
+     - Left scaling for normalizing or changing the sign of equations. Krylov
+       residual norms are measured in the resulting weighted equation norm.
+   * - ``dofmap_col_custom``
+     - :math:`(A D)y = b`
+     - :math:`x = D y`
+     - Right scaling for changing unknown units while retaining the original
+       physical residual :math:`b-Ax`.
+   * - ``dofmap_similarity_custom``
+     - :math:`(D^{-1} A D)y = D^{-1}b`
+     - :math:`x = D y`
+     - Similarity scaling for balancing asymmetric block couplings while
+       preserving the eigenvalues of :math:`A`.
+
+Congruence scaling multiplies both opposite coupling blocks :math:`A_{ij}` and
+:math:`A_{ji}` by the same factor :math:`D_{ii}D_{jj}`. Consequently,
+``dofmap_custom`` cannot change the magnitude ratio between those blocks.
+Similarity scaling multiplies them by reciprocal factors and can balance that
+ratio. Left and right scaling are useful when only equation units or only
+unknown units should change. Except for congruence scaling, these operations
+generally do not preserve matrix symmetry.
 
 Available keywords:
 
@@ -460,12 +504,23 @@ Available keywords:
 
   - ``dofmap_custom`` - Uses custom values for vector scaling. This type requires
     a dofmap. Provide one value for each unique degree-of-freedom type. Each
-    value in ``custom_values`` scales the corresponding type. See
+    value in ``custom_values`` defines the corresponding diagonal entry of
+    :math:`D`. It applies congruence scaling as described above. See
     :ref:`linear_system_dofmap`.
 
-- ``custom_values`` - (Required for ``dofmap_custom``) Scaling values for each unique DOF
-  type. Provide these values as a YAML sequence. Provide one entry for each
-  unique tag. For tags 0, 1, and 2, provide three entries.
+  - ``dofmap_row_custom`` - Applies custom left (row/equation) scaling
+    :math:`D A` and :math:`D b`.
+
+  - ``dofmap_col_custom`` - Applies custom right (column/unknown) scaling
+    :math:`A D` and recovers :math:`x = D y`.
+
+  - ``dofmap_similarity_custom`` - Applies the custom similarity transform
+    :math:`D^{-1} A D` and scales the RHS by :math:`D^{-1}`.
+
+- ``custom_values`` - Required for all four custom dofmap types. Provide one
+  nonzero value for each unique DOF tag as a YAML sequence. Entry :math:`i`
+  defines :math:`D_{jj}` for every unknown whose dofmap tag is :math:`i`. For
+  tags 0, 1, and 2, provide three entries in that order.
 
 Scaling requires hypre 3.0.0 or newer. On older builds, YAML parsing succeeds,
 but hypredrive disables scaling at run time without a message.
@@ -511,6 +566,22 @@ Example configuration with dofmap_custom scaling:
          - 1.0e5
          - 1.0e8
          - 1.0e4
+   linear_system:
+     dofmap_filename: dofmap.dat
+
+For example, similarity scaling can balance an asymmetric coupling between
+tags 0 and 2 without changing the matrix eigenvalues:
+
+.. code-block:: yaml
+
+   solver:
+     gmres:
+       max_iter: 300
+       relative_tol: 1.0e-6
+     scaling:
+       enabled: yes
+       type: dofmap_similarity_custom
+       custom_values: [1.0, 1.0, 31.0]
    linear_system:
      dofmap_filename: dofmap.dat
 
@@ -1511,8 +1582,11 @@ preconditioner:
                 coarsest_level:
                   amg:
 
-  - ``restriction_type`` - algorithm for computing the restriction operator. For available
-    options, see `HYPRE_MGRSetRestrictType
+  - ``restriction_type`` - algorithm for computing the restriction operator. Accepted values
+    are ``injection``, ``jacobi``, ``approx-inv``, ``blk-jacobi``, ``cpr-like``,
+    ``columped``, and ``columped-partial``. With HYPRE 2.32 or newer, ``air_1`` and
+    ``air_1.5`` select distance-1 and distance-1.5 approximate ideal restriction,
+    respectively. See `HYPRE_MGRSetRestrictType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv424HYPRE_MGRSetRestrictType12HYPRE_Solver9HYPRE_Int>`_. Default
     value is `0` (Injection).
 

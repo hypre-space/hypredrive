@@ -75,6 +75,7 @@ typedef struct AMGcsn_args_struct
    HYPRE_Int  rap2;
    HYPRE_Int  mod_rap2;
    HYPRE_Int  keep_transpose;
+   HYPRE_Int  sabs;
    HYPRE_Int  num_functions;
    HYPRE_Int  filter_functions;
    HYPRE_Int  nodal;
@@ -116,6 +117,7 @@ typedef struct AMG_args_struct
    HYPRE_Int  print_level;
    HYPRE_Real tolerance;
 
+   HYPRE_Int       interp_vec_variant;
    HYPRE_Int       num_rbms;
    HYPRE_ParVector rbms[3];
 } AMG_args;
@@ -128,6 +130,9 @@ void hypredrv_AMGSetDefaultArgs(AMG_args *);
 void hypredrv_AMGSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
+void hypredrv_AMGSetProjectedRBMs(AMG_args *, HYPRE_IJVector, const IntArray *,
+                                  const StackIntArray *);
+void hypredrv_AMGDestroyRBMs(AMG_args *);
 void hypredrv_AMGSetDofFunc(const AMG_args *, const IntArray *, HYPRE_Solver,
                             HYPRE_IJMatrix);
 

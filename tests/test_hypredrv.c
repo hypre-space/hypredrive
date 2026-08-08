@@ -589,6 +589,25 @@ create_test_ijvector_1x1(double value)
    return vec;
 }
 
+static double
+get_test_ijmatrix_1x1(HYPRE_IJMatrix mat)
+{
+   HYPRE_Int     ncols = 1;
+   HYPRE_BigInt  index = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 1, &ncols, &index, &index, &value), 0);
+   return (double)value;
+}
+
+static double
+get_test_ijvector_1x1(HYPRE_IJVector vec)
+{
+   HYPRE_BigInt  index = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(vec, 1, &index, &value), 0);
+   return (double)value;
+}
+
 static HYPRE_IJMatrix
 create_test_ijmatrix_2x2(double a00, double a01, double a10, double a11)
 {
@@ -4865,6 +4884,107 @@ test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref(void)
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
+
+static void
+test_HYPREDRV_scaled_setup_failure_restores_borrowed_system(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  scaling:\n"
+      "    enabled: 1\n"
+      "    type: rhs_l2\n"
+      "  pcg:\n"
+      "    max_iter: 20\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state        = (struct hypredrv_struct *)obj;
+   HYPRE_Solver           saved_solver = state->solver;
+   state->solver                       = NULL;
+   uint32_t code                       = HYPREDRV_LinearSolverSetup(obj);
+   state->solver                       = saved_solver;
+
+   ASSERT_TRUE(code & ERROR_INVALID_SOLVER);
+   ASSERT_NOT_NULL(state->scaling_ctx);
+   ASSERT_FALSE(state->scaling_ctx->is_applied);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
+
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_scaled_solve_failure_restores_borrowed_system(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  scaling:\n"
+      "    enabled: 1\n"
+      "    type: rhs_l2\n"
+      "  pcg:\n"
+      "    max_iter: 20\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_TRUE(state->scaling_ctx->is_applied);
+   solver_t saved_method             = state->iargs->solver_method;
+   state->iargs->solver_method       = (solver_t)999;
+   uint32_t code                     = HYPREDRV_LinearSolverApply(obj);
+   state->iargs->solver_method       = saved_method;
+
+   ASSERT_TRUE(code & ERROR_INVALID_SOLVER);
+   ASSERT_FALSE(state->scaling_ctx->is_applied);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
+
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
 #endif /* HYPRE_CHECK_MIN_VERSION(30000, 0) */
 
 static void
@@ -5502,6 +5622,8 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverDestroy_without_precon);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref);
+   RUN_TEST(test_HYPREDRV_scaled_setup_failure_restores_borrowed_system);
+   RUN_TEST(test_HYPREDRV_scaled_solve_failure_restores_borrowed_system);
 #endif
 }
 

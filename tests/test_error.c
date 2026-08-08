@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "_hypre_utilities.h"
 #include "internal/error.h"
 #include "internal/mgr.h"
 #include "internal/yaml.h"
@@ -70,6 +71,36 @@ test_ErrorCodeMultiple(void)
 
    hypredrv_ErrorCodeResetAll();
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
+}
+
+static void
+test_HypreConsumeErrors_classifies_soft_and_hard_flags(void)
+{
+   TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+
+   /* Also exercise the no-sticky-error path that drains buffered messages. */
+   hypredrv_HypreConsumeErrors();
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypre_error(HYPRE_ERROR_CONV);
+   hypredrv_HypreConsumeErrors();
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(HYPRE_GetError(), 0);
+
+   hypre_error(HYPRE_ERROR_ARG);
+   hypredrv_HypreConsumeErrors();
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(HYPRE_GetError(), 0);
+
+   hypre_error(HYPRE_ERROR_GENERIC | HYPRE_ERROR_ARG);
+   hypredrv_HypreConsumeErrors();
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
+   ASSERT_EQ(HYPRE_GetError(), 0);
+
+   hypredrv_ErrorStateReset();
+   TEST_HYPRE_FINALIZE();
 }
 
 /*-----------------------------------------------------------------------------
@@ -640,6 +671,7 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorCodeSet_get);
    RUN_TEST(test_ErrorCodeReset);
    RUN_TEST(test_ErrorCodeMultiple);
+   RUN_TEST(test_HypreConsumeErrors_classifies_soft_and_hard_flags);
 
    RUN_TEST(test_ErrorMsgAdd);
    RUN_TEST(test_ErrorMsgClear);

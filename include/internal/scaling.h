@@ -23,6 +23,9 @@ typedef enum scaling_type_enum
    SCALING_RHS_L2,
    SCALING_DOFMAP_MAG,
    SCALING_DOFMAP_CUSTOM,
+   SCALING_DOFMAP_ROW_CUSTOM,
+   SCALING_DOFMAP_COL_CUSTOM,
+   SCALING_DOFMAP_SIMILARITY_CUSTOM,
 } scaling_type_t;
 
 typedef enum scaling_vector_kind_enum
@@ -39,7 +42,7 @@ typedef struct Scaling_args_struct
 {
    int            enabled;
    scaling_type_t type;
-   DoubleArray   *custom_values; /* Array of custom scaling values for dofmap_custom */
+   DoubleArray   *custom_values; /* Diagonal weights for custom dofmap scaling */
 } Scaling_args;
 
 /*--------------------------------------------------------------------------
@@ -50,10 +53,14 @@ typedef struct Scaling_context_struct
 {
    int             enabled;
    scaling_type_t  type;
-   int             is_applied;     /* 1 if scaling is currently applied to system */
+   int             is_applied; /* 1 if any caller-owned system object is scaled */
+   int             matrices_are_scaled;
+   int             rhs_is_scaled;
+   int             x_is_scaled;
    HYPRE_Complex   scalar_factor;  /* for rhs_l2 */
    HYPRE_ParVector scaling_vector; /* for dofmap */
-   HYPRE_IJVector  scaling_ijvec;  /* IJ wrapper for scaling_vector */
+   HYPRE_ParVector inverse_scaling_vector;
+   HYPRE_IJVector  scaling_ijvec; /* IJ wrapper for scaling_vector */
 } Scaling_context;
 
 /*--------------------------------------------------------------------------

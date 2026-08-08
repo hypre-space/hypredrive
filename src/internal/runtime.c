@@ -109,6 +109,12 @@ hypredrv_RuntimeInitialize(void)
       /* Initialize hypre */
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       HYPRE_Initialize();
+      /* Preserve HYPRE's source-level diagnostics until HypreDrive consumes
+       * the corresponding error code at an API boundary.  At trace verbosity,
+       * print at the point of failure as well: nested solver setup can return a
+       * nonzero callback status after the originating HYPRE error state has
+       * already been changed by its caller. */
+      HYPRE_SetPrintErrorMode(hypredrv_LogEnabled(3) ? 0 : 1);
 #if HYPRE_CHECK_MIN_VERSION(23100, 0)
       const char *gpu_aware_mpi_env = RuntimeGpuAwareMPIEnvGet();
       HYPRE_SetGpuAwareMPI(gpu_aware_mpi_env != NULL);

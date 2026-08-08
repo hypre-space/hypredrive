@@ -211,6 +211,8 @@ void hypredrv_LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *,
                                                HYPRE_IJVector *, const Stats *);
 void hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector, Stats *);
 void hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector, IntArray *);
+void hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm, HYPRE_IJMatrix, const IntArray *,
+                                            const DofLabelMap *, const char *, int);
 void hypredrv_LinearSystemSetPrecMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
                                         HYPRE_IJMatrix *, const Stats *);
 void hypredrv_LinearSystemReadDofmap(MPI_Comm, const LS_args *, IntArray **, Stats *);
@@ -221,6 +223,9 @@ void hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const
                                            double *);
 void hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector,
                                               HYPRE_IJVector, const char *, double *);
+void hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm, HYPRE_IJMatrix, HYPRE_IJVector,
+                                                HYPRE_IJVector, const IntArray *,
+                                                const DofLabelMap *, const char *, int);
 void hypredrv_LinearSystemPrintData(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
                                     const IntArray *);
 uint32_t hypredrv_LinearSystemDumpScheduled(MPI_Comm, const LS_args *, HYPRE_IJMatrix,

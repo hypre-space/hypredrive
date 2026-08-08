@@ -8,16 +8,29 @@
 #include "test_helpers.h"
 
 static char *
-capture_help(const char *topic)
+capture_help_with_status(const char *topic, int *status)
 {
    char  *buf  = NULL;
    size_t size = 0;
    FILE  *fp   = open_memstream(&buf, &size);
    ASSERT_NOT_NULL(fp);
 
-   ASSERT_EQ(hypredrv_HelpPrint(fp, "hypredrive-cli", topic), 0);
+   int rc = hypredrv_HelpPrint(fp, "hypredrive-cli", topic);
    fclose(fp);
    ASSERT_NOT_NULL(buf);
+   if (status)
+   {
+      *status = rc;
+   }
+   return buf;
+}
+
+static char *
+capture_help(const char *topic)
+{
+   int   status = -1;
+   char *buf    = capture_help_with_status(topic, &status);
+   ASSERT_EQ(status, 0);
    return buf;
 }
 
@@ -152,6 +165,77 @@ test_HelpPrint_reuse_mean_kind_values(void)
 }
 
 static void
+test_HelpPrint_print_system_schema(void)
+{
+   char *out = capture_help("linear_system:print_system");
+   assert_contains(out, "enabled");
+   assert_contains(out, "every_n_systems");
+   assert_contains(out, "setup_time_over");
+   assert_contains(out, "build (1)");
+   assert_contains(out, "apply (4)");
+   assert_contains(out, "matrix");
+   assert_contains(out, "selectors");
+   free(out);
+
+   out = capture_help("linear_system:print_system:selectors:0");
+   assert_contains(out, "basis");
+   assert_contains(out, "linear_system");
+   assert_contains(out, "iterations");
+   assert_contains(out, "threshold");
+   free(out);
+}
+
+static void
+test_HelpPrint_reuse_guard_transform_and_history_schema(void)
+{
+   char *out = capture_help("preconditioner:reuse");
+   assert_contains(out, "frequency");
+   assert_contains(out, "static/always");
+   assert_contains(out, "guards");
+   assert_contains(out, "adaptive");
+   free(out);
+
+   out = capture_help("preconditioner:reuse:guards");
+   assert_contains(out, "min_reuse_solves");
+   assert_contains(out, "rebuild_on_solver_failure");
+   free(out);
+
+   out = capture_help("preconditioner:reuse:adaptive");
+   assert_contains(out, "rebuild_threshold");
+   assert_contains(out, "components");
+   free(out);
+
+   out = capture_help("preconditioner:reuse:adaptive:components:0:transform");
+   assert_contains(out, "ratio_to_baseline");
+   assert_contains(out, "window_mean");
+   assert_contains(out, "amortization_window");
+   free(out);
+
+   out = capture_help("preconditioner:reuse:adaptive:components:0:history");
+   assert_contains(out, "linear_solves");
+   assert_contains(out, "completed_level");
+   assert_contains(out, "none (0)");
+   assert_contains(out, "mean (1)");
+   assert_contains(out, "sum (2)");
+   free(out);
+}
+
+static void
+test_HelpPrint_unknown_and_dot_separated_topics(void)
+{
+   char *out = capture_help("solver.gmres.max_iter");
+   assert_contains(out, "Help for solver:gmres:max_iter");
+   free(out);
+
+   int status = 0;
+   out        = capture_help_with_status("preconditioner:does_not_exist", &status);
+   ASSERT_EQ(status, 1);
+   assert_contains(out, "Unknown help topic");
+   assert_contains(out, "Nested topics:");
+   free(out);
+}
+
+static void
 test_HelpRequested_joins_topic_args(void)
 {
    char  topic[128];
@@ -174,6 +258,9 @@ main(void)
    RUN_TEST(test_HelpPrint_mgr_numeric_level_alias);
    RUN_TEST(test_HelpPrint_reuse_nested_schema);
    RUN_TEST(test_HelpPrint_reuse_mean_kind_values);
+   RUN_TEST(test_HelpPrint_print_system_schema);
+   RUN_TEST(test_HelpPrint_reuse_guard_transform_and_history_schema);
+   RUN_TEST(test_HelpPrint_unknown_and_dot_separated_topics);
    RUN_TEST(test_HelpRequested_joins_topic_args);
 
    return 0;

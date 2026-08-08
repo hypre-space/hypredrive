@@ -34,17 +34,46 @@ void
 hypredrv_HypreConsumeErrors(void)
 {
    HYPRE_Int hypre_error = HYPRE_GetError();
+   HYPRE_Int hard_error  = hypre_error & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
 
    if (!hypre_error)
    {
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+      /* HYPRE routines can raise and then clear an error internally. Discard
+       * any diagnostics retained by print mode 1 even when no sticky flag is
+       * left for us to consume. */
+      HYPRE_ClearErrorMessages();
+#endif
       return;
    }
 
-   /* Public setup/solve boundaries historically cleared hypre's sticky flag
-    * unconditionally so a prior soft failure could not poison the next call.
-    * Prefer hypredrv_HypreClearConvergenceErrors() when only HYPRE_ERROR_CONV
-    * should be discarded and harder bits must remain visible. */
-   (void)hypre_error;
+   if (hard_error)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      fprintf(stderr, "[HYPREDRV] HYPRE hard error flags=0x%x, argument=%d\n",
+              (unsigned)hypre_error, (int)HYPRE_GetErrorArg());
+      fflush(stderr);
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      /* HYPRE's detailed diagnostics include the source file, line, and the
+       * message passed by the failing routine. Emit them before clearing the
+       * sticky error state so applications do not see only "Generic error". */
+      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+      fflush(stderr);
+#endif
+      HYPRE_DescribeError(hypre_error, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAddUnique("HYPRE reported error 0x%x: %s", (unsigned)hypre_error,
+                                 hypre_err_msg);
+   }
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+   /* HYPRE_ClearErrorMessages was added in 2.33.0. Clear both soft-warning
+    * diagnostics and the hard-error messages printed above. */
+   HYPRE_ClearErrorMessages();
+#endif
+
+   /* Consume the sticky hypre state after preserving every hard error in
+    * HypreDrive's error state. Convergence failures and argument-flag warnings
+    * (for example ILUT's usable zero-row factorization) remain soft results. */
    HYPRE_ClearAllErrors();
 }
 
