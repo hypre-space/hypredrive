@@ -143,6 +143,62 @@ precon_test_ij_vector_1x1(double value)
    return vec;
 }
 
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+static HYPRE_IJVector
+precon_test_ij_multivector(HYPRE_Int num_entries, HYPRE_Int num_components,
+                           const HYPRE_Complex *values)
+{
+   HYPRE_IJVector vec = NULL;
+   ASSERT_GT(num_entries, 0);
+   ASSERT_GT(num_components, 0);
+   ASSERT_NOT_NULL(values);
+
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, num_entries - 1, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetNumComponents(vec, num_components), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize_v2(vec, HYPRE_MEMORY_HOST), 0);
+
+   HYPRE_BigInt *indices = malloc((size_t)num_entries * sizeof(*indices));
+   ASSERT_NOT_NULL(indices);
+   for (HYPRE_Int i = 0; i < num_entries; i++)
+   {
+      indices[i] = i;
+   }
+
+   for (HYPRE_Int component = 0; component < num_components; component++)
+   {
+      ASSERT_EQ(HYPRE_IJVectorSetComponent(vec, component), 0);
+      ASSERT_EQ(
+         HYPRE_IJVectorSetValues(vec, num_entries, indices,
+                                 values + ((size_t)component * (size_t)num_entries)),
+         0);
+   }
+   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
+   free(indices);
+   return vec;
+}
+
+static void
+assert_amg_rbm_values(const AMG_args *args, HYPRE_Int local_size,
+                      const HYPRE_Complex expected[3][4])
+{
+   ASSERT_EQ(args->num_rbms, 3);
+   for (HYPRE_Int mode = 0; mode < 3; mode++)
+   {
+      ASSERT_NOT_NULL(args->rbms[mode]);
+      hypre_Vector *local = hypre_ParVectorLocalVector(args->rbms[mode]);
+      ASSERT_NOT_NULL(local);
+      ASSERT_EQ(hypre_VectorSize(local), local_size);
+      HYPRE_Complex *data = hypre_VectorData(local);
+      ASSERT_NOT_NULL(data);
+      for (HYPRE_Int i = 0; i < local_size; i++)
+      {
+         ASSERT_TRUE(data[i] == expected[mode][i]);
+      }
+   }
+}
+#endif
+
 static void
 precon_test_set_static_mgr_component_reuse(MGRComponentReuse_args *reuse, int frequency)
 {
@@ -154,6 +210,117 @@ precon_test_set_static_mgr_component_reuse(MGRComponentReuse_args *reuse, int fr
    reuse->args.policy    = PRECON_REUSE_POLICY_STATIC;
    reuse->args.frequency = frequency;
 }
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+static void
+test_AMGSetRBMs_full_and_projected_modes(void)
+{
+   static const HYPRE_Complex values[6][4] = {
+      {0.0, 0.0, 0.0, 0.0},     {1.0, 1.0, 1.0, 1.0},     {2.0, 2.0, 2.0, 2.0},
+      {30.0, 31.0, 32.0, 33.0}, {40.0, 41.0, 42.0, 43.0}, {50.0, 51.0, 52.0, 53.0},
+   };
+   static const HYPRE_Complex expected_full[3][4] = {
+      {30.0, 31.0, 32.0, 33.0},
+      {40.0, 41.0, 42.0, 43.0},
+      {50.0, 51.0, 52.0, 53.0},
+   };
+   static const HYPRE_Complex expected_projected[3][4] = {
+      {30.0, 32.0, 33.0, 0.0},
+      {40.0, 42.0, 43.0, 0.0},
+      {50.0, 52.0, 53.0, 0.0},
+   };
+
+   TEST_HYPRE_INIT();
+   HYPRE_IJVector vec_nn = precon_test_ij_multivector(4, 6, &values[0][0]);
+
+   AMG_args args;
+   hypredrv_AMGSetDefaultArgs(&args);
+   args.coarsening.nodal = 4;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetRBMs(&args, vec_nn);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   assert_amg_rbm_values(&args, 4, expected_full);
+
+   /* Existing full-system modes take precedence over a projected rebuild. */
+   int           labels[4] = {2, 1, 2, 0};
+   IntArray      dofmap    = {.data = labels, .size = 4};
+   StackIntArray f_dofs    = STACK_INTARRAY_CREATE();
+   f_dofs.data[0]          = 2;
+   f_dofs.data[1]          = 0;
+   f_dofs.size             = 2;
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
+   assert_amg_rbm_values(&args, 4, expected_full);
+
+   hypredrv_AMGDestroyRBMs(&args);
+   ASSERT_EQ(args.num_rbms, 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   assert_amg_rbm_values(&args, 3, expected_projected);
+
+   hypredrv_AMGDestroyRBMs(&args);
+   HYPRE_IJVectorDestroy(vec_nn);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_AMGSetRBMs_validation_paths(void)
+{
+   static const HYPRE_Complex values[6][4] = {
+      {0.0, 0.0, 0.0, 0.0}, {1.0, 1.0, 1.0, 1.0}, {2.0, 2.0, 2.0, 2.0},
+      {3.0, 3.0, 3.0, 3.0}, {4.0, 4.0, 4.0, 4.0}, {5.0, 5.0, 5.0, 5.0},
+   };
+
+   TEST_HYPRE_INIT();
+   HYPRE_IJVector vec_nn = precon_test_ij_multivector(4, 6, &values[0][0]);
+   AMG_args       args;
+   hypredrv_AMGSetDefaultArgs(&args);
+
+   /* Nodal coarsening is the only configuration that consumes these modes. */
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetRBMs(&args, vec_nn);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.num_rbms, 0);
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, NULL, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   args.coarsening.nodal = 4;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetRBMs(&args, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.num_rbms, 0);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetProjectedRBMs(&args, NULL, NULL, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.num_rbms, 0);
+
+   int           labels[4] = {0, 1, 0, 1};
+   IntArray      dofmap    = {.data = labels, .size = 4};
+   StackIntArray f_dofs    = STACK_INTARRAY_CREATE();
+   f_dofs.data[0]          = 99;
+   f_dofs.size             = 1;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.num_rbms, 0);
+
+   HYPRE_IJVector short_vec = precon_test_ij_multivector(4, 1, &values[0][0]);
+   f_dofs.data[0]           = 0;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetProjectedRBMs(&args, short_vec, &dofmap, &f_dofs);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.num_rbms, 0);
+
+   hypredrv_AMGDestroyRBMs(NULL);
+   HYPRE_IJVectorDestroy(short_vec);
+   HYPRE_IJVectorDestroy(vec_nn);
+   TEST_HYPRE_FINALIZE();
+}
+#endif
 
 static void
 test_PreconGetValidKeys_contains_expected(void)
@@ -6571,6 +6738,10 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_none_with_main_logs);
    RUN_TEST(test_PreconSetup_default_case);
    RUN_TEST(test_AMGSetDofFunc_labels);
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   RUN_TEST(test_AMGSetRBMs_full_and_projected_modes);
+   RUN_TEST(test_AMGSetRBMs_validation_paths);
+#endif
    RUN_TEST(test_AMGCreate_grid_relax_points_air);
    RUN_TEST(test_PreconApply_default_case);
    RUN_TEST(test_PreconApply_precon_none);
