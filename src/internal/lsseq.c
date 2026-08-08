@@ -858,12 +858,12 @@ hypredrv_LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload
 static int
 LSSeqLocalPartIDs(MPI_Comm comm, uint32_t g_nparts, int **partids_ptr, int *nparts_ptr)
 {
-   int  nprocs  = 0;
-   int  myid    = 0;
-   int  nparts  = 0;
-   int  offset  = 0;
-   int  rem     = 0;
-   int *partids = NULL;
+   int      nprocs       = 0;
+   int      myid         = 0;
+   int      nparts       = 0;
+   int      offset       = 0;
+   int     *partids      = NULL;
+   uint64_t local_nparts = 0, first_part = 0;
 
    if (!partids_ptr || !nparts_ptr) /* GCOVR_EXCL_BR_LINE */
    {
@@ -874,9 +874,8 @@ LSSeqLocalPartIDs(MPI_Comm comm, uint32_t g_nparts, int **partids_ptr, int *npar
 
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   nparts = (int)(g_nparts / (uint32_t)nprocs);
-   rem    = (int)(g_nparts % (uint32_t)nprocs);
-   nparts += (myid < rem) ? 1 : 0;
+   hypredrv_MultipartRange((uint64_t)g_nparts, nprocs, myid, &first_part, &local_nparts);
+   nparts = (int)local_nparts;
    /* GCOVR_EXCL_BR_START */
    if (g_nparts < (uint32_t)nprocs) /* GCOVR_EXCL_BR_STOP */
    {
@@ -896,8 +895,7 @@ LSSeqLocalPartIDs(MPI_Comm comm, uint32_t g_nparts, int **partids_ptr, int *npar
    }
 
    /* Keep the same mapping as multipart readers in matrix/vector containers. */
-   offset = myid * nparts;
-   offset += (myid < rem) ? myid : rem;
+   offset = (int)first_part;
    for (int i = 0; i < nparts; i++)
    {
       partids[i] = offset + i;

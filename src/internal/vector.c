@@ -95,32 +95,36 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      HYPRE_IJVector      *vec_ptr)
 {
    int      nprocs = 0, myid = 0;
-   uint32_t nparts = 0;
-   uint64_t part   = 0;
-   uint32_t offset = 0;
+   uint32_t nparts       = 0;
+   uint64_t part         = 0;
+   uint32_t offset       = 0;
+   uint64_t local_nparts = 0, first_part = 0;
 
    char     filename[1024];
    uint64_t header[11];
 
-   uint64_t nrows_sum = 0, nrows_max = 0, nrows_offset = 0;
+   uint64_t nrows_sum = 0, nrows_max = 0, nrows_offset = 0, local_row_offset = 0;
 
    uint32_t *partids  = NULL;
    FILE     *fp       = NULL;
    int       local_ok = 1;
 
    HYPRE_BigInt         ilower = 0, iupper = 0;
-   HYPRE_IJVector       vec    = NULL;
-   HYPRE_Complex       *h_vals = NULL;
-   const HYPRE_Complex *vals   = NULL;
+   HYPRE_IJVector       vec       = NULL;
+   HYPRE_BigInt        *h_indices = NULL;
+   HYPRE_Complex       *h_vals    = NULL;
+   const HYPRE_BigInt  *indices   = NULL;
+   const HYPRE_Complex *vals      = NULL;
 #ifdef HYPRE_USING_GPU
-   HYPRE_Complex *d_vals = NULL;
+   HYPRE_BigInt  *d_indices = NULL;
+   HYPRE_Complex *d_vals    = NULL;
 #endif
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   nparts = (uint32_t)(g_nparts / (uint64_t)nprocs);
-   nparts += (myid < ((int)g_nparts % nprocs)) ? 1 : 0;
+   hypredrv_MultipartRange(g_nparts, nprocs, myid, &first_part, &local_nparts);
+   nparts = (uint32_t)local_nparts;
    if (g_nparts < (size_t)nprocs)
    {
       *vec_ptr = NULL;
@@ -155,9 +159,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       return;
    }
    /* LCOV_EXCL_STOP */
-   offset = ((uint32_t)myid) * nparts;
-   offset += (myid < ((int)g_nparts % nprocs)) ? (uint32_t)myid
-                                               : (uint32_t)((int)g_nparts % nprocs);
+   offset = (uint32_t)first_part;
    for (part = 0; part < nparts; part++)
    {
       partids[part] = (uint32_t)(offset + part);
@@ -224,13 +226,15 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Allocate variables */
+   h_indices =
+      (nrows_max > 0) ? (HYPRE_BigInt *)malloc(nrows_max * sizeof(HYPRE_BigInt)) : NULL;
    h_vals =
       (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
    /* LCOV_EXCL_START */
-   if (nrows_max > 0 && !h_vals)
+   if (nrows_max > 0 && (!h_indices || !h_vals))
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate vector read buffer (%llu rows)",
+      hypredrv_ErrorMsgAdd("Failed to allocate vector read buffers (%llu rows)",
                            (unsigned long long)nrows_max);
       goto cleanup;
    }
@@ -238,12 +242,14 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
+      indices = d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
       vals = d_vals = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
    }
    else
 #endif
    {
-      vals = h_vals;
+      indices = h_indices;
+      vals    = h_vals;
    }
 
    /* 4) Fill entries */
@@ -371,9 +377,33 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       }
 #endif
 
+      /* Each runtime rank can own several consecutive stored parts when the
+       * communicator is smaller than g_nparts.  Explicit indices preserve the
+       * concatenation offset; indices=NULL would restart at ilower for every part
+       * and overwrite the values loaded from preceding parts. */
+      if (header[5] > nrows_sum || local_row_offset > nrows_sum - header[5])
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Vector part rows exceed the pre-scanned local range at %s",
+                              filename);
+         goto after_values;
+      }
+      for (uint64_t i = 0; i < header[5]; i++)
+      {
+         h_indices[i] = ilower + (HYPRE_BigInt)local_row_offset + (HYPRE_BigInt)i;
+      }
+#ifdef HYPRE_USING_GPU
+      if (indices != h_indices)
+      {
+         hypre_TMemcpy(d_indices, h_indices, HYPRE_BigInt, header[5], HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+      }
+#endif
+
       HYPRE_Int nvalues =
          (HYPRE_Int)header[5]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
-      HYPRE_IJVectorSetValues(vec, nvalues, NULL, vals);
+      HYPRE_IJVectorSetValues(vec, nvalues, indices, vals);
+      local_row_offset += header[5];
    }
 
 after_values:
@@ -398,10 +428,12 @@ cleanup:
    }
    /* LCOV_EXCL_STOP */
    free(partids);
+   free(h_indices);
    free(h_vals);
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
+      hypre_TFree(d_indices, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
    }
 #endif

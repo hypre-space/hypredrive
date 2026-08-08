@@ -61,6 +61,20 @@ void  hypredrv_CombineFilename(const char *, const char *, char **);
 bool  hypredrv_IsYAMLFilename(const char *);
 bool  hypredrv_PathIsUnderRoot(const char *, const char *);
 
+/* Assign a contiguous block of stored parts to a runtime rank.  The first
+ * remainder ranks receive one extra part. */
+static inline void
+hypredrv_MultipartRange(uint64_t num_parts, int num_procs, int rank, uint64_t *first_part,
+                        uint64_t *num_local_parts)
+{
+   uint64_t base  = num_parts / (uint64_t)num_procs;
+   uint64_t rem   = num_parts % (uint64_t)num_procs;
+   uint64_t urank = (uint64_t)rank;
+
+   *first_part      = urank * base + (urank < rem ? urank : rem);
+   *num_local_parts = base + (urank < rem ? 1u : 0u);
+}
+
 /* Clear hypre's sticky error flag after a public setup/solve boundary call.
  * Convergence and argument-flag warnings are treated as soft results.
  * Use this at API edges that previously called HYPRE_ClearAllErrors(). For

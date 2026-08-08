@@ -450,6 +450,7 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
    IntArray *int_array = NULL;
    FILE     *fp        = NULL;
    int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;
+   uint64_t  local_nparts = 0, first_part = 0;
    int      *partids   = NULL;
    bool      is_binary = false;
 
@@ -466,8 +467,8 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
    g_nparts = hypredrv_CountNumberOfPartitions(prefix);
-   nparts   = g_nparts / nprocs;
-   nparts += (myid < (g_nparts % nprocs)) ? 1 : 0;
+   hypredrv_MultipartRange((uint64_t)g_nparts, nprocs, myid, &first_part, &local_nparts);
+   nparts = (int)local_nparts;
    if (g_nparts < nprocs)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -478,8 +479,7 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
 
    /* 1b) Compute partids array */
    partids = malloc((size_t)nparts * sizeof(int));
-   offset  = myid * nparts;
-   offset += (myid < (g_nparts % nprocs)) ? myid : (g_nparts % nprocs);
+   offset  = (int)first_part;
    for (int part = 0; part < nparts; part++)
    {
       partids[part] = offset + part;

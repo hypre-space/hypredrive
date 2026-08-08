@@ -145,9 +145,10 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      HYPRE_IJMatrix      *mat_ptr)
 {
    int      nprocs = 0, myid = 0;
-   uint32_t nparts = 0;
-   uint64_t part   = 0;
-   uint32_t offset = 0;
+   uint32_t nparts       = 0;
+   uint64_t part         = 0;
+   uint32_t offset       = 0;
+   uint64_t local_nparts = 0, first_part = 0;
 
    char     filename[1024];
    uint64_t header[11];
@@ -181,8 +182,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
    MPI_Comm_rank(comm, &myid);
-   nparts = (uint32_t)(g_nparts / (uint64_t)nprocs);
-   nparts += (myid < ((int)g_nparts % nprocs)) ? 1 : 0;
+   hypredrv_MultipartRange(g_nparts, nprocs, myid, &first_part, &local_nparts);
+   nparts = (uint32_t)local_nparts;
    if (g_nparts < (size_t)nprocs)
    {
       *mat_ptr = NULL;
@@ -219,9 +220,7 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       return;
    }
    /* GCOVR_EXCL_STOP */
-   offset = ((uint32_t)myid) * nparts;
-   offset += (myid < ((int)g_nparts % nprocs)) ? (uint32_t)myid
-                                               : (uint32_t)((int)g_nparts % nprocs);
+   offset = (uint32_t)first_part;
    for (part = 0; part < nparts; part++)
    {
       partids[part] = (uint32_t)(offset + part);

@@ -2618,6 +2618,8 @@ test_lsseq_two_parts_row_order_sort(void)
    HYPRE_IJMatrix  mat     = NULL;
    HYPRE_IJVector  rhs     = NULL;
    IntArray       *dofmap   = NULL;
+   HYPRE_BigInt    indices[4] = {0, 1, 2, 3};
+   HYPRE_Complex   values[4]  = {0.0, 0.0, 0.0, 0.0};
 
    write_two_part_container_with_info(filename);
    add_temp_file(filename);
@@ -2630,11 +2632,20 @@ test_lsseq_two_parts_row_order_sort(void)
    hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(hypredrv_LSSeqReadRHS(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &rhs));
    ASSERT_NOT_NULL(rhs);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 4, indices, values), 0);
+   ASSERT_EQ_DOUBLE((double)values[0], 3.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE((double)values[1], 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE((double)values[2], 1.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE((double)values[3], 2.0, 1.0e-12);
 
    hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(hypredrv_LSSeqReadDofmap(MPI_COMM_SELF, filename, 0, &dofmap));
    ASSERT_NOT_NULL(dofmap);
    ASSERT_EQ((int)dofmap->size, 4);
+   ASSERT_EQ(dofmap->data[0], 1);
+   ASSERT_EQ(dofmap->data[1], 1);
+   ASSERT_EQ(dofmap->data[2], 0);
+   ASSERT_EQ(dofmap->data[3], 1);
 
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);

@@ -162,6 +162,30 @@ test_ComputeNumberOfDigits_large(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * Test hypredrv_MultipartRange
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_MultipartRange_nondivisible(void)
+{
+   const uint64_t expected_first[6] = {0, 3, 6, 9, 12, 14};
+   const uint64_t expected_count[6] = {3, 3, 3, 3, 2, 2};
+   uint64_t       cursor            = 0;
+
+   for (int rank = 0; rank < 6; rank++)
+   {
+      uint64_t first = 0, count = 0;
+      hypredrv_MultipartRange(16, 6, rank, &first, &count);
+
+      ASSERT_EQ_SIZE(first, expected_first[rank]);
+      ASSERT_EQ_SIZE(count, expected_count[rank]);
+      ASSERT_EQ_SIZE(first, cursor);
+      cursor += count;
+   }
+   ASSERT_EQ_SIZE(cursor, 16);
+}
+
+/*-----------------------------------------------------------------------------
  * Test hypredrv_SplitFilename
  *-----------------------------------------------------------------------------*/
 
@@ -417,6 +441,7 @@ main(void)
 
    RUN_TEST(test_ComputeNumberOfDigits_basic);
    RUN_TEST(test_ComputeNumberOfDigits_large);
+   RUN_TEST(test_MultipartRange_nondivisible);
 
    RUN_TEST(test_SplitFilename_full_path);
    RUN_TEST(test_SplitFilename_no_dir);
