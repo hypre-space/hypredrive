@@ -1660,7 +1660,11 @@ if(TARGET HYPRE::HYPRE)
     # Build a runtime library search path for CTest so executables can launch
     # when HYPRE's transitive shared-library dependencies (e.g., Caliper) are
     # not resolved through executable RUNPATH.
-    set(_hypredrv_test_runtime_lib_dirs "")
+    # Prefer libraries produced by this build over same-named libraries in a
+    # dependency/install prefix. This matters for coverage builds in particular:
+    # loading a stale installed libHYPREDRV writes incompatible counters into
+    # the active build tree and causes gcovr to discard entire source files.
+    set(_hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
 
     function(_hypredrv_collect_lib_dirs_from_items out_var)
         set(_dirs "")
@@ -1716,8 +1720,6 @@ if(TARGET HYPRE::HYPRE)
         list(APPEND _hypredrv_test_runtime_lib_dirs
             "${CMAKE_BINARY_DIR}/_deps/hypre-build/lib")
     endif()
-    list(APPEND _hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
-
     get_target_property(_hypredrv_hypre_link_libs HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
     if(_hypredrv_hypre_link_libs)
         _hypredrv_collect_lib_dirs_from_items(_hypredrv_hypre_link_dirs ${_hypredrv_hypre_link_libs})
