@@ -192,6 +192,16 @@ Degrees of Freedom Map
   directory, filename, or basename fields. Container metadata gives the number
   of systems.
 
+- ``precmat_sequence_filename`` - (Optional) Path to a lossless compressed sequence
+  container whose matrix is used to build the preconditioner. This avoids unpacking
+  an auxiliary matrix archive. It cannot be combined with ``precmat_filename`` or
+  ``precmat_basename``.
+
+- ``precmat_sequence_system_id`` - (Optional) Zero-based matrix index in
+  ``precmat_sequence_filename``. The default value, ``-1``, selects the current
+  linear-system index. Set this to ``0`` to reuse the only matrix in a one-system
+  archive while solving another sequence.
+
 - ``matrix_basename`` - (Possibly required) Common prefix for matrix filenames.
   Use it to solve multiple matrices in a shared directory. This parameter has
   no default.
@@ -411,6 +421,17 @@ Example use in YAML:
 
     linear_system:
       sequence_filename: poromech2k_np1_lsseq.zst.bin
+      rhs_mode: file
+
+An independently packed matrix can be used for preconditioner construction without
+unpacking either archive:
+
+.. code-block:: yaml
+
+    linear_system:
+      sequence_filename: operator.zst.bin
+      precmat_sequence_filename: approximate-operator.zst.bin
+      precmat_sequence_system_id: 0
       rhs_mode: file
 
 When ``sequence_filename`` is present, hypredrive reads the matrix, right-hand

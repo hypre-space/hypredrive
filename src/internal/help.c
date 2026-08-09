@@ -921,6 +921,9 @@ static const HelpKeyDoc GeneralKeyDocs[] = {
 static const HelpKeyDoc LinearSystemKeyDocs[] = {
    {"dirname", "Directory containing linear-system input files"},
    {"sequence_filename", "Compressed linear-system sequence file"},
+   {"precmat_sequence_filename",
+    "Compressed sequence containing the preconditioner matrix"},
+   {"precmat_sequence_system_id", "System index in the preconditioner-matrix sequence"},
    {"matrix_filename", "Matrix file for a single linear system"},
    {"matrix_basename", "Matrix filename prefix for a sequence"},
    {"precmat_filename", "Matrix file used to build the preconditioner"},

@@ -289,6 +289,9 @@ AccumulateBlockNorms(HYPRE_Int num_rows, const HYPRE_Int *row_ptr,
 static const FieldOffsetMap ls_field_offset_map[] = {
    FIELD_OFFSET_MAP_ENTRY(LS_args, dirname, hypredrv_FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, sequence_filename, hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_sequence_filename,
+                          hypredrv_FieldTypeStringSet),
+   FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_sequence_system_id, hypredrv_FieldTypeIntSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_filename, hypredrv_FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, matrix_basename, hypredrv_FieldTypeStringSet),
    FIELD_OFFSET_MAP_ENTRY(LS_args, precmat_filename, hypredrv_FieldTypeStringSet),
@@ -393,29 +396,31 @@ hypredrv_LinearSystemGetValidValues(const char *key)
 void
 hypredrv_LinearSystemSetDefaultArgs(LS_args *args)
 {
-   args->dirname[0]           = '\0';
-   args->sequence_filename[0] = '\0';
-   args->matrix_filename[0]   = '\0';
-   args->matrix_basename[0]   = '\0';
-   args->precmat_filename[0]  = '\0';
-   args->precmat_basename[0]  = '\0';
-   args->rhs_filename[0]      = '\0';
-   args->rhs_basename[0]      = '\0';
-   args->x0_filename[0]       = '\0';
-   args->xref_filename[0]     = '\0';
-   args->xref_basename[0]     = '\0';
-   args->timestep_filename[0] = '\0';
-   args->sol_filename[0]      = '\0';
-   args->dofmap_filename[0]   = '\0';
-   args->dofmap_basename[0]   = '\0';
-   args->digits_suffix        = 5;
-   args->init_suffix          = -1;
-   args->last_suffix          = -1;
-   args->set_suffix           = NULL;
-   args->init_guess_mode      = 0;
-   args->rhs_mode             = 2;
-   args->type                 = 1;
-   args->num_systems          = 1;
+   args->dirname[0]                   = '\0';
+   args->sequence_filename[0]         = '\0';
+   args->precmat_sequence_filename[0] = '\0';
+   args->precmat_sequence_system_id   = -1;
+   args->matrix_filename[0]           = '\0';
+   args->matrix_basename[0]           = '\0';
+   args->precmat_filename[0]          = '\0';
+   args->precmat_basename[0]          = '\0';
+   args->rhs_filename[0]              = '\0';
+   args->rhs_basename[0]              = '\0';
+   args->x0_filename[0]               = '\0';
+   args->xref_filename[0]             = '\0';
+   args->xref_basename[0]             = '\0';
+   args->timestep_filename[0]         = '\0';
+   args->sol_filename[0]              = '\0';
+   args->dofmap_filename[0]           = '\0';
+   args->dofmap_basename[0]           = '\0';
+   args->digits_suffix                = 5;
+   args->init_suffix                  = -1;
+   args->last_suffix                  = -1;
+   args->set_suffix                   = NULL;
+   args->init_guess_mode              = 0;
+   args->rhs_mode                     = 2;
+   args->type                         = 1;
+   args->num_systems                  = 1;
 #ifdef HYPRE_USING_GPU
    args->exec_policy = 1;
 #else
@@ -1112,6 +1117,27 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
          "linear_system: set_suffix cannot be used with init_suffix or last_suffix");
+   }
+
+   if (args->precmat_sequence_filename[0] != '\0' &&
+       (args->precmat_filename[0] != '\0' || args->precmat_basename[0] != '\0'))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("linear_system: precmat_sequence_filename cannot be used with "
+                           "precmat_filename or precmat_basename");
+   }
+   if (args->precmat_sequence_system_id < -1)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system: precmat_sequence_system_id must be -1 or nonnegative");
+   }
+   if (args->precmat_sequence_system_id >= 0 &&
+       args->precmat_sequence_filename[0] == '\0')
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("linear_system: precmat_sequence_system_id requires "
+                           "precmat_sequence_filename");
    }
 }
 
@@ -2630,6 +2656,35 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                       "preconditioner matrix setup begin");
 
+   if (args->precmat_sequence_filename[0] != '\0')
+   {
+      int precmat_ls_id = args->precmat_sequence_system_id >= 0
+                             ? (int)args->precmat_sequence_system_id
+                             : ls_id;
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "preconditioner matrix source: sequence file '%s', system %d",
+                         args->precmat_sequence_filename, precmat_ls_id);
+      if (*precmat_ptr && *precmat_ptr != mat)
+      {
+         HYPRE_IJMatrixDestroy(*precmat_ptr);
+      }
+      *precmat_ptr = NULL;
+
+      if (!hypredrv_LSSeqReadMatrix(comm, args->precmat_sequence_filename, precmat_ls_id,
+                                    LinearSystemMemoryLocationGet(args), precmat_ptr))
+      {
+         HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
+                            "preconditioner matrix read failed from sequence file '%s', "
+                            "system %d",
+                            args->precmat_sequence_filename, precmat_ls_id);
+         return;
+      }
+
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "preconditioner matrix setup end");
+      return;
+   }
+
    /* Set matrix filename */
    if (args->dirname[0] != '\0' && args->precmat_filename[0] != '\0')
    {
@@ -2662,10 +2717,11 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: '%s'", matrix_filename);
       /* Destroy matrix */
-      if (*precmat_ptr)
+      if (*precmat_ptr && *precmat_ptr != mat)
       {
          HYPRE_IJMatrixDestroy(*precmat_ptr);
       }
+      *precmat_ptr = NULL;
 
       HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, precmat_ptr);
       /* GCOVR_EXCL_BR_START */

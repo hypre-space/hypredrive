@@ -647,6 +647,10 @@ fuzz_solve_yaml_text_once(const uint8_t *data, size_t size, int force_solver)
    FUZZ_ARGV_ADD_COPY("");
    FUZZ_ARGV_ADD_COPY("--linear_system:sequence_filename");
    FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:precmat_sequence_filename");
+   FUZZ_ARGV_ADD_COPY("");
+   FUZZ_ARGV_ADD_COPY("--linear_system:precmat_sequence_system_id");
+   FUZZ_ARGV_ADD_COPY("-1");
    /* Pin every file-input key so fuzzed configs cannot redirect reads to
     * nonexistent files and abort the process inside HYPREDRV_LinearSystemBuild. */
    FUZZ_ARGV_ADD_COPY("--linear_system:x0_filename");
