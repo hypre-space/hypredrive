@@ -774,7 +774,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
                   (num_entries == 0 || (selected && host_values));
    int global_ok = 0;
    MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
-   if (!global_ok)
+   if (!global_ok || (num_selected_dofs > 0 && !selected_labels))
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd(
