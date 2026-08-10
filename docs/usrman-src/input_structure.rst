@@ -1132,6 +1132,46 @@ preconditioner:
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv433HYPRE_BoomerAMGSetFilterFunctions12HYPRE_Solver9HYPRE_Int>`_.
     Default value is `off`.
 
+  - ``nodal`` - turn on/off nodal (block) coarsening, in which the strength of connection
+    matrix is built from small blocks of unknowns rather than single entries. Required for
+    the rigid-body-mode (GM/LN) interpolation used by 3D elasticity, and combined with the
+    near-null-space modes set through ``HYPREDRV_LinearSystemSetNearNullSpace``. Available
+    values are any non-negative integer. Default value is `0` (off).
+
+  - ``nodal_type`` - norm used to build the nodal strength matrix. For available options,
+    see `HYPRE_BoomerAMGSetNodal
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv423HYPRE_BoomerAMGSetNodal12HYPRE_Solver9HYPRE_Int>`_.
+    Only relevant when ``nodal`` is on. Default value is `4` (row-sum norm, which also
+    enables ``HYPRE_BoomerAMGSetNodalDiag``); `2` (block sum-of-absolute-values) is a
+    common alternative for elasticity.
+
+  - ``interp_vec_variant`` - variant of the GM/LN interpolation that incorporates the
+    supplied near-null-space vectors: `1` (GM1), `2` (GM2), or `3` and above (LN). For
+    detailed information, see `HYPRE_BoomerAMGSetInterpVecVariant
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv434HYPRE_BoomerAMGSetInterpVecVariant12HYPRE_Solver9HYPRE_Int>`_.
+    Only relevant when ``nodal`` is on. Default value is `-1` (auto), which selects `2`
+    for a full-system near-null space and `1` when the modes are projected onto an MGR
+    F-block.
+
+  - ``smooth_interp_vecs`` - turn on/off smoothing of the interpolation (near-null-space)
+    vectors before they are used. For detailed information, see
+    `HYPRE_BoomerAMGSetSmoothInterpVectors
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv437HYPRE_BoomerAMGSetSmoothInterpVectors12HYPRE_Solver9HYPRE_Int>`_.
+    Only relevant when ``nodal`` is on. Default value is `-1` (auto), which smooths them
+    only for the GM2 variant.
+
+  - ``interp_vec_qmax`` - maximum number of nonzeros per row added to interpolation by the
+    GM/LN expansion. For detailed information, see `HYPRE_BoomerAMGSetInterpVecQMax
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv431HYPRE_BoomerAMGSetInterpVecQMax12HYPRE_Solver9HYPRE_Int>`_.
+    Only relevant when ``nodal`` is on. Default value is `-1` (auto), which uses `4` for
+    the GM2 variant and `0` (no limit) otherwise.
+
+  - ``interp_vec_abs_q_trunc`` - drop entries of the GM/LN expansion below this magnitude.
+    For detailed information, see `HYPRE_BoomerAMGSetInterpVecAbsQTrunc
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv435HYPRE_BoomerAMGSetInterpVecAbsQTrunc12HYPRE_Solver10HYPRE_Real>`_.
+    Only relevant when ``nodal`` is on. Available values are any non-negative floating
+    point number. Default value is `0.0`.
+
   - ``rap2`` - whether or not to use two matrix products to compute coarse
     level matrices. Available values are any non-negative integer. Default value is `0`.
 

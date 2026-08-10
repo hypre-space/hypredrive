@@ -1,0 +1,72 @@
+# Two-material elasticity (mixed u-p): SAME as mgr2-gmres.yml (FGMRES + 2-level MGR
+# with the application-supplied scaled pressure-mass Schur as the coarse operator,
+# coarse_level_type: user), but with `reuse: always` on the coarsest (user-Schur)
+# solver. This is the regression test for preconditioner reuse + a borrowed,
+# application-owned coarse matrix: the coarse solver is built on the first setup and
+# reused on all later ones, while MGR re-aliases the SAME borrowed Schur matrix each
+# rebuild (it never owns or frees it). Run with --coarse-schur and -ns > 1; every
+# solve must converge identically with no crash/leak (the borrowed matrix stays valid
+# across reused setups because the linear system, not MGR, owns it).
+#
+#   mpirun -np 1 build/elasticity --problem two-material --discretization mixed \
+#     -n 23 15 15 --nu-top 0.4999 --coarse-schur -ns 4 -i mgr2-gmres-reuse.yml
+
+solver:
+  fgmres:
+    krylov_dim: 100
+    max_iter: 300
+    print_level: 0
+    relative_tol: 1.0e-6
+    absolute_tol: 0.0
+
+preconditioner:
+  mgr:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    coarse_th: 0.0
+    level:
+      0:
+        f_dofs: [0, 1, 2, 3, 4, 5]
+        f_relaxation:
+          amg:
+            max_iter: 2
+            tolerance: 0.0
+            interpolation:
+              prolongation_type: extended+i
+            coarsening:
+              type: hmis
+              strong_th: 0.25
+              num_functions: 3
+              nodal: 1
+              nodal_type: 2
+              interp_vec_variant: 2
+              smooth_interp_vecs: 0
+            relaxation:
+              down_type: forward-hl1gs
+              up_type: backward-hl1gs
+              coarse_type: ge
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: jacobi
+        coarse_level_type: user
+
+    coarsest_level:
+      gmres:
+        max_iter: 1
+        print_level: 0
+        preconditioner:
+          amg:
+            max_iter: 1
+            tolerance: 0.0
+            interpolation:
+              prolongation_type: extended+i
+            coarsening:
+              type: hmis
+              strong_th: 0.3
+              num_functions: 1
+            relaxation:
+              down_type: forward-hl1gs
+              up_type: backward-hl1gs
+              coarse_type: ge
+      reuse: always
