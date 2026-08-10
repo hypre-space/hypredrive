@@ -48,6 +48,7 @@ examples/src/C_darcy/reproduce-out/
 examples/src/C_elasticity/*.out
 examples/src/C_elasticity/iters_elasticity_presets_dofs.png
 examples/src/C_elasticity/total_elasticity_presets_dofs.png
+examples/src/C_elasticity/iters_two_material_bars.png
 
 ###########
 # Autotools

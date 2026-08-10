@@ -10,8 +10,7 @@
 #     each cycle resolve the elasticity rotation modes. This gives NEARLY
 #     MESH-INDEPENDENT outer iterations at below-baseline cost: vs a single plain
 #     V-cycle it cuts iterations ~1.5x and runs faster (lower complexity), e.g. at
-#     1M DOFs / nu_top=0.4999, 42 iters / 19s vs 83 iters / 26s. See
-#     reports/mixed_up_preconditioner.tex, Sec. 11.2.
+#     1M DOFs / nu_top=0.4999, 42 iters / 19s vs 83 iters / 26s (16 MPI ranks).
 #   C-block (pressure 6): coarse_level_type: user hands MGR the assembled mass
 #     Schur Mhat instead of the Galerkin RAP product. Mhat is spectrally
 #     equivalent to the exact pressure Schur uniformly in h and lambda (the
