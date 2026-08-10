@@ -2,7 +2,10 @@
 #define HYPREDRV_OBJECT_HEADER_
 
 /* Matches hypre's MAX_MGR_LEVELS; per-level coarse Schur operator slots. */
-#define HYPREDRV_MGR_MAX_LEVELS 32
+enum
+{
+   HYPREDRV_MGR_MAX_LEVELS = 32
+};
 
 #include "HYPREDRV.h"
 #include "internal/args.h"
@@ -14,30 +17,30 @@
 typedef struct hypredrv_struct
 {
    /* Pointers, opaque HYPRE handles, and aggregates (8-byte aligned). */
-   MPI_Comm         comm;
-   int             *states;   /* Array of state indices */
-   input_args      *iargs;    /* Input arguments (passed via YAML) */
-   IntArray        *dofmap;   /* Mapping array for degrees-of-freedom */
-   HYPRE_IJMatrix   mat_A;    /* System matrix */
-   HYPRE_IJMatrix   mat_M;    /* Matrix used to build the preconditioner */
-   HYPRE_IJVector   vec_b;    /* Right-hand side vector */
-   HYPRE_IJVector   vec_x;    /* Solution vector */
-   HYPRE_IJVector   vec_x0;   /* Initial solution vector */
-   HYPRE_IJVector   vec_xref; /* Reference solution vector */
-   HYPRE_IJVector   vec_nn;   /* Near-null space modes */
-   HYPRE_IJVector   vec_ns;   /* Orthonormalized null space modes projected out of sol. */
-   HYPRE_IJVector  *vec_s;    /* Array of vector states */
-   HYPRE_IJMatrix   mat_G;    /* Discrete gradient */
-   HYPRE_IJMatrix   mat_C;    /* Discrete curl */
+   MPI_Comm        comm;
+   int            *states;   /* Array of state indices */
+   input_args     *iargs;    /* Input arguments (passed via YAML) */
+   IntArray       *dofmap;   /* Mapping array for degrees-of-freedom */
+   HYPRE_IJMatrix  mat_A;    /* System matrix */
+   HYPRE_IJMatrix  mat_M;    /* Matrix used to build the preconditioner */
+   HYPRE_IJVector  vec_b;    /* Right-hand side vector */
+   HYPRE_IJVector  vec_x;    /* Solution vector */
+   HYPRE_IJVector  vec_x0;   /* Initial solution vector */
+   HYPRE_IJVector  vec_xref; /* Reference solution vector */
+   HYPRE_IJVector  vec_nn;   /* Near-null space modes */
+   HYPRE_IJVector  vec_ns;   /* Orthonormalized null space modes projected out of sol. */
+   HYPRE_IJVector *vec_s;    /* Array of vector states */
+   HYPRE_IJMatrix  mat_G;    /* Discrete gradient */
+   HYPRE_IJMatrix  mat_C;    /* Discrete curl */
    /* Per-MGR-level app-provided coarse (Schur) operators. Owned by the linear
     * system (freed at teardown); MGR borrows the ParCSR each setup. Size matches
     * hypre's MAX_MGR_LEVELS (32). */
-   HYPRE_IJMatrix   mat_coarse_schur[HYPREDRV_MGR_MAX_LEVELS];
-   HYPRE_Precon     precon;   /* Preconditioner object */
-   HYPRE_Solver     solver;   /* Solver object */
-   Scaling_context *scaling_ctx;      /* Scaling context */
-   Stats           *stats;            /* Solver statistics structure */
-   struct hypredrv_struct *next_live; /* linked-list hook for the runtime registry */
+   HYPRE_IJMatrix          mat_coarse_schur[HYPREDRV_MGR_MAX_LEVELS];
+   HYPRE_Precon            precon;      /* Preconditioner object */
+   HYPRE_Solver            solver;      /* Solver object */
+   Scaling_context        *scaling_ctx; /* Scaling context */
+   Stats                  *stats;       /* Solver statistics structure */
+   struct hypredrv_struct *next_live;   /* linked-list hook for the runtime registry */
    PreconReuseTimesteps    precon_reuse_timesteps; /* Preconditioner reuse structure */
    HYPRE_IJVector          vec_coord[3];           /* Vertex coordinates */
    PreconReuseState        precon_reuse_state;     /* Preconditioner reuse state */

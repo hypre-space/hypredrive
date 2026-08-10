@@ -1045,12 +1045,19 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_Int variant = (args->coarsening.interp_vec_variant > -1)
                              ? args->coarsening.interp_vec_variant
                              : args->interp_vec_variant;
-      HYPRE_Int qmax    = (args->coarsening.interp_vec_qmax > -1)
-                             ? args->coarsening.interp_vec_qmax
-                             : ((variant == 2) ? 4 : 0);
-      HYPRE_Int smooth  = (args->coarsening.smooth_interp_vecs > -1)
-                             ? args->coarsening.smooth_interp_vecs
-                             : ((variant == 2) ? 1 : 0);
+      /* GM2 expands interpolation with the near-null-space vectors, so it wants a
+         nonzero QMax and smoothed vectors; the other variants keep hypre's defaults. */
+      HYPRE_Int qmax   = (variant == 2) ? 4 : 0;
+      HYPRE_Int smooth = (variant == 2) ? 1 : 0;
+
+      if (args->coarsening.interp_vec_qmax > -1)
+      {
+         qmax = args->coarsening.interp_vec_qmax;
+      }
+      if (args->coarsening.smooth_interp_vecs > -1)
+      {
+         smooth = args->coarsening.smooth_interp_vecs;
+      }
 
       HYPRE_BoomerAMGSetNumFunctions(precon, 3);
       HYPRE_BoomerAMGSetNodal(precon, args->coarsening.nodal_type);
