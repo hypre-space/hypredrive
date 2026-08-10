@@ -2514,9 +2514,9 @@ MGRProjectNestedRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
       return 1;
    }
 
-   hypredrv_AMGSetProjectedRBMs(&krylov->precon.amg, mgr_args->vec_nn,
-                                mgr_args->dofmap, mgr_args->rbm_input_generation,
-                                selected_dofs, num_selected_dofs);
+   hypredrv_AMGSetProjectedRBMs(&krylov->precon.amg, mgr_args->vec_nn, mgr_args->dofmap,
+                                mgr_args->rbm_input_generation, selected_dofs,
+                                num_selected_dofs);
    return !hypredrv_ErrorCodeActive();
 }
 
@@ -2530,9 +2530,9 @@ MGRProjectNestedRemainingRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
       return 1;
    }
 
-   const IntArray *dofmap = mgr_args->dofmap;
-   const int *source = dofmap->unique_data ? dofmap->unique_data : dofmap->data;
-   size_t source_size = dofmap->unique_data ? dofmap->unique_size : dofmap->size;
+   const IntArray *dofmap      = mgr_args->dofmap;
+   const int      *source      = dofmap->unique_data ? dofmap->unique_data : dofmap->data;
+   size_t          source_size = dofmap->unique_data ? dofmap->unique_size : dofmap->size;
    int *remaining = source_size ? (int *)malloc(source_size * sizeof(*remaining)) : NULL;
    size_t num_remaining = 0;
    if (source_size && !remaining)
@@ -2544,8 +2544,8 @@ MGRProjectNestedRemainingRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
       for (size_t i = 0; i < source_size; i++)
       {
          int eliminated = 0;
-         for (int active_lvl = 0;
-              active_lvl < num_eliminated_levels && !eliminated; active_lvl++)
+         for (int active_lvl = 0; active_lvl < num_eliminated_levels && !eliminated;
+              active_lvl++)
          {
             const StackIntArray *f_dofs =
                &mgr_args->level[mgr_args->active_level_map[active_lvl]].f_dofs;
@@ -2582,18 +2582,17 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args,
    AMG_args *amg = (krylov->has_precon && krylov->precon_method == PRECON_BOOMERAMG)
                       ? &krylov->precon.amg
                       : NULL;
-   int keep_projected_rbms =
-      amg && amg->interp_vec_variant == 1 &&
-      amg->rbm_source_generation == mgr_args->rbm_input_generation;
-   HYPRE_Int       cached_num_rbms = 0;
-   HYPRE_ParVector cached_rbms[3]  = {NULL, NULL, NULL};
+   int       keep_projected_rbms = amg && amg->interp_vec_variant == 1 &&
+                             amg->rbm_source_generation == mgr_args->rbm_input_generation;
+   HYPRE_Int       cached_num_rbms    = 0;
+   HYPRE_ParVector cached_rbms[3]     = {NULL, NULL, NULL};
    size_t          cached_labels_size = 0;
    uint64_t        cached_labels_hash = 0;
    if (keep_projected_rbms)
    {
-      cached_num_rbms     = amg->num_rbms;
-      cached_labels_size  = amg->rbm_source_labels_size;
-      cached_labels_hash  = amg->rbm_source_labels_hash;
+      cached_num_rbms    = amg->num_rbms;
+      cached_labels_size = amg->rbm_source_labels_size;
+      cached_labels_hash = amg->rbm_source_labels_hash;
       for (int i = 0; i < 3; i++)
       {
          cached_rbms[i] = amg->rbms[i];
@@ -4110,8 +4109,7 @@ MGRConfigFRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
              * rotation modes. Without this, PreconCreate would attach full-system
              * modes that overrun the extracted A_FF during interpolation setup. */
             if (!MGRProjectNestedRBMs(level_args->f_relaxation.krylov, args,
-                                      level_args->f_dofs.data,
-                                      level_args->f_dofs.size))
+                                      level_args->f_dofs.data, level_args->f_dofs.size))
             {
                return 0;
             }

@@ -115,62 +115,61 @@
  * HYPREDRV_LinearSystemSetCoarseSchur. Targets hypre >= 3.1.0 with MGR
  * coarse_grid_method 6 (user); older releases can run a user file via -i.
  *--------------------------------------------------------------------------*/
-static const char *default_config_mixed =
-   "solver:\n"
-   "  fgmres:\n"
-   "    krylov_dim: 100\n"
-   "    max_iter: 300\n"
-   "    print_level: 0\n"
-   "    relative_tol: 1.0e-6\n"
-   "preconditioner:\n"
-   "  mgr:\n"
-   "    max_iter: 1\n"
-   "    tolerance: 0.0\n"
-   "    print_level: 0\n"
-   "    coarse_th: 0.0\n"
-   "    level:\n"
-   "      0:\n"
-   "        f_dofs: [0, 1, 2, 3, 4, 5]\n"
-   "        f_relaxation:\n"
-   "          amg:\n"
-   "            max_iter: 2\n"
-   "            tolerance: 0.0\n"
-   "            interpolation:\n"
-   "              prolongation_type: extended+i\n"
-   "            coarsening:\n"
-   "              type: hmis\n"
-   "              strong_th: 0.25\n"
-   "              num_functions: 3\n"
-   "              nodal: 1\n"
-   "              nodal_type: 2\n"
-   "              interp_vec_variant: 2\n"
-   "              smooth_interp_vecs: 0\n"
-   "            relaxation:\n"
-   "              down_type: forward-hl1gs\n"
-   "              up_type: backward-hl1gs\n"
-   "              coarse_type: ge\n"
-   "        g_relaxation: none\n"
-   "        restriction_type: injection\n"
-   "        prolongation_type: jacobi\n"
-   "        coarse_level_type: user\n"
-   "    coarsest_level:\n"
-   "      gmres:\n"
-   "        max_iter: 1\n"
-   "        print_level: 0\n"
-   "        preconditioner:\n"
-   "          amg:\n"
-   "            max_iter: 1\n"
-   "            tolerance: 0.0\n"
-   "            interpolation:\n"
-   "              prolongation_type: extended+i\n"
-   "            coarsening:\n"
-   "              type: hmis\n"
-   "              strong_th: 0.3\n"
-   "              num_functions: 1\n"
-   "            relaxation:\n"
-   "              down_type: forward-hl1gs\n"
-   "              up_type: backward-hl1gs\n"
-   "              coarse_type: ge\n";
+static const char *default_config_mixed = "solver:\n"
+                                          "  fgmres:\n"
+                                          "    krylov_dim: 100\n"
+                                          "    max_iter: 300\n"
+                                          "    print_level: 0\n"
+                                          "    relative_tol: 1.0e-6\n"
+                                          "preconditioner:\n"
+                                          "  mgr:\n"
+                                          "    max_iter: 1\n"
+                                          "    tolerance: 0.0\n"
+                                          "    print_level: 0\n"
+                                          "    coarse_th: 0.0\n"
+                                          "    level:\n"
+                                          "      0:\n"
+                                          "        f_dofs: [0, 1, 2, 3, 4, 5]\n"
+                                          "        f_relaxation:\n"
+                                          "          amg:\n"
+                                          "            max_iter: 2\n"
+                                          "            tolerance: 0.0\n"
+                                          "            interpolation:\n"
+                                          "              prolongation_type: extended+i\n"
+                                          "            coarsening:\n"
+                                          "              type: hmis\n"
+                                          "              strong_th: 0.25\n"
+                                          "              num_functions: 3\n"
+                                          "              nodal: 1\n"
+                                          "              nodal_type: 2\n"
+                                          "              interp_vec_variant: 2\n"
+                                          "              smooth_interp_vecs: 0\n"
+                                          "            relaxation:\n"
+                                          "              down_type: forward-hl1gs\n"
+                                          "              up_type: backward-hl1gs\n"
+                                          "              coarse_type: ge\n"
+                                          "        g_relaxation: none\n"
+                                          "        restriction_type: injection\n"
+                                          "        prolongation_type: jacobi\n"
+                                          "        coarse_level_type: user\n"
+                                          "    coarsest_level:\n"
+                                          "      gmres:\n"
+                                          "        max_iter: 1\n"
+                                          "        print_level: 0\n"
+                                          "        preconditioner:\n"
+                                          "          amg:\n"
+                                          "            max_iter: 1\n"
+                                          "            tolerance: 0.0\n"
+                                          "            interpolation:\n"
+                                          "              prolongation_type: extended+i\n"
+                                          "            coarsening:\n"
+                                          "              type: hmis\n"
+                                          "              strong_th: 0.3\n"
+                                          "              num_functions: 1\n"
+                                          "            relaxation:\n"
+                                          "              down_type: forward-hl1gs\n"
+                                          "              up_type: backward-hl1gs\n"
+                                          "              coarse_type: ge\n";
 
 /*--------------------------------------------------------------------------
  * Problem parameters struct
@@ -193,9 +192,9 @@ typedef struct
    char      *yaml_file;         /* YAML configuration file */
    char      *solver_preset;     /* Example solver preset selector */
    HYPRE_Int  problem;           /* 0 = single material, 1 = two-material bar */
-   HYPRE_Int  discretization;  /* 0 = mixed u-p top, 1 = standard CG, 2 = B-bar (Q1-P0) */
-   HYPRE_Real E_top;           /* Top-material Young's modulus (two-material) */
-   HYPRE_Real nu_top;          /* Top-material Poisson ratio (two-material) */
+   HYPRE_Int  discretization; /* 0 = mixed u-p top, 1 = standard CG, 2 = B-bar (Q1-P0) */
+   HYPRE_Real E_top;          /* Top-material Young's modulus (two-material) */
+   HYPRE_Real nu_top;         /* Top-material Poisson ratio (two-material) */
    HYPRE_Int coarse_schur; /* mixed: provide pressure-mass Schur as MGR coarse operator */
    HYPRE_Int hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
    char    **hypredrv_argv; /* Hypredrive override args, starting at -a */
@@ -899,15 +898,14 @@ q1_shape_ref(const HYPRE_Real xi, const HYPRE_Real eta, const HYPRE_Real zeta,
 static void
 Q1StrainBlock(HYPRE_Real gx, HYPRE_Real gy, HYPRE_Real gz, HYPRE_Real B[6][3])
 {
-   const HYPRE_Real block[6][3] = {{gx, 0.0, 0.0}, {0.0, gy, 0.0},
-                                    {0.0, 0.0, gz}, {0.0, gz, gy},
-                                    {gz, 0.0, gx},  {gy, gx, 0.0}};
+   const HYPRE_Real block[6][3] = {{gx, 0.0, 0.0}, {0.0, gy, 0.0}, {0.0, 0.0, gz},
+                                   {0.0, gz, gy},  {gz, 0.0, gx},  {gy, gx, 0.0}};
    memcpy(B, block, sizeof(block));
 }
 
 static void
-Q1AccumulateBtDB(const HYPRE_Real B[8][6][3], const HYPRE_Real D[6][6],
-                 HYPRE_Real weight, HYPRE_Real K[24][24])
+Q1AccumulateBtDB(const HYPRE_Real B[8][6][3], const HYPRE_Real D[6][6], HYPRE_Real weight,
+                 HYPRE_Real K[24][24])
 {
    HYPRE_Real DB[8][6][3] = {{{0}}};
    for (int b = 0; b < 8; b++)
@@ -921,8 +919,7 @@ Q1AccumulateBtDB(const HYPRE_Real B[8][6][3], const HYPRE_Real D[6][6],
          for (int i = 0; i < 3; i++)
             for (int j = 0; j < 3; j++)
                for (int alpha = 0; alpha < 6; alpha++)
-                  K[3 * a + i][3 * b + j] +=
-                     weight * B[a][alpha][i] * DB[b][alpha][j];
+                  K[3 * a + i][3 * b + j] += weight * B[a][alpha][i] * DB[b][alpha][j];
 }
 
 /*--------------------------------------------------------------------------
@@ -975,8 +972,7 @@ PrecomputeQ1HexTemplates(const HYPRE_Real hx, const HYPRE_Real hy, const HYPRE_R
             }
 
             HYPRE_Real B[8][6][3];
-            for (int a = 0; a < 8; a++)
-               Q1StrainBlock(dNx[a], dNy[a], dNz[a], B[a]);
+            for (int a = 0; a < 8; a++) Q1StrainBlock(dNx[a], dNy[a], dNz[a], B[a]);
             Q1AccumulateBtDB(B, D, w, Ke_t);
          }
       }
@@ -1070,12 +1066,12 @@ PrecomputeQ1HexBbar(const HYPRE_Real hx, const HYPRE_Real hy, const HYPRE_Real h
             HYPRE_Real Bbar[8][6][3];
             for (int a = 0; a < 8; a++)
             {
-               HYPRE_Real gx = dxi[a] * Jinv[0];
-               HYPRE_Real gy = deta[a] * Jinv[1];
-               HYPRE_Real gz = dzeta[a] * Jinv[2];
+               HYPRE_Real gx            = dxi[a] * Jinv[0];
+               HYPRE_Real gy            = deta[a] * Jinv[1];
+               HYPRE_Real gz            = dzeta[a] * Jinv[2];
                HYPRE_Real correction[3] = {(gbar[a][0] - gx) / 3.0,
-                                            (gbar[a][1] - gy) / 3.0,
-                                            (gbar[a][2] - gz) / 3.0};
+                                           (gbar[a][1] - gy) / 3.0,
+                                           (gbar[a][2] - gz) / 3.0};
                Q1StrainBlock(gx, gy, gz, Bbar[a]);
                for (int row = 0; row < 3; row++)
                   for (int component = 0; component < 3; component++)
@@ -1380,8 +1376,7 @@ PrecomputeMixedTopTemplates(const HYPRE_Real hx, const HYPRE_Real hy, const HYPR
 
             /* A = int B^T D_A B */
             HYPRE_Real Bblocks[8][6][3];
-            for (int a = 0; a < 8; a++)
-               Q1StrainBlock(dNx[a], dNy[a], dNz[a], Bblocks[a]);
+            for (int a = 0; a < 8; a++) Q1StrainBlock(dNx[a], dNy[a], dNz[a], Bblocks[a]);
             Q1AccumulateBtDB(Bblocks, D_A, w, A_t);
 
             /* B[b][3a+i] = int N_b dN_a/dx_i ;  M[b][a] = int N_b N_a */
@@ -1945,7 +1940,7 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                   if (prow < ilower || prow > iupper) continue; /* owned pressure row */
 
                   schur_ncols[schur_nrows] = 8;
-                  schur_rows[schur_nrows] = ml_pdof_to_coarse(L, coarse_start, prow);
+                  schur_rows[schur_nrows]  = ml_pdof_to_coarse(L, coarse_start, prow);
                   for (int cc = 0; cc < 8; cc++)
                   {
                      HYPRE_Int offset = 8 * schur_nrows + cc;
@@ -1962,12 +1957,11 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                                         : schur_nrows;
                for (HYPRE_Int start = 0; start < schur_nrows; start += max_batch)
                {
-                  HYPRE_Int count = (start + max_batch <= schur_nrows)
-                                       ? max_batch
-                                       : schur_nrows - start;
-                  HYPRE_IJMatrixAddToValues(
-                     Schur, count, &schur_ncols[start], &schur_rows[start],
-                     &schur_cols[8 * start], &schur_vals[8 * start]);
+                  HYPRE_Int count =
+                     (start + max_batch <= schur_nrows) ? max_batch : schur_nrows - start;
+                  HYPRE_IJMatrixAddToValues(Schur, count, &schur_ncols[start],
+                                            &schur_rows[start], &schur_cols[8 * start],
+                                            &schur_vals[8 * start]);
                }
             }
 
@@ -1989,7 +1983,7 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                for (int j = 0; j < ndof; j++)
                {
                   if (is_dir[j]) continue;
-                  HYPRE_Int offset = elem_offsets[elem_nrows] + elem_ncols[elem_nrows];
+                  HYPRE_Int offset  = elem_offsets[elem_nrows] + elem_ncols[elem_nrows];
                   elem_cols[offset] = gid[j];
                   elem_vals[offset] =
                      MixedElementValue(i, j, is_top, Ke_bot, A_t, B_t, C_t);
@@ -2003,11 +1997,10 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                (params->max_rows_per_call > 0) ? params->max_rows_per_call : elem_nrows;
             for (HYPRE_Int start = 0; start < elem_nrows; start += max_batch)
             {
-               HYPRE_Int count = (start + max_batch <= elem_nrows)
-                                    ? max_batch
-                                    : elem_nrows - start;
-               HYPRE_IJMatrixAddToValues(A, count, &elem_ncols[start],
-                                         &elem_rows[start], &elem_cols[elem_offsets[start]],
+               HYPRE_Int count =
+                  (start + max_batch <= elem_nrows) ? max_batch : elem_nrows - start;
+               HYPRE_IJMatrixAddToValues(A, count, &elem_ncols[start], &elem_rows[start],
+                                         &elem_cols[elem_offsets[start]],
                                          &elem_vals[elem_offsets[start]]);
                HYPRE_IJVectorAddToValues(b, count, &elem_rows[start], &elem_rhs[start]);
             }

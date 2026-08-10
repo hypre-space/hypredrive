@@ -234,14 +234,14 @@ hypredrv_AMGsmtSetDefaultArgs(AMGsmt_args *args)
 void
 hypredrv_AMGSetDefaultArgs(AMG_args *args)
 {
-   args->max_iter           = 1;
-   args->print_level        = 0;
-   args->tolerance          = 0.0;
-   args->interp_vec_variant = 2;
-   args->num_rbms           = 0;
-   args->rbms[0]               = NULL;
-   args->rbms[1]               = NULL;
-   args->rbms[2]               = NULL;
+   args->max_iter               = 1;
+   args->print_level            = 0;
+   args->tolerance              = 0.0;
+   args->interp_vec_variant     = 2;
+   args->num_rbms               = 0;
+   args->rbms[0]                = NULL;
+   args->rbms[1]                = NULL;
+   args->rbms[2]                = NULL;
    args->rbm_source_generation  = 0;
    args->rbm_source_labels_size = 0;
    args->rbm_source_labels_hash = 0;
@@ -704,7 +704,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    uint64_t       projected_local  = 0;
    uint64_t       projected_global = 0;
    uint64_t       projected_scan   = 0;
-   int            *selected_labels = NULL;
+   int           *selected_labels  = NULL;
    MPI_Comm       comm             = MPI_COMM_NULL;
 
    if (!args)
@@ -732,7 +732,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
       return;
    }
 
-   comm           = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
+   comm                = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
    int local_cache_hit = args->interp_vec_variant == 1 &&
                          args->rbm_source_generation == input_generation &&
                          args->rbm_source_labels_size == num_selected_dofs &&
@@ -746,7 +746,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
 
    hypredrv_AMGDestroyRBMs(args);
    args->interp_vec_variant = 1;
-   num_components = hypre_IJVectorNumComponents(vec_nn);
+   num_components           = hypre_IJVectorNumComponents(vec_nn);
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
    num_entries     = (jupper >= jlower) ? (HYPRE_Int)(jupper - jlower + 1) : 0;
    int local_valid = num_components >= AMG_FIRST_RBM_COMPONENT + AMG_NUM_RBMS &&
