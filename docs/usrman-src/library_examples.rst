@@ -1375,10 +1375,12 @@ figure above and the reference output included below.
 
 .. code-block:: text
 
-  Usage: ${MPIRUN} ./elasticity [options]
+  Usage: ${MPIEXEC_COMMAND} <np> ./elasticity [options]
 
   Options:
-    -i <file>         : YAML configuration file for solver settings (Optional)
+    -i <file>         : YAML configuration file for solver settings (Opt.)
+    -a|--args ...     : Hypredrive YAML overrides, e.g. -a --solver:pcg:max_iter 100
+                        (requires -i; must come last)
     -n <nx> <ny> <nz> : Global grid dimensions in nodes (30 10 10)
     -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)
     -L <Lx> <Ly> <Lz> : Physical dimensions (3 1 1)
@@ -1389,29 +1391,31 @@ figure above and the reference output included below.
     -nu <val>         : Poisson ratio nu (0.3)
     -rho <val>        : Density rho (1.0)
     --solver-preset <name>
-                     : Solver preset selector (elasticity_3D | elasticity_sdc_3D | elasticity_nodal_3D)
-                       (ignored when --problem two-material)
+                      : Solver preset selector (elasticity_3D | elasticity_sdc_3D | elasticity_nodal_3D)
+                        (ignored when --problem two-material)
     --problem <name>  : Problem configuration: single | two-material (single)
-                        two-material splits the bar at y=Ly/2 into a bottom half
-                        and a near-incompressible top half;
+                        two-material splits the bar at y=Ly/2 into a bottom
+                        half and a near-incompressible top half;
                         requires (ny-1) even so a node layer sits at y=Ly/2
     --discretization <name>
                       : discretization: mixed | standard | bbar (mixed)
                         mixed    = u-p (Q1-Q1) top + CG bottom (saddle point)
                         standard = standard CG Q1 displacement everywhere
-                        bbar     = Q1-P0 mean-dilatation (B-bar), locking-free,
-                                   displacement-only, SPD (PCG + AMG)
+                                   (locks near nu=0.5; pass -i amg-pcg.yml)
+                        bbar     = Q1-P0 mean-dilatation (B-bar) everywhere:
+                                   displacement-only, locking-free, SPD
+                                   (PCG + AMG, e.g. -i amg-pcg.yml)
     --E-top <val>     : Top-material Young's modulus (defaults to -E)
     --nu-top <val>    : Top-material Poisson ratio (0.4999)
     -ns|--nsolve <n>  : Number of solves (5)
     -vis <m>          : Visualization mode (0)
-        0: none
-        1: ASCII VTK
-        2: binary VTK
+                           0: none
+                           1: ASCII VTK
+                           2: binary VTK
     -v|--verbose <n>  : Verbosity bitset (0)
-        0x1: Library info and linear solver statistics
-        0x2: System info
-        0x4: Print linear system matrices
+                           0x1: Library info and linear solver statistics
+                           0x2: System info
+                           0x4: Print linear system matrices
     -h|--help         : Print this message
 
 Run the example with one process:
