@@ -10,6 +10,7 @@ set -euo pipefail
 
 MODE="run-and-plot"
 STUDY="presets"
+PLOT_TIMES=0
 
 for arg in "$@"; do
     case "${arg}" in
@@ -18,6 +19,9 @@ for arg in "$@"; do
             ;;
         --two-material)
             STUDY="two-material"
+            ;;
+        --times)
+            PLOT_TIMES=1
             ;;
         -h|--help)
             MODE="help"
@@ -48,6 +52,10 @@ if [[ "${MODE}" == "help" ]]; then
     echo "                  {0.49,0.499,0.4999} over 5 mesh sizes (to ~1e6 DOFs);"
     echo "                  writes two_material_iters.csv and the two-panel grouped-bar"
     echo "                  figure iters_two_material_bars.png"
+    echo "  --times         With --two-material, additionally render the stacked"
+    echo "                  setup/solve time figure for the mixed u-p discretization"
+    echo "                  (times_two_material_mixed.png). Combine with --plot-only"
+    echo "                  to render it from an existing two_material_iters.csv."
     echo "  --plot-only     Skip runs and only generate plots from existing output logs"
     echo ""
     echo "Environment overrides:"
@@ -67,6 +75,9 @@ if [[ "${MODE}" == "help" ]]; then
     echo "  CONFIG_DIR           Directory holding the .yml configs + plot script (default: .)"
     echo ""
     echo "Outputs:"
+    echo "  two_material_iters.csv           (--two-material)"
+    echo "  iters_two_material_bars.png      (--two-material)"
+    echo "  times_two_material_mixed.png     (--two-material --times)"
     echo "  elasticity_builtin.out"
     echo "  elasticity_sdc.out"
     echo "  elasticity_nodal.out"
@@ -232,7 +243,7 @@ run_two_material_study() {
     local nus=("0.49" "0.499" "0.4999")
 
     if [[ "${MODE}" != "plot-only" ]]; then
-        echo "disc,nu,nx,ny,nz,dofs,iters,relres" > "${csv}"
+        echo "disc,nu,nx,ny,nz,dofs,iters,relres,setup,solve" > "${csv}"
         local s nx ny nz dofs nu spec disc yml row
         for s in "${sizes[@]}"; do
             read -r nx ny nz <<< "${s}"
@@ -246,17 +257,19 @@ run_two_material_study() {
                     local extra=""
                     if [[ "${disc}" == "mixed" ]]; then extra="--coarse-schur"; fi
                     echo "N=${nx}x${ny}x${nz} (DOFs=${dofs}) nu_top=${nu} ${disc} ..."
-                    # Pull the single STATISTICS SUMMARY data row and keep its last
-                    # two columns: relative residual ($7) and iteration count ($8).
+                    # Pull the single STATISTICS SUMMARY data row. Columns are
+                    # $2 entry, $3 LS build, $4 setup, $5 solve, $6 initial res,
+                    # $7 relative res, $8 iters.
                     row=$(${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks} ${EXEC} \
                             --problem two-material --discretization "${disc}" \
                             -n "${nx}" "${ny}" "${nz}" -P ${pgrid} -nu "${nu_bottom}" \
                             --nu-top "${nu}" -ns 1 -v 1 ${extra} -i "${cfgdir}/${yml}" 2>&1 \
                         | awk -F'|' '/^\|[[:space:]]*[0-9]+[[:space:]]*\|/ \
-                                     { gsub(/ /,"",$7); gsub(/ /,"",$8); rr=$7; it=$8 } \
-                                     END { print it","rr }')
+                                     { for (i = 4; i <= 8; i++) gsub(/ /, "", $i); \
+                                       su=$4; so=$5; rr=$7; it=$8 } \
+                                     END { print it","rr","su","so }')
                     echo "${disc},${nu},${nx},${ny},${nz},${dofs},${row}" >> "${csv}"
-                    echo "    -> iters,relres = ${row}"
+                    echo "    -> iters,relres,setup,solve = ${row}"
                 done
             done
         done
@@ -266,6 +279,13 @@ run_two_material_study() {
     PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 \
         "${cfgdir}/plot_two_material.py" "${csv}" "iters_two_material_bars.png"
     echo "Done. Plot: iters_two_material_bars.png (data: ${csv})"
+
+    if (( PLOT_TIMES )); then
+        echo "Plotting stacked setup/solve times -> times_two_material_mixed.png"
+        PYTHONWARNINGS=ignore::UserWarning MPLBACKEND=Agg python3 \
+            "${cfgdir}/plot_two_material_times.py" "${csv}" "times_two_material_mixed.png"
+        echo "Done. Plot: times_two_material_mixed.png (data: ${csv})"
+    fi
 }
 
 if [[ "${STUDY}" == "two-material" ]]; then

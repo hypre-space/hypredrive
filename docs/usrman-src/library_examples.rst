@@ -1504,8 +1504,8 @@ which MGR supplies automatically, restricted to the F-points. The block uses the
 :math:`\lambda`-independent; the rigid-body modes keep the AMG hierarchy cheap
 (operator complexity :math:`\approx 2`) *and* make it nearly mesh-independent, so the
 outer FGMRES count grows only mildly with mesh size -- at below-baseline cost (at
-:math:`10^6` DOFs, :math:`\nu_{\text{top}}{=}0.4999`: 42 iterations / 19 s, versus a
-single plain V-cycle's 83 / 26). For the coarse
+:math:`10^6` DOFs, :math:`\nu_{\text{top}}{=}0.4999` on 16 ranks: 42 iterations /
+29 s, versus a single plain V-cycle's 81 / 34). For the coarse
 (pressure) block, MGR is handed the scaled pressure-mass Schur
 :math:`\hat S = (\tfrac{1}{2\mu}+\tfrac{1}{\lambda})\,M_p` via
 ``coarse_level_type: user`` (``HYPRE_MGRSetCoarseGridMatrixAtLevel``) instead of forming
@@ -1623,6 +1623,48 @@ converging.
    ratios. *Right:* mixed u-p (FGMRES + MGR with the scaled pressure-mass Schur as
    MGR's coarse operator) converges at every ratio and size, essentially independent
    of :math:`\nu_{\text{top}}`.
+
+Bounded iteration counts are only half of the cost story: what an application pays
+is wall-clock time, split between building the preconditioner once and running the
+Krylov iterations. Adding ``--times`` to the same command breaks the mixed u-p runs
+down that way, into ``times_two_material_mixed.png``:
+
+.. code-block:: bash
+
+   cd examples/src/C_elasticity
+   EXEC=/path/to/build/elasticity MPI_RANKS_TM=16 PGRID_TM="4 2 2" \
+      ./reproduce.sh --two-material --times
+
+Because it reads the ``two_material_iters.csv`` the sweep already wrote, adding
+``--plot-only`` renders this figure from an existing sweep without re-running any
+solves.
+
+.. figure:: figures/times_two_material_mixed.png
+   :alt: Stacked setup and solve time for the mixed u-p discretization
+   :width: 85%
+   :align: center
+
+   Mixed u-p time to solution vs mesh resolution, one stacked bar per
+   :math:`\nu_{\text{top}}` (16 ranks, ``-P 4 2 2``). The hatched lower segment is
+   the MGR setup and the solid upper segment is the FGMRES solve; the bar height is
+   their sum. Setup accounts for 17-30% of the total, and -- like the iteration
+   count -- neither segment grows appreciably as
+   :math:`\nu_{\text{top}} \to 1/2`.
+
+Two things are worth reading off this figure. First, cost scales with problem size
+rather than with :math:`\nu_{\text{top}}`: 41k to :math:`10^6` DOFs is a 25-fold
+increase in unknowns and a 22-31x increase in time, so the solver stays close to
+linear in the DOF count, while the spread across the three Poisson ratios at a fixed
+size stays small. That is the wall-clock counterpart of the bounded iteration counts
+above -- :math:`\lambda` robustness in the preconditioner shows up as
+:math:`\lambda` robustness in the runtime.
+
+Second, the setup fraction bounds what preconditioner reuse can buy here. Setup is
+17-30% of the time to solution, so a nonlinear or time-stepping loop that rebuilds
+the operator but reuses the MGR hierarchy saves at most about that much per solve --
+worthwhile, but a smaller lever than in the single-material RBM study above, where
+the GM2 setup is expensive enough to offset its own iteration savings on a single
+solve. See :ref:`Preconditioner reuse <PreconReuse>` for the reuse policies.
 
 The lesson is that **removing locking is not the same as making the system cheap to
 solve.** Both discretizations recover the correct displacement (0.144), but B-bar's

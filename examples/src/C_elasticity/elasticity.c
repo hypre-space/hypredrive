@@ -138,7 +138,7 @@ static const char *default_config_mixed =
       three rotational rigid-body modes -- injected automatically by MGR, restricted
       to this level's F-points -- make each cycle resolve the elasticity rotation
       modes. The result is nearly mesh-independent outer iterations at below-baseline
-      cost: at 1M DOFs / nu_top = 0.4999 it cuts a single plain V-cycle's 83
+      cost: at 1M DOFs / nu_top = 0.4999 it cuts a single plain V-cycle's 81
       iterations to 42, and its lower complexity makes each of them cheaper. */
    "            max_iter: 2\n"
    "            tolerance: 0.0\n"
@@ -2887,29 +2887,27 @@ main(int argc, char *argv[])
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
 
    /* Configure solver:
-       - two-material MIXED: symmetric indefinite saddle point -> built-in
-         FGMRES + MGR configuration (or a user file via -i).
-       - two-material STANDARD CG: SPD; the config file (e.g. amg-gmres.yml) is
-         authoritative, or PCG + AMG preset if none is given.
+       - two-material MIXED without -i: symmetric indefinite saddle point ->
+         built-in FGMRES + MGR configuration.
+       - two-material with -i (any discretization): the config file is
+         authoritative, and -a/--args overrides apply on top of it.
+       - two-material STANDARD CG without -i: SPD; PCG + AMG preset.
        - single material: SPD; PCG + AMG preset, optionally tweaked by -i. */
-   if (params.problem && params.discretization == 0)
+   if (params.problem && params.discretization == 0 && !params.yaml_file)
    {
 #if !ELASTICITY_HAVE_MGR_USER_COARSE
-      if (!params.yaml_file)
-      {
-         if (!myid)
-            printf("Error: the built-in two-material solver configuration requires "
-                   "hypre >= 3.1.0 (develop 77); provide a configuration file with "
-                   "-i instead\n");
-         HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
-         HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
-         MPI_Finalize();
-         return 1;
-      }
-#endif
-      char *args[2] = {params.yaml_file ? params.yaml_file : (char *)default_config_mixed,
-                       NULL};
+      if (!myid)
+         printf("Error: the built-in two-material solver configuration requires "
+                "hypre >= 3.1.0 (develop 77); provide a configuration file with "
+                "-i instead\n");
+      HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Finalize();
+      return 1;
+#else
+      char *args[2] = {(char *)default_config_mixed, NULL};
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+#endif
    }
    else if (params.problem && params.yaml_file)
    {
