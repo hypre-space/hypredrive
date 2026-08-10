@@ -20,6 +20,7 @@ endif()
 # Common build configuration
 add_executable(laplacian laplacian.c)
 target_link_libraries(laplacian PRIVATE HYPREDRV::HYPREDRV)
+hypredrv_add_hypre_build_dependency(laplacian)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(laplacian)
 endif()
@@ -42,14 +43,11 @@ if(HYPREDRV_ENABLE_CALIPER)
     endif()
 endif()
 
-# Add OpenMP support for parallel assembly
-find_package(OpenMP)
-if(OpenMP_C_FOUND)
-    target_link_libraries(laplacian PRIVATE OpenMP::OpenMP_C)
-    message(STATUS "OpenMP enabled for laplacian driver")
-else()
-    message(STATUS "OpenMP not found - laplacian driver will build without OpenMP")
+# Add opt-in OpenMP support for parallel assembly
+if(NOT COMMAND hypredrv_link_example_omp)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/HYPREDRV_Platform.cmake")
 endif()
+hypredrv_link_example_omp(laplacian)
 
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
@@ -103,6 +101,17 @@ if(HYPREDRV_ENABLE_TESTING)
     )
     add_executable_test(laplacian_125pt_test_4proc laplacian 4
         ARGS -n 6 6 6 -P 2 2 1 -s 125 -ns 1 -v 1
+    )
+
+    # Hypredrive CLI override pass-through test (-a requires -i)
+    set(_laplacian_args_yaml "${CMAKE_CURRENT_BINARY_DIR}/laplacian_args.yml")
+    file(WRITE "${_laplacian_args_yaml}" "solver: pcg\npreconditioner: amg\n")
+    add_executable_test(laplacian_hypredrive_args laplacian 1
+        ARGS -n 6 6 6 -s 7 -ns 1 -v 0 -i "${_laplacian_args_yaml}"
+             -a --general:statistics on --solver:pcg:print_level 1
+        RUN_SERIAL
+        REQUIRE_CONTAINS
+            "STATISTICS SUMMARY"
     )
 endif()
 

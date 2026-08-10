@@ -803,6 +803,75 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
 }
 
 static void
+test_YAMLtreeExpandIncludes_rejects_mixed_content(void)
+{
+   /* A node holding both mapping keys and sequence items ("-") is invalid:
+    * section parsers would only see one side of the content. */
+   const char *yaml_text = "linear_system:\n"
+                           "  matrix_filename: IJ.out.A\n"
+                           "  - rhs_filename: IJ.out.b\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   hypredrv_YAMLtreeExpandIncludes(tree, ".");
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_YAML_TREE_INVALID) != 0);
+
+   free(text);
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeExpandIncludes_accepts_nested_pure_sequence(void)
+{
+   /* Nested mixed content below a valid mapping must also be flagged, while a
+    * pure sequence node remains accepted. */
+   const char *yaml_text = "preconditioner:\n"
+                           "  - amg:\n"
+                           "      max_iter: 1\n";
+   size_t      len       = strlen(yaml_text);
+   char       *text      = malloc(len + 1);
+   strcpy(text, yaml_text);
+
+   YAMLtree *tree = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   hypredrv_YAMLtreeExpandIncludes(tree, ".");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_YAMLtreeDestroy(&tree);
+
+   const char *nested_text = "preconditioner:\n"
+                             "  amg:\n"
+                             "    max_iter: 1\n"
+                             "    - coarse: 2\n";
+   len        = strlen(nested_text);
+   char *text2 = malloc(len + 1);
+   strcpy(text2, nested_text);
+
+   tree = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, text2, &tree);
+   ASSERT_NOT_NULL(tree);
+
+   hypredrv_YAMLtreeExpandIncludes(tree, ".");
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_YAML_TREE_INVALID) != 0);
+
+   free(text);
+   free(text2);
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
 test_YAMLtextRead_rejects_absolute_include_path(void)
 {
    const char *tmpdir = "/tmp/hypredrv_test_yaml_abs";
@@ -1262,6 +1331,80 @@ test_YAMLtreeBuild_inline_sequence_mapping_siblings(void)
    hypredrv_YAMLtreeDestroy(&tree);
 }
 
+static void
+test_YAMLtreeBuild_flow_mappings(void)
+{
+   const char *yaml_text =
+      "root: { first: one, nested: { second: two }, values: [1, 2], "
+      "quoted: \"Comma,Colon:Value\", display_name: MixedCase, } # trailing comment\n"
+      "list:\n"
+      "  - { tag: a, options: { mode: Fast } }\n"
+      "  - wrapper: { inner: Yes }\n";
+   YAMLtree *tree = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, yaml_text, &tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(tree);
+
+   YAMLnode *root = hypredrv_YAMLnodeFindChildByKey(tree->root, "root");
+   ASSERT_NOT_NULL(root);
+   ASSERT_STREQ(root->val, "");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "first"), "one");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "values"), "[1, 2]");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "quoted"),
+                "comma,colon:value");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(root, "display_name"), "MixedCase");
+
+   YAMLnode *nested = hypredrv_YAMLnodeFindChildByKey(root, "nested");
+   ASSERT_NOT_NULL(nested);
+   ASSERT_STREQ(nested->val, "");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(nested, "second"), "two");
+
+   YAMLnode *list = hypredrv_YAMLnodeFindChildByKey(tree->root, "list");
+   ASSERT_NOT_NULL(list);
+   YAMLnode *dash = list->children;
+   ASSERT_NOT_NULL(dash);
+   ASSERT_STREQ(dash->key, "-");
+   ASSERT_STREQ(dash->val, "");
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(dash, "tag"), "a");
+
+   YAMLnode *options = hypredrv_YAMLnodeFindChildByKey(dash, "options");
+   ASSERT_NOT_NULL(options);
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(options, "mode"), "fast");
+
+   ASSERT_NOT_NULL(dash->next);
+   YAMLnode *wrapper = hypredrv_YAMLnodeFindChildByKey(dash->next, "wrapper");
+   ASSERT_NOT_NULL(wrapper);
+   ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(wrapper, "inner"), "yes");
+
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeBuild_malformed_flow_mappings(void)
+{
+   const char *bad_yaml[] = {
+      "root: { first }\n",
+      "root: { first: [1, 2 }\n",
+      "root: { first: value } trailing\n",
+      "root: { first: \"unterminated }\n",
+   };
+
+   for (size_t i = 0; i < sizeof(bad_yaml) / sizeof(bad_yaml[0]); i++)
+   {
+      YAMLtree *tree = NULL;
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_YAMLtreeBuild(2, bad_yaml[i], &tree);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, ERROR_INVALID_VAL);
+      ASSERT_NOT_NULL(tree);
+      hypredrv_YAMLtreeDestroy(&tree);
+   }
+   hypredrv_ErrorCodeResetAll();
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_YAMLtextRead: pre-sized output buffer (prefix + file append)
  *-----------------------------------------------------------------------------*/
@@ -1329,7 +1472,7 @@ static void
 test_YAMLtreeUpdate_pair_list_not_pairs_noop(void)
 {
    YAMLtree *tree = hypredrv_YAMLtreeCreate(2);
-   char     *argv[] = {(char *)"-q", (char *)"cfg.yml"};
+   char     *argv[] = {(char *)"-i", (char *)"cfg.yml"};
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_YAMLtreeUpdate(2, argv, tree);
@@ -1486,6 +1629,86 @@ test_YAMLtreeUpdate_replace_existing_leaf_scalar(void)
 
    ASSERT_STREQ(leaf->val, "new");
    ASSERT_NULL(leaf->children);
+
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeUpdate_duplicate_leaf_keys_all_updated(void)
+{
+   YAMLtree *tree  = hypredrv_YAMLtreeCreate(2);
+   YAMLnode *block = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   YAMLnode *leaf1 = hypredrv_YAMLnodeCreate("matrix_filename", "bad1", 1);
+   YAMLnode *leaf2 = hypredrv_YAMLnodeCreate("matrix_filename", "bad2", 1);
+
+   hypredrv_YAMLnodeAddChild(tree->root, block);
+   hypredrv_YAMLnodeAddChild(block, leaf1);
+   hypredrv_YAMLnodeAddChild(block, leaf2);
+
+   char *argv[] = {(char *)"--linear_system:matrix_filename", (char *)"fixed"};
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeUpdate(2, argv, tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   /* Parsers read the last occurrence of a duplicated key, so the override must
+    * update every occurrence to remain authoritative. */
+   ASSERT_STREQ(leaf1->val, "fixed");
+   ASSERT_STREQ(leaf2->val, "fixed");
+
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeUpdate_duplicate_intermediate_sections_all_updated(void)
+{
+   YAMLtree *tree = hypredrv_YAMLtreeCreate(2);
+   YAMLnode *pre  = hypredrv_YAMLnodeCreate("pre", "", 0);
+   YAMLnode *amg1 = hypredrv_YAMLnodeCreate("amg", "", 1);
+   YAMLnode *amg2 = hypredrv_YAMLnodeCreate("amg", "", 1);
+   YAMLnode *it1  = hypredrv_YAMLnodeCreate("max_iter", "1", 2);
+   YAMLnode *it2  = hypredrv_YAMLnodeCreate("max_iter", "2", 2);
+
+   hypredrv_YAMLnodeAddChild(tree->root, pre);
+   hypredrv_YAMLnodeAddChild(pre, amg1);
+   hypredrv_YAMLnodeAddChild(pre, amg2);
+   hypredrv_YAMLnodeAddChild(amg1, it1);
+   hypredrv_YAMLnodeAddChild(amg2, it2);
+
+   char *argv[] = {(char *)"--pre:amg:max_iter", (char *)"9"};
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeUpdate(2, argv, tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_STREQ(it1->val, "9");
+   ASSERT_STREQ(it2->val, "9");
+
+   hypredrv_YAMLtreeDestroy(&tree);
+}
+
+static void
+test_YAMLtreeUpdate_duplicate_leaf_in_sequence_item_all_updated(void)
+{
+   YAMLtree *tree  = hypredrv_YAMLtreeCreate(2);
+   YAMLnode *pre   = hypredrv_YAMLnodeCreate("pre", "", 0);
+   YAMLnode *dash1 = hypredrv_YAMLnodeCreate("-", "", 1);
+   YAMLnode *k1    = hypredrv_YAMLnodeCreate("type", "old1", 2);
+   YAMLnode *k2    = hypredrv_YAMLnodeCreate("type", "old2", 2);
+
+   hypredrv_YAMLnodeAddChild(tree->root, pre);
+   hypredrv_YAMLnodeAddChild(pre, dash1);
+   hypredrv_YAMLnodeAddChild(dash1, k1);
+   hypredrv_YAMLnodeAddChild(dash1, k2);
+
+   char *argv[] = {(char *)"--pre:type", (char *)"new"};
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeUpdate(2, argv, tree);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_STREQ(k1->val, "new");
+   ASSERT_STREQ(k2->val, "new");
 
    hypredrv_YAMLtreeDestroy(&tree);
 }
@@ -1780,6 +2003,43 @@ test_YAMLSetArgsGeneric_flat_rewrites_key_to_type(void)
    ASSERT_STREQ(node->key, "mypre");
 
    hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_YAMLnodeValidateSchema_records_avail_vals_and_keys(void)
+{
+   /* Invalid value against a schema map records the map for error reporting */
+   YAMLnode *bad = hypredrv_YAMLnodeCreate("solver", "bogus", 0);
+   hypredrv_YAMLnodeValidateSchema(bad, stub_schema_keys, stub_schema_vals);
+   ASSERT_EQ(bad->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_EQ(bad->avail_vals.size, 2);
+   ASSERT_EQ(bad->avail_keys.size, 0);
+   hypredrv_YAMLnodeDestroy(bad);
+
+   /* Keys accepting free-form values record no map */
+   YAMLnode *freeform = hypredrv_YAMLnodeCreate("k_empty", "anything", 0);
+   hypredrv_YAMLnodeValidateSchema(freeform, stub_schema_keys, stub_schema_vals);
+   ASSERT_EQ(freeform->valid, YAML_NODE_VALID);
+   ASSERT_EQ(freeform->avail_vals.size, 0);
+   hypredrv_YAMLnodeDestroy(freeform);
+
+   /* Unknown key records the valid-keys list */
+   YAMLnode *badkey = hypredrv_YAMLnodeCreate("unknown", "x", 0);
+   hypredrv_YAMLnodeValidateSchema(badkey, stub_schema_keys, stub_schema_vals);
+   ASSERT_EQ(badkey->valid, YAML_NODE_INVALID_KEY);
+   ASSERT_EQ(badkey->avail_keys.size, 3);
+   hypredrv_YAMLnodeDestroy(badkey);
+
+   /* Flat form: map recorded and original key restored for error reporting */
+   YAMLnode *flat  = hypredrv_YAMLnodeCreate("mypre", "bogus", 0);
+   int       calls = 0;
+   hypredrv_YAMLSetArgsGeneric(&calls, flat, stub_keys_flat_only_type, stub_vals_flat,
+                               stub_schema_set_field);
+   ASSERT_EQ(flat->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_EQ(calls, 0);
+   ASSERT_EQ(flat->avail_vals.size, 2);
+   ASSERT_STREQ(flat->key, "mypre");
+   hypredrv_YAMLnodeDestroy(flat);
 }
 
 /*-----------------------------------------------------------------------------
@@ -2305,6 +2565,8 @@ main(void)
    RUN_TEST(test_YAMLtreeBuild_sequence_items);
    RUN_TEST(test_YAMLtreeExpandIncludes_list_under_type);
    RUN_TEST(test_YAMLtreeExpandIncludes_list_under_preconditioner);
+   RUN_TEST(test_YAMLtreeExpandIncludes_rejects_mixed_content);
+   RUN_TEST(test_YAMLtreeExpandIncludes_accepts_nested_pure_sequence);
    RUN_TEST(test_YAMLtextRead_rejects_absolute_include_path);
    RUN_TEST(test_YAMLtextRead_rejects_include_traversal_outside_root);
    RUN_TEST(test_YAMLtextRead_rejects_include_cycle);
@@ -2322,6 +2584,8 @@ main(void)
    RUN_TEST(test_YAMLnodeCreate_nonname_lowercases_and_strips_quotes);
    RUN_TEST(test_YAMLtreeBuild_sequence_scalar_item);
    RUN_TEST(test_YAMLtreeBuild_inline_sequence_mapping_siblings);
+   RUN_TEST(test_YAMLtreeBuild_flow_mappings);
+   RUN_TEST(test_YAMLtreeBuild_malformed_flow_mappings);
    RUN_TEST(test_YAMLtextRead_appends_to_nonempty_buffer);
 
    RUN_TEST(test_YAMLtreeUpdate_null_tree_errors);
@@ -2334,6 +2598,9 @@ main(void)
    RUN_TEST(test_YAMLtreeUpdate_sequence_broadcast_intermediate_path);
    RUN_TEST(test_YAMLtreeUpdate_leaf_broadcast_on_sequence_parent);
    RUN_TEST(test_YAMLtreeUpdate_replace_existing_leaf_scalar);
+   RUN_TEST(test_YAMLtreeUpdate_duplicate_leaf_keys_all_updated);
+   RUN_TEST(test_YAMLtreeUpdate_duplicate_intermediate_sections_all_updated);
+   RUN_TEST(test_YAMLtreeUpdate_duplicate_leaf_in_sequence_item_all_updated);
 
    RUN_TEST(test_YAMLtextRead_invalid_base_indent);
    RUN_TEST(test_YAMLtextRead_inconsistent_indent);
@@ -2346,6 +2613,7 @@ main(void)
    RUN_TEST(test_YAMLnodeValidateSchema_type_fallback_when_key_not_in_list);
    RUN_TEST(test_YAMLSetArgsGeneric_nested_children);
    RUN_TEST(test_YAMLSetArgsGeneric_flat_rewrites_key_to_type);
+   RUN_TEST(test_YAMLnodeValidateSchema_records_avail_vals_and_keys);
 
    RUN_TEST(test_YAMLtextRead_bad_root_directory);
    RUN_TEST(test_YAMLtextRead_scalar_include_success);

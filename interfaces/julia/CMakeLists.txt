@@ -30,6 +30,9 @@ add_library(HYPREDRV_Julia SHARED
     src/HYPREDRV_julia.c
 )
 add_library(HYPREDRV::Julia ALIAS HYPREDRV_Julia)
+hypredrv_hide_static_archive_symbols(HYPREDRV_Julia APPLE_EXPORTS
+    "_HYPREDRV_Julia*")
+hypredrv_add_dynamic_export_test(HYPREDRV_Julia JULIA)
 
 target_link_libraries(HYPREDRV_Julia
     PUBLIC
@@ -142,6 +145,18 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
                 ${CMAKE_CURRENT_SOURCE_DIR}/test/runtests.jl
     )
     set_tests_properties(julia_laplacian_serial PROPERTIES
+        LABELS "julia;interface"
+        ENVIRONMENT "${_hypredrv_julia_test_env}"
+        FIXTURES_REQUIRED "julia_built;julia_project_instantiated"
+    )
+
+    add_test(NAME julia_laplacian1d_args
+        COMMAND ${Julia_EXECUTABLE} --startup-file=no
+                --project=${_hypredrv_julia_test_project}
+                ${CMAKE_CURRENT_SOURCE_DIR}/examples/laplacian1d.jl
+                64 -a --solver:pcg:relative_tol 1.0e-2
+    )
+    set_tests_properties(julia_laplacian1d_args PROPERTIES
         LABELS "julia;interface"
         ENVIRONMENT "${_hypredrv_julia_test_env}"
         FIXTURES_REQUIRED "julia_built;julia_project_instantiated"

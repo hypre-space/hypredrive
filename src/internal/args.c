@@ -35,6 +35,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    ADD_FIELD_OFFSET_ENTRY(_prefix, statistics, hypredrv_FieldTypeIntSet)             \
    ADD_FIELD_OFFSET_ENTRY(_prefix, print_config_params, hypredrv_FieldTypeIntSet)    \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_millisec, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, device_lazy_init, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spgemm, hypredrv_FieldTypeIntSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spmv, hypredrv_FieldTypeIntSet)        \
@@ -54,8 +55,8 @@ StrIntMapArray
 hypredrv_GeneralGetValidValues(const char *key)
 {
    if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
-       !strcmp(key, "use_millisec") || !strcmp(key, "use_vendor_spgemm") ||
-       !strcmp(key, "use_vendor_spmv"))
+       !strcmp(key, "use_millisec") || !strcmp(key, "device_lazy_init") ||
+       !strcmp(key, "use_vendor_spgemm") || !strcmp(key, "use_vendor_spmv"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
@@ -85,6 +86,7 @@ hypredrv_GeneralSetDefaultArgs(General_args *args)
    args->statistics             = 1;
    args->print_config_params    = 1;
    args->use_millisec           = 0;
+   args->device_lazy_init       = 0;
 #ifdef HYPRE_USING_GPU
    args->exec_policy       = 1;
    args->use_vendor_spgemm = 1;
@@ -336,6 +338,8 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       }
    }
 
+   StrIntMapArray solver_type_map = hypredrv_SolverGetValidTypeIntMap();
+
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
    {
@@ -357,14 +361,20 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       }
 
       iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
-         hypredrv_SolverGetValidTypeIntMap(), parent->children->key);
+         solver_type_map, parent->children->key);
 
       hypredrv_SolverSetArgsFromYAML(&iargs->solver, parent);
    }
+   else if (!hypredrv_StrIntMapArrayDomainEntryExists(solver_type_map, parent->val))
+   {
+      /* Unknown value-only solver type: defer reporting to tree validation */
+      parent->avail_vals = solver_type_map;
+      YAML_NODE_SET_INVALID_VAL(parent);
+   }
    else
    {
-      iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
-         hypredrv_SolverGetValidTypeIntMap(), parent->val);
+      iargs->solver_method =
+         (solver_t)hypredrv_StrIntMapArrayGetImage(solver_type_map, parent->val);
 
       /* Value-only form (e.g., `solver: gmres`): use per-method defaults. */
       hypredrv_SolverArgsSetDefaultsForMethod(iargs->solver_method, &iargs->solver);
@@ -718,6 +728,14 @@ PreconParseMethodResolve(const char *name, hypredrv_error_t error_code,
                                                  name))
    {
       hypredrv_ErrorCodeSet(error_code);
+      char *avail =
+         hypredrv_StrIntMapArrayDomainToString(hypredrv_PreconGetValidTypeIntMap());
+      if (avail)
+      {
+         /* Added first so it prints after the message below (LIFO order) */
+         hypredrv_ErrorMsgAddUnique("Available values for \"preconditioner\": %s", avail);
+         free(avail);
+      }
       hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", name);
       return 0;
    }
@@ -775,7 +793,7 @@ InputArgsParsePreconValueOnly(input_args *iargs, YAMLnode *parent,
    }
 
    ctx->methods[0] = method;
-   hypredrv_PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   hypredrv_PreconArgsSetDefaultsForName(method, parent->val, &ctx->variants[0]);
    ctx->parsed_variants = 1;
 
    InputArgsPreconVariant0Activate(iargs, ctx, 1);
@@ -1155,30 +1173,33 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
 
    MPI_Comm_rank(comm, &myid);
 
-   /* Rank 0: Check if file exists */
+   /* Rank 0: Check if file exists. Do not return early from this rank-0-only
+    * block: every rank must reach the collective hypredrv_DistributedErrorCodeActive
+    * below, otherwise rank 0 desynchronizes and the job deadlocks. */
    if (!myid)
    {
       if (filename == NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAdd("Configuration filename is NULL");
-         return;
       }
-      if (!hypredrv_BinaryPathPrefixIsSafe(filename))
+      else if (!hypredrv_BinaryPathPrefixIsSafe(filename))
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid configuration file path");
-         return;
-      }
-      FILE *fp = fopen(filename, "r");
-      if (!fp)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", filename);
       }
       else
       {
-         fclose(fp);
+         FILE *fp = fopen(filename, "r");
+         if (!fp)
+         {
+            hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+            hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", filename);
+         }
+         else
+         {
+            fclose(fp);
+         }
       }
    }
 
@@ -1204,16 +1225,34 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
       return;
    }
 
-   /* Broadcast the text size and base indentation */
+   /* Broadcast the text size and base indentation. Use a fixed-width type for the
+    * size so the broadcast is correct on LLP64 platforms where sizeof(size_t) !=
+    * sizeof(unsigned long). */
+   uint64_t text_size_u64 = (uint64_t)text_size;
    MPI_Bcast(&base_indent, 1, MPI_INT, 0, comm);
-   MPI_Bcast(&text_size, 1, MPI_UNSIGNED_LONG, 0, comm);
+   MPI_Bcast(&text_size_u64, 1, MPI_UINT64_T, 0, comm);
+   text_size = (size_t)text_size_u64;
 
    /* Broadcast the text */
    MPI_Comm_rank(comm, &myid);
    if (myid)
    {
-      text = (char *)malloc(text_size + 1);
-   } /* +1: for null terminator */
+      text = (char *)malloc(text_size + 1); /* +1: for null terminator */
+   }
+   /* If a non-root rank failed to allocate, all ranks must bail together to avoid
+    * a NULL receive buffer and a desynchronized collective. */
+   int bcast_ok = (myid && !text) ? 0 : 1;
+   MPI_Allreduce(MPI_IN_PLACE, &bcast_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!bcast_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate configuration text buffer (%zu bytes)",
+                           text_size + 1);
+      free(text);
+      free(dirname);
+      free(basename);
+      return;
+   }
    MPI_Bcast(text, (int)text_size, MPI_CHAR, 0, comm);
 
    /* Make sure null terminator is in the right place */
@@ -1246,22 +1285,31 @@ FindConfigIndex(int argc, char **argv)
    return -1;
 }
 
-static int
-ConfigPathIsUnderRoot(const char *path, const char *root)
+/* Distinguish inline YAML text from a program or file path in argv[0]: a YAML
+ * mapping document contains a newline or a "key:" separator (colon followed by
+ * whitespace or end of string), which paths do not. When argv[0] is inline
+ * YAML, it is the configuration source and the remaining argv entries are
+ * override tokens, so they must not be rediscovered as configuration files
+ * (e.g. an override value that happens to end in ".yml"). */
+static bool
+ArgLooksLikeYAMLText(const char *arg)
 {
-   size_t root_len;
-
-   if (!path || !root)
+   if (!arg)
    {
-      return 0;
+      return false;
    }
-   root_len = strlen(root);
-   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   if (strchr(arg, '\n') != NULL)
    {
-      return 0;
+      return true;
    }
-
-   return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
+   for (const char *colon = strchr(arg, ':'); colon; colon = strchr(colon + 1, ':'))
+   {
+      if (colon[1] == '\0' || colon[1] == ' ' || colon[1] == '\t')
+      {
+         return true;
+      }
+   }
+   return false;
 }
 
 static bool
@@ -1302,7 +1350,7 @@ LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_si
       hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", candidate);
       goto cleanup;
    }
-   if (!ConfigPathIsUnderRoot(resolved, root_dir) ||
+   if (!hypredrv_PathIsUnderRoot(resolved, root_dir) ||
        !hypredrv_BinaryPathPrefixIsSafe(resolved) || strstr(resolved, "..") != NULL)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -1353,7 +1401,7 @@ LoadConfigText(MPI_Comm comm, int argc, char **argv, int config_idx, int *base_i
       return true;
    }
 
-   if (config_idx >= 0)
+   if (config_idx >= 0 && !ArgLooksLikeYAMLText(argv[0]))
    {
       char cfg_path[MAX_FILENAME_LENGTH];
 
@@ -1396,7 +1444,7 @@ ApplyCLIOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
       /* Legacy: overrides are in argv[1..] */
       hypredrv_YAMLtreeUpdate(argc - 1, argv + 1, tree);
    }
-   else if (config_idx >= 0)
+   else if (config_idx >= 0 && !ArgLooksLikeYAMLText(argv[0]))
    {
       /* Driver: allow hypredrv_YAMLtreeUpdate to parse -a/--args inside full argv */
       hypredrv_YAMLtreeUpdate(argc, argv, tree);

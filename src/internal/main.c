@@ -5,44 +5,21 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
-
-static bool
-LooksLikeYAMLFilename(const char *str)
-{
-   if (!str || *str == '\0')
-   {
-      return false;
-   }
-
-   /* Filenames should not contain spaces */
-   if (strchr(str, ' ') != NULL)
-   {
-      return false;
-   }
-
-   const char *dot = strrchr(str, '.');
-   if (!dot || dot == str)
-   {
-      return false;
-   }
-
-   const char *ext = dot + 1;
-   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
-}
+#include "internal/help.h"
+#include "internal/utils.h"
 
 static void
 PrintUsage(const char *argv0)
 {
-   fprintf(stdout, "Usage: %s [options] <filename>\n", argv0);
+   fprintf(stdout, "Usage: %s [options] <filename> [filename ...]\n", argv0);
    fprintf(stdout, "  filename: config file in YAML format\n");
    fprintf(stdout, "\nOptions:\n");
    fprintf(stdout, "  -h, --help         Show this help message\n");
-   fprintf(stdout, "  -q, --quiet        Skip system information printout\n");
+   fprintf(stdout, "  -i, --info         Show system information\n");
    fprintf(stdout, "  -a, --args         Override YAML parameters from the CLI\n");
    fprintf(stdout, "  -p, --prec-preset  Override preconditioner with a preset\n");
    fprintf(stdout, "\nOverride syntax (after -a/--args):\n");
@@ -52,6 +29,7 @@ PrintUsage(const char *argv0)
    fprintf(stdout, "  %s input.yml -a solver:pcg:print_level 1\n", argv0);
    fprintf(stdout, "  %s input.yml -a --preconditioner:amg:print_level 2\n", argv0);
    fprintf(stdout, "  %s input.yml -p poisson\n", argv0);
+   fprintf(stdout, "  %s input1.yml input2.yml -q\n", argv0);
    fflush(stdout);
 }
 
@@ -109,24 +87,11 @@ PrintBanner(void)
 // clang-format on
 
 static int
-HelpRequested(int argc, char **argv)
+InfoModeRequested(int argc, char **argv)
 {
    for (int i = 1; i < argc; i++)
    {
-      if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0)
-      {
-         return 1;
-      }
-   }
-   return 0;
-}
-
-static int
-QuietModeRequested(int argc, char **argv)
-{
-   for (int i = 1; i < argc; i++)
-   {
-      if (strcmp(argv[i], "-q") == 0 || strcmp(argv[i], "--quiet") == 0)
+      if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--info") == 0)
       {
          return 1;
       }
@@ -147,25 +112,55 @@ FindPreconPreset(int argc, char **argv)
    return NULL;
 }
 
-static char *
-FindConfigFile(int argc, char **argv)
+static int
+IsConfigFileArgument(const char *arg)
 {
-   /* Find the first arg that looks like a YAML filename.
-    * This avoids mis-detecting override values as the config file. */
+   return arg && hypredrv_IsYAMLFilename(arg);
+}
+
+static int
+CountConfigFiles(int argc, char **argv)
+{
+   int count = 0;
    for (int i = 1; i < argc; i++)
    {
-      if (LooksLikeYAMLFilename(argv[i]))
+      if (IsConfigFileArgument(argv[i]))
       {
-         return argv[i];
+         count++;
       }
    }
-   return NULL;
+   return count;
+}
+
+static int
+BuildConfigArgv(int argc, char **argv, int config_index, char **config_argv)
+{
+   int config_argc            = 0;
+   config_argv[config_argc++] = argv[0];
+
+   for (int i = 1; i < argc; i++)
+   {
+      if (IsConfigFileArgument(argv[i]))
+      {
+         if (i == config_index)
+         {
+            config_argv[config_argc++] = argv[i];
+         }
+      }
+      else
+      {
+         config_argv[config_argc++] = argv[i];
+      }
+   }
+
+   config_argv[config_argc] = NULL;
+   return config_argc;
 }
 
 static int
 RequireConfigArgument(int argc, char **argv, int myid)
 {
-   if (FindConfigFile(argc, argv) == NULL)
+   if (CountConfigFiles(argc, argv) == 0)
    {
       if (!myid)
       {
@@ -177,86 +172,9 @@ RequireConfigArgument(int argc, char **argv, int myid)
    return 1;
 }
 
-int
-main(int argc, char **argv)
+static void
+RunSolveLoops(HYPREDRV_t obj)
 {
-   MPI_Comm   comm = MPI_COMM_WORLD;
-   int        myid = 0;
-   HYPREDRV_t obj  = NULL;
-
-   /*-----------------------------------------------------------
-    * Initialize driver
-    *-----------------------------------------------------------*/
-
-   MPI_Init(&argc, &argv);
-   MPI_Comm_rank(comm, &myid);
-   if (!myid)
-   {
-      PrintBanner();
-   }
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
-   if (HelpRequested(argc, argv))
-   {
-      if (!myid)
-      {
-         PrintUsage(argv[0]);
-      }
-      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
-      MPI_Finalize();
-      return 0;
-   }
-   if (!RequireConfigArgument(argc, argv, myid))
-   {
-      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
-      MPI_Finalize();
-      return 1;
-   }
-
-   /*-----------------------------------------------------------
-    * Create driver object and print libraries/driver info
-    *-----------------------------------------------------------*/
-
-   int quiet_mode = QuietModeRequested(argc, argv);
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
-   HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
-   if (!quiet_mode)
-   {
-      HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
-   }
-
-   /*-----------------------------------------------------------
-    * Parse input parameters
-    *-----------------------------------------------------------*/
-
-   if (!RequireConfigArgument(argc, argv, myid))
-   {
-      HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
-      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
-      MPI_Finalize();
-      return 1;
-   }
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
-
-   /* If --precon-preset was given, override the preconditioner */
-   const char *preset_name = FindPreconPreset(argc, argv);
-   if (preset_name)
-   {
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(obj, preset_name));
-   }
-
-   /*-----------------------------------------------------------
-    * Apply YAML configuration to HYPRE's global runtime settings
-    *-----------------------------------------------------------*/
-
-   int warmup = 0;
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetWarmup(obj, &warmup));
-
-   /*-----------------------------------------------------------
-    * Build and solve linear system(s)
-    *-----------------------------------------------------------*/
-
    int num_linear_systems  = 0;
    int num_precon_variants = 0;
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumLinearSystems(obj, &num_linear_systems));
@@ -282,8 +200,9 @@ main(int argc, char **argv)
          HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsGetNumRepetitions(obj, &num_reps));
          for (int i = 0; i < num_reps; i++)
          {
-            /* (Optional) Annotate the entire solve iteration */
-            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(obj, "Run-%d", i));
+            /* (Optional) Annotate the entire solve iteration. The id is appended by
+             * the annotation API, so the name is a plain literal (not a format). */
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(obj, "Run", i));
 
             /* Reset initial guess */
             HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemResetInitialGuess(obj));
@@ -303,22 +222,115 @@ main(int argc, char **argv)
             HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(obj));
 
             /* (Optional) Annotate the entire solve iteration */
-            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(obj, "Run-%d", i));
+            HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(obj, "Run", i));
          }
       }
    }
+}
+
+static void
+RunOneConfig(MPI_Comm comm, int myid, int argc, char **argv, int print_lib_info,
+             int print_system_info)
+{
+   HYPREDRV_t obj = NULL;
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &obj));
+   if (print_lib_info)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
+   }
+   if (print_system_info)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
+   }
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(argc, argv, obj));
+
+   const char *preset_name = FindPreconPreset(argc, argv);
+   if (preset_name)
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(obj, preset_name));
+   }
+
+   RunSolveLoops(obj);
 
    /*-----------------------------------------------------------
-    * Finalize driver
+    * Finalize this solve case
     *-----------------------------------------------------------*/
 
    if (!myid)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(obj));
    }
-   HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&obj));
+}
+
+int
+main(int argc, char **argv)
+{
+   MPI_Comm comm = MPI_COMM_WORLD;
+   int      myid = 0;
+   char     help_topic[512];
+
+   /*-----------------------------------------------------------
+    * Initialize driver
+    *-----------------------------------------------------------*/
+
+   MPI_Init(&argc, &argv);
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      PrintBanner();
+   }
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+   if (hypredrv_HelpRequested(argc, argv, help_topic, sizeof(help_topic)))
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
+
+      int help_status = 0;
+      if (!myid)
+      {
+         help_status = hypredrv_HelpPrint(stdout, argv[0], help_topic);
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Finalize();
+      return help_status;
+   }
+   if (!RequireConfigArgument(argc, argv, myid))
+   {
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Finalize();
+      return 1;
+   }
+
+   const int config_count = CountConfigFiles(argc, argv);
+   const int info_mode    = InfoModeRequested(argc, argv);
+   int       case_number  = 0;
+
+   for (int i = 1; i < argc; i++)
+   {
+      if (!IsConfigFileArgument(argv[i]))
+      {
+         continue;
+      }
+
+      char *config_argv[argc + 1];
+      int   config_argc = BuildConfigArgv(argc, argv, i, config_argv);
+      case_number++;
+
+      if (config_count > 1 && !myid)
+      {
+         printf("\n=== hypredrive case %d/%d: %s ===\n", case_number, config_count,
+                argv[i]);
+      }
+
+      RunOneConfig(comm, myid, config_argc, config_argv, case_number == 1,
+                   info_mode && case_number == 1);
+   }
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
    MPI_Finalize();
 

@@ -9,8 +9,8 @@
 #define SCHWARZ_HEADER
 
 #include "HYPRE_utilities.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * Schwarz preconditioner arguments struct
@@ -39,7 +39,7 @@ typedef struct Schwarz_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_SchwarzSetDefaultArgs(Schwarz_args *);
-void hypredrv_SchwarzSetArgs(void *, const YAMLnode *);
+void hypredrv_SchwarzSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_SchwarzCreate(const Schwarz_args *, HYPRE_Solver *);
 
 #endif /* SCHWARZ_HEADER */

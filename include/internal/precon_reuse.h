@@ -11,7 +11,8 @@
 #include "HYPREDRV.h"
 #include "internal/containers.h"
 #include "internal/stats.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 typedef enum PreconReusePolicy_enum
 {
@@ -187,7 +188,7 @@ typedef struct PreconReuseTimesteps_struct
 
 void hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *);
 void hypredrv_PreconReuseDestroyArgs(PreconReuse_args *);
-void hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, YAMLnode *);
+void hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, struct YAMLnode_struct *);
 void hypredrv_PreconReuseStateInit(PreconReuseState *);
 void hypredrv_PreconReuseStateDestroy(PreconReuseState *);
 void hypredrv_PreconReuseStateReset(PreconReuseState *);
@@ -198,12 +199,11 @@ void hypredrv_PreconReuseBuildObservation(HYPREDRV_t, const IntArray *,
 void hypredrv_PreconReuseMarkRebuild(HYPREDRV_t, PreconReuseState *);
 void hypredrv_PreconReuseLogDecision(HYPREDRV_t, int, const PreconReuseDecision *,
                                      const char *);
-int  hypredrv_PreconReuseResolveTimestepIndex(const IntArray *,
-                                              const struct Stats_struct *, int);
+int  hypredrv_PreconReuseResolveTimestepIndex(const IntArray *, const Stats *, int);
 int  hypredrv_PreconReuseShouldRebuildStatic(const PreconReuse_args *, const IntArray *,
-                                             const struct Stats_struct *, int);
+                                             const Stats *, int);
 int  hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *, const IntArray *,
-                                       const struct Stats_struct *, PreconReuseState *,
-                                       int, PreconReuseDecision *);
+                                       const Stats *, PreconReuseState *, int,
+                                       PreconReuseDecision *);
 
 #endif /* PRECON_REUSE_HEADER */

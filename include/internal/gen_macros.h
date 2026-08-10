@@ -8,8 +8,7 @@
 #ifndef GEN_MACROS_HEADER
 #define GEN_MACROS_HEADER
 
-#include "internal/containers.h"
-#include "internal/yaml.h"
+#include "internal/field.h"
 
 /**
  * @brief Defines a function to set a field by name.
@@ -197,15 +196,15 @@
  * etc., with AMG_args and AMG_field_offset_map for types.
  */
 #define GENERATE_PREFIXED_COMPONENTS(prefix)                                        \
-   DEFINE_FIELD_OFFSET_MAP(prefix);                                                 \
+   DEFINE_FIELD_OFFSET_MAP(prefix)                                                  \
    DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS);   \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
-                              prefix##_field_offset_map);                           \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args);                 \
-   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix);                       \
-   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
+                              prefix##_field_offset_map)                            \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                 \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                  \
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix)                        \
+   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
 
 /**
  * @brief Adds an entry in the field offset map from a 4-column field list.
@@ -231,7 +230,7 @@
  */
 #define DEFINE_FIELD_OFFSET_MAP4(_prefix)                       \
    static const FieldOffsetMap _prefix##_field_offset_map[] = { \
-      _prefix##_FIELDS(ADD_FIELD_OFFSET_ENTRY4, _prefix)}
+      _prefix##_FIELDS(ADD_FIELD_OFFSET_ENTRY4, _prefix)};
 
 /**
  * @brief Defines a SetDefaultArgs function generated from a 4-column field list,
@@ -253,28 +252,28 @@
  * (conditional on build flags, nested sub-struct initialization, or unions).
  */
 #define GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(prefix)                          \
-   DEFINE_FIELD_OFFSET_MAP4(prefix);                                                \
+   DEFINE_FIELD_OFFSET_MAP4(prefix)                                                 \
    DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS);   \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
-                              prefix##_field_offset_map);                           \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
+                              prefix##_field_offset_map)                            \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                 \
    DEFINE_SET_DEFAULT_ARGS_FROM_FIELDS(prefix)                                      \
-   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix);                       \
-   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
+   DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix)                        \
+   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
 
 /**
  * @brief Like GENERATE_PREFIXED_COMPONENTS, but uses a custom prefixSetArgsFromYAML.
  */
 #define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                   \
-   DEFINE_FIELD_OFFSET_MAP(prefix);                                                 \
+   DEFINE_FIELD_OFFSET_MAP(prefix)                                                  \
    DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS);   \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
-                              prefix##_field_offset_map);                           \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix);                                \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args);                 \
-   DECLARE_SET_ARGS_FROM_YAML_FUNC(hypredrv_##prefix);                              \
-   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix);
+                              prefix##_field_offset_map)                            \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                 \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                  \
+   DECLARE_SET_ARGS_FROM_YAML_FUNC(hypredrv_##prefix)                               \
+   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
 
 #endif /* GEN_MACROS_HEADER */

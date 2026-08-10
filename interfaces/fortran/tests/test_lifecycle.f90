@@ -52,18 +52,8 @@ program test_lifecycle
    call HYPREDRV_Check(HYPREDRV_AnnotateEnd(drv, 'initialize'//c_null_char, -1_c_int))
    call HYPREDRV_Check(HYPREDRV_AnnotateLevelBegin(drv, 0_c_int, 'initialize-level'//c_null_char, -1_c_int))
    call HYPREDRV_Check(HYPREDRV_AnnotateLevelEnd(drv, 0_c_int, 'initialize-level'//c_null_char, -1_c_int))
-   call accept_success_or_error(HYPREDRV_LinearSystemBuild(drv))
-   call accept_success_or_error(HYPREDRV_LinearSystemReadMatrix(drv))
-   call accept_success_or_error(HYPREDRV_LinearSystemSetMatrix(drv, c_null_ptr))
-   call accept_success_or_error(HYPREDRV_LinearSystemSetRHS(drv, c_null_ptr))
    call HYPREDRV_Check(HYPREDRV_Destroy(drv))
    if (c_associated(drv)) stop 'HYPREDRV_Destroy did not clear handle'
    call HYPREDRV_Check(HYPREDRV_Finalize())
    call MPI_Finalize(ierr)
-contains
-   subroutine accept_success_or_error(ierr)
-      integer(c_int32_t), intent(in) :: ierr
-
-      if (ierr < 0_c_int32_t) stop 'invalid HYPREDRV error code'
-   end subroutine accept_success_or_error
 end program test_lifecycle

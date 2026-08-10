@@ -1,0 +1,22 @@
+# GMRES preconditioned by classical BoomerAMG (default options).
+#
+# This configuration is included as a reference point: classical interpolation
+# and R = P^T are designed for symmetric, diffusion-dominated operators, so the
+# iteration counts degrade as the cell Peclet number grows. Compare against
+# gmres-air.yml and gmres-ilu.yml.
+
+general:
+  name: convdif-amg
+
+solver:
+  gmres:
+    max_iter: 100
+    krylov_dim: 30
+    relative_tol: 1.0e-8
+    print_level: 0
+
+preconditioner:
+  amg:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0

@@ -276,15 +276,7 @@ hypredrv_PresetFindTyped(const char *name, hypredrv_PresetKind kind)
       return NULL;
    }
 
-   /* Normalize: lowercase and treat '-' as '_' so we can use identifier-style keys. */
-   for (char *p = lower; *p; ++p)
-   {
-      *p = (char)tolower((unsigned char)*p);
-      if (*p == '-')
-      {
-         *p = '_';
-      }
-   }
+   normalize_preset_name(lower);
 
    const hypredrv_Preset *match = NULL;
    for (size_t i = 0; i < (sizeof(g_presets) / sizeof(g_presets[0])); i++)

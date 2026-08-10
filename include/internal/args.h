@@ -9,7 +9,6 @@
 #define ARGS_HEADER
 
 #include <HYPRE_utilities.h>
-#include <stdint.h>
 #include "internal/linsys.h"
 #include "internal/precon.h"
 #include "internal/scaling.h"
@@ -28,6 +27,7 @@ typedef struct General_args_struct
    int    statistics;
    int    print_config_params;
    int    use_millisec;
+   int    device_lazy_init;
    int    exec_policy;
    int    use_vendor_spgemm;
    int    use_vendor_spmv;

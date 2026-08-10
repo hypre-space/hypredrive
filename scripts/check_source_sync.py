@@ -29,7 +29,7 @@ def _extract_sources_from_makefile(text: str) -> set[str]:
     block_parts: list[str] = []
     for line in lines:
         if not collecting:
-            if line.startswith("libHYPREDRV_la_SOURCES"):
+            if line.startswith("libHYPREDRV_internal_la_SOURCES"):
                 collecting = True
                 block_parts.append(line.split("=", 1)[1])
         else:
@@ -38,7 +38,9 @@ def _extract_sources_from_makefile(text: str) -> set[str]:
                 break
 
     if not block_parts:
-        raise RuntimeError("Could not find libHYPREDRV_la_SOURCES in Makefile.am")
+        raise RuntimeError(
+            "Could not find libHYPREDRV_internal_la_SOURCES in Makefile.am"
+        )
 
     block = "\n".join(block_parts).replace("\\\n", " ")
     return set(re.findall(r"\bsrc/[A-Za-z0-9_./-]+\.c\b", block))

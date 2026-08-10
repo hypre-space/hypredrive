@@ -589,6 +589,25 @@ create_test_ijvector_1x1(double value)
    return vec;
 }
 
+static double
+get_test_ijmatrix_1x1(HYPRE_IJMatrix mat)
+{
+   HYPRE_Int     ncols = 1;
+   HYPRE_BigInt  index = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 1, &ncols, &index, &index, &value), 0);
+   return (double)value;
+}
+
+static double
+get_test_ijvector_1x1(HYPRE_IJVector vec)
+{
+   HYPRE_BigInt  index = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(vec, 1, &index, &value), 0);
+   return (double)value;
+}
+
 static HYPRE_IJMatrix
 create_test_ijmatrix_2x2(double a00, double a01, double a10, double a11)
 {
@@ -1189,9 +1208,36 @@ test_HYPREDRV_log_level_input_args_internal_logs_use_object_name(void)
    ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj-1] args parse begin"));
    ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L3][obj-1] yaml tree build complete"));
    ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L2][obj-1] args parse end:"));
+   ASSERT_NOT_NULL(strstr(output, "[HYPREDRV][L1][obj-1] HYPRE execution policy: Host"));
+   ASSERT_EQ(count_substr(output, "HYPRE execution policy:"), 1);
    ASSERT_NULL(strstr(output, "[HYPREDRV][L3][unnamed] args parse begin"));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+run_preset_only_configuration_for_capture(void *context)
+{
+   (void)context;
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "pcg"), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(obj, "poisson"), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_preset_only_configuration_prints_execution_policy_once(void)
+{
+   reset_state();
+
+   char output[8192];
+   capture_stdout_output(run_preset_only_configuration_for_capture, NULL, output,
+                         sizeof(output));
+
+   ASSERT_EQ(count_substr(output, "HYPRE execution policy:"), 1);
 }
 
 static void
@@ -1252,6 +1298,7 @@ test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name(void)
    ASSERT_NOT_NULL(strstr(output, "initial guess reset end"));
    ASSERT_NOT_NULL(strstr(output, "solver apply begin"));
    ASSERT_NOT_NULL(strstr(output, "solver apply end"));
+   ASSERT_EQ(count_substr(output, "HYPRE execution policy:"), 1);
    ASSERT_NULL(strstr(output, "unnamed][ls="));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
@@ -1919,7 +1966,7 @@ test_HYPREDRV_InputArgsParse_exec_policy(void)
 }
 
 static void
-test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec(void)
+test_HYPREDRV_InputArgsParse_gpu_standard_amg_rejects_unsupported_variant(void)
 {
 #if !defined(HYPRE_USING_GPU) || !HYPRE_CHECK_MIN_VERSION(22100, 0)
    return;
@@ -1963,9 +2010,11 @@ test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec(void)
    ASSERT_EQ(obj->iargs->general.exec_policy, 1);
    ASSERT_EQ(obj->iargs->ls.exec_policy, 1);
 
-   ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 1), ERROR_NONE);
-   ASSERT_EQ(obj->iargs->general.exec_policy, 0);
-   ASSERT_EQ(obj->iargs->ls.exec_policy, 0);
+   ASSERT_TRUE(HYPREDRV_InputArgsSetPreconVariant(obj, 1) & ERROR_INVALID_PRECON);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   ASSERT_EQ(obj->iargs->general.exec_policy, 1);
+   ASSERT_EQ(obj->iargs->ls.exec_policy, 1);
 
    ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 0), ERROR_NONE);
    ASSERT_EQ(obj->iargs->general.exec_policy, 1);
@@ -2726,9 +2775,9 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
 {
    reset_state();
 
-   /* MGR with AMG f-relaxation + filter_functions crashes in hypre < 2.21.0 */
-#if HYPREDRV_HYPRE_RELEASE_NUMBER < 22100
-   printf("SKIP: MGR AMG f-relaxation requires hypre >= 2.21.0\n");
+   /* This advanced MGR configuration crashes inside hypre before 2.30.0. */
+#if HYPREDRV_HYPRE_RELEASE_NUMBER < 23000
+   printf("SKIP: advanced MGR AMG f-relaxation requires hypre >= 2.30.0\n");
    return;
 #endif
 
@@ -3244,7 +3293,8 @@ test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary(void)
    struct DestroyObjectContext destroy_context = {&obj};
    capture_stdout_output(destroy_object_for_capture, &destroy_context, output, sizeof(output));
 
-   ASSERT_TRUE(strstr(output, "STATISTICS SUMMARY for named-handle:") != NULL);
+   ASSERT_NOT_NULL(strstr(output, "STATISTICS SUMMARY for named-handle:"));
+   ASSERT_NULL(strstr(output, "HYPRE execution policy:"));
    ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
    ASSERT_NULL(obj);
 
@@ -3284,7 +3334,8 @@ test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary(void)
    char output[8192];
    capture_stdout_output(finalize_for_capture, NULL, output, sizeof(output));
 
-   ASSERT_TRUE(strstr(output, "STATISTICS SUMMARY for finalize-handle:") != NULL);
+   ASSERT_NOT_NULL(strstr(output, "STATISTICS SUMMARY for finalize-handle:"));
+   ASSERT_NULL(strstr(output, "HYPRE execution policy:"));
    ASSERT_TRUE(strstr(output, "|          0 |") != NULL);
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
@@ -3329,11 +3380,13 @@ test_HYPREDRV_statistics_filename_routes_stats_to_file(void)
    capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
                          sizeof(stdout_output));
    ASSERT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
+   ASSERT_NULL(strstr(stdout_output, "HYPRE execution policy:"));
 
    char file_output[8192];
    read_text_file(stats_file, file_output, sizeof(file_output));
    ASSERT_NOT_NULL(strstr(file_output, "STATISTICS SUMMARY"));
    ASSERT_NOT_NULL(strstr(file_output, "|          0 |"));
+   ASSERT_NULL(strstr(file_output, "HYPRE execution policy:"));
 
    ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -3387,6 +3440,7 @@ test_HYPREDRV_statistics_filename_fallbacks_to_stdout_on_open_failure(void)
    capture_stdout_output(stats_print_for_capture, &stats_context, stdout_output,
                          sizeof(stdout_output));
    ASSERT_NOT_NULL(strstr(stdout_output, "STATISTICS SUMMARY"));
+   ASSERT_NULL(strstr(stdout_output, "HYPRE execution policy:"));
 
    ((struct hypredrv_struct *)obj)->iargs->general.statistics = 0;
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -4830,6 +4884,107 @@ test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref(void)
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
+
+static void
+test_HYPREDRV_scaled_setup_failure_restores_borrowed_system(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  scaling:\n"
+      "    enabled: 1\n"
+      "    type: rhs_l2\n"
+      "  pcg:\n"
+      "    max_iter: 20\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state        = (struct hypredrv_struct *)obj;
+   HYPRE_Solver           saved_solver = state->solver;
+   state->solver                       = NULL;
+   uint32_t code                       = HYPREDRV_LinearSolverSetup(obj);
+   state->solver                       = saved_solver;
+
+   ASSERT_TRUE(code & ERROR_INVALID_SOLVER);
+   ASSERT_NOT_NULL(state->scaling_ctx);
+   ASSERT_FALSE(state->scaling_ctx->is_applied);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
+
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_HYPREDRV_scaled_solve_failure_restores_borrowed_system(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] =
+      "general:\n"
+      "  statistics: off\n"
+      "  exec_policy: host\n"
+      "linear_system:\n"
+      "  init_guess_mode: zeros\n"
+      "solver:\n"
+      "  scaling:\n"
+      "    enabled: 1\n"
+      "    type: rhs_l2\n"
+      "  pcg:\n"
+      "    max_iter: 20\n"
+      "preconditioner:\n"
+      "  amg:\n"
+      "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_TRUE(state->scaling_ctx->is_applied);
+   solver_t saved_method             = state->iargs->solver_method;
+   state->iargs->solver_method       = (solver_t)999;
+   uint32_t code                     = HYPREDRV_LinearSolverApply(obj);
+   state->iargs->solver_method       = saved_method;
+
+   ASSERT_TRUE(code & ERROR_INVALID_SOLVER);
+   ASSERT_FALSE(state->scaling_ctx->is_applied);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
+
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
 #endif /* HYPRE_CHECK_MIN_VERSION(30000, 0) */
 
 static void
@@ -5107,6 +5262,15 @@ test_HYPREDRV_preconditioner_variants(void)
    /* Test setting and using each variant */
    for (int v = 0; v < num_variants; v++)
    {
+#ifdef HYPRE_USING_GPU
+      if (v == 1)
+      {
+         ASSERT_TRUE(HYPREDRV_InputArgsSetPreconVariant(obj, v) & ERROR_INVALID_PRECON);
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_ErrorMsgClear();
+         continue;
+      }
+#endif
       ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, v), ERROR_NONE);
 
       /* Reset initial guess */
@@ -5394,6 +5558,7 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_stream_stdout_stays_off_stderr);
    RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
    RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
+   RUN_TEST(test_HYPREDRV_preset_only_configuration_prints_execution_policy_once);
    RUN_TEST(test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name);
    RUN_TEST(
       test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);
@@ -5418,7 +5583,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_with_xref);
    RUN_TEST(test_HYPREDRV_stats_level_apis);
    RUN_TEST(test_HYPREDRV_InputArgsParse_exec_policy);
-   RUN_TEST(test_HYPREDRV_InputArgsParse_gpu_standard_amg_forces_host_exec);
+   RUN_TEST(test_HYPREDRV_InputArgsParse_gpu_standard_amg_rejects_unsupported_variant);
    RUN_TEST(test_HYPREDRV_LinearSystemComputeEigenspectrum_warns_once_when_disabled);
    RUN_TEST(test_HYPREDRV_state_vectors_and_eigspec_error_paths);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic_variations);
@@ -5457,6 +5622,8 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverDestroy_without_precon);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref);
+   RUN_TEST(test_HYPREDRV_scaled_setup_failure_restores_borrowed_system);
+   RUN_TEST(test_HYPREDRV_scaled_solve_failure_restores_borrowed_system);
 #endif
 }
 

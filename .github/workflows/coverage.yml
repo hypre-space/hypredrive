@@ -59,7 +59,9 @@ jobs:
           extra_packages: 'python3-pip'
 
       - name: Install gcovr
-        run: pip3 install gcovr
+        # Keep coverage parsing and exclusion semantics reproducible. New gcovr
+        # releases can change branch totals even when the compiled code is identical.
+        run: pip3 install 'gcovr==8.6'
 
       - name: Cache datasets
         uses: actions/cache@v5

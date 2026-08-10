@@ -96,6 +96,19 @@ hypredrv_CheckInitAndObj(HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();      \
    }
 
+// Macro to check that input arguments have been parsed (iargs is non-NULL).
+// iargs is NULL before HYPREDRV_InputArgsParse and is reset to NULL if parsing
+// fails, so every API that dereferences it must guard first.
+#define HYPREDRV_CHECK_ARGS()                                      \
+   if (!hypredrv->iargs)                                           \
+   {                                                               \
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                    \
+      hypredrv_ErrorMsgAdd("%s: input arguments not parsed (call " \
+                           "HYPREDRV_InputArgsParse first)",       \
+                           __func__);                              \
+      return hypredrv_ErrorCodeGet();                              \
+   }
+
 /*-----------------------------------------------------------------------------
  * Destroy the currently active solver object, if any
  *-----------------------------------------------------------------------------*/
@@ -120,6 +133,27 @@ SetSolverRefSolution(HYPREDRV_t hypredrv)
    {
       hypredrv_GMRESSetRefSolution(hypredrv->solver, hypredrv->vec_xref);
    }
+}
+
+/* Restore every caller-owned object after a scaled operation, even when an
+ * earlier error is still active. ScalingUndoOnSystem preserves that error
+ * around its inverse transforms; the final synchronization also propagates a
+ * rank-local cleanup failure without creating a second divergent return. */
+static bool
+RestoreScaledSystemState(HYPREDRV_t hypredrv, int reference_is_scaled)
+{
+   if (hypredrv->scaling_ctx && hypredrv->scaling_ctx->is_applied)
+   {
+      hypredrv_ScalingUndoOnSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
+                                   hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
+   }
+   if (reference_is_scaled && hypredrv->vec_xref)
+   {
+      hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                                   SCALING_VECTOR_UNKNOWN);
+   }
+
+   return hypredrv_DistributedErrorStateSync(hypredrv->comm);
 }
 
 /*-----------------------------------------------------------------------------
@@ -225,6 +259,52 @@ PreconReuseShouldRebuildCollective(HYPREDRV_t hypredrv, int next_ls_id,
  * Push general.* runtime settings (exec policy, memory pools) into hypre
  *-----------------------------------------------------------------------------*/
 
+static void
+LogExecutionPolicy(HYPREDRV_t hypredrv)
+{
+   HYPREDRV_LOG_OBJECTF(
+      1, hypredrv, "HYPRE execution policy: %s",
+      hypredrv_ExecutionPolicyName(hypredrv->iargs->general.exec_policy));
+}
+
+static void
+ReportExecutionPolicy(HYPREDRV_t hypredrv)
+{
+   hypredrv_PrintExecutionPolicy(hypredrv->comm, hypredrv->iargs->general.exec_policy,
+                                 stdout);
+   LogExecutionPolicy(hypredrv);
+}
+
+static int
+ValidateDevicePreconditioner(HYPREDRV_t hypredrv, int device_requested, precon_t method,
+                             const precon_args *args)
+{
+#ifndef HYPRE_USING_GPU
+   (void)hypredrv;
+   (void)device_requested;
+   (void)method;
+   (void)args;
+   return 1;
+#else
+   char reason[160];
+
+   if (!device_requested ||
+       hypredrv_PreconSupportsDevice(method, args, reason, sizeof(reason)))
+   {
+      return 1;
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   hypredrv_ErrorMsgAdd(
+      "GPU execution requested, but the configured linear solver strategy is "
+      "not available on GPUs: %s. Select a GPU-supported strategy or set "
+      "general.exec_policy to host.",
+      reason);
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "rejecting unsupported GPU strategy: %s", reason);
+   return 0;
+#endif
+}
+
 static uint32_t
 ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 {
@@ -266,6 +346,31 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
    }
 
    return ERROR_NONE;
+}
+
+static uint32_t
+ApplyConfiguredDeviceInitialization(HYPREDRV_t hypredrv)
+{
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(23100, 0)
+   if (hypredrv && hypredrv->iargs && hypredrv->iargs->general.exec_policy &&
+       !hypredrv->iargs->general.device_lazy_init)
+   {
+      uint32_t code = ApplyGlobalRuntimeSettings(hypredrv);
+      if (code != ERROR_NONE)
+      {
+         return code;
+      }
+
+      HYPREDRV_LOG_OBJECTF(1, hypredrv,
+                           "eager device initialization requested by "
+                           "general.device_lazy_init=off");
+      HYPRE_DeviceInitialize();
+   }
+#else
+   (void)hypredrv;
+#endif
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
@@ -590,7 +695,24 @@ LinearSystemSetVectorTagsInternal(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
-   if (!hypredrv->dofmap || !hypredrv->dofmap->data || hypredrv->dofmap->size == 0)
+   /* Tagging must not be skipped where the local dofmap is empty. A rank that owns no
+    * rows still takes part in every reduction over the tagged vectors, and those
+    * reductions exchange num_tags + 1 values, so an untagged rank would enter the
+    * collective with a different length than its peers and hang the solve. */
+   if (!hypredrv->dofmap || !hypredrv->dofmap->data)
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Vector tags drive hypre's *tagged* Krylov inner product, which only feeds the
+    * optional per-block residual-norm diagnostic (emitted at high solver print
+    * levels); MGR and scaling derive their block structure from the dofmap
+    * directly, not from these tags. hypre has no device implementation of the
+    * tagged inner product yet (hypre_SeqVectorInnerProdTagged deep-clones both
+    * vectors to the host on every call), so tagging vectors under device execution
+    * turns each Krylov inner product into a full host round-trip. Skip tagging on
+    * device so the solve stays fully on the GPU. */
+   if (hypredrv->iargs->general.exec_policy) /* nonzero == device */
    {
       return hypredrv_ErrorCodeGet();
    }
@@ -765,7 +887,6 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
                                              &hypredrv->iargs->precon);
    }
 #endif
-   hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    if (print_statistics > 0 && !hypredrv->stats_printed)
    {
@@ -778,6 +899,8 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "skipping statistics on destroy (already printed)");
    }
+
+   hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal end");
    hypredrv_StatsDestroy(&hypredrv->stats);
@@ -798,7 +921,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_Initialize()
+HYPREDRV_Initialize(void)
 {
    hypredrv_LogInitializeFromEnv();
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Initialize begin");
@@ -813,7 +936,7 @@ HYPREDRV_Initialize()
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_Finalize()
+HYPREDRV_Finalize(void)
 {
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "HYPREDRV_Finalize begin");
    if (hypredrv_RuntimeIsInitialized())
@@ -853,6 +976,27 @@ HYPREDRV_ErrorCodeDescribe(uint32_t error_code)
    hypredrv_ErrorMsgPrint();
    hypredrv_ErrorMsgClear();
    hypredrv_ErrorBacktracePrint();
+}
+
+/*-----------------------------------------------------------------------------
+ * Clear the process-global sticky error state
+ *-----------------------------------------------------------------------------*/
+
+void
+HYPREDRV_ErrorCodeClear(void)
+{
+   hypredrv_ErrorStateReset();
+}
+
+/*-----------------------------------------------------------------------------
+ * Public wrapper backing the HYPREDRV_SAFE_CALL* macros
+ *-----------------------------------------------------------------------------*/
+
+void
+HYPREDRV_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *file,
+                             int line, const char *func)
+{
+   hypredrv_SafeCallHandleError(error_code, comm, file, line, func);
 }
 
 /*-----------------------------------------------------------------------------
@@ -1147,26 +1291,24 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
                                          &hypredrv->precon_reuse_timesteps.ids,
                                          &hypredrv->precon_reuse_timesteps.starts);
    }
-
-#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
-   hypredrv->preferred_exec_policy = hypredrv->iargs->general.exec_policy;
-   if (hypredrv->preferred_exec_policy &&
-       hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
+   if (hypredrv_ErrorCodeGet())
    {
-      int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
-      if (interp_type == 8 || interp_type == 9)
-      {
-         hypredrv->iargs->general.exec_policy = 0;
-         hypredrv->iargs->ls.exec_policy      = 0;
-         HYPREDRV_LOG_OBJECTF(
-            1, hypredrv,
-            "forcing host execution for compatibility in InputArgsParse: "
-            "BoomerAMG standard interpolation");
-         HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      }
+      return hypredrv_ErrorCodeGet();
+   }
+
+#ifdef HYPRE_USING_GPU
+   hypredrv->preferred_exec_policy = hypredrv->iargs->general.exec_policy;
+   if (!ValidateDevicePreconditioner(hypredrv, hypredrv->preferred_exec_policy,
+                                     hypredrv->iargs->precon_method,
+                                     &hypredrv->iargs->precon))
+   {
+      return hypredrv_ErrorCodeGet();
    }
 #endif
 
+   HYPREDRV_SAFE_CALL(ApplyConfiguredDeviceInitialization(hypredrv));
+
+   ReportExecutionPolicy(hypredrv);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");
 
    return hypredrv_ErrorCodeGet();
@@ -1207,6 +1349,7 @@ uint32_t
 HYPREDRV_InputArgsGetWarmup(HYPREDRV_t hypredrv, int *warmup)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    if (!warmup)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -1224,6 +1367,7 @@ uint32_t
 HYPREDRV_InputArgsGetNumRepetitions(HYPREDRV_t hypredrv, int *num_reps)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    if (!num_reps)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -1241,6 +1385,7 @@ uint32_t
 HYPREDRV_InputArgsGetNumLinearSystems(HYPREDRV_t hypredrv, int *num_ls)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    if (!num_ls)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -1258,6 +1403,7 @@ uint32_t
 HYPREDRV_InputArgsGetNumPreconVariants(HYPREDRV_t hypredrv, int *num_variants)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    if (!num_variants)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
@@ -1303,6 +1449,16 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    int      current_variant = hypredrv->iargs->active_precon_variant;
    int      variant_changed = (variant_idx != current_variant);
    precon_t current_method  = hypredrv->iargs->precon_method;
+
+#ifdef HYPRE_USING_GPU
+   if (!ValidateDevicePreconditioner(hypredrv, hypredrv->preferred_exec_policy,
+                                     hypredrv->iargs->precon_methods[variant_idx],
+                                     &hypredrv->iargs->precon_variants[variant_idx]))
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+#endif
+
    HYPREDRV_LOG_OBJECTF(
       2, hypredrv, "preconditioner variant selection: current=%d requested=%d changed=%d",
       current_variant, variant_idx, variant_changed);
@@ -1362,47 +1518,6 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
       hypredrv->iargs->precon        = hypredrv->iargs->precon_variants[variant_idx];
    }
 
-   /* GPU-only exec-policy coupling */
-#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22100, 0)
-   int desired_exec_policy = hypredrv->preferred_exec_policy;
-   if (hypredrv->iargs->precon_method == PRECON_BOOMERAMG)
-   {
-      int interp_type = hypredrv->iargs->precon.amg.interpolation.prolongation_type;
-      if (interp_type == 8 || interp_type == 9)
-      {
-         desired_exec_policy = 0;
-      }
-   }
-   if (hypredrv->iargs->general.exec_policy != desired_exec_policy)
-   {
-      hypredrv->iargs->general.exec_policy = desired_exec_policy;
-      hypredrv->iargs->ls.exec_policy      = desired_exec_policy;
-      if (desired_exec_policy)
-      {
-         HYPREDRV_LOG_OBJECTF(1, hypredrv,
-                              "restoring device execution in InputArgsSetPreconVariant: "
-                              "active variant is GPU-compatible");
-      }
-      else
-      {
-         HYPREDRV_LOG_OBJECTF(
-            1, hypredrv,
-            "forcing host execution for compatibility in InputArgsSetPreconVariant: "
-            "BoomerAMG standard interpolation");
-      }
-      HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
-      if (hypredrv->mat_M && hypredrv->mat_M != hypredrv->mat_A)
-      {
-         PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_M, 1);
-      }
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_x0, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_xref, 0);
-      PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_nn, 0);
-   } /* GCOVR_EXCL_BR_LINE */
-#endif
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner variant selected: idx=%d method=%d",
                         variant_idx, (int)hypredrv->iargs->precon_method);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsSetPreconVariant end");
@@ -1417,6 +1532,8 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
 uint32_t
 HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 {
+   bool created_input_args = false;
+
    HYPREDRV_CHECK_INIT_AND_OBJ();
    if (!preset) /* GCOVR_EXCL_BR_LINE */
    {
@@ -1430,6 +1547,7 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
       hypredrv_InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
       hypredrv_PreconArgsSetDefaultsForMethod(hypredrv->iargs->precon_method,
                                               &hypredrv->iargs->precon);
+      created_input_args = true;
    }
 
    int      variant_idx    = hypredrv->iargs->active_precon_variant;
@@ -1476,6 +1594,10 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    hypredrv_InputArgsApplyPreconPreset(hypredrv->iargs, preset, variant_idx);
+   if (!hypredrv_ErrorCodeGet() && created_input_args)
+   {
+      ReportExecutionPolicy(hypredrv);
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1487,6 +1609,8 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
 uint32_t
 HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
 {
+   bool created_input_args = false;
+
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
    if (!preset)
@@ -1499,6 +1623,7 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    if (!hypredrv->iargs)
    {
       hypredrv_InputArgsCreate(hypredrv->lib_mode, &hypredrv->iargs);
+      created_input_args = true;
    }
 
    if (hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
@@ -1509,6 +1634,10 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
          hypredrv_SolverGetValidTypeIntMap(), preset);
       hypredrv_SolverArgsSetDefaultsForMethod(hypredrv->iargs->solver_method,
                                               &hypredrv->iargs->solver);
+      if (created_input_args)
+      {
+         ReportExecutionPolicy(hypredrv);
+      }
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1519,6 +1648,10 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    }
 
    DestroyActiveSolver(hypredrv);
+   if (created_input_args)
+   {
+      ReportExecutionPolicy(hypredrv);
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1584,27 +1717,49 @@ HYPREDRV_StateVectorSet(HYPREDRV_t hypredrv, int nstates, HYPRE_IJVector *vecs)
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorSet begin (nstates=%d)",
                         nstates);
 
+   /* Validate all inputs before mutating the object so a bad argument cannot
+    * leave partially-initialized state arrays that the destroy path would later
+    * dereference. */
+   if (nstates <= 0 || !vecs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorSet: nstates must be > 0 and vecs "
+                           "must be non-NULL");
+      return hypredrv_ErrorCodeGet();
+   }
+   for (int i = 0; i < nstates; i++)
+   {
+      if (!vecs[i])
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorSet: NULL state vector at index %d",
+                              i);
+         return hypredrv_ErrorCodeGet();
+      }
+   }
+
+   int            *new_states = (int *)malloc(sizeof(int) * (size_t)nstates);
+   HYPRE_IJVector *new_vec_s =
+      (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * (size_t)nstates);
+   if (!new_states || !new_vec_s)
+   {
+      free(new_states);
+      free(new_vec_s);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorSet: allocation failed");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Replace any previously configured arrays. */
+   free(hypredrv->states);
+   free(hypredrv->vec_s);
+   hypredrv->states  = new_states;
+   hypredrv->vec_s   = new_vec_s;
    hypredrv->nstates = nstates;
-   hypredrv->states  = (int *)malloc(sizeof(int) * (size_t)nstates);
-   hypredrv->vec_s   = (HYPRE_IJVector *)malloc(sizeof(HYPRE_IJVector) * (size_t)nstates);
    for (int i = 0; i < nstates; i++)
    {
       hypredrv->states[i] = i;
-      if (vecs && vecs[i])
-      {
-         hypredrv->vec_s[i] = vecs[i];
-      }
-      else
-      {
-         /* GCOVR_EXCL_BR_START */
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                              "HYPREDRV_StateVectorSet failed: missing vector at "
-                              "index=%d",
-                              i);
-         return hypredrv_ErrorCodeGet();
-         /* GCOVR_EXCL_BR_STOP */
-      }
+      hypredrv->vec_s[i]  = vecs[i];
    }
 
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorSet end");
@@ -1621,6 +1776,16 @@ HYPREDRV_StateVectorGetValues(HYPREDRV_t hypredrv, int index, HYPRE_Complex **da
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_StateVectorGetValues begin (index=%d)",
                         index);
+
+   if (!hypredrv->states || !hypredrv->vec_s || index < 0 || index >= hypredrv->nstates ||
+       !data_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorGetValues: invalid index %d or output "
+                           "pointer (nstates=%d)",
+                           index, hypredrv->nstates);
+      return hypredrv_ErrorCodeGet();
+   }
 
    int             state   = hypredrv->states[index];
    HYPRE_ParVector par_vec = NULL;
@@ -1662,6 +1827,16 @@ HYPREDRV_StateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
    HYPREDRV_LOG_OBJECTF(1, hypredrv,
                         "HYPREDRV_StateVectorCopy begin (index_in=%d index_out=%d)",
                         index_in, index_out);
+
+   if (!hypredrv->states || !hypredrv->vec_s || index_in < 0 ||
+       index_in >= hypredrv->nstates || index_out < 0 || index_out >= hypredrv->nstates)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorCopy: index out of range "
+                           "(index_in=%d index_out=%d nstates=%d)",
+                           index_in, index_out, hypredrv->nstates);
+      return hypredrv_ErrorCodeGet();
+   }
 
    int   state_in  = hypredrv->states[index_in];
    int   state_out = hypredrv->states[index_out];
@@ -1723,7 +1898,8 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
    HYPREDRV_LOG_OBJECTF(
       1, hypredrv, "HYPREDRV_StateVectorApplyCorrection begin (state_idx=%d)", state_idx);
 
-   if (state_idx < 0 || state_idx >= hypredrv->nstates)
+   if (!hypredrv->states || !hypredrv->vec_s || state_idx < 0 ||
+       state_idx >= hypredrv->nstates)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("state_idx %d out of range [0, %d)", state_idx,
@@ -1731,6 +1907,13 @@ HYPREDRV_StateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "HYPREDRV_StateVectorApplyCorrection failed: state index out "
                            "of range");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (!hypredrv->vec_x)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("HYPREDRV_StateVectorApplyCorrection: no solution vector "
+                           "(solve not performed yet)");
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1778,7 +1961,10 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
    /* Reset scaling state for new system */
    if (hypredrv->scaling_ctx)
    {
-      hypredrv->scaling_ctx->is_applied = 0;
+      hypredrv->scaling_ctx->is_applied          = 0;
+      hypredrv->scaling_ctx->matrices_are_scaled = 0;
+      hypredrv->scaling_ctx->rhs_is_scaled       = 0;
+      hypredrv->scaling_ctx->x_is_scaled         = 0;
    }
 
    long long int num_rows = hypredrv_LinearSystemMatrixGetNumRows(hypredrv->mat_A);
@@ -1791,7 +1977,7 @@ HYPREDRV_LinearSystemBuild(HYPREDRV_t hypredrv)
              hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
       printf("with %lld rows and %lld nonzeros...\n", num_rows, num_nonzeros);
    }
-   HYPRE_ClearAllErrors();
+   hypredrv_HypreConsumeErrors();
    MaybeDumpLinearSystem(hypredrv, PRINT_SYSTEM_STAGE_BUILD);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSystemBuild end");
 
@@ -1806,6 +1992,7 @@ uint32_t
 HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
    hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
@@ -1989,15 +2176,28 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
    hypredrv->mat_A      = NULL;
    hypredrv->owns_mat_A = false;
 
-   /* Caller-provided CSR buffers are host pointers, so the builder runs on host
-    * regardless of the configured execution policy. */
-   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, HYPRE_MEMORY_HOST,
-                                                 row_start, row_end, indptr, col_indices,
-                                                 data, &hypredrv->mat_A);
+   /* The caller's CSR buffers are host pointers, but we build the matrix directly
+    * in the configured execution space: under device execution hypre assembles the
+    * ParCSR on the GPU (staging the host CSR once), which is far cheaper than host
+    * assembly of millions of nonzeros followed by a ParCSR migration. */
+   HYPRE_MemoryLocation build_memloc = HYPRE_MEMORY_HOST;
+#if defined(HYPRE_USING_GPU) && HYPRE_CHECK_MIN_VERSION(22000, 0)
+   if (hypredrv->iargs->ls.exec_policy) /* nonzero == device */
+   {
+      build_memloc = HYPRE_MEMORY_DEVICE;
+   }
+#endif
+   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, build_memloc, row_start,
+                                                 row_end, indptr, col_indices, data,
+                                                 &hypredrv->mat_A);
 
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
    hypredrv->mat_M      = hypredrv->mat_A;
    hypredrv->owns_mat_M = false;
+
+   /* Safety net: ensure the matrix matches the configured execution space (no-op
+    * when already built there). mat_M aliases mat_A here. */
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A, 1);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2059,6 +2259,10 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
 
    hypredrv->owns_vec_b = (hypredrv->vec_b != NULL);
 
+   /* The RHS was built on host above; migrate it to the configured execution
+    * space (e.g. device) to match the global memory/execution policy. */
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b, 0);
+
    return hypredrv_ErrorCodeGet();
 }
 
@@ -2071,6 +2275,7 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
                                       int num_components, const HYPRE_Complex *values)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
    hypredrv_LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls,
@@ -2119,6 +2324,7 @@ HYPREDRV_LinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
                                   int num_components, const HYPRE_Complex *values)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
    /* num_components == 0 clears previously set modes and disables the projection */
@@ -2322,6 +2528,10 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
       return hypredrv_ErrorCodeGet();
    }
 
+#if defined(HYPRE_USING_GPU)
+   /* Ensure data is accessible on host before returning the pointer */
+   HYPRE_IJVectorMigrate(hypredrv->vec_x, HYPRE_MEMORY_HOST);
+#endif
    hypredrv_LinearSystemGetSolutionValues(hypredrv->vec_x, sol_data);
 
    return hypredrv_ErrorCodeGet();
@@ -2480,6 +2690,7 @@ uint32_t
 HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
 
    if (!mat)
    {
@@ -2562,6 +2773,7 @@ uint32_t
 HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
 
    hypredrv_LinearSystemReadDofmap(hypredrv->comm, &hypredrv->iargs->ls,
                                    &hypredrv->dofmap, hypredrv->stats);
@@ -2606,6 +2818,7 @@ uint32_t
 HYPREDRV_LinearSystemPrint(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
 
    /* Delegate printing to linsys */
    hypredrv_LinearSystemPrintData(hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A,
@@ -2622,6 +2835,7 @@ uint32_t
 HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconCreate begin");
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
@@ -2726,6 +2940,7 @@ uint32_t
 HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverCreate begin");
 
@@ -2789,6 +3004,7 @@ uint32_t
 HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup begin");
 
@@ -2804,8 +3020,14 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
 
    hypredrv_PreconSetup(hypredrv->iargs->precon_method, hypredrv->precon,
                         hypredrv->mat_A);
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
-   if (hypredrv->precon)   /* GCOVR_EXCL_BR_LINE */
+   hypredrv_HypreConsumeErrors();
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+   {
+      hypredrv->precon_is_setup = false;
+      HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconSetup failed");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (hypredrv->precon) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->precon_is_setup = true;
    }
@@ -2822,6 +3044,7 @@ uint32_t
 HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup begin");
 
@@ -2843,6 +3066,14 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
                         "skip_precon_setup=%d",
                         should_rebuild, rerun_mgr_component_setup, skip_precon_setup);
 
+   char diagnostic_object_name[32];
+   diagnostic_object_name[0]     = '\0';
+   const char *setup_object_name = ResolveLogObjectName(hypredrv, diagnostic_object_name,
+                                                        sizeof(diagnostic_object_name));
+   hypredrv_LinearSystemLogBlockFrobenius(
+      hypredrv->comm, hypredrv->mat_A, hypredrv->dofmap, hypredrv->iargs->ls.dof_labels,
+      setup_object_name, next_ls_id);
+
    /* Propagate dofmap to vectors (no-op if no dofmap is set) */
    /* GCOVR_EXCL_BR_LINE */ /* SAFE_CALL fail-fast wrapper */
    HYPREDRV_SAFE_CALL(
@@ -2862,8 +3093,8 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    {
       hypredrv_ScalingCompute(hypredrv->comm, &hypredrv->iargs->scaling,
                               hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->vec_b,
-                              hypredrv->dofmap); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_ErrorCodeGet())               /* GCOVR_EXCL_BR_LINE */
+                              hypredrv->dofmap);              /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
       {
          return hypredrv_ErrorCodeGet();
       }
@@ -2874,9 +3105,10 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    {
       hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
                                     hypredrv->mat_M, hypredrv->vec_b,
-                                    hypredrv->vec_x); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_ErrorCodeGet())                    /* GCOVR_EXCL_BR_LINE */
+                                    hypredrv->vec_x);         /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
       {
+         RestoreScaledSystemState(hypredrv, 0);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -2888,8 +3120,13 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       hypredrv_MGRRefreshComponentsForSetup(
          &hypredrv->iargs->precon.mgr, hypredrv->precon->main,
          hypredrv->precon_reuse_timesteps.starts, hypredrv->stats, next_ls_id);
-      if (hypredrv_ErrorCodeGet())
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
       {
+         if (hypredrv->precon)
+         {
+            hypredrv->precon_is_setup = false;
+         }
+         RestoreScaledSystemState(hypredrv, 0);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -2903,7 +3140,17 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
                                  hypredrv->vec_x, hypredrv->stats, skip_precon_setup);
    PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
 
-   HYPRE_ClearAllErrors();
+   hypredrv_HypreConsumeErrors();
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+   {
+      if (hypredrv->precon && !skip_precon_setup)
+      {
+         hypredrv->precon_is_setup = false;
+      }
+      RestoreScaledSystemState(hypredrv, 0);
+      HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverSetup failed");
+      return hypredrv_ErrorCodeGet();
+   }
    if (hypredrv->precon && !skip_precon_setup)
    {
       hypredrv->precon_is_setup = true;
@@ -2933,6 +3180,18 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
          "HYPREDRV_LinearSolverApply failed: solver is NULL"); /* GCOVR_EXCL_BR_LINE */
       return hypredrv_ErrorCodeGet();
    }
+   HYPREDRV_CHECK_ARGS();
+
+   if (hypredrv->iargs->precon_method != PRECON_NONE &&
+       (!hypredrv->precon || !hypredrv->precon_is_setup))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Linear solver apply requires a successfully set up "
+                           "preconditioner; check the preceding setup error");
+      HYPREDRV_LOG_OBJECTF(
+         1, hypredrv, "HYPREDRV_LinearSolverApply failed: preconditioner is not set up");
+      return hypredrv_ErrorCodeGet();
+   }
 
    double e_norm = 0.0, x_norm = 0.0, xref_norm = 0.0;
    double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
@@ -2951,9 +3210,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
                            "applying deferred system scaling"); /* GCOVR_EXCL_BR_LINE */
       hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
                                     hypredrv->mat_M, hypredrv->vec_b,
-                                    hypredrv->vec_x); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_ErrorCodeGet())                    /* GCOVR_EXCL_BR_LINE */
+                                    hypredrv->vec_x);         /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
       {
+         RestoreScaledSystemState(hypredrv, 0);
          return hypredrv_ErrorCodeGet();
       }
    }
@@ -2968,13 +3228,20 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* Compute initial residual norm before solve (on current system state) */
       hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
                                                hypredrv->vec_x, "L2", &r0_norm);
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+      {
+         RestoreScaledSystemState(hypredrv, 0);
+         return hypredrv_ErrorCodeGet();
+      }
 
       if (hypredrv->vec_xref)
       {
          hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
                                        SCALING_VECTOR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
-         if (hypredrv_ErrorCodeGet())                           /* GCOVR_EXCL_BR_LINE */
+         xref_scaled = !hypredrv_ErrorCodeActive();
+         if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
          {
+            RestoreScaledSystemState(hypredrv, xref_scaled);
             return hypredrv_ErrorCodeGet();
          }
          xref_scaled = 1;
@@ -2988,18 +3255,19 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       HYPRE_Int iters =
          hypredrv_SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
                                   hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_LINE */ /* solver failure requires hypre injection */
-      if (iters < 0)           /* GCOVR_EXCL_BR_LINE */
+      if (iters < 0 && !hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */
       {
-         solve_succeeded = 0; /* GCOVR_EXCL_BR_LINE */ /* paired with iters<0 path */
-         if (xref_scaled)                              /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                         SCALING_VECTOR_UNKNOWN);
-         }
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Scaled solver returned a negative iteration count");
+      }
+      if (hypredrv_DistributedErrorStateSync(
+             hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */ /* solver failure injection */
+      {
+         solve_succeeded = 0; /* GCOVR_EXCL_BR_LINE */
          hypredrv_StatsIterSet(hypredrv->stats, 0);
          hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END,
                                 "solve"); /* GCOVR_EXCL_BR_LINE */
+         RestoreScaledSystemState(hypredrv, xref_scaled);
          if (hypredrv->iargs &&
              hypredrv->iargs->precon_reuse.enabled && /* GCOVR_EXCL_BR_LINE */
              hypredrv->iargs->precon_reuse.policy ==
@@ -3018,29 +3286,10 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       hypredrv_StatsIterSet(hypredrv->stats, (int)iters);
       hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "solve");
 
-      /* Undo scaling on solution and restore original system */
-      hypredrv_ScalingUndoOnSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
-                                   hypredrv->mat_M, hypredrv->vec_b, hypredrv->vec_x);
-      /* GCOVR_EXCL_BR_LINE */     /* undo failure needs injection */
-      if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
-      {                            /* GCOVR_EXCL_BR_LINE */
-         if (xref_scaled)          /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                         SCALING_VECTOR_UNKNOWN);
-         }
-         return hypredrv_ErrorCodeGet();
-      }
-
-      if (xref_scaled)
+      /* Undo scaling on the solution/reference and restore the caller's system. */
+      if (RestoreScaledSystemState(hypredrv, xref_scaled)) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ScalingUndoOnVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                      SCALING_VECTOR_UNKNOWN);
-         /* GCOVR_EXCL_BR_LINE */     /* xref undo failure */
-         if (hypredrv_ErrorCodeGet()) /* GCOVR_EXCL_BR_LINE */
-         {
-            return hypredrv_ErrorCodeGet();
-         }
+         return hypredrv_ErrorCodeGet();
       }
 
       /* Compute residual norms on original (now restored) system */
@@ -3069,7 +3318,21 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       /* hypredrv_SolverApply already computed and set all stats */
    }
 
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */
+   hypredrv_HypreConsumeErrors();
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
+   {
+      solve_succeeded = 0;
+      if (hypredrv->iargs && hypredrv->iargs->precon_reuse.enabled &&
+          hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE)
+      {
+         PreconReuseObservation obs;
+         hypredrv_PreconReuseBuildObservation(
+            hypredrv, hypredrv->precon_reuse_timesteps.starts, &obs);
+         obs.solve_succeeded = solve_succeeded;
+         hypredrv_PreconReuseStateRecordObservation(&hypredrv->precon_reuse_state, &obs);
+      }
+      return hypredrv_ErrorCodeGet();
+   }
 
    /* Fix the solution gauge when exact null space modes are set */
    if (hypredrv->vec_ns && hypredrv->num_ns > 0)
@@ -3077,6 +3340,15 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
       hypredrv_LinearSystemProjectOutNullSpace(hypredrv->vec_ns, hypredrv->num_ns,
                                                hypredrv->vec_x);
    }
+
+   char residual_object_name[32];
+   residual_object_name[0] = '\0';
+   const char *solve_object_name =
+      ResolveLogObjectName(hypredrv, residual_object_name, sizeof(residual_object_name));
+   hypredrv_LinearSystemLogBlockResidualNorms(
+      hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x, hypredrv->dofmap,
+      hypredrv->iargs->ls.dof_labels, solve_object_name,
+      hypredrv_StatsGetLinearSystemID(hypredrv->stats));
 
    if (hypredrv->vec_xref)
    {
@@ -3141,6 +3413,7 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
                                                                     */
       return hypredrv_ErrorCodeGet();
    }
+   HYPREDRV_CHECK_ARGS();
    /* GCOVR_EXCL_BR_LINE */
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "preconditioner apply: method=%d has_precon=%d",
                         (int)hypredrv->iargs->precon_method,
@@ -3148,7 +3421,7 @@ HYPREDRV_PreconApply(HYPREDRV_t hypredrv, HYPRE_Vector vec_b, HYPRE_Vector vec_x
 
    hypredrv_PreconApply(hypredrv->iargs->precon_method, hypredrv->precon, hypredrv->mat_A,
                         (HYPRE_IJVector)vec_b, (HYPRE_IJVector)vec_x);
-   HYPRE_ClearAllErrors(); /* TODO: error handling from hypre */ /* GCOVR_EXCL_BR_LINE */
+   hypredrv_HypreConsumeErrors(); /* GCOVR_EXCL_BR_LINE */
    /* Fix the solution gauge when exact null space modes are set */
    if (hypredrv->vec_ns && hypredrv->num_ns > 0)
    {
@@ -3168,6 +3441,7 @@ uint32_t
 HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconDestroy begin");
 
    int                 next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
@@ -3232,6 +3506,7 @@ uint32_t
 HYPREDRV_LinearSolverDestroy(HYPREDRV_t hypredrv)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
+   HYPREDRV_CHECK_ARGS();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverDestroy begin");
 
    /* First, destroy the preconditioner if we need */
@@ -3344,6 +3619,7 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum begin");
 
 #ifdef HYPREDRV_ENABLE_EIGSPEC
+   HYPREDRV_CHECK_ARGS();
    /* Exit early if not computing eigenspectrum */
    if (!hypredrv->iargs->ls.eigspec.enable)
    {

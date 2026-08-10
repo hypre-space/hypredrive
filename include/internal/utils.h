@@ -59,6 +59,19 @@ int   hypredrv_ComputeNumberOfDigits(int);
 void  hypredrv_SplitFilename(const char *, char **, char **);
 void  hypredrv_CombineFilename(const char *, const char *, char **);
 bool  hypredrv_IsYAMLFilename(const char *);
+bool  hypredrv_PathIsUnderRoot(const char *, const char *);
+
+/* Clear hypre's sticky error flag after a public setup/solve boundary call.
+ * Convergence and argument-flag warnings are treated as soft results.
+ * Use this at API edges that previously called HYPRE_ClearAllErrors(). For
+ * nested/inexact solvers that should only discard HYPRE_ERROR_CONV, call
+ * hypredrv_HypreClearConvergenceErrors() instead. */
+void hypredrv_HypreConsumeErrors(void);
+
+/* Clear hypre's sticky error flag only when it is exclusively HYPRE_ERROR_CONV.
+ * Harder hypre failures are left intact. Prefer hypredrv_HypreConsumeErrors() at
+ * public API boundaries. */
+void hypredrv_HypreClearConvergenceErrors(void);
 
 static inline int
 hypredrv_FloatIsFinite(float value)
@@ -103,6 +116,14 @@ hypredrv_DoubleIsFinite(double value)
     (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && \
      ((develop) == 0 || HYPRE_DEVELOP_NUMBER_GE(develop))))
 
+/* Mark a function or variable that may be unused in some build configurations
+   (e.g. gated behind an optional dependency), suppressing -Wunused warnings. */
+#if defined(__GNUC__) || defined(__clang__) || defined(__NVCOMPILER)
+#define HYPREDRV_MAYBE_UNUSED __attribute__((unused))
+#else
+#define HYPREDRV_MAYBE_UNUSED
+#endif
+
 enum
 {
    GB_TO_BYTES        = (1 << 30),
@@ -126,21 +147,15 @@ PrintLine(char ch, size_t len)
 
 #if HAVE_COLORS
 #define TEXT_RESET "\033[0m"
-#define TEXT_RED "\033[31m"
 #define TEXT_GREEN "\033[32m"
-#define TEXT_YELLOW "\033[33m"
 #define TEXT_BOLD "\033[1m"
 #define TEXT_REDBOLD "\033[1;31m"
-#define TEXT_GREENBOLD "\033[1;32m"
 #define TEXT_YELLOWBOLD "\033[1;33m"
 #else
 #define TEXT_RESET ""
-#define TEXT_RED ""
 #define TEXT_GREEN ""
-#define TEXT_YELLOW ""
 #define TEXT_BOLD ""
 #define TEXT_REDBOLD ""
-#define TEXT_GREENBOLD ""
 #define TEXT_YELLOWBOLD ""
 #endif
 

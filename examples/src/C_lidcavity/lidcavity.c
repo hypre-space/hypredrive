@@ -131,6 +131,9 @@ static const char *default_config_q2q1 = "solver:\n"
                                          "          amg:\n"
                                          "            max_iter: 1\n"
                                          "            tolerance: 0.0\n"
+#ifdef HYPRE_USING_GPU
+                                         "          reuse: always\n"
+#endif
                                          "        g_relaxation: none\n"
                                          "        restriction_type: injection\n"
                                          "        prolongation_type: blk-absrowsum\n"
@@ -138,7 +141,11 @@ static const char *default_config_q2q1 = "solver:\n"
                                          "    coarsest_level:\n"
                                          "      amg:\n"
                                          "        max_iter: 1\n"
-                                         "        tolerance: 0.0\n";
+                                         "        tolerance: 0.0\n"
+#ifdef HYPRE_USING_GPU
+                                         "      reuse: always\n"
+#endif
+   ;
 
 /*--------------------------------------------------------------------------
  * Problem parameters struct
@@ -159,7 +166,9 @@ typedef struct
    HYPRE_Real max_cfl;           /* Maximum CFL for adaptive time stepping (0=no limit) */
    HYPRE_Int  regularize_bc;     /* Use regularized lid BC (smooth corners) */
    HYPRE_Int  disc; /* Discretization: 0 = Q1-Q1 stabilized, 1 = Q2-Q1 (Taylor-Hood) */
-   char      *yaml_file; /* YAML configuration file */
+   char      *yaml_file;     /* YAML configuration file */
+   HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
+   char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } LidCavityParams;
 
 /*--------------------------------------------------------------------------
@@ -231,6 +240,10 @@ PrintUsage(void)
    printf("\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file for solver settings (Opt.)\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:gmres:max_iter 100\n");
+   printf(
+      "                      (applies to -i file or built-in config; must come last)\n");
    printf("  -n <nx> <ny>      : Global grid dimensions in nodes (32 32)\n");
    printf("  -P <Px> <Py>      : Processor grid dimensions (1 1)\n");
    printf("  -L <Lx> <Ly>      : Physical dimensions (1 1)\n");
@@ -287,12 +300,20 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    params->regularize_bc     = 0;
    params->disc              = 0;
    params->yaml_file         = NULL;
+   params->hypredrv_argc     = 0;
+   params->hypredrv_argv     = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
+      {
+         params->hypredrv_argc = argc - i;
+         params->hypredrv_argv = argv + i;
+         break;
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -441,8 +462,10 @@ static inline HYPRE_BigInt
 grid2idx(const HYPRE_BigInt gcoords[2], const HYPRE_Int bcoords[2],
          const HYPRE_Int gdims[2], HYPRE_BigInt **pstarts)
 {
-   return pstarts[1][bcoords[1]] * (HYPRE_BigInt)gdims[0] +
-          pstarts[0][bcoords[0]] * (pstarts[1][bcoords[1] + 1] - pstarts[1][bcoords[1]]) +
+   /* Blocks are numbered in MPI Cartesian rank order (row-major, y fastest) so
+    * that each rank's row range is ascending with rank, as required by hypre */
+   return pstarts[0][bcoords[0]] * (HYPRE_BigInt)gdims[1] +
+          pstarts[1][bcoords[1]] * (pstarts[0][bcoords[0] + 1] - pstarts[0][bcoords[0]]) +
           (gcoords[1] - pstarts[1][bcoords[1]]) *
              (pstarts[0][bcoords[0] + 1] - pstarts[0][bcoords[0]]) +
           (gcoords[0] - pstarts[0][bcoords[0]]);
@@ -967,6 +990,7 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    const size_t    col_len = 2 * (size_t)ctx->wvy + (size_t)ctx->wpy;
    const size_t    row_len = 2 * (size_t)ctx->wvx + (size_t)ctx->wpx;
    MPI_Request     reqs[6];
+   MPI_Status      statuses[6];
 
    (void)bx;
    (void)by;
@@ -1009,7 +1033,7 @@ Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
    MPI_Isend(ctx->send_row, (int)row_len, MPI_DOUBLE, mesh->nbrs[2], 102, mesh->cart_comm,
              &reqs[4]);
    MPI_Isend(ctx->send_cor, 3, MPI_DOUBLE, mesh->nbrs[4], 103, mesh->cart_comm, &reqs[5]);
-   MPI_Waitall(6, reqs, MPI_STATUSES_IGNORE);
+   MPI_Waitall(6, reqs, statuses);
 
    return 0;
 }
@@ -2901,7 +2925,7 @@ int
 main(int argc, char *argv[])
 {
    MPI_Comm        comm = MPI_COMM_WORLD;
-   char           *hypredrv_args[2];
+   char           *config_arg;
    HYPREDRV_t      hypredrv;
    int             myid, num_procs;
    HYPRE_Real      res_norm;
@@ -2939,7 +2963,7 @@ main(int argc, char *argv[])
    }
 #endif
 
-   hypredrv_args[0] =
+   config_arg =
       params.yaml_file ? params.yaml_file : (char *)DiscretizationDefaultConfig(&params);
 
    if (params.disc && params.visualize)
@@ -3001,9 +3025,24 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintSystemInfo(comm));
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
-   HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, hypredrv_args, hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
-
+   {
+      HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
+      char     *hypredrv_argv[hypredrv_argc];
+      hypredrv_argv[0] = config_arg;
+      for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+      {
+         hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      if (n_print)
+      {
+         /* Print the parsed YAML (with any -a/--args overrides applied). */
+         hypredrv_argv[1 + params.hypredrv_argc] = "--general:print_config_params";
+         hypredrv_argv[2 + params.hypredrv_argc] = "1";
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
+   }
    /* Create distributed mesh object */
    CreateDistMesh2D(comm, params.L[0], params.L[1], params.N[0], params.N[1], params.P[0],
                     params.P[1], &mesh);
@@ -3020,7 +3059,7 @@ main(int argc, char *argv[])
    {
       HYPRE_IJVectorCreate(MPI_COMM_WORLD, mesh->dof_ilower, mesh->dof_iupper, &vec_s[i]);
       HYPRE_IJVectorSetObjectType(vec_s[i], HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize(vec_s[i]);
+      HYPREDRV_IJ_VECTOR_INIT_HOST(vec_s[i]);
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
 

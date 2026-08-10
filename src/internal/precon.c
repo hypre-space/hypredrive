@@ -7,9 +7,25 @@
 
 #include "internal/precon.h"
 #include "HYPRE_parcsr_mv.h"
+#include "_hypre_parcsr_mv.h"
 #include "internal/gen_macros.h"
 #include "internal/krylov.h"
 #include "logging.h"
+
+#include <stdio.h>
+
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+static HYPRE_Int
+PreconUnavailable(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                  HYPRE_ParVector x)
+{
+   (void)solver;
+   (void)A;
+   (void)b;
+   (void)x;
+   return 1;
+}
+#endif
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 #define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix) \
@@ -18,7 +34,7 @@
 #define HYPREDRV_PRECON_SCHWARZ_FIELD(_prefix)
 #endif
 
-#define Precon_FIELDS(_prefix)                                 \
+#define precon_FIELDS(_prefix)                                 \
    ADD_FIELD_OFFSET_ENTRY(_prefix, amg, hypredrv_AMGSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, mgr, hypredrv_MGRSetArgs)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, ilu, hypredrv_ILUSetArgs)   \
@@ -29,14 +45,14 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, reuse, hypredrv_FieldTypeIntSet)
 
 /* GCOVR_EXCL_START */
-DEFINE_FIELD_OFFSET_MAP(Precon)
-#define Precon_NUM_FIELDS \
-   (sizeof(Precon_field_offset_map) / sizeof(Precon_field_offset_map[0]))
+DEFINE_FIELD_OFFSET_MAP(precon)
+#define precon_NUM_FIELDS \
+   (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, Precon_args,
-                              Precon_field_offset_map, Precon_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, Precon_NUM_FIELDS,
-                           Precon_field_offset_map)
+DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, precon_args,
+                              precon_field_offset_map, precon_NUM_FIELDS)
+DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, precon_NUM_FIELDS,
+                           precon_field_offset_map)
 /* GCOVR_EXCL_STOP */
 
 /*-----------------------------------------------------------------------------
@@ -59,15 +75,130 @@ StrIntMapArray
 hypredrv_PreconGetValidTypeIntMap(void)
 {
    static StrIntMap map[] = {
-      {"amg", (int)PRECON_BOOMERAMG},   {"mgr", (int)PRECON_MGR},
-      {"ilu", (int)PRECON_ILU},         {"fsai", (int)PRECON_FSAI},
-      {"ams", (int)PRECON_AMS},         {"ads", (int)PRECON_ADS},
+      {"amg", (int)PRECON_BOOMERAMG},
+      {"jacobi", (int)PRECON_BOOMERAMG},
+      {"gauss-seidel", (int)PRECON_BOOMERAMG},
+      {"mgr", (int)PRECON_MGR},
+      {"ilu", (int)PRECON_ILU},
+      {"fsai", (int)PRECON_FSAI},
+      {"ams", (int)PRECON_AMS},
+      {"ads", (int)PRECON_ADS},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       {"schwarz", (int)PRECON_SCHWARZ},
 #endif
    };
 
    return STR_INT_MAP_ARRAY_CREATE(map);
+}
+
+/* Per-method hypre entry points. Index by precon_t; keep in sync with the enum. */
+typedef HYPRE_Int (*PreconParFn)(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                                 HYPRE_ParVector);
+typedef HYPRE_Int (*PreconDestroyFn)(HYPRE_Solver);
+
+typedef struct PreconOps_struct
+{
+   PreconParFn     setup;
+   PreconParFn     solve;
+   PreconDestroyFn destroy;
+} PreconOps;
+
+static const PreconOps precon_ops[] = {
+   [PRECON_BOOMERAMG] = {.setup   = HYPRE_BoomerAMGSetup,
+                         .solve   = HYPRE_BoomerAMGSolve,
+                         .destroy = HYPRE_BoomerAMGDestroy},
+   [PRECON_MGR] =
+      {
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+         .setup = HYPRE_MGRSetup,
+         .solve = HYPRE_MGRSolve,
+#else
+         .setup = NULL,
+         .solve = NULL,
+#endif
+         .destroy = NULL, /* MGR teardown is handled by PreconDestroyMGRSolver */
+      },
+   [PRECON_ILU] =
+      {
+#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+         .setup   = HYPRE_ILUSetup,
+         .solve   = HYPRE_ILUSolve,
+         .destroy = HYPRE_ILUDestroy,
+#else
+         .setup   = NULL,
+         .solve   = NULL,
+         .destroy = NULL,
+#endif
+      },
+   [PRECON_FSAI] =
+      {
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+         .setup   = HYPRE_FSAISetup,
+         .solve   = HYPRE_FSAISolve,
+         .destroy = HYPRE_FSAIDestroy,
+#else
+         .setup   = NULL,
+         .solve   = NULL,
+         .destroy = NULL,
+#endif
+      },
+   [PRECON_AMS] = {.setup   = HYPRE_AMSSetup,
+                   .solve   = HYPRE_AMSSolve,
+                   .destroy = HYPRE_AMSDestroy},
+   [PRECON_ADS] = {.setup   = HYPRE_ADSSetup,
+                   .solve   = HYPRE_ADSSolve,
+                   .destroy = HYPRE_ADSDestroy},
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   [PRECON_SCHWARZ] = {.setup   = HYPRE_SchwarzSetup,
+                       .solve   = HYPRE_SchwarzSolve,
+                       .destroy = HYPRE_SchwarzDestroy},
+#endif
+   [PRECON_NONE] = {.setup = NULL, .solve = NULL, .destroy = NULL},
+};
+
+static const PreconOps *
+PreconOpsLookup(precon_t method)
+{
+   if ((unsigned)method >= (unsigned)(sizeof(precon_ops) / sizeof(precon_ops[0])))
+   {
+      return NULL;
+   }
+
+   return &precon_ops[method];
+}
+
+void
+hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
+                            HYPRE_PtrToParSolverFcn *solve)
+{
+   const PreconOps        *ops      = PreconOpsLookup(method);
+   HYPRE_PtrToParSolverFcn setup_fn = NULL;
+   HYPRE_PtrToParSolverFcn solve_fn = NULL;
+
+   if (ops)
+   {
+      setup_fn = ops->setup;
+      solve_fn = ops->solve;
+   }
+
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+   /* Nested Krylov SetPrecond needs non-NULL callbacks even when the method is
+    * unavailable on this hypre build; the stub returns an error at call time. */
+   if ((!setup_fn || !solve_fn) && (method == PRECON_ILU || method == PRECON_FSAI))
+   {
+      setup_fn = PreconUnavailable;
+      solve_fn = PreconUnavailable;
+   }
+#endif
+
+   if (setup)
+   {
+      *setup = setup_fn;
+   }
+   if (solve)
+   {
+      *solve = solve_fn;
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -119,6 +250,41 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
       default:
          break;
    }
+}
+
+void
+hypredrv_PreconArgsSetDefaultsForName(precon_t method, const char *name,
+                                      precon_args *args)
+{
+   hypredrv_PreconArgsSetDefaultsForMethod(method, args);
+
+   if (!args || !name || method != PRECON_BOOMERAMG)
+   {
+      return;
+   }
+
+   HYPRE_Int relax_type = -1;
+   if (!strcmp(name, "jacobi"))
+   {
+      relax_type = 0;
+   }
+   else if (!strcmp(name, "gauss-seidel"))
+   {
+      relax_type = 3;
+   }
+
+   if (relax_type < 0)
+   {
+      return;
+   }
+
+   args->amg.coarsening.max_levels    = 1;
+   args->amg.relaxation.type          = relax_type;
+   args->amg.relaxation.down_type     = relax_type;
+   args->amg.relaxation.coarse_type   = relax_type;
+   args->amg.relaxation.down_sweeps   = 1;
+   args->amg.relaxation.up_sweeps     = 0;
+   args->amg.relaxation.coarse_sweeps = 1;
 }
 
 void
@@ -320,12 +486,11 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         /* Skip deriving full-system RBMs when F-restricted rotational modes were
-          * already injected for an MGR F-block AMG (frelax_nullspace == 1). Those
-          * modes match the extracted A_FF partitioning; full-system RBMs would be
-          * sized to the whole saddle-point system and overrun A_FF during GM
-          * interpolation setup. */
-         if (!args->amg.frelax_nullspace)
+         /* Skip deriving full-system RBMs when projected ones were already set for
+          * an MGR F-block AMG (rbms_projected == 1). Those modes match the
+          * extracted A_FF partitioning; full-system RBMs would be sized to the
+          * whole system and overrun A_FF during GM interpolation setup. */
+         if (!args->amg.rbms_projected)
          {
             hypredrv_AMGSetRBMs(&args->amg, vec_nn);
          }
@@ -381,6 +546,25 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
          return;
    }
 
+   /* If a sub-create failed, do not publish a half-built wrapper whose main handle
+    * is NULL: a later PreconSetup/PreconApply would otherwise pass NULL straight
+    * into hypre and crash. A NULL main for any method other than PRECON_NONE is the
+    * reliable failure signal here (the process-global error state is sticky and may
+    * reflect an unrelated earlier failure, so it must not be used for this check). */
+   if (precon_method != PRECON_NONE && !precon->main)
+   {
+      if (!hypredrv_ErrorCodeActive())
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("Preconditioner creation failed (method=%d)",
+                              (int)precon_method);
+      }
+      hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
+      free(precon);
+      *precon_ptr = NULL;
+      return;
+   }
+
    *precon_ptr = precon;
 }
 
@@ -392,6 +576,70 @@ int
 hypredrv_PreconMethodRequiresOperators(precon_t precon_method)
 {
    return (precon_method == PRECON_AMS || precon_method == PRECON_ADS);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_PreconSupportsDevice
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
+                              char *reason, size_t reason_size)
+{
+   if (!args)
+   {
+      return 1;
+   }
+
+   if (precon_method == PRECON_BOOMERAMG)
+   {
+      int interp_type = args->amg.interpolation.prolongation_type;
+      if (interp_type == 8 || interp_type == 9)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "BoomerAMG interpolation type %d is not ported to GPUs",
+                     interp_type);
+         }
+         return 0;
+      }
+   }
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   if (precon_method == PRECON_MGR)
+   {
+      int fine_levels = args->mgr.num_levels > 0 ? args->mgr.num_levels - 1 : 0;
+      for (int level = 0; level < fine_levels; level++)
+      {
+         if (args->mgr.level[level].f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size,
+                        "MGR level %d Schwarz F-relaxation is not ported to GPUs", level);
+            }
+            return 0;
+         }
+         if (args->mgr.level[level].g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size,
+                        "MGR level %d Schwarz global relaxation is not ported to GPUs",
+                        level);
+            }
+            return 0;
+         }
+      }
+   }
+#endif
+
+   if (reason && reason_size)
+   {
+      reason[0] = '\0';
+   }
+   return 1;
 }
 
 /*-----------------------------------------------------------------------------
@@ -477,7 +725,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   if (!precon)
+   if (!precon || !precon->main)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("Preconditioner setup requested with null preconditioner");
@@ -498,69 +746,59 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   HYPRE_Solver prec = precon->main;
+   HYPRE_Solver     prec = precon->main;
+   const PreconOps *ops  = PreconOpsLookup(precon_method);
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
 
-   switch (precon_method)
+   if (!ops || !ops->setup)
    {
-      case PRECON_BOOMERAMG:
-         HYPRE_BoomerAMGSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
-
-      case PRECON_MGR:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_MGRSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      if (precon_method == PRECON_MGR)
+      {
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_ILU:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_ILUSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_ILU)
+      {
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_FSAI:
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-         HYPRE_FSAISetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_FSAI)
+      {
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
+      }
+      return;
+   }
 
-      case PRECON_AMS:
-         HYPRE_AMSSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
-
-      case PRECON_ADS:
-         HYPRE_ADSSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         HYPRE_SchwarzSetup(prec, par_A, par_b, par_x);
-         precon->is_setup = 1;
-         break;
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+   /* hypre 2.28.0 unconditionally reads the RHS vector's component count during
+    * ILU/FSAI setup, although setup otherwise accepts NULL vectors. */
+   if (precon_method == PRECON_ILU || precon_method == PRECON_FSAI)
+   {
+      HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
+                            hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);
+      HYPRE_ParVectorInitialize(par_b);
+      par_x = par_b;
+   }
 #endif
 
-      default:
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         break;
+   ops->setup(prec, par_A, par_b, par_x);
+
+   hypredrv_HypreConsumeErrors();
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
+   if (par_b)
+   {
+      HYPRE_ParVectorDestroy(par_b);
    }
+#endif
+
+   if (hypredrv_ErrorCodeActive())
+   {
+      precon->is_setup = 0;
+      return;
+   }
+
+   precon->is_setup = 1;
 
    // TODO: fix timing. Adjust LinearSolverSetup.
    // StatsTimerStop("prec");
@@ -577,7 +815,20 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    void              *vA = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   HYPRE_Solver       prec = precon->main;
+
+   if (precon_method == PRECON_NONE)
+   {
+      return;
+   }
+   if (!precon || !precon->main)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Preconditioner apply requested with null preconditioner");
+      return;
+   }
+
+   HYPRE_Solver     prec = precon->main;
+   const PreconOps *ops  = PreconOpsLookup(precon_method);
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -586,60 +837,25 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    HYPRE_IJVectorGetObject(x, &vx);
    par_x = (HYPRE_ParVector)vx;
 
-   switch (precon_method)
+   if (!ops || !ops->solve)
    {
-      case PRECON_BOOMERAMG:
-         HYPRE_BoomerAMGSolve(prec, par_A, par_b, par_x);
-         break;
-
-      case PRECON_MGR:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_MGRSolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      if (precon_method == PRECON_MGR)
+      {
          hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_ILU:
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         HYPRE_ILUSolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_ILU)
+      {
          hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_FSAI:
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-         HYPRE_FSAISolve(prec, par_A, par_b, par_x);
-#else  /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      }
+      else if (precon_method == PRECON_FSAI)
+      {
          hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-#endif /* GCOVR_EXCL_STOP */
-         break;
-
-      case PRECON_AMS:
-         HYPRE_AMSSolve(prec, par_A, par_b, par_x);
-         break;
-
-      case PRECON_ADS:
-         HYPRE_ADSSolve(prec, par_A, par_b, par_x);
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         HYPRE_SchwarzSolve(prec, par_A, par_b, par_x);
-         break;
-#endif
-
-      case PRECON_NONE:
-         break;
-
-      default:
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         break;
+      }
+      return;
    }
+
+   ops->solve(prec, par_A, par_b, par_x);
 
    // StatsTimerStop("prec_apply");
 }
@@ -740,7 +956,10 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       return;
    }
 
-   if (precon->main)
+   /* Enter the dispatch when a main handle exists, and also for MGR even without a
+    * main handle: PreconDestroyMGRSolver cleans up component solvers cached before
+    * an outer-MGR create failure, which would otherwise leak. */
+   if (precon->main || precon_method == PRECON_MGR)
    {
       switch (precon_method)
       {
@@ -749,12 +968,8 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=boomeramg");
             /* GCOVR_EXCL_STOP */
-            for (HYPRE_Int i = 0; i < args->amg.num_rbms; i++)
-            {
-               HYPRE_ParVectorDestroy(args->amg.rbms[i]);
-               args->amg.rbms[i] = NULL;
-            }
             HYPRE_BoomerAMGDestroy(precon->main);
+            hypredrv_AMGDestroyRBMs(&args->amg);
             break;
 
          case PRECON_MGR:

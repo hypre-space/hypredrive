@@ -46,12 +46,19 @@ end
     @test info.solve_time >= 0.0
     @test info.solution_norm > 0.0
 
+    args_options = hypredrive_options(solver=:pcg, preconditioner=:amg,
+                                      pcg=(max_iter=100, relative_tol=1.0e-10),
+                                      amg=(print_level=0,))
     x_args, _ = hypredrive_solve(A, b; dofmap=zeros(Int, n),
-                                 input_args=[hypredrive_options(solver=:pcg,
-                                                                preconditioner=:amg,
-                                                                pcg=(max_iter=100, relative_tol=1.0e-10),
-                                                                amg=(print_level=0,))])
+                                 input_args=[args_options])
     @test norm(A * x_args - b) / norm(b) < 1.0e-8
+
+    # A tolerated -a marker must not make a YAML-looking override value become
+    # a second configuration file.
+    x_yaml_value, _ = hypredrive_solve(A, b;
+                                       input_args=[args_options, "-a", "--general:name",
+                                                   "run.yml"])
+    @test norm(A * x_yaml_value - b) / norm(b) < 1.0e-8
 end
 
 @testset "input validation" begin

@@ -8,7 +8,7 @@
 Interfaces
 ==========
 
-Hypredrive can be used through several entry points:
+`hypredrive` has several entry points:
 
 - The ``hypredrive-cli`` driver reads YAML input files and matrix/RHS data from disk.
 - The C library API exposes ``HYPREDRV_t`` handles for applications that already manage

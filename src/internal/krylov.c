@@ -16,66 +16,6 @@
 #include "_hypre_utilities.h" // for hypre_Solver
 #endif
 
-#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
-static HYPRE_Int
-FSAISetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-              HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-static HYPRE_Int
-FSAISolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-              HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-#define LOCAL_FSAI_SETUP FSAISetupStub
-#define LOCAL_FSAI_SOLVE FSAISolveStub
-#else
-#define LOCAL_FSAI_SETUP HYPRE_FSAISetup
-#define LOCAL_FSAI_SOLVE HYPRE_FSAISolve
-#endif
-
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
-static HYPRE_Int
-ILUSetupStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-             HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-static HYPRE_Int
-ILUSolveStub(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-             HYPRE_ParVector x)
-{
-   (void)solver;
-   (void)A;
-   (void)b;
-   (void)x;
-   return 1;
-}
-
-#define LOCAL_ILU_SETUP ILUSetupStub
-#define LOCAL_ILU_SOLVE ILUSolveStub
-#else
-#define LOCAL_ILU_SETUP HYPRE_ILUSetup
-#define LOCAL_ILU_SOLVE HYPRE_ILUSolve
-#endif
-
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
@@ -176,13 +116,15 @@ NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Unknown nested preconditioner type: '%s'",
                               precon_node->val);
+         precon_node->avail_vals = hypredrv_PreconGetValidTypeIntMap();
          YAML_NODE_SET_INVALID_VAL(precon_node);
          return;
       }
       args->precon_method = (precon_t)hypredrv_StrIntMapArrayGetImage(
          hypredrv_PreconGetValidTypeIntMap(), precon_node->val);
       args->has_precon = 1;
-      hypredrv_PreconArgsSetDefaultsForMethod(args->precon_method, &args->precon);
+      hypredrv_PreconArgsSetDefaultsForName(args->precon_method, precon_node->val,
+                                            &args->precon);
       return;
    }
 
@@ -237,50 +179,12 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       return;
    }
 
-   switch (precon_method)
+   hypredrv_PreconGetCallbacks(precon_method, &setup, &solve);
+   if (!setup || !solve)
    {
-      case PRECON_BOOMERAMG:
-         setup = HYPRE_BoomerAMGSetup;
-         solve = HYPRE_BoomerAMGSolve;
-         break;
-
-      case PRECON_MGR:
-         setup = HYPRE_MGRSetup;
-         solve = HYPRE_MGRSolve;
-         break;
-
-      case PRECON_ILU:
-         setup = LOCAL_ILU_SETUP;
-         solve = LOCAL_ILU_SOLVE;
-         break;
-
-      case PRECON_FSAI:
-         setup = LOCAL_FSAI_SETUP;
-         solve = LOCAL_FSAI_SOLVE;
-         break;
-
-      case PRECON_AMS:
-         setup = HYPRE_AMSSetup;
-         solve = HYPRE_AMSSolve;
-         break;
-
-      case PRECON_ADS:
-         setup = HYPRE_ADSSetup;
-         solve = HYPRE_ADSSolve;
-         break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-         setup = HYPRE_SchwarzSetup;
-         solve = HYPRE_SchwarzSolve;
-         break;
-#endif
-
-      case PRECON_NONE:
-      default:
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("Nested Krylov preconditioner method not supported");
-         return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Nested Krylov preconditioner method not supported");
+      return;
    }
 
    /* GCOVR_EXCL_BR_LINE */
@@ -568,6 +472,13 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
          return;
    }
 
+   /* Do not proceed to SetPrecond with a NULL base solver: a failed create would
+    * otherwise pass NULL into hypre's SetPrecond. */
+   if (hypredrv_ErrorCodeActive() || !base_solver)
+   {
+      return;
+   }
+
    /* Attach preconditioner to the solver object */
    if (args->has_precon)
    {
@@ -575,6 +486,9 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
                              args->precon_obj);                /* GCOVR_EXCL_BR_LINE */
       if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* SetPrecond error path */
       {
+         /* Reclaim the base solver we just created so it does not leak (args->base_solver
+          * is not set on this path, so destroy it directly). */
+         NestedKrylovBaseSolverDestroy(args->solver_method, base_solver);
          return;
       }
    }
@@ -677,7 +591,7 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
          ~HYPRE_ERROR_CONV)) /* GCOVR_EXCL_BR_LINE */ /* HYPRE conv flags hard to
                                                          stabilize in unit tests */
    {
-      HYPRE_ClearAllErrors();
+      hypredrv_HypreClearConvergenceErrors();
       return 0;
    }
 
@@ -705,7 +619,11 @@ hypredrv_NestedKrylovDestroy(NestedKrylov_args *args)
 
    if (args->precon_obj)
    {
-      args->precon_obj->is_setup = 1;
+      /* Pass the preconditioner's real setup state. Forcing is_setup=1 here made
+       * PreconDestroy take the "was setup" branch even when the nested (e.g. MGR)
+       * preconditioner was created but never set up, which skips reclamation of
+       * still-hypredrive-owned detached component handles and leaks them. When the
+       * precon truly was set up, is_setup is already 1, so behavior is unchanged. */
       hypredrv_PreconDestroy(args->precon_method, &args->precon, &args->precon_obj, NULL,
                              0);
       args->precon_obj = NULL;

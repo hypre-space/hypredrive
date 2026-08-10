@@ -21,6 +21,7 @@ The binding follows three principles:
 """
 
 from libc.stdint cimport int64_t, uint32_t, intptr_t
+from libc.stdlib cimport malloc, free
 from libc.string cimport memcpy
 
 cimport cython
@@ -176,25 +177,50 @@ cdef class HypreDriveCore:
     # Configuration: YAML in-memory
     # ------------------------------------------------------------------
 
-    def parse_yaml(self, bytes yaml_text):
+    def parse_yaml(self, bytes yaml_text, list extra_args=None):
         """Configure solver/preconditioner from an in-memory YAML document.
 
         ``HYPREDRV_InputArgsParse`` accepts a YAML string in ``argv[0]`` (it
         falls back from filename-on-disk to literal-text when the path does
         not resolve), so we go through that same entry point and skip
         round-tripping through a temp file.
+
+        ``extra_args`` supplies CLI-style override tokens appended after
+        ``argv[0]``, e.g. ``[b"--solver:pcg:max_iter", b"100"]`` (``str``
+        items are encoded as UTF-8; a leading ``"-a"``/``"--args"`` token is
+        dropped so the C side always receives an unambiguous
+        ``--path:to:key value`` pair list).
         """
         if self._handle == NULL:
             raise RuntimeError("HypreDriveCore is closed")
         cdef bytes payload = yaml_text  # keep a reference alive for the duration
         cdef const char *payload_data = payload
-        cdef char *argv[2]
-        argv[0] = <char *>payload_data
-        argv[1] = NULL
-        _check(
-            _c.HYPREDRV_InputArgsParse(1, argv, self._handle),
-            "HYPREDRV_InputArgsParse",
-        )
+        # keep encoded byte strings alive across the C call
+        cdef list encoded = []
+        cdef Py_ssize_t i, n = 0
+        cdef char **argv
+        if extra_args:
+            for item in extra_args:
+                encoded.append(
+                    item if isinstance(item, bytes) else str(item).encode("utf-8")
+                )
+            if encoded and encoded[0] in (b"-a", b"--args"):
+                encoded = encoded[1:]
+            n = len(encoded)
+        argv = <char **>malloc(<size_t>(n + 2) * sizeof(char *))
+        if argv == NULL:
+            raise MemoryError("failed to allocate argv for HYPREDRV_InputArgsParse")
+        try:
+            argv[0] = <char *>payload_data
+            for i in range(n):
+                argv[i + 1] = <char *><bytes>encoded[i]
+            argv[n + 1] = NULL
+            _check(
+                _c.HYPREDRV_InputArgsParse(<int>(n + 1), argv, self._handle),
+                "HYPREDRV_InputArgsParse",
+            )
+        finally:
+            free(argv)
 
     # ------------------------------------------------------------------
     # Linear-system data ingest

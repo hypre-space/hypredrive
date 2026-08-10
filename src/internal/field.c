@@ -6,6 +6,10 @@
  ******************************************************************************/
 
 #include "internal/field.h"
+#include <errno.h>
+#include <limits.h>
+#include <stdlib.h>
+#include <string.h>
 
 /*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntSet
@@ -14,7 +18,22 @@
 void
 hypredrv_FieldTypeIntSet(void *field, const YAMLnode *node)
 {
-   sscanf(node->mapped_val, "%d", (int *)field);
+   const char *src = (node && node->mapped_val) ? node->mapped_val : "";
+   char       *end = NULL;
+   long        val;
+
+   errno = 0;
+   val   = strtol(src, &end, 10);
+   /* Reject empty/garbage input and out-of-range values instead of invoking the
+    * undefined behavior of sscanf("%d") on an unrepresentable value. */
+   if (end == src || *end != '\0' || errno == ERANGE || val < INT_MIN || val > INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid integer value '%s' for key '%s'", src,
+                           node ? node->key : "<unknown>");
+      return;
+   }
+   *((int *)field) = (int)val;
 }
 
 /*-----------------------------------------------------------------------------
@@ -28,6 +47,13 @@ hypredrv_FieldTypeIntArraySet(void *field, const YAMLnode *node)
 
    hypredrv_StrToIntArray(node->mapped_val, &int_array);
 
+   /* Free any array already stored in this field before overwriting it, so setting
+    * the same key twice (e.g. file value plus a CLI override) does not leak. */
+   IntArray *existing = *((IntArray **)field);
+   if (existing)
+   {
+      hypredrv_IntArrayDestroy(&existing);
+   }
    *((void **)field) = int_array;
 }
 
@@ -50,7 +76,20 @@ hypredrv_FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
 void
 hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
 {
-   sscanf(node->mapped_val, "%lf", (double *)field);
+   const char *src = (node && node->mapped_val) ? node->mapped_val : "";
+   char       *end = NULL;
+   double      val;
+
+   errno = 0;
+   val   = strtod(src, &end);
+   if (end == src || *end != '\0')
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid floating-point value '%s' for key '%s'", src,
+                           node ? node->key : "<unknown>");
+      return;
+   }
+   *((double *)field) = val;
 }
 
 /*-----------------------------------------------------------------------------
@@ -100,6 +139,12 @@ hypredrv_FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
 
    hypredrv_StrToDoubleArray(node->mapped_val, &double_array);
 
+   /* Free any array already stored in this field before overwriting it. */
+   DoubleArray *existing = *((DoubleArray **)field);
+   if (existing)
+   {
+      hypredrv_DoubleArrayDestroy(&existing);
+   }
    *((void **)field) = double_array;
 }
 

@@ -43,6 +43,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
+
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
         with:
@@ -91,6 +99,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
+
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
         with:
@@ -135,6 +151,14 @@ jobs:
         mode: [parse, solve, lsseq, matrix, vector]
     steps:
       - uses: actions/checkout@v6
+
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v1
+          restore-keys: |
+            datasets-v1
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu

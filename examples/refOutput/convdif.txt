@@ -1,0 +1,66 @@
+Date and time: YYYY-MM-DD HH:MM:SS
+
+Using HYPREDRV_DEVELOP_STRING: HYPREDRV_VERSION_GOES_HERE
+Using HYPRE_DEVELOP_STRING: HYPRE_VERSION_GOES_HERE
+
+=====================================================
+        Convection-Diffusion Problem Setup
+=====================================================
+Grid dimensions:      64 x 16 x 16 cells
+Processor topology:   1 x 1 x 1
+Domain sizes:         4.00 x 1.00 x 1.00
+Diffusion coeff:      1.00e-03
+Peak axial velocity:  1.00e+00
+Peak swirl velocity:  0.00e+00
+Cell Peclet number:   6.25e+01
+Initial CFL number:   1.60e+00
+Time steps:           10
+Initial step size:    1.00e-01
+Step growth factor:   1.50
+Visualization:        false
+Verbosity level:      0x1
+=====================================================
+
+Time step:   1 | Time: 1.0000e-01 | dt: 1.0000e-01 | CFL:     1.60 | Lin:   4 | min(c)= 5.81e-28 max(c)= 6.19e-01 mass=4.657564e-02
+Time step:   2 | Time: 2.5000e-01 | dt: 1.5000e-01 | CFL:     2.40 | Lin:   5 | min(c)= 2.98e-21 max(c)= 8.88e-01 mass=1.151926e-01
+Time step:   3 | Time: 4.7500e-01 | dt: 2.2500e-01 | CFL:     3.60 | Lin:   5 | min(c)= 2.52e-16 max(c)= 9.75e-01 mass=2.169852e-01
+Time step:   4 | Time: 8.1250e-01 | dt: 3.3750e-01 | CFL:     5.40 | Lin:   5 | min(c)= 1.90e-12 max(c)= 9.96e-01 mass=3.686947e-01
+Time step:   5 | Time: 1.3188e+00 | dt: 5.0625e-01 | CFL:     8.10 | Lin:   6 | min(c)= 2.06e-09 max(c)= 1.00e+00 mass=5.952351e-01
+Time step:   6 | Time: 2.0781e+00 | dt: 7.5938e-01 | CFL:    12.15 | Lin:   7 | min(c)= 4.65e-07 max(c)= 1.00e+00 mass=9.300388e-01
+Time step:   7 | Time: 3.2172e+00 | dt: 1.1391e+00 | CFL:    18.23 | Lin:   7 | min(c)= 3.03e-05 max(c)= 1.00e+00 mass=1.396037e+00
+Time step:   8 | Time: 4.9258e+00 | dt: 1.7086e+00 | CFL:    27.34 | Lin:   8 | min(c)= 7.32e-04 max(c)= 1.00e+00 mass=1.959839e+00
+Time step:   9 | Time: 7.4887e+00 | dt: 2.5629e+00 | CFL:    41.01 | Lin:   8 | min(c)= 8.05e-03 max(c)= 1.00e+00 mass=2.532292e+00
+Time step:  10 | Time: 1.1333e+01 | dt: 3.8443e+00 | CFL:    61.51 | Lin:   9 | min(c)= 4.72e-02 max(c)= 1.00e+00 mass=3.039411e+00
+
+Aggregate Summary:
+--------------------------------------------------------------
+Total number of Non-linear iterations: 10
+Total number of linear iterations:     64
+Avg. LS iterations:                    6.40
+Avg. LS times: (setup, solve, total):  0.0108, 0.0075, 0.0182
+Total LS times: (setup, solve, total): 0.1075, 0.0745, 0.1821
+Avg. LS iterations per timestep:       6.40
+Avg. LS times per timestep: (s, s, t): 0.0108, 0.0075, 0.0182
+--------------------------------------------------------------
+
+=======================================================================================
+
+
+STATISTICS SUMMARY for convdif-air:
+
++------------+-------------+-------------+-------------+------------+------------+--------+
+|            |    LS build |       setup |       solve |    initial |   relative |        |
+|       Path |   times [s] |   times [s] |   times [s] |  res. norm |  res. norm |  iters |
++------------+-------------+-------------+-------------+------------+------------+--------+
+|        1.1 |       0.003 |       0.008 |       0.004 |   3.50e-02 |   6.48e-10 |      4 |
+|        2.2 |       0.002 |       0.009 |       0.005 |   1.92e-02 |   1.83e-10 |      5 |
+|        3.3 |       0.002 |       0.010 |       0.006 |   1.29e-02 |   1.71e-09 |      5 |
+|        4.4 |       0.002 |       0.011 |       0.006 |   9.94e-03 |   8.91e-09 |      5 |
+|        5.5 |       0.002 |       0.011 |       0.007 |   8.02e-03 |   1.83e-09 |      6 |
+|        6.6 |       0.002 |       0.012 |       0.008 |   6.56e-03 |   7.01e-10 |      7 |
+|        7.7 |       0.002 |       0.012 |       0.008 |   5.37e-03 |   5.10e-09 |      7 |
+|        8.8 |       0.002 |       0.012 |       0.009 |   4.32e-03 |   1.97e-09 |      8 |
+|        9.9 |       0.002 |       0.012 |       0.009 |   3.22e-03 |   6.44e-09 |      8 |
+|      10.10 |       0.002 |       0.012 |       0.011 |   2.10e-03 |   1.90e-09 |      9 |
++------------+-------------+-------------+-------------+------------+------------+--------+
+

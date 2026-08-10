@@ -257,10 +257,7 @@ end
 function hypredrive_comm_rank(comm::Symbol=:world)
     if comm === :self
         hypredrive_initialize()
-        rank = Ref{Cint}(0)
-        _check(ccall((:HYPREDRV_JuliaSelfCommRank, _lib()), UInt32, (Ref{Cint},), rank),
-               "MPI self rank")
-        return Int(rank[])
+        return 0
     end
     comm === :world && return hypredrive_mpi_world_rank()
     throw(ArgumentError("comm must be :world or :self"))
@@ -269,10 +266,7 @@ end
 function hypredrive_comm_size(comm::Symbol=:world)
     if comm === :self
         hypredrive_initialize()
-        size = Ref{Cint}(1)
-        _check(ccall((:HYPREDRV_JuliaSelfCommSize, _lib()), UInt32, (Ref{Cint},), size),
-               "MPI self size")
-        return Int(size[])
+        return 1
     end
     comm === :world && return hypredrive_mpi_world_size()
     throw(ArgumentError("comm must be :world or :self"))
@@ -606,13 +600,20 @@ function _parse_input_args!(drv::Ptr{Cvoid}, yaml::AbstractString,
     end
 
     !isempty(input_args) || throw(ArgumentError("input_args must not be empty"))
-    cargs = Vector{Cstring}(undef, length(input_args))
-    GC.@preserve input_args begin
-        for i in eachindex(input_args)
-            cargs[i] = Base.unsafe_convert(Cstring, input_args[i])
+    # Example CLIs preserve their -a/--args delimiter. Remove it here so the C
+    # pair-list parser cannot mistake a YAML-looking value for another config.
+    args = if length(input_args) >= 2 && input_args[2] in ("-a", "--args")
+        vcat(input_args[1:1], input_args[3:end])
+    else
+        input_args
+    end
+    cargs = Vector{Cstring}(undef, length(args))
+    GC.@preserve args begin
+        for i in eachindex(args)
+            cargs[i] = Base.unsafe_convert(Cstring, args[i])
         end
         _check(ccall((:HYPREDRV_JuliaInputArgsParseArgv, _lib()), UInt32,
-                     (Ptr{Cvoid}, Cint, Ptr{Cstring}), drv, Cint(length(cargs)),
+                     (Ptr{Cvoid}, Cint, Ptr{Cstring}), drv, Cint(length(args)),
                      pointer(cargs)), "parse options")
     end
     return nothing

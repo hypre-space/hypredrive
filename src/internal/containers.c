@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "internal/containers.h"
+#include <limits.h>
+#include <stdarg.h>
 #include "internal/error.h"
 #include "internal/utils.h"
 /*-----------------------------------------------------------------------------
@@ -19,7 +21,9 @@ hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char 
    FILE *fp = NULL;
    char  fname[MAX_FILENAME_LENGTH];
 
-   if (!ia || !ia->data) return;
+   /* An empty array (size 0) is valid and still produces a header-only file; only
+    * a non-empty array with no backing storage is malformed. */
+   if (!ia || (ia->size > 0 && !ia->data)) return;
 
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
@@ -50,8 +54,22 @@ hypredrv_IntArrayCreate(size_t size)
 {
    IntArray *int_array = NULL;
 
-   int_array       = malloc(sizeof(IntArray));
-   int_array->data = malloc(size * sizeof(int));
+   int_array = malloc(sizeof(IntArray));
+   if (!int_array)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
+   /* Allocate at least one element so data is never NULL for a valid array; this
+    * preserves the historical invariant that consumers rely on (an empty dofmap
+    * still has a non-NULL data pointer). */
+   int_array->data = malloc((size > 0 ? size : 1) * sizeof(int));
+   if (!int_array->data)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      free(int_array);
+      return NULL;
+   }
    int_array->size = size;
 
    int_array->unique_size = 0;
@@ -490,6 +508,7 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAddInvalidFilename(filename);
+         free(partids);
          return;
       }
 
@@ -499,12 +518,23 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid number of header entries!");
+         fclose(fp);
+         free(partids);
          return;
       }
       fclose(fp);
       num_entries_all += num_entries;
    }
    int_array = hypredrv_IntArrayCreate(num_entries_all);
+   if (!int_array || (num_entries_all > 0 && !int_array->data))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate dofmap array (%zu entries)",
+                           num_entries_all);
+      hypredrv_IntArrayDestroy(&int_array);
+      free(partids);
+      return;
+   }
 
    /* Fill entries */
    for (size_t part = 0, idx = 0; part < (size_t)nparts; part++)
@@ -514,6 +544,8 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAddInvalidFilename(filename);
+         free(partids);
+         hypredrv_IntArrayDestroy(&int_array);
          return;
       }
 
@@ -523,12 +555,29 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid number of header entries!");
+         fclose(fp);
+         free(partids);
+         hypredrv_IntArrayDestroy(&int_array);
+         return;
+      }
+      if (idx + num_entries > num_entries_all)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Dofmap part grew between sizing and read passes");
+         fclose(fp);
+         free(partids);
+         hypredrv_IntArrayDestroy(&int_array);
          return;
       }
 
       if (is_binary)
       {
-         count = fread(&int_array->data[idx], sizeof(size_t), num_entries, fp);
+         /* On-disk dofmap entries are stored as fixed-width int (see the writer in
+          * utils/lsseq_driver.c, which reads/writes int32_t values). Reading with
+          * sizeof(int) matches the IntArray element size; using sizeof(size_t) here
+          * would read 8-byte elements into a 4-byte-per-element buffer and overflow
+          * the heap allocation. */
+         count = fread(&int_array->data[idx], sizeof(int), num_entries, fp);
       }
       else
       {
@@ -545,8 +594,11 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
       if (count != num_entries)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Expected %d, but found %ld coefficients!", num_entries,
+         hypredrv_ErrorMsgAdd("Expected %zu, but found %zu coefficients!", num_entries,
                               count);
+         fclose(fp);
+         free(partids);
+         hypredrv_IntArrayDestroy(&int_array);
          return;
       }
 
@@ -572,7 +624,13 @@ hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap,
    IntArray *int_array = NULL;
 
    int_array = hypredrv_IntArrayCreate((size_t)size);
-   memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
+   /* A rank may legitimately own no rows, in which case the caller passes an empty
+    * (possibly NULL) dofmap. Still take part in the collective below so the global
+    * label set is built consistently across all ranks. */
+   if (size > 0 && dofmap)
+   {
+      memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
+   }
    hypredrv_IntArrayUnique(comm, int_array);
 
    *int_array_ptr = int_array;
@@ -743,6 +801,165 @@ bool
 hypredrv_StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
 {
    return (hypredrv_StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
+}
+
+/*--------------------------------------------------------------------------
+ * StrBufferAppend
+ *--------------------------------------------------------------------------*/
+
+static void
+StrBufferAppend(char **pos, size_t *remaining, const char *format, ...)
+{
+   va_list args;
+   int     written = 0;
+
+   va_start(args, format);
+   written = vsnprintf(*pos, *remaining, format, args);
+   va_end(args);
+
+   /* GCOVR_EXCL_BR_START */
+   if (written < 0 || (size_t)written >= *remaining) /* GCOVR_EXCL_BR_STOP */
+   {
+      *remaining = 0; /* GCOVR_EXCL_LINE */
+      return;         /* GCOVR_EXCL_LINE */
+   }
+
+   *pos += written;
+   *remaining -= (size_t)written;
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StrIntMapArrayDomainToString
+ *
+ * Builds a comma-separated list of the printable domain entries of a map,
+ * grouping aliases that share the same numeric image with a slash, e.g.:
+ * "none (-1), single/jacobi (7)". Returns a heap string owned by the
+ * caller, or NULL when the map has no printable entry.
+ *--------------------------------------------------------------------------*/
+
+char *
+hypredrv_StrIntMapArrayDomainToString(const StrIntMapArray valid)
+{
+   size_t length = 1;
+   size_t count  = 0;
+
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      if (!valid.data[i].str || valid.data[i].str[0] == '\0')
+      {
+         continue;
+      }
+      length += strlen(valid.data[i].str) + 16; /* separators plus " (num)" */
+      count++;
+   }
+
+   if (count == 0)
+   {
+      return NULL;
+   }
+
+   char *buffer = (char *)malloc(length);
+   /* GCOVR_EXCL_BR_START */
+   if (!buffer) /* GCOVR_EXCL_BR_STOP */
+   {
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+
+   char  *pos       = buffer;
+   size_t remaining = length;
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      const char *str          = valid.data[i].str;
+      int         num          = valid.data[i].num;
+      bool        already_seen = false;
+
+      if (!str || str[0] == '\0')
+      {
+         continue;
+      }
+
+      /* Skip entries whose alias group has already been emitted */
+      for (size_t j = 0; j < i; j++)
+      {
+         if (valid.data[j].num == num && valid.data[j].str &&
+             valid.data[j].str[0] != '\0')
+         {
+            already_seen = true;
+            break;
+         }
+      }
+      if (already_seen)
+      {
+         continue;
+      }
+
+      StrBufferAppend(&pos, &remaining, "%s%s", (pos == buffer) ? "" : ", ", str);
+
+      /* Join the remaining aliases mapping to the same numeric image */
+      for (size_t j = i + 1; j < valid.size; j++)
+      {
+         if (valid.data[j].num == num && valid.data[j].str &&
+             valid.data[j].str[0] != '\0')
+         {
+            StrBufferAppend(&pos, &remaining, "/%s", valid.data[j].str);
+         }
+      }
+
+      StrBufferAppend(&pos, &remaining, " (%d)", num);
+   }
+
+   return buffer;
+}
+
+/*--------------------------------------------------------------------------
+ * hypredrv_StrArrayToString
+ *
+ * Builds a comma-separated list of the entries of a string array, e.g.:
+ * "max_iter, tolerance". Returns a heap string owned by the caller, or
+ * NULL when the array has no printable entry.
+ *--------------------------------------------------------------------------*/
+
+char *
+hypredrv_StrArrayToString(const StrArray valid)
+{
+   size_t length = 1;
+   size_t count  = 0;
+
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      if (!valid.data[i] || valid.data[i][0] == '\0')
+      {
+         continue;
+      }
+      length += strlen(valid.data[i]) + 2; /* ", " separator */
+      count++;
+   }
+
+   if (count == 0)
+   {
+      return NULL;
+   }
+
+   char *buffer = (char *)malloc(length);
+   /* GCOVR_EXCL_BR_START */
+   if (!buffer) /* GCOVR_EXCL_BR_STOP */
+   {
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+
+   char  *pos       = buffer;
+   size_t remaining = length;
+   for (size_t i = 0; i < valid.size; i++)
+   {
+      if (!valid.data[i] || valid.data[i][0] == '\0')
+      {
+         continue;
+      }
+      StrBufferAppend(&pos, &remaining, "%s%s", (pos == buffer) ? "" : ", ",
+                      valid.data[i]);
+   }
+
+   return buffer;
 }
 
 /*-----------------------------------------------------------------------------

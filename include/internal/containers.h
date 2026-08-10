@@ -8,23 +8,9 @@
 #ifndef CONTAINERS_HEADER
 #define CONTAINERS_HEADER
 
-#include "HYPRE.h"
-#include "HYPRE_utilities.h"
-
-/* Undefine autotools package macros from hypre */
-#undef PACKAGE_NAME
-#undef PACKAGE_BUGREPORT
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_URL
-#undef PACKAGE_VERSION
-
-#include <limits.h>
+#include <mpi.h>
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include "internal/utils.h"
+#include <stddef.h>
 
 enum
 {
@@ -42,7 +28,6 @@ typedef struct StackIntArray_struct
    size_t size;
 } StackIntArray;
 
-void hypredrv_StackIntArrayRead(StackIntArray *);
 #define STACK_INTARRAY_CREATE() ((StackIntArray){.data = {0}, .size = 0})
 
 /*--------------------------------------------------------------------------
@@ -98,11 +83,15 @@ typedef struct StrArray_struct
    {                                                       \
       .data = _str, .size = sizeof(_str) / sizeof(_str[0]) \
    }
+// clang-format off
+#define STR_ARRAY_VOID() (StrArray){.data = NULL, .size = 0}
+// clang-format on
 
-bool hypredrv_StrArrayEntryExists(StrArray, const char *);
-void hypredrv_StrToIntArray(const char *, IntArray **);
-void hypredrv_StrToDoubleArray(const char *, DoubleArray **);
-void hypredrv_StrToStackIntArray(const char *, StackIntArray *);
+bool  hypredrv_StrArrayEntryExists(StrArray, const char *);
+char *hypredrv_StrArrayToString(StrArray);
+void  hypredrv_StrToIntArray(const char *, IntArray **);
+void  hypredrv_StrToDoubleArray(const char *, DoubleArray **);
+void  hypredrv_StrToStackIntArray(const char *, StackIntArray *);
 
 /*--------------------------------------------------------------------------
  * StrIntMap struct (str <-> num)
@@ -132,19 +121,9 @@ typedef struct StrIntMapArray_struct
 
 extern const StrIntMapArray hypredrv_OnOffMapArray;
 
-int  hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
-bool hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
-
-/*--------------------------------------------------------------------------
- * StrStrIntMap struct (strA,strB <-> num)
- *--------------------------------------------------------------------------*/
-
-typedef struct StrStrIntMap_struct
-{
-   const char *strA;
-   const char *strB;
-   int         num;
-} StrStrIntMap;
+int   hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
+bool  hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
+char *hypredrv_StrIntMapArrayDomainToString(StrIntMapArray);
 
 /*--------------------------------------------------------------------------
  * DofLabelMap struct (name <-> integer dof type)

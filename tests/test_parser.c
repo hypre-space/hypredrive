@@ -75,7 +75,6 @@ void           hypredrv_MGRfrlxSetArgsFromYAML(void *, YAMLnode *);
 void           hypredrv_MGRgrlxSetArgsFromYAML(void *, YAMLnode *);
 StrIntMapArray hypredrv_MGRGetValidValues(const char *);
 StrIntMapArray hypredrv_MGRlvlGetValidValues(const char *);
-HYPRE_Int     *hypredrv_MGRConvertArgInt(MGR_args *, const char *);
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
@@ -460,16 +459,6 @@ test_exhaustive_mgr_parser(void)
 
    ASSERT_EQ(lvl_bad->valid, YAML_NODE_INVALID_KEY);
 
-   /* Exercise hypredrv_MGRConvertArgInt table conversion paths (HANDLE_MGR_LEVEL_ATTRIBUTE macro) */
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:num_sweeps"));
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "g_relaxation:type"));
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "g_relaxation:num_sweeps"));
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "prolongation_type"));
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "restriction_type"));
-   ASSERT_NOT_NULL(hypredrv_MGRConvertArgInt(&args, "coarse_level_type"));
-   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "unknown:name"));
-
    hypredrv_YAMLnodeDestroy(mgr);
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
@@ -553,6 +542,29 @@ test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels(void)
    hypredrv_MGRDestroyNestedSolverArgs(&args);
    hypredrv_MGRSetDofLabels(NULL);
    hypredrv_DofLabelMapDestroy(&labels);
+}
+
+static void
+test_mgr_scalar_level_is_rejected(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0 = add_child(levels, "0", "not-a-mapping", 2);
+   add_child(mgr, "coarsest_level", "amg", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet() & ERROR_UNEXPECTED_VAL, ERROR_UNEXPECTED_VAL);
+   ASSERT_EQ(lvl0->valid, YAML_NODE_UNEXPECTED_VAL);
+   ASSERT_EQ(args.num_levels, 1);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
+   hypredrv_ErrorCodeResetAll();
 }
 
 /* Symbolic f_dofs block sequence with dof_labels */
@@ -809,26 +821,6 @@ test_mgr_MGRDestroyNestedSolverArgs_null(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_MGRDestroyNestedSolverArgs(NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-}
-
-static void
-test_mgr_MGRConvertArgInt_max_levels_guard_and_nested_mgr_remap(void)
-{
-   MGR_args args;
-   hypredrv_MGRSetDefaultArgs(&args);
-
-   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
-
-   args.num_levels = MAX_MGR_LEVELS - 1;
-   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "f_relaxation:type"));
-   ASSERT_NULL(hypredrv_MGRConvertArgInt(&args, "prolongation_type"));
-
-   hypredrv_MGRSetDefaultArgs(&args);
-   args.num_levels = 2;
-   args.level[0].f_relaxation.type = MGR_FRLX_TYPE_NESTED_MGR;
-   HYPRE_Int *buf = hypredrv_MGRConvertArgInt(&args, "f_relaxation:type");
-   ASSERT_NOT_NULL(buf);
-   ASSERT_EQ(buf[0], 7);
 }
 
 static void
@@ -1092,6 +1084,23 @@ test_relaxation_values_use_canonical_l1_jacobi_spelling(void)
 }
 
 static void
+test_mgr_air_restriction_values_require_hypre_232(void)
+{
+   StrIntMapArray map = hypredrv_MGRlvlGetValidValues("restriction_type");
+#if HYPRE_CHECK_MIN_VERSION(23200, 0)
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1"), 4);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1.5"), 5);
+#else
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
+#endif
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-1"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-2"));
+}
+
+static void
 test_amg_relaxation_values_accept_forward_and_backward_hl1gs(void)
 {
    StrIntMapArray down_map = hypredrv_AMGrlxGetValidValues("down_type");
@@ -1125,6 +1134,7 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_parser_flat_scalars_and_grelax_krylov_type_promotion);
    RUN_TEST(test_mgr_f_dofs_yaml_block_sequence_extra_non_dash_keys);
    RUN_TEST(test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels);
+   RUN_TEST(test_mgr_scalar_level_is_rejected);
    RUN_TEST(test_mgr_f_dofs_symbolic_block_sequence_with_dof_labels);
    RUN_TEST(test_mgr_f_dofs_symbolic_without_dof_labels_errors);
    RUN_TEST(test_mgr_f_dofs_unknown_symbolic_label_errors);
@@ -1137,12 +1147,12 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_cls_frxl_grlx_flat_scalar_branches);
    RUN_TEST(test_mgr_MGR_setters_null_parent_early_return);
    RUN_TEST(test_mgr_MGRDestroyNestedSolverArgs_null);
-   RUN_TEST(test_mgr_MGRConvertArgInt_max_levels_guard_and_nested_mgr_remap);
    RUN_TEST(test_nested_krylov_parse_precon_errors);
    RUN_TEST(test_nested_krylov_parser_extra_coverage);
    RUN_TEST(test_nested_krylov_solver_switch_pc_fgmres_bicgstab);
    RUN_TEST(test_mgr_nested_krylov_accepts_mgr_precon);
    RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);
+   RUN_TEST(test_mgr_air_restriction_values_require_hypre_232);
    RUN_TEST(test_amg_relaxation_values_accept_forward_and_backward_hl1gs);
 
    MPI_Finalize();

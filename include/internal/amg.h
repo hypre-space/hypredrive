@@ -11,10 +11,10 @@
 #include "HYPRE_parcsr_ls.h"
 #include "internal/cheby.h"
 #include "internal/containers.h"
-#include "internal/field.h"
 #include "internal/fsai.h"
 #include "internal/ilu.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * AMG complex smoother arguments struct
@@ -35,6 +35,7 @@ typedef struct AMGsmt_args_struct
 
 typedef struct AMGrlx_args_struct
 {
+   HYPRE_Int  type;
    HYPRE_Int  down_type;
    HYPRE_Int  up_type;
    HYPRE_Int  coarse_type;
@@ -43,6 +44,7 @@ typedef struct AMGrlx_args_struct
    HYPRE_Int  coarse_sweeps;
    HYPRE_Int  num_sweeps;
    HYPRE_Int  order;
+   HYPRE_Int  points;
    HYPRE_Real weight;
    HYPRE_Real outer_weight;
    Cheby_args chebyshev;
@@ -73,13 +75,14 @@ typedef struct AMGcsn_args_struct
    HYPRE_Int  rap2;
    HYPRE_Int  mod_rap2;
    HYPRE_Int  keep_transpose;
+   HYPRE_Int  sabs;
    HYPRE_Int  num_functions;
    HYPRE_Int  filter_functions;
    HYPRE_Int  nodal;
-   HYPRE_Int  nodal_type;          /* HYPRE_BoomerAMGSetNodal mode for GM/LN interp */
-   HYPRE_Int  interp_vec_variant;  /* 1=GM1, 2=GM2, 3+=LN rigid-body-mode interp */
-   HYPRE_Int  smooth_interp_vecs;  /* smooth the interp (rigid-body) vectors */
-   HYPRE_Int  interp_vec_qmax;     /* max nnz per row added by GM/LN expansion */
+   HYPRE_Int  nodal_type;         /* HYPRE_BoomerAMGSetNodal mode for GM/LN interp */
+   HYPRE_Int  interp_vec_variant; /* -1 = auto, 1 = GM1, 2 = GM2, 3+ = LN interp */
+   HYPRE_Int  smooth_interp_vecs; /* -1 = auto; smooth the interp (rigid-body) vectors */
+   HYPRE_Int  interp_vec_qmax; /* -1 = auto; max nnz per row added by GM/LN expansion */
    HYPRE_Real interp_vec_abs_q_trunc; /* drop GM/LN Q entries below this magnitude */
    HYPRE_Int  seq_amg_th;
    HYPRE_Int  min_coarse_size;
@@ -99,6 +102,8 @@ typedef struct AMGint_args_struct
    HYPRE_Int  restriction_type;
    HYPRE_Int  max_nnz_row;
    HYPRE_Real trunc_factor;
+   HYPRE_Real restrict_strong_th;
+   HYPRE_Real restrict_filter_th;
 } AMGint_args;
 
 /*--------------------------------------------------------------------------
@@ -117,9 +122,13 @@ typedef struct AMG_args_struct
    HYPRE_Int  print_level;
    HYPRE_Real tolerance;
 
+   /* GM/LN interpolation variant implied by how the near-null space was built
+      (full system vs. projected onto an MGR F-block). Used when the YAML knob
+      coarsening.interp_vec_variant is left on "auto". */
+   HYPRE_Int       interp_vec_variant;
    HYPRE_Int       num_rbms;
    HYPRE_ParVector rbms[3];
-   HYPRE_Int       frelax_nullspace; /* GM interp vectors live on an MGR F-block */
+   HYPRE_Int       rbms_projected; /* RBMs live on an MGR F-block, not the full system */
 } AMG_args;
 
 /*--------------------------------------------------------------------------
@@ -127,10 +136,12 @@ typedef struct AMG_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_AMGSetDefaultArgs(AMG_args *);
-void hypredrv_AMGSetArgs(void *, const YAMLnode *);
+void hypredrv_AMGSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
-void hypredrv_AMGSetRBMsFRestricted(AMG_args *, HYPRE_IJVector, const int *, int);
+void hypredrv_AMGSetProjectedRBMs(AMG_args *, HYPRE_IJVector, const IntArray *,
+                                  const StackIntArray *);
+void hypredrv_AMGDestroyRBMs(AMG_args *);
 void hypredrv_AMGSetDofFunc(const AMG_args *, const IntArray *, HYPRE_Solver,
                             HYPRE_IJMatrix);
 

@@ -20,7 +20,8 @@ function(setup_test_executable target_name source_file)
     target_compile_definitions(${target_name} PRIVATE HYPREDRIVE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
     # Link to both HYPREDRV and HYPRE, same as hypredrive executable does
-    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
+    target_link_libraries(${target_name} PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
+    hypredrv_add_hypre_build_dependency(${target_name})
 
     # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
     if(HYPREDRV_ENABLE_CALIPER)
@@ -111,6 +112,7 @@ set(_hypredrv_unit_test_cases
     "test_error|test_error.c|FALSE"
     "test_logging|test_logging.c|FALSE"
     "test_field|test_field.c|FALSE"
+    "test_help|test_help.c|FALSE"
     "test_runtime|test_runtime.c|FALSE"
     "test_args|test_args.c|FALSE"
     "test_precon|test_precon.c|TRUE"
@@ -145,6 +147,15 @@ foreach(_case IN LISTS _hypredrv_unit_test_cases)
     endif()
 endforeach()
 
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(
+        NAME unit_test_parse_logs
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_parse_logs.py
+    )
+    set_tests_properties(unit_test_parse_logs PROPERTIES LABELS "unit")
+endif()
+
 setup_test_executable(test_linsys_print_mpi test_linsys_print_mpi.c)
 add_executable_test(linsys_print_mpi_2proc test_linsys_print_mpi 2 RUN_SERIAL)
 
@@ -159,6 +170,9 @@ add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_args_mpi test_args_mpi.c)
 add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)
+
+setup_test_executable(test_hypredrv_mpi test_hypredrv_mpi.c)
+add_executable_test(hypredrv_mpi_2proc test_hypredrv_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)
 add_executable_test(setmatrix_from_csr_mpi_2proc test_setmatrix_from_csr_mpi 2 RUN_SERIAL)

@@ -263,7 +263,9 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive_mex.c"
                 ${_hypredrv_octave_link_inputs}
                 -lm
-        DEPENDS HYPREDRV "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive_mex.c"
+        DEPENDS HYPREDRV
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive_mex.c"
+                "${CMAKE_SOURCE_DIR}/include/internal/compatibility.h"
         COMMENT "Building hypredrive Octave MEX interface"
         VERBATIM
         COMMAND_EXPAND_LISTS)

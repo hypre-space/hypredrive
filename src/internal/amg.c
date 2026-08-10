@@ -6,6 +6,8 @@
  ******************************************************************************/
 
 #include "internal/amg.h"
+#include <stdlib.h>
+#include <string.h>
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
 #include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
@@ -18,31 +20,34 @@
  *-----------------------------------------------------------------------------*/
 
 /* AMG's interpolation fields */
-#define AMGint_FIELDS(_prefix)                                                  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)
+#define AMGint_FIELDS(_prefix)                                                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet)     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restriction_type, hypredrv_FieldTypeIntSet)      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restrict_strong_th, hypredrv_FieldTypeDoubleSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, restrict_filter_th, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's coarsening fields */
-#define AMGcsn_FIELDS(_prefix)                                                 \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, hypredrv_FieldTypeIntSet)             \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, hypredrv_FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, hypredrv_FieldTypeIntSet)    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal_type, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, interp_vec_variant, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, smooth_interp_vecs, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, interp_vec_qmax, hypredrv_FieldTypeIntSet)  \
+#define AMGcsn_FIELDS(_prefix)                                                          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, rap2, hypredrv_FieldTypeIntSet)                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, mod_rap2, hypredrv_FieldTypeIntSet)                  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, keep_transpose, hypredrv_FieldTypeIntSet)            \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, sabs, hypredrv_FieldTypeIntSet)                      \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_functions, hypredrv_FieldTypeIntSet)             \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal_type, hypredrv_FieldTypeIntSet)                \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, interp_vec_variant, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, smooth_interp_vecs, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, interp_vec_qmax, hypredrv_FieldTypeIntSet)           \
    ADD_FIELD_OFFSET_ENTRY(_prefix, interp_vec_abs_q_trunc, hypredrv_FieldTypeDoubleSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, hypredrv_FieldTypeIntSet) \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal, hypredrv_FieldTypeIntSet)            \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, hypredrv_FieldTypeIntSet)  \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, hypredrv_FieldTypeIntSet)       \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, hypredrv_FieldTypeDoubleSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, filter_functions, hypredrv_FieldTypeIntSet)          \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, nodal, hypredrv_FieldTypeIntSet)                     \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, seq_amg_th, hypredrv_FieldTypeIntSet)                \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, min_coarse_size, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_coarse_size, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_levels, hypredrv_FieldTypeIntSet)                \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_row_sum, hypredrv_FieldTypeDoubleSet)            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's aggressive coarsening fields */
@@ -65,6 +70,7 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_sweeps, hypredrv_FieldTypeIntSet)   \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_sweeps, hypredrv_FieldTypeIntSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, order, hypredrv_FieldTypeIntSet)           \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, points, hypredrv_FieldTypeIntSet)          \
    ADD_FIELD_OFFSET_ENTRY(_prefix, weight, hypredrv_FieldTypeDoubleSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, outer_weight, hypredrv_FieldTypeDoubleSet) \
    ADD_FIELD_OFFSET_ENTRY(_prefix, chebyshev, hypredrv_ChebySetArgs)
@@ -118,10 +124,12 @@ hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_AMG) // LCOV_EXCL_LINE
 
    void hypredrv_AMGintSetDefaultArgs(AMGint_args *args)
 {
-   args->prolongation_type = 6;
-   args->restriction_type  = 0;
-   args->max_nnz_row       = 4;
-   args->trunc_factor      = 0.0;
+   args->prolongation_type  = 6;
+   args->restriction_type   = 0;
+   args->max_nnz_row        = 4;
+   args->trunc_factor       = 0.0;
+   args->restrict_strong_th = 0.25;
+   args->restrict_filter_th = 0.0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -141,20 +149,24 @@ hypredrv_AMGcsnSetDefaultArgs(AMGcsn_args *args)
    args->keep_transpose = 0;
    args->type           = 10;
 #endif
-   args->num_functions    = 1;
-   args->nodal_type         = 4; /* GM/LN defaults reproduce the historical setup */
-   args->interp_vec_variant = 2;
-   args->smooth_interp_vecs = 1;
-   args->interp_vec_qmax    = 4;
+   args->num_functions = 1;
+   /* GM/LN knobs: "auto" (-1) reproduces the historical hard-coded setup, i.e.
+      GM2 with QMax 4 and smoothed interpolation vectors for a full-system near
+      null space, GM1 for one projected onto an MGR F-block. */
+   args->nodal_type             = 4;
+   args->interp_vec_variant     = -1;
+   args->smooth_interp_vecs     = -1;
+   args->interp_vec_qmax        = -1;
    args->interp_vec_abs_q_trunc = 0.0;
-   args->filter_functions = 0;
-   args->nodal            = 0;
-   args->seq_amg_th       = 0;
-   args->min_coarse_size  = 0;
-   args->max_coarse_size  = 64;
-   args->max_levels       = 25;
-   args->max_row_sum      = 0.9;
-   args->strong_th        = 0.25;
+   args->sabs                   = 0;
+   args->filter_functions       = 0;
+   args->nodal                  = 0;
+   args->seq_amg_th             = 0;
+   args->min_coarse_size        = 0;
+   args->max_coarse_size        = 64;
+   args->max_levels             = 25;
+   args->max_row_sum            = 0.9;
+   args->strong_th              = 0.25;
 }
 
 /*-----------------------------------------------------------------------------
@@ -180,6 +192,7 @@ hypredrv_AMGaggSetDefaultArgs(AMGagg_args *args)
 void
 hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *args)
 {
+   args->type = -1;
 #ifdef HYPRE_USING_GPU
    args->down_type = 18;
    args->up_type   = 18;
@@ -193,6 +206,7 @@ hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *args)
    args->coarse_sweeps = 1;
    args->num_sweeps    = 1;
    args->order         = 0;
+   args->points        = 0;
    args->weight        = 1.0;
    args->outer_weight  = 1.0;
 
@@ -220,14 +234,14 @@ hypredrv_AMGsmtSetDefaultArgs(AMGsmt_args *args)
 void
 hypredrv_AMGSetDefaultArgs(AMG_args *args)
 {
-   args->max_iter    = 1;
-   args->print_level = 0;
-   args->tolerance   = 0.0;
-   args->num_rbms         = 0;
-   args->rbms[0]          = NULL;
-   args->rbms[1]          = NULL;
-   args->rbms[2]          = NULL;
-   args->frelax_nullspace = 0;
+   args->max_iter           = 1;
+   args->print_level        = 0;
+   args->tolerance          = 0.0;
+   args->interp_vec_variant = 2;
+   args->num_rbms           = 0;
+   args->rbms[0]            = NULL;
+   args->rbms[1]            = NULL;
+   args->rbms[2]            = NULL;
 
    hypredrv_AMGintSetDefaultArgs(&args->interpolation);
    hypredrv_AMGaggSetDefaultArgs(&args->aggressive);
@@ -363,6 +377,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"hsgs",           6},
                                 {"jacobi",         7},
                                 {"l1-hsgs",        8},
+                                {"forward-solve", 10},
                                 {"2gs-it1",       11},
                                 {"2gs-it2",       12},
                                 {"forward-hl1gs", 13},
@@ -383,6 +398,7 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"hsgs",            6},
                                 {"jacobi",          7},
                                 {"l1-hsgs",         8},
+                                {"forward-solve",  10},
                                 {"2gs-it1",        11},
                                 {"2gs-it2",        12},
                                 {"forward-hl1gs",  13},
@@ -391,6 +407,16 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"chebyshev",      16},
                                 {"l1-jacobi",      18},
                                 {"l1sym-hgs",      89},};
+
+      return STR_INT_MAP_ARRAY_CREATE(map);
+   }
+   if (!strcmp(key, "points"))
+   {
+      /* Which grid points each sweep of the cycle relaxes. "all" leaves hypre's
+         default schedule untouched; "air" applies the F/C schedule that the
+         approximate ideal restriction algorithm expects. */
+      static StrIntMap map[] = {{"all", 0},
+                                {"air", 1},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -450,11 +476,154 @@ hypredrv_AMGsmtGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 void
+hypredrv_AMGDestroyRBMs(AMG_args *args)
+{
+   if (!args)
+   {
+      return;
+   }
+
+   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   {
+      HYPRE_ParVectorDestroy(args->rbms[i]);
+      args->rbms[i] = NULL;
+   }
+   args->num_rbms       = 0;
+   args->rbms_projected = 0;
+}
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+enum
+{
+   AMG_NUM_RBMS            = 3,
+   AMG_FIRST_RBM_COMPONENT = 3,
+};
+
+static int
+AMGIntCompare(const void *lhs, const void *rhs)
+{
+   int left  = *(const int *)lhs;
+   int right = *(const int *)rhs;
+   return (left > right) - (left < right);
+}
+
+/* Copy the complete multivector to host memory. HYPRE_IJVectorGetValues()
+ * expects its output buffer in the vector's execution memory on GPU builds,
+ * so passing a malloc'ed buffer to it is not portable. Keeping the original
+ * strides also handles both supported multivector storage layouts. */
+static HYPRE_Complex *
+AMGNearNullDataToHost(HYPRE_IJVector vec_nn, HYPRE_Int num_entries,
+                      HYPRE_Int *vector_stride, HYPRE_Int *index_stride)
+{
+   void            *object     = NULL;
+   hypre_ParVector *par_vector = NULL;
+   hypre_Vector    *local      = NULL;
+
+   HYPRE_IJVectorGetObject(vec_nn, &object);
+   par_vector = (hypre_ParVector *)object;
+   if (!par_vector || !(local = hypre_ParVectorLocalVector(par_vector)) ||
+       hypre_VectorSize(local) != num_entries ||
+       hypre_VectorNumVectors(local) < AMG_FIRST_RBM_COMPONENT + AMG_NUM_RBMS)
+   {
+      return NULL;
+   }
+
+   size_t total_entries = (size_t)num_entries * (size_t)hypre_VectorNumVectors(local);
+   HYPRE_Complex *host_values =
+      hypre_TAlloc(HYPRE_Complex, total_entries, HYPRE_MEMORY_HOST);
+   if (total_entries > 0 && !host_values)
+   {
+      return NULL;
+   }
+
+   if (total_entries > 0)
+   {
+      HYPRE_Complex *source = hypre_VectorData(local);
+      if (!source)
+      {
+         hypre_TFree(host_values, HYPRE_MEMORY_HOST);
+         return NULL;
+      }
+      hypre_TMemcpy(host_values, source, HYPRE_Complex, total_entries, HYPRE_MEMORY_HOST,
+                    hypre_VectorMemoryLocation(local));
+   }
+
+   *vector_stride = hypre_VectorVectorStride(local);
+   *index_stride  = hypre_VectorIndexStride(local);
+   return host_values;
+}
+
+/* Build the three displacement RBMs from a host copy of the near-null-space
+ * multivector. A NULL selection mask copies every local row. */
+static int
+AMGCreateRBMsFromHost(AMG_args *args, MPI_Comm comm, HYPRE_BigInt global_size,
+                      HYPRE_BigInt local_start, HYPRE_Int local_size,
+                      HYPRE_Int source_size, const unsigned char *selected,
+                      const HYPRE_Complex *host_values, HYPRE_Int vector_stride,
+                      HYPRE_Int index_stride)
+{
+   hypredrv_AMGDestroyRBMs(args);
+
+   for (HYPRE_Int mode = 0; mode < AMG_NUM_RBMS; mode++)
+   {
+      /* hypre_ParVectorCreate copies these two entries. */
+      HYPRE_BigInt partitioning[2] = {local_start, local_start + local_size};
+      HYPRE_ParVectorCreate(comm, global_size, partitioning, &args->rbms[mode]);
+      int local_ok = args->rbms[mode] != NULL;
+      if (local_ok)
+      {
+         hypre_ParVectorInitialize_v2(args->rbms[mode], HYPRE_MEMORY_HOST);
+         hypre_Vector *local = hypre_ParVectorLocalVector(args->rbms[mode]);
+         local_ok            = local && (local_size == 0 || hypre_VectorData(local));
+      }
+
+      int global_ok = 0;
+      MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+      if (!global_ok)
+      {
+         if (args->rbms[mode])
+         {
+            HYPRE_ParVectorDestroy(args->rbms[mode]);
+            args->rbms[mode] = NULL;
+         }
+         hypredrv_AMGDestroyRBMs(args);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to create rigid-body-mode vectors");
+         return 0;
+      }
+
+      args->num_rbms++;
+      HYPRE_Complex *data =
+         hypre_VectorData(hypre_ParVectorLocalVector(args->rbms[mode]));
+      HYPRE_Int projected_i = 0;
+      for (HYPRE_Int i = 0; i < source_size; i++)
+      {
+         if (!selected || selected[i])
+         {
+            size_t source_index =
+               ((size_t)(AMG_FIRST_RBM_COMPONENT + mode) * (size_t)vector_stride) +
+               ((size_t)i * (size_t)index_stride);
+            data[projected_i++] = host_values[source_index];
+         }
+      }
+   }
+
+   return 1;
+}
+#endif
+
+void
 hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
-   HYPRE_BigInt   jlower = 0, jupper = 0;
-   HYPRE_Int      num_entries = 0;
-   HYPRE_Complex *values      = NULL;
+   HYPRE_BigInt jlower = 0, jupper = 0;
+   HYPRE_Int    num_entries = 0;
+
+   if (!args)
+   {
+      return;
+   }
+   args->interp_vec_variant = 2;
+   hypredrv_AMGDestroyRBMs(args);
 
    /* Sanity: check if the near null space vector is set
       We do not error out when NOT using nodal coarsening. */
@@ -471,43 +640,26 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
-   num_entries = (HYPRE_Int)(jupper - jlower + 1);
-   values      = (HYPRE_Complex *)malloc((size_t)num_entries * sizeof(HYPRE_Complex));
-
-   /* Reset any previous RBMs */
-   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   num_entries                  = (HYPRE_Int)(jupper - jlower + 1);
+   HYPRE_Int      vector_stride = 0, index_stride = 0;
+   HYPRE_Complex *host_values =
+      AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
+   int      local_ok  = num_entries == 0 || host_values != NULL;
+   int      global_ok = 0;
+   MPI_Comm comm      = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
    {
-      HYPRE_ParVectorDestroy(args->rbms[i]);
-      args->rbms[i] = NULL;
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to access near-null-space components on host");
+      hypre_TFree(host_values, HYPRE_MEMORY_HOST);
+      return;
    }
 
-   /* Create three RBMs */
-   args->num_rbms = 3;
-   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
-   {
-      /* Allocate single-component parallel vector for this RBM */
-      HYPRE_BigInt partitioning[2] = {jlower, jupper + 1};
-
-      HYPRE_ParVectorCreate(hypre_ParVectorComm(vec_nn),
-                            hypre_IJVectorGlobalNumRows(vec_nn), partitioning,
-                            &args->rbms[i]);
-      hypre_ParVectorInitialize_v2(args->rbms[i], HYPRE_MEMORY_HOST);
-
-      /* Copy component data into host buffer */
-      HYPRE_IJVectorSetComponent(vec_nn, 3 + i);
-      HYPRE_IJVectorGetValues(vec_nn, num_entries, NULL, values);
-
-      /* Fill entries */
-      hypre_Vector  *seq_vec = hypre_ParVectorLocalVector(args->rbms[i]);
-      HYPRE_Complex *data    = hypre_VectorData(seq_vec);
-      for (HYPRE_Int j = 0; j < num_entries; j++)
-      {
-         data[j] = values[j];
-      }
-   }
-
-   /* Free memory */
-   free(values);
+   AMGCreateRBMsFromHost(args, comm, hypre_IJVectorGlobalNumRows(vec_nn), jlower,
+                         num_entries, num_entries, NULL, host_values, vector_stride,
+                         index_stride);
+   hypre_TFree(host_values, HYPRE_MEMORY_HOST);
 #else
    (void)vec_nn;
    return;
@@ -515,100 +667,121 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 }
 
 /*-----------------------------------------------------------------------------
- * AMGSetRBMsFRestricted
+ * hypredrv_AMGSetProjectedRBMs
  *
- * Build the three rotational rigid-body near-null modes (components 3,4,5 of the
- * global near-null space vec_nn) RESTRICTED to the subset of local rows selected
- * by fmask (rows with fmask[j] != 0). This feeds the rotational modes to a
- * BoomerAMG solver that operates on an MGR F-block, e.g. the displacement
- * sub-matrix A_FF of a mixed u-p saddle point. hypre extracts A_FF keeping the
- * local F-points in increasing local order, so a vector filled with the F-rows
- * of vec_nn (in local order) matches A_FF's row partitioning exactly.
- *
- * Translations (components 0,1,2) are already represented exactly by the
- * unknown-based (num_functions = 3) nodal coarsening, so only the three
- * rotations are supplied as GM interpolation vectors -- mirroring
- * hypredrv_AMGSetRBMs, but on the restricted F-space.
+ * MGR F-relaxation acts on a row-filtered submatrix. Project the full-system
+ * rigid-body modes onto the selected F labels while preserving each rank's row
+ * order, which is also the ordering used by hypre's extracted F block.
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_AMGSetRBMsFRestricted(AMG_args *args, HYPRE_IJVector vec_nn, const int *fmask,
-                               int num_local)
+hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
+                             const IntArray *dofmap, const StackIntArray *f_dofs)
 {
-   if (!vec_nn || !fmask || !args->coarsening.nodal)
-   {
-      return;
-   }
-
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
-   MPI_Comm     comm   = hypre_IJVectorComm(vec_nn);
-   HYPRE_BigInt jlower = 0, jupper = 0;
+   HYPRE_BigInt   jlower = 0, jupper = -1;
+   HYPRE_Int      num_entries      = 0;
+   HYPRE_Int      num_components   = 0;
+   unsigned char *selected         = NULL;
+   uint64_t       projected_local  = 0;
+   uint64_t       projected_global = 0;
+   uint64_t       projected_scan   = 0;
+   MPI_Comm       comm             = MPI_COMM_NULL;
 
-   HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
-   if ((HYPRE_Int)(jupper - jlower + 1) != num_local)
+   if (!args)
    {
-      /* dofmap and near-null space disagree on the local size; skip safely. */
+      return;
+   }
+   args->interp_vec_variant = 1;
+   hypredrv_AMGDestroyRBMs(args);
+   /* Flag the AMG even when no vectors end up being attached: it marks this AMG
+    * as living on an MGR F-block, so that a later hypredrv_AMGSetRBMs (e.g. from
+    * PreconCreate for a nested-Krylov F-relaxation) does not replace the modes
+    * with full-system ones sized to the whole saddle-point system. */
+   args->rbms_projected = 1;
+   if (!args->coarsening.nodal)
+   {
+      return;
+   }
+   if (!vec_nn || !dofmap || !f_dofs || f_dofs->size == 0)
+   {
+      /* Nodal AMG is valid without user interpolation vectors. Passing zero
+       * vectors below preserves hypre's standard nodal-coarsening behavior. */
       return;
    }
 
-   /* Count local F-points and form their global (assumed) partition. */
-   HYPRE_Int nF = 0;
-   for (HYPRE_Int j = 0; j < num_local; j++)
+   comm           = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
+   num_components = hypre_IJVectorNumComponents(vec_nn);
+   HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
+   num_entries     = (jupper >= jlower) ? (HYPRE_Int)(jupper - jlower + 1) : 0;
+   int local_valid = num_components >= AMG_FIRST_RBM_COMPONENT + AMG_NUM_RBMS &&
+                     (size_t)num_entries == dofmap->size;
+   int global_valid = 0;
+   MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_valid)
    {
-      nF += (fmask[j] ? 1 : 0);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Elasticity near null space requires 6 components and a local size matching "
+         "the MGR dofmap on every rank");
+      return;
    }
 
-   HYPRE_BigInt nF_big = (HYPRE_BigInt)nF, fstart = 0, global_nF = 0;
-   MPI_Scan(&nF_big, &fstart, 1, HYPRE_MPI_BIG_INT, MPI_SUM, comm);
-   fstart -= nF_big; /* exclusive prefix sum */
-   MPI_Allreduce(&nF_big, &global_nF, 1, HYPRE_MPI_BIG_INT, MPI_SUM, comm);
-
-   HYPRE_Complex *full =
-      (HYPRE_Complex *)malloc((size_t)(num_local > 0 ? num_local : 1) * sizeof(HYPRE_Complex));
-
-   /* Reset any previous RBMs */
-   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   selected = (unsigned char *)calloc((size_t)num_entries, sizeof(unsigned char));
+   HYPRE_Int      vector_stride = 0, index_stride = 0;
+   HYPRE_Complex *host_values =
+      AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
+   int local_ok  = num_entries == 0 || (selected && host_values);
+   int global_ok = 0;
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
    {
-      HYPRE_ParVectorDestroy(args->rbms[i]);
-      args->rbms[i] = NULL;
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd(
+         "Failed to allocate projected near-null-space buffers (%d entries)",
+         (int)num_entries);
+      free(selected);
+      hypre_TFree(host_values, HYPRE_MEMORY_HOST);
+      return;
    }
 
-   /* Three rotational near-null modes (components 3,4,5) */
-   args->num_rbms         = 3;
-   args->frelax_nullspace = 1;
-   for (HYPRE_Int i = 0; i < args->num_rbms; i++)
+   int selected_labels[MAX_STACK_ARRAY_LENGTH];
+   memcpy(selected_labels, f_dofs->data, f_dofs->size * sizeof(selected_labels[0]));
+   qsort(selected_labels, f_dofs->size, sizeof(selected_labels[0]), AMGIntCompare);
+   for (HYPRE_Int i = 0; i < num_entries; i++)
    {
-      HYPRE_BigInt partitioning[2] = {fstart, fstart + nF_big};
-
-      HYPRE_ParVectorCreate(comm, global_nF, partitioning, &args->rbms[i]);
-      hypre_ParVectorInitialize_v2(args->rbms[i], HYPRE_MEMORY_HOST);
-
-      /* Pull the i-th rotation over the full local range, then scatter the
-         F-rows into the restricted vector preserving local order. */
-      HYPRE_IJVectorSetComponent(vec_nn, 3 + i);
-      HYPRE_IJVectorGetValues(vec_nn, num_local, NULL, full);
-
-      hypre_Vector  *seq_vec = hypre_ParVectorLocalVector(args->rbms[i]);
-      HYPRE_Complex *data    = hypre_VectorData(seq_vec);
-      HYPRE_Int      k       = 0;
-      for (HYPRE_Int j = 0; j < num_local; j++)
+      if (bsearch(&dofmap->data[i], selected_labels, f_dofs->size,
+                  sizeof(selected_labels[0]), AMGIntCompare))
       {
-         if (fmask[j])
-         {
-            data[k++] = full[j];
-         }
+         selected[i] = 1;
+         projected_local++;
       }
    }
 
-   /* Restore the default active component so later readers of vec_nn are unaffected. */
-   HYPRE_IJVectorSetComponent(vec_nn, 0);
+   MPI_Allreduce(&projected_local, &projected_global, 1, MPI_UINT64_T, MPI_SUM, comm);
+   MPI_Scan(&projected_local, &projected_scan, 1, MPI_UINT64_T, MPI_SUM, comm);
 
-   free(full);
+   if (projected_global == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("MGR F-label set selects no near-null-space entries");
+   }
+   else
+   {
+      AMGCreateRBMsFromHost(args, comm, (HYPRE_BigInt)projected_global,
+                            (HYPRE_BigInt)(projected_scan - projected_local),
+                            (HYPRE_Int)projected_local, num_entries, selected,
+                            host_values, vector_stride, index_stride);
+   }
+   args->rbms_projected = 1; /* AMGCreateRBMsFromHost resets it via DestroyRBMs */
+
+   free(selected);
+   hypre_TFree(host_values, HYPRE_MEMORY_HOST);
 #else
+   (void)args;
    (void)vec_nn;
-   (void)fmask;
-   (void)num_local;
-   return;
+   (void)dofmap;
+   (void)f_dofs;
 #endif
 }
 
@@ -642,8 +815,11 @@ hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solve
    void     *vA            = NULL;
    HYPRE_Int num_functions = args->coarsening.num_functions;
 
-   if (!precon || !ij_A || !dofmap || !dofmap->data || dofmap->size == 0 ||
-       num_functions <= 1)
+   /* An empty local dofmap (a rank that owns no rows) is not a reason to skip this:
+    * whether dof_func is attached changes the collective sequence of the AMG setup,
+    * so the decision has to be the same on every rank. The remaining conditions below
+    * are evaluated from globally reduced data and are rank-consistent by construction. */
+   if (!precon || !ij_A || !dofmap || !dofmap->data || num_functions <= 1)
    {
       return;
    }
@@ -676,7 +852,11 @@ hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solve
       return;
    }
 
-   HYPRE_Int *h_dof_func = hypre_TAlloc(HYPRE_Int, num_local_rows, HYPRE_MEMORY_HOST);
+   /* Allocate at least one element so the attached dof_func pointer is non-NULL even
+    * on a rank that owns no rows; hypre only tests the pointer, never reads past the
+    * local row count. */
+   HYPRE_Int *h_dof_func = hypre_TAlloc(
+      HYPRE_Int, (num_local_rows > 0) ? num_local_rows : 1, HYPRE_MEMORY_HOST);
    for (HYPRE_Int i = 0; i < num_local_rows; i++)
    {
       h_dof_func[i] = (HYPRE_Int)dofmap->data[i];
@@ -708,7 +888,13 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGCreate(&precon);
    HYPRE_BoomerAMGSetInterpType(precon, args->interpolation.prolongation_type);
    HYPRE_BoomerAMGSetRestriction(precon, args->interpolation.restriction_type);
+#if HYPRE_CHECK_MIN_VERSION(21800, 0)
+   /* Strength and filtering of the approximate ideal restriction operator */
+   HYPRE_BoomerAMGSetStrongThresholdR(precon, args->interpolation.restrict_strong_th);
+   HYPRE_BoomerAMGSetFilterThresholdR(precon, args->interpolation.restrict_filter_th);
+#endif
    HYPRE_BoomerAMGSetCoarsenType(precon, args->coarsening.type);
+   HYPRE_BoomerAMGSetSabs(precon, args->coarsening.sabs);
    HYPRE_BoomerAMGSetTol(precon, args->tolerance);
    HYPRE_BoomerAMGSetStrongThreshold(precon, args->coarsening.strong_th);
    HYPRE_BoomerAMGSetSeqThreshold(precon, args->coarsening.seq_amg_th);
@@ -722,6 +908,10 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetChebyEigEst(precon, args->relaxation.chebyshev.eig_est);
    HYPRE_BoomerAMGSetChebyVariant(precon, args->relaxation.chebyshev.variant);
    HYPRE_BoomerAMGSetChebyScale(precon, args->relaxation.chebyshev.scale);
+   if (args->relaxation.type >= 0)
+   {
+      HYPRE_BoomerAMGSetRelaxType(precon, args->relaxation.type);
+   }
    HYPRE_BoomerAMGSetRelaxOrder(precon, args->relaxation.order);
    HYPRE_BoomerAMGSetRelaxWt(precon, args->relaxation.weight);
    HYPRE_BoomerAMGSetOuterWt(precon, args->relaxation.outer_weight);
@@ -734,7 +924,12 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetILUType(precon, args->smoother.ilu.type);
 #endif
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22900
+   HYPRE_BoomerAMGSetILULocalReordering(
+      precon, args->smoother.ilu.reordering ? args->smoother.ilu.reordering : 1);
+#else
    HYPRE_BoomerAMGSetILULocalReordering(precon, args->smoother.ilu.reordering);
+#endif
    HYPRE_BoomerAMGSetILUTriSolve(precon, args->smoother.ilu.tri_solve);
    HYPRE_BoomerAMGSetILULowerJacobiIters(precon, args->smoother.ilu.lower_jac_iters);
    HYPRE_BoomerAMGSetILUUpperJacobiIters(precon, args->smoother.ilu.upper_jac_iters);
@@ -807,28 +1002,72 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
       HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
    }
 
+   /* Per-sweep grid point schedule. The AIR algorithm skips the down cycle and
+      relaxes F-points on the way up, finishing on the C-points when there are
+      enough sweeps to do so. hypre takes ownership of the array. */
+   if (args->relaxation.points == 1)
+   {
+      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
+                               ? args->relaxation.down_sweeps
+                               : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                              : args->relaxation.num_sweeps;
+      HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
+                               ? args->relaxation.coarse_sweeps
+                               : args->relaxation.num_sweeps;
+
+      HYPRE_Int **grid_relax_points = hypre_CTAlloc(HYPRE_Int *, 4, HYPRE_MEMORY_HOST);
+
+      grid_relax_points[0] = NULL;
+      grid_relax_points[1] = hypre_CTAlloc(HYPRE_Int, ns_down, HYPRE_MEMORY_HOST);
+      grid_relax_points[2] = hypre_CTAlloc(HYPRE_Int, ns_up, HYPRE_MEMORY_HOST);
+      grid_relax_points[3] = hypre_CTAlloc(HYPRE_Int, ns_coarse, HYPRE_MEMORY_HOST);
+
+      /* Down cycle and coarsest level relax every point */
+      for (HYPRE_Int i = 0; i < ns_down; i++) grid_relax_points[1][i] = 0;
+      for (HYPRE_Int i = 0; i < ns_coarse; i++) grid_relax_points[3][i] = 0;
+
+      /* Up cycle: F-points, with a trailing C-point sweep when ns_up > 2 */
+      for (HYPRE_Int i = 0; i < ns_up; i++) grid_relax_points[2][i] = -1;
+      if (ns_up > 2) grid_relax_points[2][ns_up - 1] = 1;
+
+      HYPRE_BoomerAMGSetGridRelaxPoints(precon, grid_relax_points);
+   }
+
    if (args->coarsening.nodal)
    {
-      /* Configurable GM/LN rigid-body-mode interpolation, used for both top-level
-         elasticity AMG and an MGR F-block AMG. Defaults reproduce the historical
-         setup; YAML can override to experiment toward an h-uniform elasticity AMG
+      /* Configurable GM/LN rigid-body-mode interpolation, used for both a
+         top-level elasticity AMG and an MGR F-block AMG. The "auto" defaults
+         reproduce the historical hard-coded setup; YAML can override them
          (coarsening.nodal_type / interp_vec_variant / smooth_interp_vecs /
-         interp_vec_qmax). */
+         interp_vec_qmax / interp_vec_abs_q_trunc) to experiment toward an
+         h-uniform elasticity AMG. */
+      HYPRE_Int variant = (args->coarsening.interp_vec_variant > -1)
+                             ? args->coarsening.interp_vec_variant
+                             : args->interp_vec_variant;
+      HYPRE_Int qmax    = (args->coarsening.interp_vec_qmax > -1)
+                             ? args->coarsening.interp_vec_qmax
+                             : ((variant == 2) ? 4 : 0);
+      HYPRE_Int smooth  = (args->coarsening.smooth_interp_vecs > -1)
+                             ? args->coarsening.smooth_interp_vecs
+                             : ((variant == 2) ? 1 : 0);
+
       HYPRE_BoomerAMGSetNumFunctions(precon, 3);
       HYPRE_BoomerAMGSetNodal(precon, args->coarsening.nodal_type);
       if (args->coarsening.nodal_type == 4)
       {
+         /* Nodal coarsening based on the row-sum norm */
          HYPRE_BoomerAMGSetNodalDiag(precon, 1);
       }
-      HYPRE_BoomerAMGSetInterpVecVariant(precon, args->coarsening.interp_vec_variant);
-      HYPRE_BoomerAMGSetInterpVecQMax(precon, args->coarsening.interp_vec_qmax);
-      HYPRE_BoomerAMGSetInterpVecAbsQTrunc(precon, args->coarsening.interp_vec_abs_q_trunc);
+      HYPRE_BoomerAMGSetInterpVecVariant(precon, variant);
+      HYPRE_BoomerAMGSetInterpVecQMax(precon, qmax);
+      HYPRE_BoomerAMGSetInterpVecAbsQTrunc(precon,
+                                           args->coarsening.interp_vec_abs_q_trunc);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-      HYPRE_BoomerAMGSetSmoothInterpVectors(precon, args->coarsening.smooth_interp_vecs);
+      HYPRE_BoomerAMGSetSmoothInterpVectors(precon, smooth);
 #endif
       HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
                                       (HYPRE_ParVector *)args->rbms);
-      (void)args->frelax_nullspace;
    }
 
    *precon_ptr = precon;

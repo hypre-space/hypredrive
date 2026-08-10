@@ -17,6 +17,7 @@ solver:
     relative_tol: 1.0e-6
   scaling:
     enabled: yes
+    # Congruence scaling: (D A D)y = D b, with x = D y.
     type: dofmap_custom
     custom_values: [1.0e5, 1.0e8, 1.0e4, 1.0e6, 1.0e7, 1.0e3]
 

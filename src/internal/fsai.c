@@ -77,6 +77,7 @@ hypredrv_FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_FSAISetMaxStepSize(precon, args->max_step_size);
    HYPRE_FSAISetMaxNnzRow(precon, args->max_nnz_row);
    HYPRE_FSAISetNumLevels(precon, args->num_levels);
+   HYPRE_FSAISetEigMaxIters(precon, args->eig_max_iters);
    HYPRE_FSAISetThreshold(precon, args->threshold);
    HYPRE_FSAISetKapTolerance(precon, args->kap_tolerance);
 #endif

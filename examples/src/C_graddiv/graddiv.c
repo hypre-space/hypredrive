@@ -13,6 +13,16 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
+   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
+   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
+#else
+#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
+#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
+#endif
+
 /*==========================================================================
  *   Definite grad-div (grad-div + mass) Example Driver -- ADS preconditioner
  *==========================================================================
@@ -65,8 +75,10 @@ typedef struct
    HYPRE_Int  verbose;
    char      *yaml_file;
    char      *solver_preset;
-   char      *name;     /* optional object name (labels the statistics table) */
-   char      *vtk_file; /* optional VTK output base name (parallel: .pvti + .vti) */
+   char      *name;          /* optional object name (labels the statistics table) */
+   char      *vtk_file;      /* optional VTK output base name (parallel: .pvti + .vti) */
+   HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
+   char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
 } GradDivParams;
 
 /*--------------------------------------------------------------------------
@@ -264,6 +276,9 @@ PrintUsage(void)
    printf("\nUsage: ${MPIEXEC_COMMAND} <np> ./graddiv [options]\n\n");
    printf("Options:\n");
    printf("  -i <file>         : YAML configuration file (Opt.)\n");
+   printf("  -a|--args ...     : Hypredrive YAML overrides, e.g. -a "
+          "--solver:pcg:max_iter 100\n");
+   printf("                      (requires -i; must come last)\n");
    printf("  --name <str>      : Object name (labels the statistics table) (Opt.)\n");
    printf("  -n <nx> <ny> <nz> : Global grid dimensions in nodes (17 17 17)\n");
    printf("  -P <Px> <Py> <Pz> : Processor grid dimensions (1 1 1)\n");
@@ -299,12 +314,20 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
    params->solver_preset = "pcg";
    params->name          = NULL;
    params->vtk_file      = NULL;
+   params->hypredrv_argc = 0;
+   params->hypredrv_argv = NULL;
 
    for (int i = 1; i < argc; i++)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
          if (++i < argc) params->yaml_file = argv[i];
+      }
+      else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
+      {
+         params->hypredrv_argc = argc - i;
+         params->hypredrv_argv = argv + i;
+         break;
       }
       else if (!strcmp(argv[i], "--name"))
       {
@@ -387,6 +410,11 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
          if (!myid) printf("Error: too many ranks in dimension %d\n", d);
          return 1;
       }
+   }
+   if (params->hypredrv_argc && !params->yaml_file)
+   {
+      if (!myid) printf("Error: -a/--args requires a YAML configuration file (-i)\n");
+      return 1;
    }
    if (params->alpha <= 0.0)
    {
@@ -600,27 +628,27 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
    HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->face_ilower,
                         m->face_iupper, &A);
    HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(A);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->node_ilower,
                         m->node_iupper, &G);
    HYPRE_IJMatrixSetObjectType(G, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(G);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(G);
    HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->edge_ilower,
                         m->edge_iupper, &C);
    HYPRE_IJMatrixSetObjectType(C, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(C);
+   HYPREDRV_IJ_MATRIX_INIT_HOST(C);
    HYPRE_IJVectorCreate(comm, m->face_ilower, m->face_iupper, &b);
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(b);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(b);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cx);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cy);
    HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cz);
    HYPRE_IJVectorSetObjectType(cx, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(cy, HYPRE_PARCSR);
    HYPRE_IJVectorSetObjectType(cz, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize(cx);
-   HYPRE_IJVectorInitialize(cy);
-   HYPRE_IJVectorInitialize(cz);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cx);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cy);
+   HYPREDRV_IJ_VECTOR_INIT_HOST(cz);
 
    HYPRE_Real *xref = (HYPRE_Real *)calloc(
       (size_t)(m->num_faces_local > 0 ? m->num_faces_local : 1), sizeof(HYPRE_Real));
@@ -1045,8 +1073,21 @@ main(int argc, char *argv[])
 
    if (params.yaml_file)
    {
-      char *args[2] = {params.yaml_file, NULL};
-      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
+      HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
+      HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
+      char     *hypredrv_argv[hypredrv_argc];
+      hypredrv_argv[0] = params.yaml_file;
+      for (HYPRE_Int k = 0; k < params.hypredrv_argc; k++)
+      {
+         hypredrv_argv[k + 1] = params.hypredrv_argv[k];
+      }
+      if (n_print)
+      {
+         /* Print the parsed YAML (with any -a/--args overrides applied). */
+         hypredrv_argv[1 + params.hypredrv_argc] = "--general:print_config_params";
+         hypredrv_argv[2 + params.hypredrv_argc] = "1";
+      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
    }
    else
    {
@@ -1054,7 +1095,6 @@ main(int argc, char *argv[])
          HYPREDRV_InputArgsSetSolverPreset(hypredrv, params.solver_preset));
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(hypredrv, "ads"));
    }
-
    /* Name the object after parsing (input parsing re-initializes the stats). */
    if (params.name)
    {

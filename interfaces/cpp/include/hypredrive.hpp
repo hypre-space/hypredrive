@@ -12,7 +12,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <istream>
@@ -20,7 +19,6 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 namespace hypredrive
@@ -102,6 +100,13 @@ inline void
 describe_error(status code)
 {
    HYPREDRV_ErrorCodeDescribe(code);
+}
+/// @brief C++ wrapper for HYPREDRV_ErrorCodeClear.
+/// @see HYPREDRV_ErrorCodeClear
+inline void
+clear_error()
+{
+   HYPREDRV_ErrorCodeClear();
 }
 /// @brief C++ wrapper for HYPREDRV_ErrorInvalidValue.
 /// @see HYPREDRV_ErrorInvalidValue
@@ -236,6 +241,62 @@ class driver
       // The payload is passed as a C string, so embedded NUL bytes are rejected above.
       char *argv[] = {text.data()};
       HYPREDRIVE_CXX_CHECK(HYPREDRV_InputArgsParse(1, argv, handle_));
+   }
+   /// @brief Parse YAML options plus CLI-style override tokens, e.g.
+   ///        {"--solver:pcg:max_iter", "100"}. The YAML source may be a file
+   ///        path or inline text, resolved with the same heuristic as
+   ///        parse_yaml(std::string_view); a leading "-a"/"--args" token in
+   ///        @p args is dropped so the C side receives an unambiguous
+   ///        "--path:to:key value" pair list.
+   /// @see HYPREDRV_InputArgsParse
+   void
+   parse_yaml(std::string_view yaml, const std::vector<std::string> &args)
+   {
+      if (args.empty())
+      {
+         parse_yaml(yaml);
+         return;
+      }
+      if (yaml.find('\0') != std::string_view::npos)
+      {
+         throw std::invalid_argument(
+            "hypredrive YAML text must not contain embedded NUL bytes");
+      }
+      std::string text;
+      if (detail::looks_like_yaml_file_path(yaml))
+      {
+         const std::filesystem::path path{std::string(yaml)};
+         std::ifstream               file(path);
+         if (!file)
+         {
+            throw std::runtime_error("failed to open hypredrive YAML file: " +
+                                     path.string());
+         }
+         std::ostringstream buffer;
+         buffer << file.rdbuf();
+         if (file.bad())
+         {
+            throw std::runtime_error("failed to read hypredrive YAML file: " +
+                                     path.string());
+         }
+         text = buffer.str();
+      }
+      else
+      {
+         text.assign(yaml);
+      }
+      const std::size_t first =
+         (args.front() == "-a" || args.front() == "--args") ? 1 : 0;
+      std::vector<std::string> tokens(args.begin() + static_cast<std::ptrdiff_t>(first),
+                                      args.end());
+      std::vector<char *>      argv;
+      argv.reserve(tokens.size() + 1);
+      argv.push_back(text.data());
+      for (auto &token : tokens)
+      {
+         argv.push_back(token.data());
+      }
+      parse_args(static_cast<int>(argv.size()), argv.data());
    }
    /// @brief Parse YAML options from a string.
    /// @see HYPREDRV_InputArgsParse
@@ -521,9 +582,11 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetNullSpace(handle_, n, c, values));
    }
-   /// @brief Return the HYPREDRV-owned raw solution buffer.
+   /// @brief Return the HYPREDRV-owned raw host solution buffer.
    /// @note The returned pointer is owned by this driver and remains valid until the
    /// next solve, linear-system rebuild, solution replacement, or driver destruction.
+   /// On GPU builds, this call migrates/synchronizes the solution to host memory before
+   /// returning the pointer.
    /// @see HYPREDRV_LinearSystemGetSolutionValues
    complex *
    get_solution_values_raw()
@@ -542,8 +605,9 @@ class driver
       return n;
    }
    /// @brief Return a copied solution vector.
-   /// @note Allocates and copies the full solution. Use get_solution_values_raw() and
-   /// get_solution_length() to access the HYPREDRV-owned buffer in place.
+   /// @note Allocates and copies the full solution from the HYPREDRV-owned host buffer.
+   /// Use get_solution_values_raw() and get_solution_length() to access that buffer in
+   /// place.
    /// @see HYPREDRV_LinearSystemGetSolutionValues
    std::vector<complex>
    get_solution_values()

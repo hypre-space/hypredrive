@@ -78,7 +78,14 @@ hypredrv_ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
 
    HYPRE_ILUSetType(precon, args->type);
    HYPRE_ILUSetLevelOfFill(precon, args->fill_level);
+#if HYPREDRV_HYPRE_RELEASE_NUMBER == 22900
+   /* hypre 2.29.0's host triangular solve dereferences a NULL permutation
+    * when local reordering is disabled. Request its supported local ordering
+    * for the default-zero case; hypre 2.30.0 fixes the identity path. */
+   HYPRE_ILUSetLocalReordering(precon, args->reordering ? args->reordering : 1);
+#else
    HYPRE_ILUSetLocalReordering(precon, args->reordering);
+#endif
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_ILUSetTriSolve(precon, args->tri_solve);
    HYPRE_ILUSetLowerJacobiIters(precon, args->lower_jac_iters);

@@ -280,6 +280,33 @@ test_dof_labels_flow_mapping(void)
 }
 
 static void
+test_mgr_level_flow_mappings(void)
+{
+   const char yaml_text[] =
+      "solver: gmres\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0: { f_dofs: [2], prolongation_type: jacobi } # eliminate d\n"
+      "      1: { f_dofs: [1] } # then f\n"
+      "    coarsest_level: amg # solve p\n";
+
+   input_args *args = parse_config(yaml_text);
+   ASSERT_NOT_NULL(args);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_EQ(args->precon.mgr.num_levels, 3);
+   ASSERT_EQ((int)args->precon.mgr.level[0].f_dofs.size, 1);
+   ASSERT_EQ(args->precon.mgr.level[0].f_dofs.data[0], 2);
+   ASSERT_EQ(args->precon.mgr.level[0].prolongation_type, 2);
+   ASSERT_EQ((int)args->precon.mgr.level[1].f_dofs.size, 1);
+   ASSERT_EQ(args->precon.mgr.level[1].f_dofs.data[0], 1);
+   ASSERT_EQ(args->precon.mgr.coarsest_level.type, 0);
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
 test_f_dofs_block_sequence_labels(void)
 {
    /* f_dofs as a block sequence of symbolic labels */
@@ -396,6 +423,7 @@ main(void)
 
    /* Alternative YAML syntax forms */
    RUN_TEST(test_dof_labels_flow_mapping);
+   RUN_TEST(test_mgr_level_flow_mappings);
    RUN_TEST(test_f_dofs_block_sequence_labels);
    RUN_TEST(test_f_dofs_block_sequence_integers);
    RUN_TEST(test_f_dofs_unknown_label_when_dof_labels_exist);

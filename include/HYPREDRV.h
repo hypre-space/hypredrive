@@ -34,8 +34,23 @@ extern "C"
 {
 #endif
 
-// Visibility control macros
+// Public-library visibility. CMake defines HYPREDRV_EXPORTS while building a
+// shared HYPREDRV library and propagates HYPREDRV_STATIC_DEFINE to consumers of
+// a static HYPREDRV library. Non-CMake static consumers on Windows should also
+// define HYPREDRV_STATIC_DEFINE before including this header.
+#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(HYPREDRV_STATIC_DEFINE)
+#define HYPREDRV_EXPORT_SYMBOL
+#elif defined(HYPREDRV_EXPORTS)
+#define HYPREDRV_EXPORT_SYMBOL __declspec(dllexport)
+#else
+#define HYPREDRV_EXPORT_SYMBOL __declspec(dllimport)
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
 #define HYPREDRV_EXPORT_SYMBOL __attribute__((visibility("default")))
+#else
+#define HYPREDRV_EXPORT_SYMBOL
+#endif
 #define HYPREDRV_SUCCESS ((uint32_t)0u)
 
    // HYPREDRV_SAFE_CALL and HYPREDRV_SAFE_CALL_COMM are defined in HYPREDRV_utils.h.
@@ -47,6 +62,12 @@ extern "C"
    /**
     * @defgroup HYPREDRV HYPREDRV Public API
     * @brief Public APIs to solve linear systems with hypre through hypredrive.
+    *
+    * @note Thread safety: HYPREDRV keeps process-global state (an error state, a
+    * live-object registry, logging configuration, and a user-preset registry) that
+    * is not internally synchronized. All HYPREDRV_* calls, including operations on
+    * distinct HYPREDRV_t objects, must be made from a single thread or serialized
+    * externally by the caller.
     * @{
     **/
 
@@ -149,6 +170,23 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL void HYPREDRV_ErrorCodeDescribe(uint32_t error_code);
 
    /**
+    * @brief Clear the process-global HYPREDRV error state.
+    *
+    * HYPREDRV accumulates error codes and messages in a process-global, sticky
+    * state that most API calls expose through their uint32_t return value.
+    * Because the state is sticky, a failure left unhandled by one call can be
+    * observed as a (spurious) non-zero return by a later, otherwise-successful
+    * call, and failures are shared across all HYPREDRV_t objects in the process.
+    * This routine resets both the accumulated error code and the queued messages
+    * so a consumer can recover after inspecting/handling an error, without
+    * needing the internal error headers.
+    *
+    * @note Thread safety: the error state is process-global and not thread-safe;
+    * call this from a single thread or provide external synchronization.
+    */
+   HYPREDRV_EXPORT_SYMBOL void HYPREDRV_ErrorCodeClear(void);
+
+   /**
     * @brief Record and return an invalid-value error with optional context.
     *
     * This helper is intended for thin language-interface shims that validate
@@ -159,6 +197,31 @@ extern "C"
     * @return Current HYPREDRV error code bitfield.
     */
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_ErrorInvalidValue(const char *message);
+
+   /**
+    * @brief Handle the result of a HYPREDRV call, aborting on error.
+    *
+    * Backs the HYPREDRV_SAFE_CALL() and HYPREDRV_SAFE_CALL_COMM() macros
+    * (defined in HYPREDRV_utils.h) and is not normally called directly. When
+    * @p error_code is non-zero it prints the originating source location,
+    * describes the error via HYPREDRV_ErrorCodeDescribe(), then either raises
+    * @c SIGTRAP (when the environment variable @c HYPREDRV_DEBUG=1 is set, for
+    * use with a debugger) or calls @c MPI_Abort() with a nonzero process status
+    * derived from @p error_code. When @p error_code is zero it returns without
+    * doing anything.
+    *
+    * @param error_code Error code returned by the wrapped HYPREDRV call; zero
+    * means success and no action is taken.
+    * @param comm MPI communicator used for @c MPI_Abort and, under collective
+    * reporting, for rank selection and the barrier.
+    * @param file Source file of the call site (typically @c __FILE__).
+    * @param line Source line of the call site (typically @c __LINE__).
+    * @param func Enclosing function of the call site (typically @c __func__).
+    */
+   HYPREDRV_EXPORT_SYMBOL void HYPREDRV_SafeCallHandleError(uint32_t    error_code,
+                                                            MPI_Comm    comm,
+                                                            const char *file, int line,
+                                                            const char *func);
 
    /**
     * @brief Create a HYPREDRV object.
@@ -185,7 +248,7 @@ extern "C"
     *
     * Example Usage:
     * @code
-    *    HYPREDRV_t *hypredrv;
+    *    HYPREDRV_t hypredrv = NULL;
     *    MPI_Comm comm = MPI_COMM_WORLD; // or any other valid MPI_Comm
     *    HYPREDRV_SAFE_CALL(HYPREDRV_Create(comm, &hypredrv));
     * @endcode
@@ -1296,16 +1359,18 @@ extern "C"
    /**
     * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
     *
-    * This function provides access to the internal pointer where the solution vector of
-    * the linear system associated with the given HYPREDRV_t object is stored. It does not
-    * copy the solution values; instead, it assigns the internal pointer to the
-    * user-provided pointer @p sol_data.
+    * This function provides access to the internal host pointer where the solution
+    * vector of the linear system associated with the given HYPREDRV_t object is stored.
+    * It does not make a separate caller-owned copy of the solution values; instead, it
+    * assigns the internal pointer to the user-provided pointer @p sol_data. In GPU
+    * builds, the solution vector is migrated/synchronized to host memory before the
+    * pointer is returned.
     *
     * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer
     * is to be retrieved.
-    * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to point to
-    * the internal solution data array. The user must not free or modify the internal
-    * array.
+    * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to a host
+    * pointer to the internal solution data array. The user must not free or modify the
+    * internal array.
     *
     * @return Returns an error code, with 0 indicating success. If the @p hypredrv
     * parameter is invalid (e.g., NULL or uninitialized), an error code is returned, and
@@ -1863,7 +1928,8 @@ extern "C"
     * @brief Print the statistics associated with the HYPREDRV object.
     *
     * This function is responsible for printing the statistics collected during the
-    * operations performed by the HYPREDRV object.
+    * operations performed by the HYPREDRV object. The summary ends with the
+    * configured HYPRE execution policy.
     *
     * @param hypredrv The HYPREDRV_t object whose statistics are to be printed.
     *

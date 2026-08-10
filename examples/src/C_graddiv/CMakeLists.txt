@@ -17,6 +17,7 @@ endif()
 # Common build configuration
 add_executable(graddiv graddiv.c)
 target_link_libraries(graddiv PRIVATE HYPREDRV::HYPREDRV)
+hypredrv_add_hypre_build_dependency(graddiv)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(graddiv)
 endif()

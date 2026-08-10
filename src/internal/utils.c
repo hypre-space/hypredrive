@@ -13,12 +13,81 @@
 #include "internal/containers.h"
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_HypreClearConvergenceErrors / hypredrv_HypreConsumeErrors
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_HypreClearConvergenceErrors(void)
+{
+   HYPRE_Int hypre_error = HYPRE_GetError();
+
+   /* Nested / inexact solvers often leave HYPRE_ERROR_CONV sticky. Clear that
+    * soft failure so it does not poison later hypre calls, but keep any harder
+    * error bits for the caller. */
+   if (hypre_error && !(hypre_error & ~HYPRE_ERROR_CONV))
+   {
+      HYPRE_ClearAllErrors();
+   }
+}
+
+void
+hypredrv_HypreConsumeErrors(void)
+{
+   HYPRE_Int hypre_error = HYPRE_GetError();
+   HYPRE_Int hard_error  = hypre_error & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
+
+   if (!hypre_error)
+   {
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+      /* HYPRE routines can raise and then clear an error internally. Discard
+       * any diagnostics retained by print mode 1 even when no sticky flag is
+       * left for us to consume. */
+      HYPRE_ClearErrorMessages();
+#endif
+      return;
+   }
+
+   if (hard_error)
+   {
+      char hypre_err_msg[HYPRE_MAX_MSG_LEN];
+      fprintf(stderr, "[HYPREDRV] HYPRE hard error flags=0x%x, argument=%d\n",
+              (unsigned)hypre_error, (int)HYPRE_GetErrorArg());
+      fflush(stderr);
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      /* HYPRE's detailed diagnostics include the source file, line, and the
+       * message passed by the failing routine. Emit them before clearing the
+       * sticky error state so applications do not see only "Generic error". */
+      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+      fflush(stderr);
+#endif
+      HYPRE_DescribeError(hypre_error, hypre_err_msg);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAddUnique("HYPRE reported error 0x%x: %s", (unsigned)hypre_error,
+                                 hypre_err_msg);
+   }
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+   /* HYPRE_ClearErrorMessages was added in 2.33.0. Clear both soft-warning
+    * diagnostics and the hard-error messages printed above. */
+   HYPRE_ClearErrorMessages();
+#endif
+
+   /* Consume the sticky hypre state after preserving every hard error in
+    * HypreDrive's error state. Convergence failures and argument-flag warnings
+    * (for example ILUT's usable zero-row factorization) remain soft results. */
+   HYPRE_ClearAllErrors();
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_StrToLowerCase
  *-----------------------------------------------------------------------------*/
 
 char *
 hypredrv_StrToLowerCase(char *str)
 {
+   if (!str)
+   {
+      return str;
+   }
    for (int i = 0; str[i]; i++)
    {
       str[i] = (char)tolower((unsigned char)str[i]);
@@ -125,6 +194,17 @@ hypredrv_BinaryPathPrefixIsSafe(const char *prefix)
    return 1;
 }
 
+static int
+FormatPartitionFilename(char *filename, size_t filename_size, const char *prefix,
+                        int partition, int binary)
+{
+   const char *extension = binary ? ".bin" : "";
+   int         written =
+      snprintf(filename, filename_size, "%s.%05d%s", prefix, partition, extension);
+
+   return written >= 0 && (size_t)written < filename_size;
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_FopenCreateRestricted
  *
@@ -192,7 +272,10 @@ hypredrv_CheckBinaryDataExists(const char *prefix)
    }
 
    /* Check if binary data exist */
-   snprintf(filename, sizeof(filename), "%*s.00000.bin", (int)strlen(prefix), prefix);
+   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 1))
+   {
+      return 0;
+   }
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
@@ -220,7 +303,10 @@ hypredrv_CheckASCIIDataExists(const char *prefix)
    }
 
    /* Check if ASCII data exist */
-   snprintf(filename, sizeof(filename), "%*s.00000", (int)strlen(prefix), prefix);
+   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 0))
+   {
+      return 0;
+   }
    file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
    if (fp)
    {
@@ -254,8 +340,10 @@ hypredrv_CountNumberOfPartitions(const char *prefix)
       FILE *fp = NULL;
       int   file_exists;
 
-      snprintf(filename, sizeof(filename), "%*s.%05d.bin", (int)strlen(prefix), prefix,
-               num_files);
+      if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 1))
+      {
+         break;
+      }
       fp          = fopen(filename, "r");
       file_exists = (fp == NULL) ? 0 : 1;
       if (fp)
@@ -264,8 +352,10 @@ hypredrv_CountNumberOfPartitions(const char *prefix)
       }
       if (!file_exists)
       {
-         snprintf(filename, sizeof(filename), "%*s.%05d", (int)strlen(prefix), prefix,
-                  num_files);
+         if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 0))
+         {
+            break;
+         }
          fp          = fopen(filename, "r");
          file_exists = (fp == NULL) ? 0 : 1;
          if (fp)
@@ -408,4 +498,21 @@ hypredrv_IsYAMLFilename(const char *str)
    /* Check for .yaml or .yml extension */
    const char *ext = dot + 1;
    return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
+}
+
+bool
+hypredrv_PathIsUnderRoot(const char *path, const char *root)
+{
+   if (!path || !root)
+   {
+      return false;
+   }
+
+   size_t root_len = strlen(root);
+   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   {
+      return false;
+   }
+
+   return (path[root_len] == '\0' || path[root_len] == '/') != 0;
 }

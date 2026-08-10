@@ -9,8 +9,8 @@
 #define CHEBY_HEADER
 
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * Chebyshev smoother arguments struct
@@ -30,6 +30,6 @@ typedef struct Cheby_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_ChebySetDefaultArgs(Cheby_args *);
-void hypredrv_ChebySetArgs(void *, const YAMLnode *);
+void hypredrv_ChebySetArgs(void *, const struct YAMLnode_struct *);
 
 #endif /* CHEBY_HEADER */

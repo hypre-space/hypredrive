@@ -1,6 +1,6 @@
 [build-system]
 requires = [
-    "scikit-build-core>=0.10",
+    "scikit-build-core>=1.0",
     "cython>=3.0",
     "numpy>=1.20",
 ]
@@ -84,6 +84,9 @@ sdist.exclude = [
     ".pytest_cache/",
     "**/__pycache__/",
 ]
+
+[tool.scikit-build.sdist.force-include]
+"../../include/internal/compatibility.h" = "src/internal/compatibility.h"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

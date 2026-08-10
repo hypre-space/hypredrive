@@ -12,17 +12,6 @@
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/utils.h"
 
-static void
-IJVectorInitializeCompat(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location)
-{
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 21900
-   HYPRE_IJVectorInitialize_v2(vec, memory_location);
-#else
-   (void)memory_location;
-   HYPRE_IJVectorInitialize(vec);
-#endif
-}
-
 enum
 {
    IJVECTOR_MAX_PART_NROWS = 200u * 1000u * 1000u,
@@ -115,8 +104,9 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    uint64_t nrows_sum = 0, nrows_max = 0, nrows_offset = 0;
 
-   uint32_t *partids = NULL;
-   FILE     *fp      = NULL;
+   uint32_t *partids  = NULL;
+   FILE     *fp       = NULL;
+   int       local_ok = 1;
 
    HYPRE_BigInt         ilower = 0, iupper = 0;
    HYPRE_IJVector       vec    = NULL;
@@ -183,7 +173,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAddInvalidFilename(filename);
-         goto cleanup;
+         break;
       }
 
       /* Read header contents */
@@ -193,14 +183,14 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
          fp = NULL;
-         goto cleanup;
+         break;
       }
       fclose(fp);
       fp = NULL;
 
       if (!IJVectorValidateHeader(header, filename))
       {
-         goto cleanup;
+         break;
       }
       /* LCOV_EXCL_START */
       if (nrows_sum > UINT64_MAX - header[5])
@@ -208,11 +198,20 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Vector local row count overflow while reading %s",
                               filename);
-         goto cleanup;
+         break;
       }
       /* LCOV_EXCL_STOP */
       nrows_sum += header[5];
       nrows_max = (header[5] > nrows_max) ? header[5] : nrows_max;
+   }
+
+   /* Collective agreement before the first collective: a rank that failed to read
+    * its parts must not return while peers block in MPI_Scan/Create below. */
+   local_ok = hypredrv_ErrorCodeActive() ? 0 : 1;
+   MPI_Allreduce(MPI_IN_PLACE, &local_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!local_ok)
+   {
+      goto cleanup;
    }
 
    /* 3) Build IJVector */
@@ -222,7 +221,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   IJVectorInitializeCompat(vec, memory_location);
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Allocate variables */
    h_vals =
@@ -259,7 +258,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
          hypredrv_ErrorMsgAddInvalidFilename(filename);
-         goto cleanup;
+         goto after_values;
       }
       /* LCOV_EXCL_STOP */
 
@@ -269,7 +268,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
          hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
          fclose(fp);
          fp = NULL;
-         goto cleanup;
+         goto after_values;
       }
       /* LCOV_EXCL_STOP */
 
@@ -277,14 +276,14 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       {
          fclose(fp);
          fp = NULL;
-         goto cleanup;
+         goto after_values;
       }
       /* LCOV_EXCL_STOP */
       if (!IJVectorPartRowsMatchesPrepass(nrows_max, header[5], filename))
       {
          fclose(fp);
          fp = NULL;
-         goto cleanup;
+         goto after_values;
       }
 
       /* Read vector coefficients */
@@ -301,7 +300,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                fclose(fp);
                fp = NULL;
                free(buffer);
-               goto cleanup;
+               goto after_values;
             }
          }
 
@@ -313,7 +312,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                fclose(fp);
                fp = NULL;
                free(buffer);
-               goto cleanup;
+               goto after_values;
             }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
@@ -333,7 +332,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                fclose(fp);
                fp = NULL;
                free(buffer);
-               goto cleanup;
+               goto after_values;
             }
          }
 
@@ -345,7 +344,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                fclose(fp);
                fp = NULL;
                free(buffer);
-               goto cleanup;
+               goto after_values;
             }
             h_vals[i] = (HYPRE_Complex)buffer[i];
          }
@@ -359,7 +358,7 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                               filename);
          fclose(fp);
          fp = NULL;
-         goto cleanup;
+         goto after_values;
       }
       fclose(fp);
       fp = NULL;
@@ -375,6 +374,16 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
       HYPRE_Int nvalues =
          (HYPRE_Int)header[5]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
       HYPRE_IJVectorSetValues(vec, nvalues, NULL, vals);
+   }
+
+after_values:
+   /* Collective agreement before Assemble: a per-rank failure in the fill pass
+    * above must not leave peers blocked in the collective Assemble below. */
+   local_ok = hypredrv_ErrorCodeActive() ? 0 : 1;
+   MPI_Allreduce(MPI_IN_PLACE, &local_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!local_ok)
+   {
+      goto cleanup;
    }
 
    HYPRE_IJVectorAssemble(vec);

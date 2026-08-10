@@ -32,6 +32,27 @@ function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
 
     file(READ "${_hypredrv_hypre_ads_file}" _hypredrv_hypre_ads_content)
     if(_hypredrv_hypre_ads_content MATCHES
+       "HYPRE_BigInt[ \t]+col_starts\\[2\\]")
+        if(_hypredrv_hypre_ads_content MATCHES
+           "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
+            string(REPLACE
+                "\n         hypre_TFree(col_starts, HYPRE_MEMORY_HOST);\n"
+                "\n"
+                _hypredrv_hypre_ads_content
+                "${_hypredrv_hypre_ads_content}")
+            file(WRITE "${_hypredrv_hypre_ads_file}" "${_hypredrv_hypre_ads_content}")
+            message(STATUS
+                "  HYPRE ads.c uses stack ADS scalar Pi column-start workspace; "
+                "removed obsolete free")
+        else()
+            message(STATUS
+                "  HYPRE ads.c uses stack ADS scalar Pi column-start workspace; "
+                "no patch needed")
+        endif()
+        return()
+    endif()
+
+    if(_hypredrv_hypre_ads_content MATCHES
        "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
         message(STATUS "  HYPRE ads.c already frees ADS scalar Pi column-start workspace")
         return()
@@ -84,6 +105,81 @@ function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
     unset(_hypredrv_hypre_ads_original)
     unset(_hypredrv_hypre_ads_old)
     unset(_hypredrv_hypre_ads_new)
+endfunction()
+
+function(_hypredrv_patch_hypre_umpire_header_linkage hypre_source_dir)
+    set(_hypredrv_umpire_header_old [=[
+#if defined(HYPRE_USING_UMPIRE)
+#include "umpire/config.hpp"
+#if UMPIRE_VERSION_MAJOR >= 2022
+#include "umpire/interface/c_fortran/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_quick_pool
+#else
+#include "umpire/interface/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_pool
+#endif /* UMPIRE_VERSION_MAJOR >= 2022 */
+#define HYPRE_UMPIRE_POOL_NAME_MAX_LEN 1024
+#endif /* defined(HYPRE_USING_UMPIRE) */
+]=])
+    set(_hypredrv_umpire_header_new [=[
+#if defined(HYPRE_USING_UMPIRE)
+#ifdef __cplusplus
+/* HYPREDRV: Umpire C++ headers require C++ linkage. */
+extern "C++" {
+#endif
+#include "umpire/config.hpp"
+#if UMPIRE_VERSION_MAJOR >= 2022
+#include "umpire/interface/c_fortran/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_quick_pool
+#else
+#include "umpire/interface/umpire.h"
+#define hypre_umpire_resourcemanager_make_allocator_pool umpire_resourcemanager_make_allocator_pool
+#endif /* UMPIRE_VERSION_MAJOR >= 2022 */
+#ifdef __cplusplus
+}
+#endif
+#define HYPRE_UMPIRE_POOL_NAME_MAX_LEN 1024
+#endif /* defined(HYPRE_USING_UMPIRE) */
+]=])
+
+    set(_hypredrv_umpire_header_patched FALSE)
+    foreach(_hypredrv_umpire_header_file IN ITEMS
+            "${hypre_source_dir}/src/utilities/handle.h"
+            "${hypre_source_dir}/src/utilities/_hypre_utilities.h")
+        if(NOT EXISTS "${_hypredrv_umpire_header_file}")
+            continue()
+        endif()
+
+        file(READ "${_hypredrv_umpire_header_file}"
+             _hypredrv_umpire_header_content)
+        if(_hypredrv_umpire_header_content MATCHES
+           "HYPREDRV: Umpire C\\+\\+ headers require C\\+\\+ linkage")
+            continue()
+        endif()
+
+        set(_hypredrv_umpire_header_original
+            "${_hypredrv_umpire_header_content}")
+        string(REPLACE
+            "${_hypredrv_umpire_header_old}"
+            "${_hypredrv_umpire_header_new}"
+            _hypredrv_umpire_header_content
+            "${_hypredrv_umpire_header_content}")
+        if("${_hypredrv_umpire_header_content}" STREQUAL
+           "${_hypredrv_umpire_header_original}")
+            message(WARNING
+                "Could not isolate Umpire's C++ headers from HYPRE's C linkage in "
+                "${_hypredrv_umpire_header_file}; upstream HYPRE may have changed")
+        else()
+            file(WRITE "${_hypredrv_umpire_header_file}"
+                 "${_hypredrv_umpire_header_content}")
+            set(_hypredrv_umpire_header_patched TRUE)
+        endif()
+    endforeach()
+
+    if(_hypredrv_umpire_header_patched)
+        message(STATUS
+            "  HYPRE Umpire C++ headers patched to use C++ linkage")
+    endif()
 endfunction()
 
 function(_hypredrv_link_mpi_interface target_name)
@@ -210,6 +306,130 @@ function(_hypredrv_detect_hypre_sycl_usage)
             endif()
         endif()
     endforeach()
+endfunction()
+
+function(_hypredrv_hypre_needs_cuda_nvjitlink result_var)
+    set(_needs_nvjitlink FALSE)
+
+    if(HYPRE_ENABLE_CUDA AND (HYPRE_ENABLE_CUSPARSE OR HYPRE_ENABLE_CUSOLVER))
+        set(_needs_nvjitlink TRUE)
+    endif()
+
+    if(TARGET HYPRE::HYPRE)
+        get_target_property(_hypre_link_libs HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
+        if(_hypre_link_libs)
+            foreach(_hypre_link_lib IN LISTS _hypre_link_libs)
+                if(_hypre_link_lib MATCHES "(^|[:>/])CUDA::(cusparse|cusolver|nvrtc)($|[>,])" OR
+                   _hypre_link_lib MATCHES "libcu(sparse|solver)\\.(so|dylib|dll|a)" OR
+                   _hypre_link_lib MATCHES "(^|[/-])cu(sparse|solver)$")
+                    set(_needs_nvjitlink TRUE)
+                    break()
+                endif()
+            endforeach()
+        endif()
+    endif()
+
+    set(${result_var} ${_needs_nvjitlink} PARENT_SCOPE)
+endfunction()
+
+function(_hypredrv_find_cuda_nvjitlink out_var)
+    if(TARGET CUDA::nvJitLink)
+        set(${out_var} CUDA::nvJitLink PARENT_SCOPE)
+        return()
+    endif()
+
+    find_package(CUDAToolkit QUIET)
+    if(TARGET CUDA::nvJitLink)
+        set(${out_var} CUDA::nvJitLink PARENT_SCOPE)
+        return()
+    endif()
+
+    set(_cuda_roots "")
+    foreach(_cuda_root IN ITEMS
+            "${CUDAToolkit_ROOT}"
+            "${CUDA_TOOLKIT_ROOT_DIR}"
+            "${CUDA_ROOT}")
+        if(_cuda_root)
+            list(APPEND _cuda_roots "${_cuda_root}")
+        endif()
+    endforeach()
+
+    if(CUDAToolkit_BIN_DIR)
+        get_filename_component(_cuda_root_from_bin "${CUDAToolkit_BIN_DIR}" DIRECTORY)
+        list(APPEND _cuda_roots "${_cuda_root_from_bin}")
+    endif()
+
+    set(_cuda_lib_hints "")
+    foreach(_cuda_lib IN ITEMS
+            "${CUDA_nvJitLink_LIBRARY}"
+            "${CUDA_cudart_LIBRARY}"
+            "${CUDA_CUDART}")
+        if(_cuda_lib)
+            get_filename_component(_cuda_lib_dir "${_cuda_lib}" DIRECTORY)
+            list(APPEND _cuda_lib_hints "${_cuda_lib_dir}")
+        endif()
+    endforeach()
+
+    foreach(_cuda_root IN LISTS _cuda_roots)
+        list(APPEND _cuda_lib_hints
+             "${_cuda_root}/lib64"
+             "${_cuda_root}/lib"
+             "${_cuda_root}/targets/x86_64-linux/lib")
+    endforeach()
+    if(CUDAToolkit_LIBRARY_DIR)
+        list(APPEND _cuda_lib_hints "${CUDAToolkit_LIBRARY_DIR}")
+    endif()
+
+    list(REMOVE_DUPLICATES _cuda_lib_hints)
+    find_library(HYPREDRV_CUDA_NVJITLINK_LIBRARY
+                 NAMES nvJitLink libnvJitLink.so
+                 HINTS ${_cuda_lib_hints}
+                 PATH_SUFFIXES lib64 lib targets/x86_64-linux/lib)
+
+    if(HYPREDRV_CUDA_NVJITLINK_LIBRARY)
+        set(${out_var} "${HYPREDRV_CUDA_NVJITLINK_LIBRARY}" PARENT_SCOPE)
+    else()
+        set(${out_var} "" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(_hypredrv_ensure_hypre_cuda_nvjitlink)
+    if(NOT TARGET HYPRE::HYPRE)
+        return()
+    endif()
+
+    set(_hypre_link_target HYPRE::HYPRE)
+    get_target_property(_hypre_aliased_target HYPRE::HYPRE ALIASED_TARGET)
+    if(_hypre_aliased_target)
+        set(_hypre_link_target "${_hypre_aliased_target}")
+    endif()
+
+    _hypredrv_hypre_needs_cuda_nvjitlink(_needs_nvjitlink)
+    if(NOT _needs_nvjitlink)
+        return()
+    endif()
+
+    get_target_property(_hypre_link_libs ${_hypre_link_target} INTERFACE_LINK_LIBRARIES)
+    if(_hypre_link_libs)
+        foreach(_hypre_link_lib IN LISTS _hypre_link_libs)
+            if(_hypre_link_lib MATCHES "(^|[:>/])CUDA::nvJitLink($|[>,])" OR
+               _hypre_link_lib MATCHES "libnvJitLink\\.(so|dylib|dll|a)")
+                return()
+            endif()
+        endforeach()
+    endif()
+
+    _hypredrv_find_cuda_nvjitlink(_nvjitlink_lib)
+    if(_nvjitlink_lib)
+        set_property(TARGET ${_hypre_link_target} APPEND PROPERTY
+                     INTERFACE_LINK_LIBRARIES "${_nvjitlink_lib}")
+        message(STATUS "  Added CUDA nvJitLink dependency for HYPRE: ${_nvjitlink_lib}")
+    else()
+        message(WARNING
+            "HYPRE links CUDA libraries that may require nvJitLink, but "
+            "libnvJitLink was not found. Runtime may require LD_LIBRARY_PATH "
+            "to include the CUDA toolkit lib directory.")
+    endif()
 endfunction()
 
 function(_hypredrv_set_using_caliper enabled)
@@ -346,6 +566,42 @@ function(_hypredrv_forward_hypre_cache_vars forwarded_count_var)
 
     set(${forwarded_count_var} ${_forwarded_count} PARENT_SCOPE)
 endfunction()
+
+############################################################
+# Propagate HYPREDRV dependency options
+############################################################
+
+# Keep accelerator selection at the HYPREDRV level and propagate it to every
+# bundled dependency that supports the selected backend. HYPRE forwards these
+# options to its own nested dependencies (for example, Umpire).
+set(_hypredrv_enabled_accelerators "")
+foreach(_hypredrv_accelerator IN ITEMS CUDA HIP SYCL)
+    if(HYPREDRV_ENABLE_${_hypredrv_accelerator})
+        list(APPEND _hypredrv_enabled_accelerators
+             "${_hypredrv_accelerator}")
+        set(HYPRE_ENABLE_${_hypredrv_accelerator} ON CACHE BOOL
+            "Enabled by HYPREDRV_ENABLE_${_hypredrv_accelerator}" FORCE)
+        message(STATUS
+            "HYPREDRV_ENABLE_${_hypredrv_accelerator}=ON: enabling "
+            "HYPRE_ENABLE_${_hypredrv_accelerator}")
+    endif()
+endforeach()
+list(LENGTH _hypredrv_enabled_accelerators
+     _hypredrv_enabled_accelerator_count)
+if(_hypredrv_enabled_accelerator_count GREATER 1)
+    list(JOIN _hypredrv_enabled_accelerators ", "
+         _hypredrv_enabled_accelerators_text)
+    message(FATAL_ERROR
+        "HYPREDRV accelerator backends are mutually exclusive; enabled: "
+        "${_hypredrv_enabled_accelerators_text}")
+endif()
+
+# Enable HYPRE's SuperLU_DIST integration whenever HYPREDRV owns the
+# SuperLU_DIST build.
+if(HYPREDRV_BUILD_DSUPERLU)
+    set(HYPRE_ENABLE_DSUPERLU ON CACHE BOOL
+        "Use TPL SuperLU_DIST" FORCE)
+endif()
 
 ############################################################
 # Sync Caliper options between HYPREDRV and HYPRE
@@ -540,13 +796,17 @@ endif()
 ############################################################
 
 set(SUPERLU_DIST_VERSION "v9.2.1" CACHE STRING
-    "SuperLU_DIST version/branch/tag to fetch when HYPRE_ENABLE_DSUPERLU=ON (e.g., v9.2.1)")
+    "SuperLU_DIST version/branch/tag to fetch (e.g., v9.2.1)")
 
-if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
+if(HYPRE_ENABLE_DSUPERLU)
     set(SUPERLU_DIST_FOUND FALSE)
 
     if(HYPRE_BUILD_DSUPERLU)
         message(STATUS "Reconfiguring auto-built SuperLU_DIST dependency")
+    elseif(HYPREDRV_BUILD_DSUPERLU)
+        message(STATUS
+            "HYPREDRV_BUILD_DSUPERLU=ON: SuperLU_DIST will be fetched "
+            "and built")
     elseif(TPL_DSUPERLU_INCLUDE_DIRS AND TPL_DSUPERLU_LIBRARIES)
         set(SUPERLU_DIST_FOUND TRUE)
         message(STATUS "Using user-provided SuperLU_DIST include/lib paths for HYPRE")
@@ -650,10 +910,25 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
             "Enable SuperLU_DIST COLAMD support")
         _hypredrv_set_cache_bool_default(TPL_ENABLE_LAPACKLIB OFF
             "Enable SuperLU_DIST LAPACK support")
-        _hypredrv_set_cache_bool_default(TPL_ENABLE_CUDALIB OFF
-            "Enable SuperLU_DIST CUDA support")
-        _hypredrv_set_cache_bool_default(TPL_ENABLE_HIPLIB OFF
-            "Enable SuperLU_DIST HIP support")
+        if(HYPREDRV_ENABLE_CUDA)
+            set(TPL_ENABLE_CUDALIB ON CACHE BOOL
+                "Enable SuperLU_DIST CUDA support" FORCE)
+        else()
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_CUDALIB OFF
+                "Enable SuperLU_DIST CUDA support")
+        endif()
+        if(HYPREDRV_ENABLE_HIP)
+            set(TPL_ENABLE_HIPLIB ON CACHE BOOL
+                "Enable SuperLU_DIST HIP support" FORCE)
+        else()
+            _hypredrv_set_cache_bool_default(TPL_ENABLE_HIPLIB OFF
+                "Enable SuperLU_DIST HIP support")
+        endif()
+        if(HYPREDRV_ENABLE_SYCL)
+            message(STATUS
+                "SuperLU_DIST ${SUPERLU_DIST_VERSION} has no SYCL backend; "
+                "building its CPU implementation for SYCL-enabled HYPRE")
+        endif()
         _hypredrv_set_cache_bool_default(TPL_ENABLE_NVSHMEM OFF
             "Enable SuperLU_DIST NVSHMEM support")
         _hypredrv_set_cache_bool_default(TPL_ENABLE_ROCSHMEM OFF
@@ -675,6 +950,10 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
 
         _hypredrv_set_common_output_directories()
 
+        set(_hypredrv_superlu_dist_static_build OFF)
+        if(NOT BUILD_SHARED_LIBS)
+            set(_hypredrv_superlu_dist_static_build ON)
+        endif()
         message(STATUS
             "  Using inherited BUILD_SHARED_LIBS=${BUILD_SHARED_LIBS} for SuperLU_DIST build")
 
@@ -701,9 +980,22 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
                 $<BUILD_INTERFACE:${superlu_dist_BINARY_DIR}/SRC>)
         endif()
 
+        if(_hypredrv_superlu_dist_static_build AND TARGET superlu_dist)
+            get_target_property(_hypredrv_superlu_dist_target_type
+                                superlu_dist TYPE)
+            if(NOT _hypredrv_superlu_dist_target_type STREQUAL
+                   "STATIC_LIBRARY")
+                message(FATAL_ERROR
+                    "The bundled HYPRE build is static, but SuperLU_DIST "
+                    "target superlu_dist is ${_hypredrv_superlu_dist_target_type}")
+            endif()
+            message(STATUS
+                "  Verified bundled SuperLU_DIST target is static")
+        endif()
+
         # HYPRE needs concrete library paths in TPL_DSUPERLU_LIBRARIES. These paths
         # assume the project's single-config, unified output directories.
-        if(BUILD_SHARED_LIBS)
+        if(NOT _hypredrv_superlu_dist_static_build)
             set(SUPERLU_DIST_LIBRARY_FILE
                 "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}superlu_dist${CMAKE_SHARED_LIBRARY_SUFFIX}")
         else()
@@ -713,7 +1005,7 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
 
         set(_hypredrv_dsuperlu_libraries ${SUPERLU_DIST_LIBRARY_FILE})
         if(TPL_ENABLE_INTERNAL_BLASLIB)
-            if(BUILD_SHARED_LIBS)
+            if(NOT _hypredrv_superlu_dist_static_build)
                 list(APPEND _hypredrv_dsuperlu_libraries
                     "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/${CMAKE_SHARED_LIBRARY_PREFIX}blas${CMAKE_SHARED_LIBRARY_SUFFIX}")
             else()
@@ -743,6 +1035,8 @@ if(DEFINED HYPRE_ENABLE_DSUPERLU AND HYPRE_ENABLE_DSUPERLU)
         message(STATUS "  Setting TPL_DSUPERLU_LIBRARIES: ${TPL_DSUPERLU_LIBRARIES}")
         message(STATUS "SuperLU_DIST configured and ready (built via FetchContent)")
         unset(_hypredrv_dsuperlu_libraries)
+        unset(_hypredrv_superlu_dist_static_build)
+        unset(_hypredrv_superlu_dist_target_type)
     endif()
 endif()
 
@@ -798,6 +1092,16 @@ if(NOT HYPRE_FOUND)
         if(_hypre_major LESS 3)
             set(_hypre_use_autotools TRUE)
         endif()
+    endif()
+
+    # Auto-fetched GPU builds use Umpire by default unless the user points to
+    # an external Umpire or explicitly disables Umpire. Preserve explicit
+    # HYPRE_BUILD_UMPIRE settings.
+    if(NOT _hypre_use_autotools AND (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       NOT umpire_ROOT AND NOT umpire_DIR AND
+       NOT (DEFINED CACHE{HYPRE_ENABLE_UMPIRE} AND NOT HYPRE_ENABLE_UMPIRE))
+        _hypredrv_set_cache_bool_default(HYPRE_BUILD_UMPIRE ON
+            "Automatically download and build Umpire for HYPRE")
     endif()
 
     set(_hypre_git_shallow TRUE)
@@ -938,6 +1242,8 @@ if(NOT HYPRE_FOUND)
             endif()
         endif()
 
+        find_program(_hypre_autotools_make_program NAMES gmake make REQUIRED)
+
         ExternalProject_Add(hypre_autotools
             SOURCE_DIR ${_hypre_autotools_src}
             CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
@@ -946,8 +1252,9 @@ if(NOT HYPRE_FOUND)
                 LDFLAGS=${_hypre_autotools_ldflags}
                 ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
                 ${_hypre_autotools_configure_extra}
-            BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM}
-            INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${CMAKE_MAKE_PROGRAM} install
+            BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${_hypre_autotools_make_program}
+            BUILD_BYPRODUCTS "${_hypre_autotools_prefix}/lib/libHYPRE.a"
+            INSTALL_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${_hypre_autotools_make_program} install
             BUILD_IN_SOURCE 1
         )
 
@@ -965,6 +1272,7 @@ if(NOT HYPRE_FOUND)
         )
         _hypredrv_link_mpi_interface(HYPRE::HYPRE)
         add_dependencies(HYPRE::HYPRE hypre_autotools)
+        set(HYPREDRV_HYPRE_BUILD_DEPENDENCY hypre_autotools)
 
         set(HYPREDRV_HYPRE_USER_PROVIDED TRUE)
         set(HYPREDRV_HYPRE_AUTOTOOLS TRUE)
@@ -976,6 +1284,7 @@ if(NOT HYPRE_FOUND)
         unset(_hypre_autotools_cflags)
         unset(_hypre_autotools_ldflags)
         unset(_hypre_autotools_configure_extra)
+        unset(_hypre_autotools_make_program)
         unset(_hypre_instrumentation_cflags)
         unset(_hypre_instrumentation_ldflags)
         unset(_hypre_cuda_arch)
@@ -994,8 +1303,15 @@ if(NOT HYPRE_FOUND)
         set(CMAKE_C_COMPILER ${MPI_C_COMPILER} CACHE FILEPATH "C compiler" FORCE)
     endif()
 
-    # Configure HYPRE-specific build options (override any user settings)
-    set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests" FORCE)
+    # HYPRE's test drivers are not needed by default, but preserve an explicit
+    # HYPRE_BUILD_TESTS setting so consumers can add native drivers such as
+    # struct to the same FetchContent build tree.
+    if(NOT DEFINED HYPRE_BUILD_TESTS)
+        set(HYPRE_BUILD_TESTS OFF CACHE BOOL "Build HYPRE tests")
+    else()
+        message(STATUS
+            "Preserving caller-provided HYPRE_BUILD_TESTS=${HYPRE_BUILD_TESTS}")
+    endif()
     set(HYPRE_BUILD_EXAMPLES OFF CACHE BOOL "Build HYPRE examples" FORCE)
     if(HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR HYPREDRV_ENABLE_FORTRAN OR HYPREDRV_ENABLE_JULIA)
         set(CMAKE_POSITION_INDEPENDENT_CODE ON CACHE BOOL
@@ -1025,6 +1341,9 @@ if(NOT HYPRE_FOUND)
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
     _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
+    if(HYPRE_BUILD_UMPIRE OR HYPRE_ENABLE_UMPIRE)
+        _hypredrv_patch_hypre_umpire_header_linkage("${hypre_SOURCE_DIR}")
+    endif()
 
     # Patch HYPRE's CMakeLists.txt to skip export when TPLs are auto-built
     # This must be done before add_subdirectory is called
@@ -1103,11 +1422,106 @@ if(NOT HYPRE_FOUND)
     if(NOT TARGET HYPRE::HYPRE)
         message(STATUS "Configuring HYPRE build...")
         message(STATUS "  Libraries will be built to: ${CMAKE_LIBRARY_OUTPUT_DIRECTORY}")
+
+        # HYPRE's automatic Umpire path adds Umpire, CAMP, and fmt as nested
+        # subprojects. Keep every library from that dependency stack static
+        # unless the top-level build explicitly requests shared libraries.
+        #
+        # Set both the directory-scope and cache values: BLT-based subprojects
+        # consult BUILD_SHARED_LIBS at several nesting levels, and a cache-only
+        # update can be shadowed by a normal variable in a parent scope.
+        set(_hypredrv_force_static_auto_umpire OFF)
+        if(HYPRE_BUILD_UMPIRE AND NOT BUILD_SHARED_LIBS)
+            set(_hypredrv_force_static_auto_umpire ON)
+            set(BUILD_SHARED_LIBS OFF)
+            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+            message(STATUS
+                "  Automatic Umpire build: forcing Umpire, CAMP, and fmt libraries static")
+        elseif(HYPRE_BUILD_UMPIRE)
+            message(STATUS
+                "  Automatic Umpire build: honoring explicit BUILD_SHARED_LIBS=ON")
+        endif()
+
         set(_hypredrv_saved_install_prefix "${CMAKE_INSTALL_PREFIX}")
         add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
         set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
         unset(_hypredrv_saved_install_prefix)
+
+        if(_hypredrv_force_static_auto_umpire)
+            set(_hypredrv_umpire_library_types)
+            foreach(_umpire_target IN ITEMS
+                    umpire
+                    umpire_resource
+                    umpire_strategy
+                    umpire_op
+                    umpire_event
+                    umpire_util
+                    umpire_interface
+                    camp
+                    fmt)
+                if(TARGET ${_umpire_target})
+                    get_target_property(_umpire_target_type
+                        ${_umpire_target} TYPE)
+                    list(APPEND _hypredrv_umpire_library_types
+                        "${_umpire_target}=${_umpire_target_type}")
+                    if(_umpire_target_type STREQUAL "SHARED_LIBRARY" OR
+                       _umpire_target_type STREQUAL "MODULE_LIBRARY")
+                        message(FATAL_ERROR
+                            "Automatic Umpire target ${_umpire_target} was "
+                            "created as ${_umpire_target_type} even though "
+                            "BUILD_SHARED_LIBS is not ON")
+                    endif()
+                endif()
+            endforeach()
+            if(_hypredrv_umpire_library_types)
+                list(JOIN _hypredrv_umpire_library_types ", "
+                    _hypredrv_umpire_library_types_text)
+                message(STATUS
+                    "  Automatic Umpire target types: "
+                    "${_hypredrv_umpire_library_types_text}")
+            endif()
+            unset(_hypredrv_umpire_library_types)
+            unset(_hypredrv_umpire_library_types_text)
+            unset(_umpire_target_type)
+        endif()
+        unset(_hypredrv_force_static_auto_umpire)
+
+        # Umpire's filesystem probe correctly falls back to POSIX when the
+        # compiler lacks <filesystem>, but its bundled nlohmann JSON header
+        # still enables std::filesystem whenever C++17 is selected. Tell that
+        # header to use its C++14-compatible path in this configuration.
+        if(TARGET umpire_tpl_json AND DEFINED UMPIRE_ENABLE_FILESYSTEM AND
+           NOT UMPIRE_ENABLE_FILESYSTEM)
+            target_compile_definitions(umpire_tpl_json INTERFACE JSON_HAS_CPP_14=1)
+            # BLT copies dependency usage requirements when it creates object
+            # libraries, so changing umpire_tpl_json afterward does not update
+            # the already-created target that compiles Umpire's JSON users.
+            if(TARGET umpire_event)
+                target_compile_definitions(umpire_event PRIVATE JSON_HAS_CPP_14=1)
+            endif()
+            message(STATUS
+                "  Umpire std::filesystem is unavailable; disabled JSON filesystem conversions")
+        endif()
+
+        if(CMAKE_CXX_COMPILER_ID STREQUAL "NVHPC")
+            foreach(_umpire_target IN ITEMS
+                    umpire
+                    umpire_resource
+                    umpire_strategy
+                    umpire_op
+                    umpire_event
+                    umpire_util
+                    umpire_interface)
+                if(TARGET ${_umpire_target})
+                    target_compile_options(${_umpire_target} PRIVATE
+                        "$<$<COMPILE_LANGUAGE:CXX>:SHELL:--diag_suppress code_is_unreachable>")
+                endif()
+            endforeach()
+            unset(_umpire_target)
+            message(STATUS
+                "  Suppressed NVHPC code_is_unreachable diagnostics for Umpire")
+        endif()
     endif()
 
     # Remove Caliper include directory from HYPRE's INTERFACE_INCLUDE_DIRECTORIES and re-add with BUILD_INTERFACE
@@ -1174,6 +1588,7 @@ endif()
 # Get HYPRE properties
 if(TARGET HYPRE::HYPRE)
     _hypredrv_detect_hypre_sycl_usage()
+    _hypredrv_ensure_hypre_cuda_nvjitlink()
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
     # Try to get library location - handle both Release and Debug configurations.
@@ -1245,7 +1660,11 @@ if(TARGET HYPRE::HYPRE)
     # Build a runtime library search path for CTest so executables can launch
     # when HYPRE's transitive shared-library dependencies (e.g., Caliper) are
     # not resolved through executable RUNPATH.
-    set(_hypredrv_test_runtime_lib_dirs "")
+    # Prefer libraries produced by this build over same-named libraries in a
+    # dependency/install prefix. This matters for coverage builds in particular:
+    # loading a stale installed libHYPREDRV writes incompatible counters into
+    # the active build tree and causes gcovr to discard entire source files.
+    set(_hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
 
     function(_hypredrv_collect_lib_dirs_from_items out_var)
         set(_dirs "")
@@ -1295,10 +1714,12 @@ if(TARGET HYPRE::HYPRE)
         set(${out_var} "${_dirs}" PARENT_SCOPE)
     endfunction()
 
-    list(APPEND _hypredrv_test_runtime_lib_dirs "${CMAKE_BINARY_DIR}/lib")
     _hypredrv_collect_lib_dirs_from_items(_hypredrv_hypre_lib_dirs ${HYPRE_LIBRARY_FILE})
     list(APPEND _hypredrv_test_runtime_lib_dirs ${_hypredrv_hypre_lib_dirs})
-
+    if(IS_DIRECTORY "${CMAKE_BINARY_DIR}/_deps/hypre-build/lib")
+        list(APPEND _hypredrv_test_runtime_lib_dirs
+            "${CMAKE_BINARY_DIR}/_deps/hypre-build/lib")
+    endif()
     get_target_property(_hypredrv_hypre_link_libs HYPRE::HYPRE INTERFACE_LINK_LIBRARIES)
     if(_hypredrv_hypre_link_libs)
         _hypredrv_collect_lib_dirs_from_items(_hypredrv_hypre_link_dirs ${_hypredrv_hypre_link_libs})

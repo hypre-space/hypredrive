@@ -101,6 +101,30 @@ def test_driver_lifecycle(laplacian_1d, base_options):
     np.testing.assert_allclose(x1, x2, rtol=1e-9, atol=1e-12)
 
 
+def test_input_args_override(laplacian_1d, base_options):
+    indptr, cols, data, rhs, n = laplacian_1d
+
+    def run(input_args=None):
+        with hd.HypreDrive(options=base_options, input_args=input_args) as drv:
+            drv.set_matrix_from_csr(indptr, cols, data, row_start=0, row_end=n - 1)
+            drv.set_rhs(rhs)
+            drv.solve()
+            assert drv.last_converged is True
+            return drv.last_iterations
+
+    baseline = run()
+    loose = run(["--solver:pcg:relative_tol", "1.0e-2"])
+    # The override must take effect: a much looser tolerance converges in
+    # fewer iterations than the 1e-8 baseline.
+    assert loose < baseline
+    # A leading "-a" token is tolerated, mirroring the example CLIs.
+    assert run(["-a", "--solver:pcg:relative_tol", "1.0e-2"]) == loose
+    # An override VALUE that looks like a YAML filename must be applied as a
+    # value, not rediscovered as the configuration file.
+    assert run(["--general:name", "run.yml"]) == baseline
+    assert run(["-a", "--general:name", "run.yml"]) == baseline
+
+
 def test_replacing_matrix_mid_lifecycle(base_options):
     indptr = np.array([0, 1, 2], dtype=hd.BIGINT_DTYPE)
     cols = np.array([0, 1], dtype=hd.BIGINT_DTYPE)

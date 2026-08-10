@@ -18,6 +18,7 @@
 #include <string.h>
 #include <sys/utsname.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
@@ -358,8 +359,9 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
 
 static int GetIntelXeCardByOrdinal(int gpu_ordinal, char *drm_path, size_t len);
 static int QueryIntelClinfoMemoryByOrdinal(int gpu_ordinal, size_t *total);
-static int QueryIntelXeMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
-                                     size_t *used);
+static int HYPREDRV_MAYBE_UNUSED QueryIntelXeMemoryByBusId(const char *pci_busid,
+                                                           int *gpu_index, size_t *total,
+                                                           size_t *used);
 static int QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *used);
 
 #ifndef __APPLE__
@@ -664,7 +666,7 @@ PciBusIdMatches(const char *lhs, const char *rhs)
    return strcmp(PciBusIdComparableSuffix(lhs), PciBusIdComparableSuffix(rhs)) == 0;
 }
 
-static int
+static int HYPREDRV_MAYBE_UNUSED
 QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
                          size_t *used)
 {
@@ -792,7 +794,7 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
    return *total > 0;
 }
 
-static int
+static int HYPREDRV_MAYBE_UNUSED
 QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
 {
    char amd_path[PATH_MAX];
@@ -1918,8 +1920,14 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
 
-   /* Get the hostname for this process */
-   gethostname(hostname, sizeof(hostname));
+   /* Get the hostname for this process. POSIX may leave the buffer unterminated if
+    * the hostname is too long, so zero-fill and force a terminator. */
+   memset(hostname, 0, sizeof(hostname));
+   if (gethostname(hostname, sizeof(hostname)) != 0)
+   {
+      hostname[0] = '\0';
+   }
+   hostname[sizeof(hostname) - 1] = '\0';
 
    /* Gather hostnames on all ranks (needed for unique counts, avoids huge stack VLAs) */
    char *allHostnames = NULL;
@@ -1954,10 +1962,10 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
              "=================================\n\n");
 
       // 1. CPU cores and model
-      int  numPhysicalCPUs = 0;
-      int  numCPUs         = 0;
-      char cpuModels[8][256];
-      char gpuInfo[256] = "Unknown";
+      int  numPhysicalCPUs   = 0;
+      int  numCPUs           = 0;
+      char cpuModels[8][256] = {{0}};
+      char gpuInfo[256]      = "Unknown";
 
       /* Count unique hostnames */
       int numNodes = 0;
@@ -1986,7 +1994,9 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
       msize = sizeof(numPhysicalCPUs);
       sysctlbyname("hw.packages", &numPhysicalCPUs, &msize, NULL, 0);
 
-      for (int i = 0; i < numPhysicalCPUs; i++)
+      /* Clamp to the fixed cpuModels capacity to avoid a stack overflow when the
+       * system reports more than 8 packages. */
+      for (int i = 0; i < numPhysicalCPUs && i < 8; i++)
       {
          msize = sizeof(cpuModels[i]);
          sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
@@ -2000,7 +2010,12 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
          {
             if (strncmp(buffer, "physical id", 11) == 0)
             {
-               int physicalID = atoi(strchr(buffer, ':') + 2);
+               const char *colon = strchr(buffer, ':');
+               if (!colon)
+               {
+                  continue;
+               }
+               int physicalID = atoi(colon + 1);
                if (physicalID >= 0 && physicalID < 8)
                {
                   unsigned long long mask = 1ULL << (unsigned)physicalID;
@@ -2017,7 +2032,16 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
                int physicalID = numPhysicalCPUs - 1;
                if (physicalID >= 0 && physicalID < 8)
                {
-                  const char *model = strchr(buffer, ':') + 2;
+                  const char *colon = strchr(buffer, ':');
+                  if (!colon)
+                  {
+                     continue;
+                  }
+                  const char *model = colon + 1;
+                  while (*model == ' ')
+                  {
+                     model++;
+                  }
                   strncpy(cpuModels[physicalID], model,
                           sizeof(cpuModels[physicalID]) - 1);
                   cpuModels[physicalID][sizeof(cpuModels[physicalID]) - 1] = '\0';
@@ -2816,8 +2840,13 @@ PrintCpuTopologyInfo(MPI_Comm comm)
 
    // Gather hostnames for multi-node information
    char hostname[HYPRE_MAX_HOSTNAME];
-   gethostname(hostname, sizeof(hostname));
-   char *allHostnames = NULL;
+   memset(hostname, 0, sizeof(hostname));
+   if (gethostname(hostname, sizeof(hostname)) != 0)
+   {
+      hostname[0] = '\0';
+   }
+   hostname[sizeof(hostname) - 1] = '\0';
+   char *allHostnames             = NULL;
    if (nprocs > 0)
    {
       allHostnames = (char *)malloc((size_t)nprocs * HYPRE_MAX_HOSTNAME);
@@ -3298,7 +3327,7 @@ PrintNumaInfo(double bytes_to_gib, GpuInfo *gpus, int gpu_count)
       unsigned long long total_mem = numa->attr->numanode.local_memory;
       int                pu_count  = hwloc_bitmap_weight(numa->cpuset);
 
-      printf("NUMA node %d\n", numa->os_index);
+      printf("NUMA node %u\n", numa->os_index);
       printf("  CPUs                 : %s (%d PUs)\n", cpuset_str, pu_count);
       printf("  Memory (GiB)         : %.2f\n", total_mem / bytes_to_gib);
 
@@ -3533,8 +3562,19 @@ static void
 PrintTopologyTreeCompact(hwloc_obj_t obj, int depth)
 {
    char indent[32];
-   memset(indent, ' ', depth * 2);
-   indent[depth * 2] = '\0';
+   /* Clamp the indent width to the buffer size; deep or synthetic hwloc topologies
+    * can exceed depth 15 and would otherwise overflow this stack buffer. */
+   int indent_len = depth * 2;
+   if (indent_len < 0)
+   {
+      indent_len = 0;
+   }
+   if (indent_len > (int)sizeof(indent) - 1)
+   {
+      indent_len = (int)sizeof(indent) - 1;
+   }
+   memset(indent, ' ', (size_t)indent_len);
+   indent[indent_len] = '\0';
 
    char type_str[32];
    hwloc_obj_type_snprintf(type_str, sizeof(type_str), obj, 1);
@@ -3840,17 +3880,34 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
    {
       gpuBindingAll = (char *)malloc((size_t)nprocs * HYPRE_MAX_GPU_BINDING);
    }
-   MPI_Gather(gpuBindingLocal, HYPRE_MAX_GPU_BINDING, MPI_CHAR, gpuBindingAll,
-              HYPRE_MAX_GPU_BINDING, MPI_CHAR, 0, comm);
+   /* Ensure the root receive buffer allocation succeeded on all ranks before the
+    * collective; passing a NULL recvbuf on the root is erroneous per the MPI
+    * standard. */
+   int gpu_gather_ok = (myid || gpuBindingAll) ? 1 : 0;
+   MPI_Allreduce(MPI_IN_PLACE, &gpu_gather_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (gpu_gather_ok)
+   {
+      MPI_Gather(gpuBindingLocal, HYPRE_MAX_GPU_BINDING, MPI_CHAR, gpuBindingAll,
+                 HYPRE_MAX_GPU_BINDING, MPI_CHAR, 0, comm);
+   }
+   else
+   {
+      free(gpuBindingAll);
+      gpuBindingAll = NULL;
+   }
 
    if (!myid)
    {
       printf("================================ System Information (hwloc) "
              "================================\n\n");
+   }
 
-      // 1. CPU Topology (includes multi-node summary and detailed info)
-      PrintCpuTopologyInfo(comm);
+   /* CPU Topology performs MPI collectives (Allreduce/Allgather) and must be
+    * entered by every rank; it prints on rank 0 internally. */
+   PrintCpuTopologyInfo(comm);
 
+   if (!myid)
+   {
       // 3. GPU Information
       PrintGpuInfo(gpus, gpu_count);
 
@@ -3883,10 +3940,14 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
 
       // 9. Process Binding
       PrintProcessBinding();
+   }
 
-      // 10. Thread Affinity (if OpenMP is enabled)
-      PrintThreadAffinity(comm, gpus, gpu_count);
+   /* Thread Affinity uses MPI_Barrier and reports per-rank data, so every rank
+    * must enter it; it gates its banner on rank 0 internally. */
+   PrintThreadAffinity(comm, gpus, gpu_count);
 
+   if (!myid)
+   {
       // 11. Topology Tree
       PrintTopologyTree();
 
@@ -3917,7 +3978,7 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
       printf("hwloc Information\n");
       printf("-----------------\n");
       unsigned version = hwloc_get_api_version();
-      printf("hwloc API version    : %d.%d.%d\n", (version >> 16) & 0xff,
+      printf("hwloc API version    : %u.%u.%u\n", (version >> 16) & 0xff,
              (version >> 8) & 0xff, version & 0xff);
       printf("\n");
 
@@ -4574,6 +4635,46 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 #elif defined(HYPRE_RELEASE_VERSION)
       printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
 #endif
+   }
+}
+
+/*--------------------------------------------------------------------------
+ * ExecutionPolicyName
+ *--------------------------------------------------------------------------*/
+
+const char *
+hypredrv_ExecutionPolicyName(int exec_policy)
+{
+   HYPRE_ExecutionPolicy hypre_exec_policy =
+      exec_policy ? HYPRE_EXEC_DEVICE : HYPRE_EXEC_HOST;
+
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   return HYPRE_GetExecutionPolicyName(hypre_exec_policy);
+#else
+   return hypre_exec_policy == HYPRE_EXEC_DEVICE ? "Device" : "Host";
+#endif
+}
+
+/*--------------------------------------------------------------------------
+ * PrintExecutionPolicy
+ *--------------------------------------------------------------------------*/
+
+void
+hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
+{
+   int myid = 0;
+
+   if (!stream)
+   {
+      return;
+   }
+
+   MPI_Comm_rank(comm, &myid);
+
+   if (!myid)
+   {
+      fprintf(stream, "HYPRE execution policy: %s\n\n",
+              hypredrv_ExecutionPolicyName(exec_policy));
    }
 }
 

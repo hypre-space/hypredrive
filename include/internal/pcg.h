@@ -10,8 +10,8 @@
 
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
-#include "internal/field.h"
-#include "internal/yaml.h"
+
+struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
  * PCG solver arguments struct
@@ -36,7 +36,7 @@ typedef struct PCG_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_PCGSetDefaultArgs(PCG_args *);
-void hypredrv_PCGSetArgs(void *, const YAMLnode *);
+void hypredrv_PCGSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_PCGCreate(MPI_Comm, const PCG_args *, HYPRE_Solver *);
 
 #endif /* PCG_HEADER */

@@ -22,6 +22,7 @@
 #include <stdio.h>
 
 #include "HYPREDRV_python.h"
+#include "internal/compatibility.h"
 
 static int HYPREDRV_python_mpi_owned = 0;
 
@@ -36,16 +37,14 @@ static int HYPREDRV_python_mpi_owned = 0;
  * cannot represent @p value.
  */
 static uint32_t
-HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name,
-                               HYPRE_BigInt *converted)
+HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name, HYPRE_BigInt *converted)
 {
-   HYPRE_BigInt tmp = (HYPRE_BigInt)value;
-   if ((int64_t)tmp != value)
+   if (!hypredrv_BigIntFromI64(value, converted))
    {
       char message[256];
       int  written = snprintf(message, sizeof(message),
-                              "%s (%lld) is outside the active HYPRE_BigInt range",
-                              name, (long long)value);
+                              "%s (%lld) is outside the active HYPRE_BigInt range", name,
+                              (long long)value);
       if (written < 0 || written >= (int)sizeof(message))
       {
          return HYPREDRV_ErrorInvalidValue(
@@ -54,7 +53,6 @@ HYPREDRV_PythonBigIntFromInt64(int64_t value, const char *name,
       return HYPREDRV_ErrorInvalidValue(message);
    }
 
-   *converted = tmp;
    return 0;
 }
 
@@ -112,6 +110,12 @@ HYPREDRV_PythonMPIInitialize(void)
       return HYPREDRV_ErrorInvalidValue(
          "HYPREDRV_PythonMPIInitialize: MPI_Init_thread failed");
    }
+   if (provided < MPI_THREAD_SERIALIZED)
+   {
+      return HYPREDRV_ErrorInvalidValue(
+         "HYPREDRV_PythonMPIInitialize: MPI implementation did not provide the "
+         "requested MPI_THREAD_SERIALIZED thread level");
+   }
    HYPREDRV_python_mpi_owned = 1;
    return 0;
 }
@@ -161,21 +165,12 @@ HYPREDRV_PythonCreateFromFortranComm(int fortran_comm, HYPREDRV_t *hypredrv_ptr)
 }
 
 /**
- * @brief Create a distributed HYPREDRV object using MPI_COMM_WORLD.
- */
-uint32_t
-HYPREDRV_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr)
-{
-   return HYPREDRV_Create(MPI_COMM_WORLD, hypredrv_ptr);
-}
-
-/**
  * @brief Install a CSR matrix from Python-owned opaque buffers.
  */
 uint32_t
-HYPREDRV_PythonSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start,
-                                int64_t row_end, const void *indptr,
-                                const void *col_indices, const void *data)
+HYPREDRV_PythonSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start, int64_t row_end,
+                                const void *indptr, const void *col_indices,
+                                const void *data)
 {
    HYPRE_BigInt hypre_row_start = 0;
    HYPRE_BigInt hypre_row_end   = 0;
@@ -201,8 +196,8 @@ HYPREDRV_PythonSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start,
  * @brief Install a right-hand-side vector from a Python-owned opaque buffer.
  */
 uint32_t
-HYPREDRV_PythonSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start,
-                               int64_t row_end, const void *values)
+HYPREDRV_PythonSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start, int64_t row_end,
+                               const void *values)
 {
    HYPRE_BigInt hypre_row_start = 0;
    HYPRE_BigInt hypre_row_end   = 0;
@@ -219,8 +214,8 @@ HYPREDRV_PythonSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start,
       return code;
    }
 
-   return HYPREDRV_LinearSystemSetRHSFromArray(
-      hypredrv, hypre_row_start, hypre_row_end, (const HYPRE_Real *)values);
+   return HYPREDRV_LinearSystemSetRHSFromArray(hypredrv, hypre_row_start, hypre_row_end,
+                                               (const HYPRE_Real *)values);
 }
 
 /**
@@ -238,8 +233,7 @@ HYPREDRV_PythonGetSolutionValues(HYPREDRV_t hypredrv, const void **sol_data,
 
    HYPRE_Complex *src        = NULL;
    HYPRE_BigInt   length_big = 0;
-   uint32_t       code       = HYPREDRV_LinearSystemGetSolutionLength(hypredrv,
-                                                                      &length_big);
+   uint32_t       code = HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &length_big);
    if (code != 0)
    {
       return code;

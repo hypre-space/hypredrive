@@ -8,13 +8,10 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#include <HYPRE_utilities.h>
-#include <stdarg.h>
+#include <mpi.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 typedef enum hypredrv_error_enum
 {
@@ -50,9 +47,6 @@ typedef enum hypredrv_error_enum
    ERROR_UNKNOWN                  = 0x80000000, // 30th bit
 } hypredrv_error_t;
 
-/* Backward-compatible alias; prefer hypredrv_error_t in new code. */
-typedef hypredrv_error_t ErrorCode;
-
 /*
  * THREAD SAFETY
  *
@@ -75,6 +69,7 @@ bool     hypredrv_DistributedErrorStateSync(MPI_Comm);
  *******************************************************************************/
 
 void hypredrv_ErrorMsgAdd(const char *, ...);
+void hypredrv_ErrorMsgAddUnique(const char *, ...);
 void hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t, const char *);
 void hypredrv_ErrorMsgAddMissingKey(const char *);
 void hypredrv_ErrorMsgAddExtraKey(const char *);
@@ -83,10 +78,10 @@ void hypredrv_ErrorMsgAddInvalidFilename(const char *);
 void hypredrv_ErrorMsgPrint(void);
 void hypredrv_ErrorMsgClear(void);
 void hypredrv_ErrorBacktracePrint(void);
-#ifndef HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
-#define HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
+
+/* Internal implementation behind the public HYPREDRV_SafeCallHandleError()
+   wrapper and the HYPREDRV_SAFE_CALL* macros. */
 void hypredrv_SafeCallHandleError(uint32_t, MPI_Comm, const char *, int, const char *);
-#endif
 
 /*******************************************************************************
  *******************************************************************************/

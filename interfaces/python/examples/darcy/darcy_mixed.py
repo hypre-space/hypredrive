@@ -1077,6 +1077,16 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=0,
         help="GMRES print_level (0 silent, 2 per-iter convergence)",
     )
+    p.add_argument(
+        "-a",
+        "--args",
+        dest="input_args",
+        nargs=argparse.REMAINDER,
+        default=None,
+        metavar="KEY VALUE",
+        help="hypredrive YAML overrides, e.g. "
+             "-a --solver:gmres:max_iter 100 (must come last)",
+    )
     return p.parse_args(argv)
 
 
@@ -1628,7 +1638,7 @@ def _run_parallel(args, mesh, drive_axis, drive_length, K, K_inv, read_time, com
     opts = mgr_options()
     if args.print_level:
         opts["solver"]["gmres"]["print_level"] = args.print_level
-    with hd.HypreDrive(options=opts, comm=comm) as drv:
+    with hd.HypreDrive(options=opts, comm=comm, input_args=args.input_args) as drv:
         drv.set_matrix_from_csr(A_local, row_start=off, row_end=off + total - 1)
         drv.set_rhs(rhs)
         drv.set_dofmap(dofmap)
@@ -1760,7 +1770,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.print_level:
         opts["solver"]["gmres"]["print_level"] = args.print_level
 
-    with hd.HypreDrive(options=opts) as drv:
+    with hd.HypreDrive(options=opts, input_args=args.input_args) as drv:
         n_total = mesh.n_faces + mesh.n_cells
         drv.set_matrix_from_csr(A, row_start=0, row_end=n_total - 1)
         drv.set_rhs(rhs)

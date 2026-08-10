@@ -67,13 +67,8 @@ extern "C"
     * mpi4py exposes communicators through Comm.py2f(); this bridge converts
     * that handle back to a C MPI_Comm before calling HYPREDRV_Create().
     */
-   uint32_t HYPREDRV_PythonCreateFromFortranComm(int fortran_comm,
+   uint32_t HYPREDRV_PythonCreateFromFortranComm(int         fortran_comm,
                                                  HYPREDRV_t *hypredrv_ptr);
-
-   /**
-    * @brief Create a HYPREDRV object on MPI_COMM_WORLD.
-    */
-   uint32_t HYPREDRV_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr);
 
    /**
     * @brief Install a CSR matrix from Python-owned opaque buffers.
@@ -90,8 +85,7 @@ extern "C"
     */
    uint32_t HYPREDRV_PythonSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start,
                                             int64_t row_end, const void *indptr,
-                                            const void *col_indices,
-                                            const void *data);
+                                            const void *col_indices, const void *data);
 
    /**
     * @brief Install a right-hand-side vector from a Python-owned opaque buffer.
@@ -109,8 +103,7 @@ extern "C"
     * until the solution vector is replaced or the object is destroyed.
     * @param sol_length Output local solution length in scalar entries.
     */
-   uint32_t HYPREDRV_PythonGetSolutionValues(HYPREDRV_t hypredrv,
-                                             const void **sol_data,
+   uint32_t HYPREDRV_PythonGetSolutionValues(HYPREDRV_t hypredrv, const void **sol_data,
                                              size_t *sol_length);
 
 #ifdef __cplusplus

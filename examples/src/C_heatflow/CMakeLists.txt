@@ -17,6 +17,7 @@ endif()
 # Common build configuration
 add_executable(heatflow heatflow.c)
 target_link_libraries(heatflow PRIVATE HYPREDRV::HYPREDRV m)
+hypredrv_add_hypre_build_dependency(heatflow)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(heatflow)
 endif()

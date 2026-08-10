@@ -144,8 +144,9 @@ typedef struct Stats_struct
    char   object_name[MAX_FILENAME_LENGTH];
 
    /* Per-level statistics (stats computed on-demand from solve index range) */
-   int         level_count[STATS_MAX_LEVELS];   /* Number of entries per level */
-   LevelEntry *level_entries[STATS_MAX_LEVELS]; /* Array of entries per level */
+   int         level_count[STATS_MAX_LEVELS];    /* Number of entries per level */
+   int         level_capacity[STATS_MAX_LEVELS]; /* Allocated entries per level */
+   LevelEntry *level_entries[STATS_MAX_LEVELS];  /* Array of entries per level */
 
    /* Current state per level */
    int level_active;                        /* Bitmask: which levels are active */
@@ -190,10 +191,12 @@ void hypredrv_StatsSetObjectName(Stats *stats, const char *name);
 void hypredrv_StatsSetPendingTimestepContext(Stats *stats, int timestep_id);
 
 /* Statistics getters */
-int    hypredrv_StatsGetLinearSystemID(const Stats *stats);
-int    hypredrv_StatsGetLastIter(const Stats *stats);
-double hypredrv_StatsGetLastSetupTime(const Stats *stats);
-double hypredrv_StatsGetLastSolveTime(const Stats *stats);
+int         hypredrv_StatsGetLinearSystemID(const Stats *stats);
+const char *hypredrv_StatsGetLogObjectName(const Stats *stats, char *buffer,
+                                           size_t buffer_size);
+int         hypredrv_StatsGetLastIter(const Stats *stats);
+double      hypredrv_StatsGetLastSetupTime(const Stats *stats);
+double      hypredrv_StatsGetLastSolveTime(const Stats *stats);
 
 /* Level statistics (populated automatically from level annotations) */
 int      hypredrv_StatsLevelGetCount(const Stats *stats, int level);

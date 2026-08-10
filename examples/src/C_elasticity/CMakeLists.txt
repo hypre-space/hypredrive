@@ -17,6 +17,7 @@ endif()
 # Common build configuration
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
+hypredrv_add_hypre_build_dependency(elasticity)
 if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(elasticity)
 endif()
@@ -39,14 +40,11 @@ if(HYPREDRV_ENABLE_CALIPER)
     endif()
 endif()
 
-# Add OpenMP support for parallel assembly
-find_package(OpenMP)
-if(OpenMP_C_FOUND)
-    target_link_libraries(elasticity PRIVATE OpenMP::OpenMP_C)
-    message(STATUS "OpenMP enabled for elasticity driver")
-else()
-    message(STATUS "OpenMP not found - elasticity driver will build without OpenMP")
+# Add opt-in OpenMP support for parallel assembly
+if(NOT COMMAND hypredrv_link_example_omp)
+    include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/HYPREDRV_Platform.cmake")
 endif()
+hypredrv_link_example_omp(elasticity)
 
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
@@ -73,9 +71,11 @@ if(HYPREDRV_ENABLE_TESTING)
         ARGS -n 12 4 4 -P 2 2 1 -ns 1 -v 1
     )
 
-    # Two-material bar (mixed u-p): the built-in FGMRES+MGR configuration needs
-    # a recent hypre, matching the lid-cavity Q2-Q1 MGR gate.
-    if(HYPREDRV_HAVE_HYPRE_30100_DEV5)
+    # Two-material bar (mixed u-p): the built-in FGMRES+MGR configuration drives
+    # MGR's coarse solve with the application-assembled pressure-mass Schur
+    # (coarse_level_type: user), which needs HYPRE_MGRSetCoarseGridMatrixAtLevel
+    # (hypre >= 3.1.0 develop 77).
+    if(HYPREDRV_HAVE_HYPRE_30100_DEV77)
         add_executable_test(elasticity_two_material_1proc elasticity 1
             ARGS --problem two-material -n 13 5 5 --nu-top 0.4999 -ns 1 -v 1
             RUN_SERIAL

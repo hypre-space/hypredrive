@@ -1,0 +1,24 @@
+# GMRES preconditioned by block-Jacobi ILU(0).
+#
+# The upwind operator is nearly triangular when the unknowns are numbered along
+# the flow direction, which makes an incomplete factorization a very effective
+# single-level preconditioner. Its parallel variant factors the on-rank block
+# only, so the iteration count grows with the number of ranks.
+#
+# Use "type: bj-ilut" together with "droptol" and "max_row_nnz" for the
+# threshold-based variant.
+
+general:
+  name: convdif-ilu
+
+solver:
+  gmres:
+    max_iter: 100
+    krylov_dim: 30
+    relative_tol: 1.0e-8
+    print_level: 0
+
+preconditioner:
+  ilu:
+    type: bj-iluk
+    fill_level: 0

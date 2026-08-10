@@ -29,9 +29,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--mode",
-        choices=("layer", "3d", "both"),
+        choices=("layer", "3d", "tile", "both"),
         default="layer",
-        help="Figure mode to generate.",
+        help="Figure mode to generate ('tile' = standalone gallery thumbnail).",
     )
     parser.add_argument(
         "--layer",
@@ -50,6 +50,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("docs/usrman-src/figures/spe10_darcy_3d.png"),
         help="Output path for the 3D figure.",
+    )
+    parser.add_argument(
+        "--figure-tile-path",
+        type=Path,
+        default=Path("docs/usrman-src/figures/gallery/02_darcy.png"),
+        help="Output path for the standalone gallery tile.",
     )
     return parser.parse_args()
 
@@ -189,12 +195,9 @@ def write_layer_figure(
     print(f"Wrote {figure_path}")
 
 
-def add_surface_box(ax, vol: np.ndarray, cmap_name: str, title: str, cbar_label: str, fig) -> None:
-    from matplotlib import cm, colors
-
+def _draw_box_faces(ax, vol: np.ndarray, cmap, norm) -> None:
+    """Paint the six outer faces of a 3D volume as colored surfaces."""
     nz, ny, nx = vol.shape
-    norm = colors.Normalize(float(np.nanmin(vol)), float(np.nanmax(vol)))
-    cmap = cm.get_cmap(cmap_name)
     x_edges = np.arange(nx + 1)
     y_edges = np.arange(ny + 1)
     z_edges = np.arange(nz + 1)
@@ -262,6 +265,15 @@ def add_surface_box(ax, vol: np.ndarray, cmap_name: str, title: str, cbar_label:
         antialiased=False,
     )
 
+
+def add_surface_box(ax, vol: np.ndarray, cmap_name: str, title: str, cbar_label: str, fig) -> None:
+    from matplotlib import cm, colors
+
+    nz, ny, nx = vol.shape
+    norm = colors.Normalize(float(np.nanmin(vol)), float(np.nanmax(vol)))
+    cmap = cm.get_cmap(cmap_name)
+    _draw_box_faces(ax, vol, cmap, norm)
+
     ax.set_title(title)
     ax.set_xlabel("Nx", labelpad=4)
     ax.set_ylabel("Ny", labelpad=4)
@@ -308,6 +320,42 @@ def write_3d_figure(pressure: np.ndarray, kx: np.ndarray, figure_3d_path: Path) 
     print(f"Wrote {figure_3d_path}")
 
 
+def write_tile_figure(pressure: np.ndarray, figure_tile_path: Path) -> None:
+    """Standalone pressure box for the docs example gallery.
+
+    Single 3D pressure box that fills a 4:3 frame, with large title/colorbar
+    fonts and no axis clutter so it stays legible at thumbnail size.
+    """
+    from matplotlib import cm, colors
+
+    nz, ny, nx = pressure.shape
+    norm = colors.Normalize(float(np.nanmin(pressure)), float(np.nanmax(pressure)))
+    cmap = cm.get_cmap("magma")
+
+    fig = plt.figure(figsize=(8, 6))
+    ax = fig.add_subplot(111, projection="3d")
+    _draw_box_faces(ax, pressure, cmap, norm)
+
+    ax.set_xlim(0, nx)
+    ax.set_ylim(0, ny)
+    ax.set_zlim(0, nz)
+    ax.view_init(elev=22, azim=-58)
+    ax.set_box_aspect((nx, ny, nz), zoom=1.18)
+    ax.set_axis_off()
+    fig.suptitle("Darcy pressure (SPE10)", fontsize=26, y=0.95)
+
+    mappable = cm.ScalarMappable(norm=norm, cmap=cmap)
+    mappable.set_array([])
+    cbar = fig.colorbar(mappable, ax=ax, shrink=0.64, pad=0.0, aspect=15)
+    cbar.set_label("pressure", fontsize=22)
+    cbar.ax.tick_params(labelsize=17)
+
+    fig.subplots_adjust(left=0.0, right=0.88, bottom=0.02, top=0.9)
+    figure_tile_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(figure_tile_path, dpi=75)
+    print(f"Wrote {figure_tile_path}")
+
+
 def main() -> None:
     args = parse_args()
     pressure, kx = read_result(args.result_file)
@@ -316,6 +364,8 @@ def main() -> None:
         write_layer_figure(pressure, kx, args.layer, args.figure_path)
     if args.mode in ("3d", "both"):
         write_3d_figure(pressure, kx, args.figure_3d_path)
+    if args.mode == "tile":
+        write_tile_figure(pressure, args.figure_tile_path)
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ to internal naming choices and make later refactors painful.
 from __future__ import annotations
 
 import contextlib
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import numpy as np
 
@@ -115,6 +115,7 @@ class HypreDrive:
         self,
         options: OptionsLike = None,
         comm: Any = None,
+        input_args: Optional[Sequence[str]] = None,
     ) -> None:
         session.initialize()
         self._core: Optional[_core.HypreDriveCore] = _core.HypreDriveCore(
@@ -132,8 +133,12 @@ class HypreDrive:
 
         # Always parse a YAML configuration up front so the C side has a
         # solver/preconditioner method selected before we hand over data.
+        # ``input_args`` supplies CLI-style overrides applied on top of the
+        # options, e.g. ["--solver:pcg:max_iter", "100"] (a leading "-a"
+        # token is tolerated).
         yaml_text = normalize_options(options)
-        self._core.parse_yaml(yaml_text.encode("utf-8"))
+        extra = list(input_args) if input_args else None
+        self._core.parse_yaml(yaml_text.encode("utf-8"), extra)
 
     # ------------------------------------------------------------------
     # Context-manager protocol
@@ -534,6 +539,7 @@ def solve(
     *,
     row_start: Optional[int] = None,
     row_end: Optional[int] = None,
+    input_args: Optional[Sequence[str]] = None,
 ) -> SolveResult:
     """Configure, solve, and tear down a single linear system.
 
@@ -556,11 +562,14 @@ def solve(
     row_start, row_end:
         Inclusive local row range, required when ``A`` is not a SciPy
         matrix.
+    input_args:
+        CLI-style override tokens applied on top of ``options``, e.g.
+        ``["--solver:pcg:max_iter", "100"]``.
     """
     if (row_start is None) != (row_end is None):
         raise TypeError("row_start and row_end must be provided together")
 
-    with HypreDrive(options=options, comm=comm) as drv:
+    with HypreDrive(options=options, comm=comm, input_args=input_args) as drv:
         if row_start is None or row_end is None:
             drv.set_matrix_from_csr(A)
         else:

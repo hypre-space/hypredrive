@@ -21,6 +21,7 @@
 #include <string.h>
 
 #include "HYPREDRV.h"
+#include "internal/compatibility.h"
 
 static const char *HYPREDRV_MATLAB_DEFAULT_YAML = "solver:\n"
                                                   "  pcg:\n"
@@ -122,9 +123,9 @@ HYPREDRV_MatlabEnsureInitialized(void)
          if (provided < MPI_THREAD_SERIALIZED)
          {
             HYPREDRV_MatlabAtExit();
-            HYPREDRV_MatlabFail(
-               "hypredrive:MPIThreadLevel",
-               "MPI did not provide the MPI_THREAD_SERIALIZED level required by hypredrive");
+            HYPREDRV_MatlabFail("hypredrive:MPIThreadLevel",
+                                "MPI did not provide the MPI_THREAD_SERIALIZED level "
+                                "required by hypredrive");
          }
       }
 
@@ -142,8 +143,8 @@ HYPREDRV_MatlabEnsureInitialized(void)
 static HYPRE_BigInt
 HYPREDRV_MatlabBigIntFromMwSize(mwSize value, const char *name)
 {
-   HYPRE_BigInt converted = (HYPRE_BigInt)value;
-   if (converted < 0 || (mwSize)converted != value)
+   HYPRE_BigInt converted = 0;
+   if (!hypredrv_BigIntFromU64((uint64_t)value, &converted) || (mwSize)converted != value)
    {
       mexErrMsgIdAndTxt("hypredrive:IndexOverflow",
                         "%s is outside the active HYPRE_BigInt range", name);
@@ -154,8 +155,9 @@ HYPREDRV_MatlabBigIntFromMwSize(mwSize value, const char *name)
 static HYPRE_BigInt
 HYPREDRV_MatlabBigIntFromMwIndex(mwIndex value, const char *name)
 {
-   HYPRE_BigInt converted = (HYPRE_BigInt)value;
-   if (converted < 0 || (mwIndex)converted != value)
+   HYPRE_BigInt converted = 0;
+   if (!hypredrv_BigIntFromU64((uint64_t)value, &converted) ||
+       (mwIndex)converted != value)
    {
       mexErrMsgIdAndTxt("hypredrive:IndexOverflow",
                         "%s is outside the active HYPRE_BigInt range", name);
@@ -203,9 +205,9 @@ HYPREDRV_MatlabValidateInputs(int nrhs, const mxArray *prhs[])
 {
    if (nrhs < 2 || nrhs > 3)
    {
-      HYPREDRV_MatlabFail(
-         "hypredrive:InvalidNumInputs",
-         "usage: x = hypredrive_solve(A, b) or [x, info] = hypredrive_solve(A, b, options)");
+      HYPREDRV_MatlabFail("hypredrive:InvalidNumInputs",
+                          "usage: x = hypredrive_solve(A, b) or [x, info] = "
+                          "hypredrive_solve(A, b, options)");
    }
    if (!mxIsSparse(prhs[0]) || !mxIsDouble(prhs[0]) || mxIsComplex(prhs[0]))
    {
@@ -241,6 +243,12 @@ HYPREDRV_MatlabConvertCscToCsr(const mxArray *A, HYPRE_BigInt **indptr_out,
    const mwIndex *ir     = mxGetIr(A);
    const double  *values = mxGetPr(A);
    mwSize         nnz    = jc[n];
+
+   /* Validate that the dimensions and non-zero count fit in HYPRE_BigInt before any
+    * counting/indexing: with a 32-bit HYPRE_BigInt build and nnz > INT32_MAX the
+    * running index computations below would overflow and write out of bounds. */
+   (void)HYPREDRV_MatlabBigIntFromMwSize(n, "row count");
+   (void)HYPREDRV_MatlabBigIntFromMwSize(nnz, "nnz");
 
    HYPRE_BigInt *indptr = (HYPRE_BigInt *)mxCalloc((size_t)n + 1, sizeof(HYPRE_BigInt));
    HYPRE_BigInt *cols =
@@ -298,8 +306,7 @@ HYPREDRV_MatlabDestroyDriver(HYPREDRV_t *drv)
       if (code != HYPREDRV_SUCCESS)
       {
          mexWarnMsgIdAndTxt("hypredrive:DestroyFailed",
-                            "HYPREDRV_Destroy failed with code 0x%x",
-                            (unsigned int)code);
+                            "HYPREDRV_Destroy failed with code 0x%x", (unsigned int)code);
       }
    }
 }
@@ -364,13 +371,13 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    HYPREDRV_MatlabValidateInputs(nrhs, prhs);
    HYPREDRV_MatlabEnsureInitialized();
 
-   HYPRE_BigInt *indptr         = NULL;
-   HYPRE_BigInt *cols           = NULL;
-   HYPRE_Real   *data           = NULL;
-   char         *yaml           = HYPREDRV_MatlabGetYaml(nrhs == 3 ? prhs[2] : NULL);
-   mwSize        nnz            = 0;
-   mwSize        n              = mxGetM(prhs[0]);
-   HYPREDRV_t    drv            = NULL;
+   HYPRE_BigInt *indptr = NULL;
+   HYPRE_BigInt *cols   = NULL;
+   HYPRE_Real   *data   = NULL;
+   char         *yaml   = HYPREDRV_MatlabGetYaml(nrhs == 3 ? prhs[2] : NULL);
+   mwSize        nnz    = 0;
+   mwSize        n      = mxGetM(prhs[0]);
+   HYPREDRV_t    drv    = NULL;
 
    HYPREDRV_MatlabConvertCscToCsr(prhs[0], &indptr, &cols, &data, &nnz);
    HYPRE_BigInt row_start = 0;
@@ -432,14 +439,14 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    code = HYPREDRV_LinearSolverSetup(drv);
    if (code != HYPREDRV_SUCCESS)
    {
-      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverSetup", &drv,
-                                         indptr, cols, data, yaml);
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverSetup", &drv, indptr,
+                                         cols, data, yaml);
    }
    code = HYPREDRV_LinearSolverApply(drv);
    if (code != HYPREDRV_SUCCESS)
    {
-      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverApply", &drv,
-                                         indptr, cols, data, yaml);
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSolverApply", &drv, indptr,
+                                         cols, data, yaml);
    }
 
    HYPRE_BigInt   solution_length = 0;

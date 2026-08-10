@@ -8,7 +8,8 @@
 #ifndef HYPREDRV_COMPATIBILITY_HEADER
 #define HYPREDRV_COMPATIBILITY_HEADER
 
-#include "HYPREDRV_config.h"
+#include <stdint.h>
+
 #include "HYPRE_utilities.h"
 
 /* Provide stable version macros even when older hypre headers don't define them. */
@@ -28,40 +29,6 @@
 #endif
 #endif
 
-/* Feature gate: hypre v3.0.0+ APIs used by tagged GMRES residual/error support. */
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 30000
-#define HYPREDRV_HAVE_HYPRE_30000 1
-#else
-#define HYPREDRV_HAVE_HYPRE_30000 0
-#endif
-
-/* Experimental features are opt-in until the corresponding hypre support lands
- * in a released version and can be guarded by a real version check. */
-#ifdef HYPREDRV_ENABLE_EXPERIMENTAL
-#define HYPREDRV_HAVE_EXPERIMENTAL 1
-#else
-#define HYPREDRV_HAVE_EXPERIMENTAL 0
-#endif
-
-/* Older hypre releases don't provide memory location APIs. */
-#if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
-typedef int HYPRE_MemoryLocation;
-#ifndef HYPRE_MEMORY_HOST
-#define HYPRE_MEMORY_HOST 0
-#endif
-#ifndef HYPRE_MEMORY_DEVICE
-#define HYPRE_MEMORY_DEVICE 0
-#endif
-#ifndef HYPRE_MEMORY_UNDEFINED
-#define HYPRE_MEMORY_UNDEFINED 0
-#endif
-#endif
-
-/* Older hypre releases may not define HYPRE_MPI_BIG_INT. */
-#ifndef HYPRE_MPI_BIG_INT
-#define HYPRE_MPI_BIG_INT HYPRE_MPI_INT
-#endif
-
 /* Older hypre releases provide HYPRE_DescribeError but not the public buffer
  * size macro used by newer headers. Keep the fallback local to hypredrive's
  * compatibility layer and let newer hypre define the canonical value. */
@@ -69,13 +36,58 @@ typedef int HYPRE_MemoryLocation;
 #define HYPRE_MAX_MSG_LEN 256
 #endif
 
-/* Very old hypre releases may not define HYPRE_BigInt at all. */
-#if HYPREDRV_HYPRE_RELEASE_NUMBER < 21900
-#ifndef HYPRE_BIGINT
-#ifndef HYPRE_MIXEDINT
-typedef int HYPRE_BigInt;
-#endif
-#endif
-#endif
+/**
+ * @brief Narrow a signed 64-bit value into the active HYPRE_BigInt type.
+ *
+ * @return 1 on success and writes @p out; 0 when @p value is outside the
+ *         representable range of HYPRE_BigInt.
+ */
+static inline int
+hypredrv_BigIntFromI64(int64_t value, HYPRE_BigInt *out)
+{
+   HYPRE_BigInt converted;
+
+   if (!out)
+   {
+      return 0;
+   }
+
+   converted = (HYPRE_BigInt)value;
+   if ((int64_t)converted != value)
+   {
+      return 0;
+   }
+
+   *out = converted;
+   return 1;
+}
+
+/**
+ * @brief Narrow an unsigned 64-bit value into a non-negative HYPRE_BigInt.
+ *
+ * Rejects values that do not round-trip through HYPRE_BigInt, including any
+ * conversion that would appear negative in a signed HYPRE_BigInt build.
+ *
+ * @return 1 on success and writes @p out; 0 on overflow or range error.
+ */
+static inline int
+hypredrv_BigIntFromU64(uint64_t value, HYPRE_BigInt *out)
+{
+   HYPRE_BigInt converted;
+
+   if (!out)
+   {
+      return 0;
+   }
+
+   converted = (HYPRE_BigInt)value;
+   if (converted < 0 || (uint64_t)converted != value)
+   {
+      return 0;
+   }
+
+   *out = converted;
+   return 1;
+}
 
 #endif /* HYPREDRV_COMPATIBILITY_HEADER */

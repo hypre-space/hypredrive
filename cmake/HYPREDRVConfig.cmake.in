@@ -20,6 +20,7 @@ endif()
 
 set(_HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS "@HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS@")
 set(_HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES "@HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES@")
+set(_HYPREDRV_CONFIG_CALIPER_DIR "@HYPREDRV_CONFIG_CALIPER_DIR@")
 set(_HYPREDRV_CONFIG_NEEDS_ZLIB "@HYPREDRV_CONFIG_NEEDS_ZLIB@")
 
 if(_HYPREDRV_CONFIG_NEEDS_ZLIB AND NOT TARGET ZLIB::ZLIB)
@@ -95,6 +96,18 @@ if(NOT TARGET HYPRE::HYPRE AND _HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS AND _HYPREDRV
         function(_hypredrv_config_find_namespaced_dependency link_item)
             _hypredrv_config_strip_link_only(_hypredrv_config_target "${link_item}")
 
+            if(_hypredrv_config_target STREQUAL "caliper")
+                if(TARGET caliper)
+                    return()
+                elseif(_HYPREDRV_CONFIG_CALIPER_DIR)
+                    find_dependency(caliper CONFIG REQUIRED
+                                    PATHS "${_HYPREDRV_CONFIG_CALIPER_DIR}"
+                                    NO_DEFAULT_PATH)
+                else()
+                    find_dependency(caliper CONFIG REQUIRED)
+                endif()
+                return()
+            endif()
             if(NOT _hypredrv_config_target MATCHES "::")
                 return()
             endif()
@@ -107,10 +120,20 @@ if(NOT TARGET HYPRE::HYPRE AND _HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS AND _HYPREDRV
 
             if(_hypredrv_config_target MATCHES "^OpenMP::")
                 find_dependency(OpenMP COMPONENTS C REQUIRED)
+            elseif(_hypredrv_config_target STREQUAL "BLAS::BLAS")
+                find_dependency(BLAS REQUIRED)
+            elseif(_hypredrv_config_target STREQUAL "LAPACK::LAPACK")
+                find_dependency(LAPACK REQUIRED)
             elseif(_hypredrv_config_target MATCHES "^CUDA::")
                 find_dependency(CUDAToolkit REQUIRED)
             elseif(_hypredrv_config_target MATCHES "^caliper::")
-                find_dependency(caliper CONFIG REQUIRED)
+                if(_HYPREDRV_CONFIG_CALIPER_DIR)
+                    find_dependency(caliper CONFIG REQUIRED
+                                    PATHS "${_HYPREDRV_CONFIG_CALIPER_DIR}"
+                                    NO_DEFAULT_PATH)
+                else()
+                    find_dependency(caliper CONFIG REQUIRED)
+                endif()
             elseif(_hypredrv_config_target STREQUAL "PkgConfig::PC_DSUPERLU")
                 find_dependency(PkgConfig REQUIRED)
                 _hypredrv_config_pkg_config_hints_from_includes(_hypredrv_config_pkg_hints)

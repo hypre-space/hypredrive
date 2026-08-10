@@ -8,9 +8,32 @@ program yaml_solve_mpi
    type(c_ptr) :: drv
    character(len=:), allocatable :: yaml
    character(len=512) :: matrix_file, rhs_file
+   character(len=512) :: cli_arg
+   character(len=512), allocatable :: hypredrv_args(:)
+   integer :: nargs, iarg, tail_start
 
    call MPI_Init(ierr)
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
+
+   ! Collect hypredrive YAML overrides given after -a/--args, e.g.
+   ! ./hypredrive-fortran-yaml -a --solver:pcg:max_iter 10
+   nargs = command_argument_count()
+   tail_start = 0
+   do iarg = 1, nargs
+      call get_command_argument(iarg, cli_arg)
+      if (trim(cli_arg) == '-a' .or. trim(cli_arg) == '--args') then
+         tail_start = iarg + 1
+         exit
+      end if
+   end do
+   if (tail_start > 0 .and. tail_start <= nargs) then
+      allocate (hypredrv_args(nargs - tail_start + 1))
+      do iarg = tail_start, nargs
+         call get_command_argument(iarg, hypredrv_args(iarg - tail_start + 1))
+      end do
+   else
+      allocate (hypredrv_args(0))
+   end if
 
    call HYPREDRV_Check(HYPREDRV_Initialize())
    call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_WORLD, c_int), drv))
@@ -29,7 +52,7 @@ program yaml_solve_mpi
           '    max_iter: 1'//new_line('a')// &
           '    tolerance: 0.0'//new_line('a')
 
-   call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, yaml))
+   call HYPREDRV_Check(HYPREDRV_InputArgsParseYamlArgs(drv, yaml, hypredrv_args))
    call HYPREDRV_Check(HYPREDRV_LinearSystemBuild(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSolverCreate(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSolverSetup(drv))

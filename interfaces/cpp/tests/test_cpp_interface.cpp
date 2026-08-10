@@ -160,6 +160,22 @@ test_parse_yaml_overloads()
    drv.parse_yaml(path);
    std::remove(path.c_str());
 
+   // Overrides overload: resolves a path the C-side filename heuristic would
+   // reject (uppercase extension) and applies CLI-style override tokens.
+   const std::string upper_path =
+      "hypredrive_cpp_options_" + std::to_string(rank) + ".YML";
+   {
+      std::ofstream file(upper_path);
+      file << test_options_yaml;
+   }
+   drv.parse_yaml(upper_path, {"--solver:pcg:max_iter", "7"});
+   std::remove(upper_path.c_str());
+
+   // Inline text plus an override value ending in .yml: the value must be
+   // applied as-is, not rediscovered as a configuration file.
+   drv.parse_yaml(std::string_view(test_options_yaml),
+                  {"-a", "--general:name", "run.yml"});
+
    bool threw = false;
    try
    {

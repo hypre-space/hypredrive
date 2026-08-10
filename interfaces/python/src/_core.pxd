@@ -71,7 +71,6 @@ cdef extern from "HYPREDRV_python.h" nogil:
     uint32_t HYPREDRV_PythonCreateFromFortranComm(
         int fortran_comm,
         HYPREDRV_t *hypredrv_ptr)
-    uint32_t HYPREDRV_PythonCreateWithWorld(HYPREDRV_t *hypredrv_ptr)
 
     uint32_t HYPREDRV_PythonSetMatrixFromCSR(
         HYPREDRV_t hypredrv,

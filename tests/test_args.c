@@ -77,6 +77,7 @@ test_InputArgsCreate_general_vendor_defaults(void)
 #endif
    ASSERT_STREQ(args->general.name, "");
    ASSERT_STREQ(args->general.statistics_filename, "");
+   ASSERT_EQ(args->general.device_lazy_init, 0);
 
    hypredrv_InputArgsDestroy(&args);
 }
@@ -90,6 +91,7 @@ test_InputArgsParseGeneral_flags(void)
                             "  warmup: yes\n"
                             "  statistics: off\n"
                             "  use_millisec: yes\n"
+                            "  device_lazy_init: no\n"
                             "  print_config_params: no\n"
                             "  use_vendor_spgemm: yes\n"
                             "  use_vendor_spmv: yes\n"
@@ -112,6 +114,7 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.warmup, 1);
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.print_config_params, 0);
+   ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
@@ -174,6 +177,36 @@ test_InputArgsParsePrecon_value_only(void)
    ASSERT_EQ(args->precon.fsai.print_level, 0);
 
    hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_InputArgsParsePrecon_stationary_value_only(void)
+{
+   struct
+   {
+      const char *name;
+      HYPRE_Int   relax_type;
+   } cases[] = {{"jacobi", 0}, {"gauss-seidel", 3}};
+
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      char yaml_text[128];
+      snprintf(yaml_text, sizeof(yaml_text), "solver: gmres\npreconditioner: %s\n",
+               cases[i].name);
+
+      input_args *args = parse_config(yaml_text);
+      ASSERT_NOT_NULL(args);
+      ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
+      ASSERT_EQ(args->precon.amg.coarsening.max_levels, 1);
+      ASSERT_EQ(args->precon.amg.relaxation.type, cases[i].relax_type);
+      ASSERT_EQ(args->precon.amg.relaxation.down_type, cases[i].relax_type);
+      ASSERT_EQ(args->precon.amg.relaxation.coarse_type, cases[i].relax_type);
+      ASSERT_EQ(args->precon.amg.relaxation.down_sweeps, 1);
+      ASSERT_EQ(args->precon.amg.relaxation.up_sweeps, 0);
+      ASSERT_EQ(args->precon.amg.relaxation.coarse_sweeps, 1);
+
+      hypredrv_InputArgsDestroy(&args);
+   }
 }
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
@@ -1012,10 +1045,10 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
       "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
       "--general:statistics",  "off", "--general:use_vendor_spgemm",      "on",
       "--general:use_vendor_spmv", "on", "--general:statistics_filename",
-      "stats_cli.out",
+      "stats_cli.out", "--general:device_lazy_init", "off",
    };
 
-   input_args *args = parse_config_with_overrides(yaml_text, 12, overrides);
+   input_args *args = parse_config_with_overrides(yaml_text, 14, overrides);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
    ASSERT_EQ(args->solver.pcg.max_iter, 50);
@@ -1024,7 +1057,26 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+   ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_STREQ(args->general.statistics_filename, "stats_cli.out");
+
+   hypredrv_InputArgsDestroy(&args);
+}
+
+static void
+test_YAMLtreeUpdate_override_value_with_yaml_suffix(void)
+{
+   /* An override value that looks like a YAML filename must not be
+      rediscovered as the configuration file when argv[0] is inline YAML. */
+   const char yaml_text[] = "solver: pcg\n"
+                            "preconditioner: amg\n";
+
+   char *overrides[] = {"--general:name", "run.yml"};
+
+   input_args *args = parse_config_with_overrides(yaml_text, 2, overrides);
+   ASSERT_NOT_NULL(args);
+   ASSERT_STREQ(args->general.name, "run.yml");
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
 
    hypredrv_InputArgsDestroy(&args);
 }
@@ -1040,7 +1092,7 @@ test_InputArgsParse_driver_mode_with_config_file(void)
    fprintf(fp, "solver: pcg\npreconditioner: amg\n");
    fclose(fp);
 
-   char *argv[] = {"hypredrive", "-q", yaml_file};
+   char *argv[] = {"hypredrive", "-i", yaml_file};
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
 
@@ -1128,7 +1180,7 @@ test_InputArgsParse_driver_mode_with_nodash_overrides(void)
                "    coarsest_level: amg\n");
    fclose(fp);
 
-   char *argv2[] = {"hypredrive-cli", "-q", yaml_file, "--args",
+   char *argv2[] = {"hypredrive-cli", "-i", yaml_file, "--args",
                     "preconditioner:mgr:print_level", "1"};
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv2, &args);
@@ -1682,7 +1734,7 @@ test_InputArgsParse_driver_mode_config_not_argv0_with_overrides(void)
    fclose(fp);
 
    /* Config is argv[2], not argv[0]; driver mode requires --args before override pairs. */
-   char *argv[] = {"hypredrive", "-q", yaml_file, "--args",
+   char *argv[] = {"hypredrive", "-i", yaml_file, "--args",
                    "--preconditioner:amg:print_level", "2"};
    input_args *args = NULL;
 
@@ -1693,6 +1745,35 @@ test_InputArgsParse_driver_mode_config_not_argv0_with_overrides(void)
    ASSERT_EQ(args->solver_method, SOLVER_GMRES);
    ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
    ASSERT_EQ(args->precon.amg.print_level, 2);
+
+   hypredrv_InputArgsDestroy(&args);
+   unlink(yaml_file);
+}
+
+static void
+test_InputArgsParse_driver_mode_overrides_stop_at_info_flag(void)
+{
+   char yaml_file[256];
+   (void)snprintf(yaml_file, sizeof(yaml_file), "/tmp/hypred_args_info_%d.yml",
+                  (int)getpid());
+
+   FILE *fp = fopen(yaml_file, "w");
+   ASSERT_NOT_NULL(fp);
+   fprintf(fp, "solver: pcg\n");
+   fprintf(fp, "preconditioner: amg\n");
+   fclose(fp);
+
+   char *argv[] = {"hypredrive", "-a", "--general:device_lazy_init", "on", "-i",
+                   yaml_file};
+   input_args *args = NULL;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv, &args);
+
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->general.device_lazy_init, 1);
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
+   ASSERT_EQ(args->precon_method, PRECON_BOOMERAMG);
 
    hypredrv_InputArgsDestroy(&args);
    unlink(yaml_file);
@@ -1888,7 +1969,7 @@ static void
 test_InputArgsParse_driver_mode_missing_config_file(void)
 {
    input_args *args   = NULL;
-   char       *argv[] = {"hypredrive", "-q", "/tmp/hypred_args_missing_config_xyz.yml"};
+   char       *argv[] = {"hypredrive", "-i", "/tmp/hypred_args_missing_config_xyz.yml"};
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
@@ -2048,6 +2129,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
+   RUN_TEST(test_InputArgsParsePrecon_stationary_value_only);
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_InputArgsParsePrecon_schwarz_value_only);
    RUN_TEST(test_InputArgsParsePrecon_schwarz_typed_block);
@@ -2086,6 +2168,7 @@ main(int argc, char **argv)
    RUN_TEST(test_YAMLtreeBuild_inconsistent_indent);
    RUN_TEST(test_YAMLtextRead_missing_file);
    RUN_TEST(test_YAMLtreeUpdate_overrides_solver_and_precon);
+   RUN_TEST(test_YAMLtreeUpdate_override_value_with_yaml_suffix);
    RUN_TEST(test_InputArgsParse_driver_mode_with_config_file);
    RUN_TEST(test_InputArgsParse_null_argv0_error);
    RUN_TEST(test_InputArgsParse_file_not_found_error);
@@ -2120,6 +2203,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParse_include_from_subdirectory);
    RUN_TEST(test_InputArgsParse_parent_relative_config_path);
    RUN_TEST(test_InputArgsParse_driver_mode_config_not_argv0_with_overrides);
+   RUN_TEST(test_InputArgsParse_driver_mode_overrides_stop_at_info_flag);
    RUN_TEST(test_InputArgsParseWithObjectName_basic);
    RUN_TEST(test_InputArgsParseWithObjectName_invalid_yaml_tree);
    RUN_TEST(test_InputArgsParseWithObjectName_duplicate_solver_post_parse);

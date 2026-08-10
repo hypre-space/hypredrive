@@ -153,7 +153,7 @@ function(hypredrv_add_fuzz_target target_name mode)
     _hypredrv_fuzz_mode_number("${mode}" _mode_num)
 
     add_executable(${target_name} "${FUZZ_SOURCE}")
-    target_link_libraries(${target_name} PRIVATE HYPREDRV::HYPREDRV)
+    target_link_libraries(${target_name} PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
     target_include_directories(${target_name}
         PRIVATE
             ${CMAKE_SOURCE_DIR}/src

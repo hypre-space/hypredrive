@@ -112,6 +112,43 @@ test_StrIntMapArray_empty_string_key(void)
    ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(arr, ""), -1);
 }
 
+static void
+test_StrIntMapArrayDomainToString_groups_aliases(void)
+{
+   static const StrIntMap map[] = {{"", -1}, {"none", -1}, {"single", 7}, {"jacobi", 7}};
+   char *str = hypredrv_StrIntMapArrayDomainToString(STR_INT_MAP_ARRAY_CREATE(map));
+
+   ASSERT_NOT_NULL(str);
+   ASSERT_STREQ(str, "none (-1), single/jacobi (7)");
+   free(str);
+}
+
+static void
+test_StrIntMapArrayDomainToString_no_printable_entries(void)
+{
+   static const StrIntMap map[] = {{"", -1}};
+
+   ASSERT_NULL(hypredrv_StrIntMapArrayDomainToString(STR_INT_MAP_ARRAY_CREATE(map)));
+   ASSERT_NULL(hypredrv_StrIntMapArrayDomainToString(STR_INT_MAP_ARRAY_VOID()));
+}
+
+static void
+test_StrArrayToString_basic(void)
+{
+   const char *strs[] = {"one", "two", "three"};
+   char       *str    = hypredrv_StrArrayToString(STR_ARRAY_CREATE(strs));
+
+   ASSERT_NOT_NULL(str);
+   ASSERT_STREQ(str, "one, two, three");
+   free(str);
+}
+
+static void
+test_StrArrayToString_empty(void)
+{
+   ASSERT_NULL(hypredrv_StrArrayToString(STR_ARRAY_VOID()));
+}
+
 /*-----------------------------------------------------------------------------
  * Test hypredrv_StrToIntArray and hypredrv_StrToStackIntArray
  *-----------------------------------------------------------------------------*/
@@ -201,6 +238,10 @@ main(int argc, char **argv)
    RUN_TEST(test_StrIntMapArray_basic);
    RUN_TEST(test_StrIntMapArrayGetImage);
    RUN_TEST(test_StrIntMapArray_empty_string_key);
+   RUN_TEST(test_StrIntMapArrayDomainToString_groups_aliases);
+   RUN_TEST(test_StrIntMapArrayDomainToString_no_printable_entries);
+   RUN_TEST(test_StrArrayToString_basic);
+   RUN_TEST(test_StrArrayToString_empty);
 
    RUN_TEST(test_StrToStackIntArray_basic);
    RUN_TEST(test_StrToStackIntArray_single);

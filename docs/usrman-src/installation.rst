@@ -8,17 +8,16 @@
 Installation
 ============
 
-CMake is the recommended build system for `hypredrive`. It handles dependency discovery
-and optional feature configuration through a single, consistent interface. An Autotools
-path is also available for environments where CMake is not suitable; see
-:ref:`AutotoolsInstall` at the end of this page.
+CMake is the recommended build system for `hypredrive`. It finds dependencies and
+configures optional features through one interface. Autotools is also available when an
+environment cannot use CMake. See :ref:`AutotoolsInstall`.
 
 Prerequisites
 -------------
 
 - `CMake <https://cmake.org/>`_ 3.23 or newer.
-- `hypre <https://github.com/hypre-space/hypre>`_ 2.20.0 or newer — or no pre-installed
-  copy at all: CMake can fetch and build HYPRE automatically.
+- `hypre <https://github.com/hypre-space/hypre>`_ 2.20.0 or newer. Alternatively, CMake
+  can fetch and build HYPRE.
 
 .. _CMakeInstall:
 
@@ -45,7 +44,7 @@ Or, to download without full git history:
 
 Choose one of the following options depending on how HYPRE is available:
 
-**Option A — Pre-installed HYPRE via** ``find_package``
+**Option A — Existing HYPRE installation through** ``find_package``
 
 .. code-block:: bash
 
@@ -54,7 +53,7 @@ Choose one of the following options depending on how HYPRE is available:
             -DHYPRE_ROOT=${HYPRE_INSTALL_DIR} \
             -B build -S .
 
-**Option B — Custom HYPRE paths (e.g. Autotools-built HYPRE)**
+**Option B — Custom HYPRE paths, such as an Autotools build**
 
 .. code-block:: bash
 
@@ -64,7 +63,7 @@ Choose one of the following options depending on how HYPRE is available:
             -DHYPRE_LIBRARIES=${HYPRE_INSTALL_DIR}/lib/libHYPRE.so \
             -B build -S .
 
-``HYPRE_LIBRARY`` may be used instead of ``HYPRE_LIBRARIES`` when a single file is sufficient.
+Use ``HYPRE_LIBRARY`` instead of ``HYPRE_LIBRARIES`` for one library file.
 
 **Option C — Automatic HYPRE build (no HYPRE required)**
 
@@ -119,7 +118,7 @@ CMake options reference
 
 - ``-DHYPREDRV_ENABLE_EIGSPEC=ON`` — Eigenspectrum support (requires LAPACK). Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_TESTING=ON`` — CTest-based unit and integration tests. Default: ``OFF``.
-- ``-DHYPREDRV_ENABLE_COVERAGE=ON`` — Coverage instrumentation; also enables testing, examples, and data. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_COVERAGE=ON`` — Coverage instrumentation. This option also enables testing, examples, and data. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_ANALYSIS=ON`` — Sanitizers and optional ``clang-tidy`` / ``cppcheck`` targets. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_DATA=ON`` — Dataset download targets (implied by testing). Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_DOCS=ON`` — Documentation targets (``docs``, ``sphinx-doc``, ``sphinx-latexpdf``). Default: ``OFF``.
@@ -127,6 +126,11 @@ CMake options reference
 - ``-DHYPREDRV_ENABLE_HWLOC=ON`` — hwloc-based topology reporting. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_CALIPER=ON`` — Caliper instrumentation. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_COMPRESSION=ON`` — Lossless compression backends and the ``hypredrive-lsseq`` utility. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_CUDA=ON`` — Enable CUDA in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_HIP=ON`` — Enable HIP in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_SYCL=ON`` — Enable SYCL in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_BUILD_DSUPERLU=ON`` — Fetch and build SuperLU_DIST and
+  enable it in the automatic HYPRE build. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_PYTHON=ON`` — Build the Python extension as part of the top-level CMake build. Default: ``OFF``.
 
 *Option interactions*
@@ -135,16 +139,23 @@ CMake options reference
 - ``HYPREDRV_ENABLE_COVERAGE=ON`` implies testing, examples, and data.
 - The ``check`` smoke-test target is always available regardless of ``HYPREDRV_ENABLE_TESTING``.
 
-*GPU builds (forwarded to the automatic HYPRE build)*
+*Accelerator builds*
 
-When HYPRE is built automatically, CMake forwards ``HYPRE_ENABLE_*``, ``*_ROOT``, ``*_DIR``,
-and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
+The HYPREDRV accelerator options select one backend for the complete bundled
+dependency stack. They enable the corresponding ``HYPRE_ENABLE_*`` option and
+are propagated by HYPRE to nested dependencies such as Umpire. When
+SuperLU_DIST is built with ``HYPREDRV_BUILD_DSUPERLU=ON``, CUDA also
+enables ``TPL_ENABLE_CUDALIB`` and HIP enables ``TPL_ENABLE_HIPLIB``.
+SuperLU_DIST 9.2.1 has no SYCL backend, so a SYCL-enabled HYPRE build uses its
+CPU implementation. CUDA, HIP, and SYCL are mutually exclusive.
+
+Examples:
 
 .. code-block:: bash
 
     # CUDA
     $ cmake -DCMAKE_BUILD_TYPE=Release \
-            -DHYPRE_ENABLE_CUDA=ON \
+            -DHYPREDRV_ENABLE_CUDA=ON \
             -DCMAKE_CUDA_ARCHITECTURES=80 \
             -B build -S .
 
@@ -152,32 +163,71 @@ and standard ``CMAKE_*`` variables to the HYPRE build. Examples:
 
     # HIP / ROCm
     $ cmake -DCMAKE_BUILD_TYPE=Release \
-            -DHYPRE_ENABLE_HIP=ON \
+            -DHYPREDRV_ENABLE_HIP=ON \
             -DROCM_PATH=/opt/rocm \
             -DCMAKE_HIP_ARCHITECTURES=gfx90a \
             -B build -S .
 
+.. code-block:: bash
+
+    # SYCL / oneAPI
+    $ cmake -DCMAKE_BUILD_TYPE=Release \
+            -DHYPREDRV_ENABLE_SYCL=ON \
+            -DHYPRE_SYCL_TARGET=spir64_gen \
+            -B build -S .
+
+Low-level ``HYPRE_ENABLE_*``, ``*_ROOT``, ``*_DIR``, and standard
+``CMAKE_*`` variables are still forwarded to an automatic HYPRE build.
+
+Auto-fetched CUDA and HIP builds also enable ``HYPRE_BUILD_UMPIRE`` by
+default unless ``umpire_ROOT`` or ``umpire_DIR`` points to an external Umpire
+installation. An explicit ``HYPRE_BUILD_UMPIRE`` setting is always preserved.
+An explicit ``-DHYPRE_ENABLE_UMPIRE=OFF`` suppresses the automatic
+bundled-Umpire default. When Umpire is built automatically, Umpire and its
+bundled CAMP/fmt libraries are forced static by default; an explicit
+``-DBUILD_SHARED_LIBS=ON`` requests shared libraries for the complete bundled
+dependency stack.
+
+The auto-fetched HYPRE test drivers remain disabled by default. Set
+``-DHYPRE_BUILD_TESTS=ON`` to add native drivers such as ``struct`` to the
+same HYPREDRV build tree; an explicit setting is preserved.
+
+With HYPRE 2.31.0 or newer, HYPREDRV configures HYPRE's GPU-aware MPI mode
+during initialization. The mode is enabled when any of ``MV2_USE_CUDA``,
+``MV2_USE_HIP``, ``MPIR_CVAR_ENABLE_GPU``, or
+``MPICH_GPU_SUPPORT_ENABLED`` is set exactly to ``1``. Otherwise, HYPREDRV
+explicitly disables GPU-aware MPI. Set ``HYPREDRV_LOG_LEVEL`` to a nonzero
+value to log the selected mode.
+
 *Caliper (optional performance profiling)*
 
 - ``-DCALIPER_VERSION=<version>`` — Caliper revision to fetch. Default: ``master``.
-- ``CALIPER_DIR`` / ``CALIPER_ROOT`` — Pre-installed Caliper search hints.
+- ``CALIPER_DIR`` / ``CALIPER_ROOT`` — Search hints for an existing Caliper installation.
 
-.. note::
-   Caliper auto-fetch is not supported with the Ninja generator. Use the default Makefile
-   generator or point ``CALIPER_DIR`` at a pre-built installation.
+Caliper automatic retrieval does not support the Ninja generator. Use the
+default Makefile generator or an existing Caliper installation.
 
 *SuperLU_DIST (optional HYPRE DSUPERLU support)*
 
-- ``-DHYPRE_ENABLE_DSUPERLU=ON`` — Enable HYPRE's SuperLU_DIST integration.
-- ``-DSUPERLU_DIST_VERSION=<version>`` — SuperLU_DIST revision to fetch if
-  ``superlu_dist`` is not found. Default: ``v9.2.1``.
-- ``DSUPERLU_DIR`` / ``DSUPERLU_ROOT`` / ``SUPERLU_DIST_ROOT`` — Pre-installed
-  SuperLU_DIST search hints.
+- ``-DHYPREDRV_BUILD_DSUPERLU=ON`` — Always fetch and build SuperLU_DIST,
+  and automatically enable HYPRE's SuperLU_DIST integration by setting
+  ``HYPRE_ENABLE_DSUPERLU=ON``.
+- ``-DSUPERLU_DIST_VERSION=<version>`` — Override the SuperLU_DIST revision to
+  fetch. The default is the latest release, ``v9.2.1``.
+- ``-DHYPRE_ENABLE_DSUPERLU=ON`` — Use an existing SuperLU_DIST installation
+  when found, falling back to an automatic fetch. This lower-level option is
+  retained for compatibility.
+- ``DSUPERLU_DIR`` / ``DSUPERLU_ROOT`` / ``SUPERLU_DIST_ROOT`` — Search hints for an
+  existing SuperLU_DIST installation.
+
+``BUILD_SHARED_LIBS`` applies to HYPREDRV, automatic HYPRE, and automatic
+SuperLU_DIST builds. With the default ``BUILD_SHARED_LIBS=OFF``, all three are
+static libraries.
 
 *Compression backends*
 
-``HYPREDRV_ENABLE_COMPRESSION=ON`` probes for zlib, zstd, lz4, and blosc. Available
-backends are enabled automatically at configure time.
+``HYPREDRV_ENABLE_COMPRESSION=ON`` probes for zlib, zstd, lz4, and blosc. CMake
+enables each available backend during configuration.
 
 *Python interface*
 
@@ -228,8 +278,8 @@ Autotools (Alternative)
 ------------------------
 
 .. note::
-   Autotools support is provided for environments where CMake is unavailable. The CMake
-   path is preferred for all other cases.
+   Autotools supports environments without CMake. CMake is the standard build path
+   for all other environments.
 
 *Prerequisites*
 
@@ -240,8 +290,8 @@ In addition to HYPRE, the following GNU tools are required:
 - `Automake <https://www.gnu.org/software/automake/>`_ 1.11.3+
 - `libtool <https://www.gnu.org/software/libtool/>`_ 2.4.2+
 
-These are typically pre-installed on Linux. On macOS, GNU libtool is installed as
-``glibtool`` by Homebrew/MacPorts to avoid conflicting with the native ``libtool`` binary.
+Linux systems usually include these tools. On macOS, Homebrew and MacPorts install GNU
+libtool as ``glibtool`` to prevent a conflict with the native ``libtool`` binary.
 
 *Build steps*
 
@@ -261,7 +311,7 @@ These are typically pre-installed on Linux. On macOS, GNU libtool is installed a
        $ ./configure --prefix=${HYPREDRIVE_INSTALL_DIR} \
                      --with-hypre-dir=${HYPRE_INSTALL_DIR}
 
-   If ``--with-hypre-dir`` is not used, provide both:
+   If you do not use ``--with-hypre-dir``, provide both:
 
    - ``--with-hypre-include=${HYPRE_INCLUDE_DIR}``
    - ``--with-hypre-lib=${HYPRE_LIBRARY_DIR}``

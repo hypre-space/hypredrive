@@ -84,7 +84,6 @@ struct DarcyDiscretization
 #define DEFAULT_MGR_CONFIG(statistics_value) \
    "general:\n"                              \
    "  statistics: " statistics_value "\n"    \
-   "  exec_policy: host\n"                   \
    "linear_system:\n"                        \
    "  init_guess_mode: zeros\n"              \
    "solver:\n"                               \
@@ -117,7 +116,6 @@ struct DarcyDiscretization
 #define LEGACY_HYPRE_CONFIG(statistics_value) \
    "general:\n"                               \
    "  statistics: " statistics_value "\n"     \
-   "  exec_policy: host\n"                    \
    "linear_system:\n"                         \
    "  init_guess_mode: zeros\n"               \
    "solver:\n"                                \
@@ -129,10 +127,13 @@ struct DarcyDiscretization
    "    print_level: 0\n"                     \
    "preconditioner: amg\n"
 
-static const char *default_mgr_config        = DEFAULT_MGR_CONFIG("0");
-static const char *default_mgr_stats_config  = DEFAULT_MGR_CONFIG("1");
+#if defined(HYPREDRV_HYPRE_RELEASE_NUMBER) && HYPREDRV_HYPRE_RELEASE_NUMBER < 30000
 static const char *legacy_hypre_config       = LEGACY_HYPRE_CONFIG("0");
 static const char *legacy_hypre_stats_config = LEGACY_HYPRE_CONFIG("1");
+#else
+static const char *default_mgr_config       = DEFAULT_MGR_CONFIG("0");
+static const char *default_mgr_stats_config = DEFAULT_MGR_CONFIG("1");
+#endif
 
 static const char *
 default_config(HYPRE_Int print_stats)
@@ -391,15 +392,6 @@ static HYPRE_BigInt
 cell_index(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
 {
    return i + (HYPRE_BigInt)mesh->n[0] * (j + (HYPRE_BigInt)mesh->n[1] * k);
-}
-
-static void
-cell_ijk(const DarcyMesh *mesh, HYPRE_BigInt cell, HYPRE_BigInt *i, HYPRE_BigInt *j,
-         HYPRE_BigInt *k)
-{
-   *i = cell % mesh->n[0];
-   *j = (cell / mesh->n[0]) % mesh->n[1];
-   *k = cell / ((HYPRE_BigInt)mesh->n[0] * mesh->n[1]);
 }
 
 static HYPRE_BigInt
@@ -1362,15 +1354,15 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
             dofmap[lr]            = 0;
             rhs[lr]               = 0.0;
             rt0_cell_flux_dofs_layout(layout, mesh, i, j, k, faces, dirs, is_low, signs);
-#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22600 && \
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 30000 && \
    HYPRE_RELEASE_NUMBER < 30100
             /* Store an explicit zero diagonal (first, per the ParCSR convention)
                in the otherwise diagonal-free continuity rows: the FF/FC block
-               extraction used by MGR in hypre [2.26.0, 3.1.0) reads the first
+               extraction used by the default MGR in hypre 3.0.x reads the first
                stored entry of each row as the diagonal, producing corrupted
-               coarse grids (heap corruption) without it. Fixed in hypre 3.1.0;
-               MGR in hypre < 2.26.0 instead misuses a stored zero diagonal in
-               its relaxation, so the entry is added only for the broken range. */
+               coarse grids (heap corruption) without it. Fixed in hypre 3.1.0.
+               Older releases use the legacy AMG default, whose relaxation must
+               not see this explicit zero diagonal. */
             cols[nentries]   = layout_cell(layout, mesh, i, j, k);
             vals[nentries++] = 0.0;
 #endif
@@ -1877,15 +1869,21 @@ main(int argc, char **argv)
    HYPREDRV_SAFE_CALL(HYPREDRV_SetLibraryMode(hypredrv));
    char *config_arg =
       params.yaml_file ? params.yaml_file : (char *)default_config(params.verbose & 0x1);
-   HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc;
+   HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
+   HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
    char     *hypredrv_argv[hypredrv_argc];
    hypredrv_argv[0] = config_arg;
    for (HYPRE_Int i = 0; i < params.hypredrv_argc; i++)
    {
       hypredrv_argv[i + 1] = params.hypredrv_argv[i];
    }
+   if (n_print)
+   {
+      /* Print the parsed YAML (with any -a/--args overrides applied). */
+      hypredrv_argv[1 + params.hypredrv_argc] = "--general:print_config_params";
+      hypredrv_argv[2 + params.hypredrv_argc] = "1";
+   }
    HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(hypredrv_argc, hypredrv_argv, hypredrv));
-
    HYPRE_Int mpi_grid[3];
    if (params.mpi_grid[0])
    {

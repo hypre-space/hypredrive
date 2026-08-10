@@ -232,6 +232,38 @@ test_mgr_nested_yaml_coarsest_nested_krylov_mgr_precon_inline(void)
    hypredrv_InputArgsDestroy(&iargs);
 }
 
+static void
+test_mgr_nested_yaml_scalar_stationary_precon(void)
+{
+   const char yaml_text[] =
+      "solver: pcg\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation: jacobi\n"
+      "        g_relaxation: none\n"
+      "    coarsest_level:\n"
+      "      gmres:\n"
+      "        max_iter: 2\n"
+      "        preconditioner: jacobi\n";
+
+   input_args *iargs = parse_config(yaml_text);
+   ASSERT_NOT_NULL(iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(iargs->precon.mgr.coarsest_level.use_krylov);
+   ASSERT_NOT_NULL(iargs->precon.mgr.coarsest_level.krylov);
+   ASSERT_TRUE(iargs->precon.mgr.coarsest_level.krylov->has_precon);
+   ASSERT_EQ(iargs->precon.mgr.coarsest_level.krylov->precon_method,
+             PRECON_BOOMERAMG);
+   ASSERT_EQ(iargs->precon.mgr.coarsest_level.krylov->precon.amg.coarsening.max_levels,
+             1);
+   ASSERT_EQ(iargs->precon.mgr.coarsest_level.krylov->precon.amg.relaxation.type, 0);
+
+   hypredrv_InputArgsDestroy(&iargs);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -244,6 +276,7 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_nested_yaml_grelax_nested_krylov_inline);
    RUN_TEST(test_mgr_nested_yaml_frelax_nested_krylov_mgr_precon_inline);
    RUN_TEST(test_mgr_nested_yaml_coarsest_nested_krylov_mgr_precon_inline);
+   RUN_TEST(test_mgr_nested_yaml_scalar_stationary_precon);
 
    MPI_Finalize();
    return 0;

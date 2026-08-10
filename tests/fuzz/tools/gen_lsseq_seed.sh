@@ -12,7 +12,7 @@ output=$3
 tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/hypredrv-lsseq-seed.XXXXXX")
 trap 'rm -rf "$tmpdir"' EXIT
 
-"$cli" -q --matrix-filename "IJ.out.A" --rhs-filename "IJ.out.b" \
+"$cli" --matrix-filename "IJ.out.A" --rhs-filename "IJ.out.b" \
     "${HYPREDRIVE_SOURCE_DIR:-.}/examples/ex7.yml" >/dev/null
 
 "$packer" pack --input-dir . --output "$tmpdir/seed.bin" >/dev/null

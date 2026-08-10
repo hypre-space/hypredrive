@@ -29,20 +29,14 @@
 
 #include "HYPREDRV.h"
 
-#ifndef HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
-#define HYPREDRV_SAFE_CALL_HANDLE_ERROR_DECLARED
-HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
-                                                         MPI_Comm comm, const char *file,
-                                                         int line, const char *func);
-#endif
-
 /**
  * @brief Safely call a HYPREDRV function; abort on error via MPI_COMM_WORLD.
  *
  * On error this macro prints the source location, calls
  * HYPREDRV_ErrorCodeDescribe() to print the error message, then either
  * raises SIGTRAP (when @c HYPREDRV_DEBUG=1 is set in the environment, for
- * use with a debugger) or calls @c MPI_Abort(MPI_COMM_WORLD, error_code).
+ * use with a debugger) or calls @c MPI_Abort() with a nonzero process status
+ * derived from the HYPREDRV error code.
  *
  * @note Uses @c MPI_COMM_WORLD as the communicator for @c MPI_Abort. If
  * your application runs on a sub-communicator and you need the abort to
@@ -56,7 +50,7 @@ HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
 #define HYPREDRV_SAFE_CALL(call)                                               \
    do                                                                          \
    {                                                                           \
-      hypredrv_SafeCallHandleError((call), MPI_COMM_WORLD, __FILE__, __LINE__, \
+      HYPREDRV_SafeCallHandleError((call), MPI_COMM_WORLD, __FILE__, __LINE__, \
                                    __func__);                                  \
    } while (0)
 #endif
@@ -81,7 +75,7 @@ HYPREDRV_EXPORT_SYMBOL void hypredrv_SafeCallHandleError(uint32_t error_code,
 #define HYPREDRV_SAFE_CALL_COMM(comm, call)                                       \
    do                                                                             \
    {                                                                              \
-      hypredrv_SafeCallHandleError((call), (comm), __FILE__, __LINE__, __func__); \
+      HYPREDRV_SafeCallHandleError((call), (comm), __FILE__, __LINE__, __func__); \
    } while (0)
 #endif
 

@@ -38,27 +38,6 @@ typedef struct YAMLincludeContext_struct
 } YAMLincludeContext;
 
 static bool
-YAMLpathIsUnderRoot(const char *path, const char *root)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (!path || !root) /* GCOVR_EXCL_BR_STOP */
-   {
-      return false; /* GCOVR_EXCL_LINE */
-   }
-
-   size_t root_len = strlen(root);
-   /* GCOVR_EXCL_BR_START */
-   if (root_len == 0 || strncmp(path, root, root_len) != 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      return false;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   return ((path[root_len] == '\0') || (path[root_len] == '/')) != 0;
-   /* GCOVR_EXCL_BR_STOP */
-}
-
-static bool
 YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
 {
    /* GCOVR_EXCL_BR_START */
@@ -383,7 +362,7 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
    }
    free(combined);
 
-   if (!YAMLpathIsUnderRoot(resolved, ctx->root_dir))
+   if (!hypredrv_PathIsUnderRoot(resolved, ctx->root_dir))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Include path escapes YAML root: '%s'", resolved);
@@ -402,6 +381,8 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
 static void
 YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
 {
+   node->avail_vals = map_array;
+
    if (hypredrv_StrIntMapArrayDomainEntryExists(map_array, node->val))
    {
       int mapped = hypredrv_StrIntMapArrayGetImage(map_array, node->val);
@@ -476,7 +457,10 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
       return;
    }
 
-   node->valid = YAML_NODE_INVALID_KEY;
+   /* Record the valid-key list so tree validation can report it. Safe because
+    * every get_keys() returns a StrArray over static, call-stable storage. */
+   node->avail_keys = keys;
+   node->valid      = YAML_NODE_INVALID_KEY;
 }
 
 void
@@ -532,8 +516,18 @@ hypredrv_YAMLtreeCreate(int base_indent)
 {
    YAMLtree *tree = NULL;
 
-   tree               = malloc(sizeof(YAMLtree));
-   tree->root         = hypredrv_YAMLnodeCreate("", "", -1);
+   tree = malloc(sizeof(YAMLtree));
+   if (!tree)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
+   tree->root = hypredrv_YAMLnodeCreate("", "", -1);
+   if (!tree->root)
+   {
+      free(tree);
+      return NULL;
+   }
    tree->base_indent  = base_indent;
    tree->is_validated = false; // Initialize validation flag
 
@@ -1093,6 +1087,20 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
          return 1; /* GCOVR_EXCL_LINE */
       }
 
+      /* Preserve flow mappings for the tree builder.  Treating this as the
+       * existing "- key: value" shorthand would incorrectly make "{ key" the
+       * key and leave the closing brace in the value. */
+      if (*inline_content == '{')
+      {
+         free(token_out->val);
+         token_out->val = NULL;
+         if (!YAMLtokenSetString(&token_out->val, inline_content))
+         {
+            return -1; /* GCOVR_EXCL_LINE */
+         }
+         return 1;
+      }
+
       if (!strchr(inline_content, ':'))
       {
          free(token_out->val);
@@ -1250,6 +1258,330 @@ YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
    return true;
 }
 
+/*-----------------------------------------------------------------------------
+ * Flow mappings
+ *
+ * Convert the single-line YAML flow-mapping form
+ *
+ *   key: { first: value, nested: { second: value } }
+ *
+ * into the same YAMLnode hierarchy produced by its block-mapping equivalent.
+ * Flow sequences remain scalar values because the component field setters
+ * already parse values such as "[0, 1]".
+ *-----------------------------------------------------------------------------*/
+
+static void
+YAMLflowMappingError(const YAMLnode *parent, const char *detail)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd("Malformed YAML flow mapping for key '%s': %s",
+                        (parent && parent->key) ? parent->key : "", detail);
+}
+
+static char *
+YAMLflowDupTrimmed(const char *begin, const char *end)
+{
+   char  *copy = NULL;
+   size_t len  = 0;
+
+   while (begin < end && (*begin == ' ' || *begin == '\t' || *begin == '\r'))
+   {
+      begin++;
+   }
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   {
+      end--;
+   }
+
+   len  = (size_t)(end - begin);
+   copy = (char *)malloc(len + 1);
+   if (!copy)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd(                    /* GCOVR_EXCL_LINE */
+                           "Failed to allocate YAML flow-mapping token");
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+   memcpy(copy, begin, len);
+   copy[len] = '\0';
+   return copy;
+}
+
+static void
+YAMLflowUnquoteKey(char *key)
+{
+   size_t len = key ? strlen(key) : 0;
+
+   if (len >= 2 && ((key[0] == '"' && key[len - 1] == '"') ||
+                    (key[0] == '\'' && key[len - 1] == '\'')))
+   {
+      key[len - 1] = '\0';
+      memmove(key, key + 1, len - 1);
+   }
+}
+
+static const char *
+YAMLflowSkipSpace(const char *pos, const char *end)
+{
+   while (pos < end && (*pos == ' ' || *pos == '\t' || *pos == '\r'))
+   {
+      pos++;
+   }
+   return pos;
+}
+
+/* Advance over a quoted character.  Double-quoted strings use backslash
+ * escapes; YAML single-quoted strings escape a quote by doubling it. */
+static bool
+YAMLflowAdvanceQuoted(const char **pos_ptr, const char *end, char *quote_ptr)
+{
+   const char *pos   = *pos_ptr;
+   char        quote = *quote_ptr;
+
+   if (!quote)
+   {
+      if (*pos == '"' || *pos == '\'')
+      {
+         *quote_ptr = *pos;
+         *pos_ptr   = pos + 1;
+         return true;
+      }
+      return false;
+   }
+
+   if (quote == '"' && *pos == '\\' && pos + 1 < end)
+   {
+      *pos_ptr = pos + 2;
+      return true;
+   }
+   if (quote == '\'' && *pos == '\'' && pos + 1 < end && pos[1] == '\'')
+   {
+      *pos_ptr = pos + 2;
+      return true;
+   }
+   if (*pos == quote)
+   {
+      *quote_ptr = '\0';
+   }
+   *pos_ptr = pos + 1;
+   return true;
+}
+
+static bool YAMLflowMappingAddChildren(YAMLnode *, const char *);
+
+static YAMLnode *
+YAMLnodeCreateWithFlowMapping(const char *key, const char *raw_val, int level)
+{
+   const char *begin = raw_val;
+   const char *end   = NULL;
+   YAMLnode   *node  = NULL;
+
+   if (!raw_val)
+   {
+      return hypredrv_YAMLnodeCreate(key, NULL, level);
+   }
+
+   end = begin + strlen(begin);
+
+   begin = YAMLflowSkipSpace(begin, end);
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   {
+      end--;
+   }
+
+   if (begin < end && *begin == '{')
+   {
+      node = hypredrv_YAMLnodeCreate(key, "", level);
+      if (!node)
+      {
+         return NULL; /* GCOVR_EXCL_LINE */
+      }
+      if (!YAMLflowMappingAddChildren(node, begin))
+      {
+         hypredrv_YAMLnodeDestroy(node);
+         return NULL;
+      }
+      return node;
+   }
+
+   return hypredrv_YAMLnodeCreate(key, raw_val, level);
+}
+
+static bool
+YAMLflowMappingAddEntry(YAMLnode *parent, const char *key_begin, const char *key_end,
+                        const char *val_begin, const char *val_end)
+{
+   char     *key   = YAMLflowDupTrimmed(key_begin, key_end);
+   char     *value = NULL;
+   YAMLnode *child = NULL;
+
+   if (!key)
+   {
+      return false; /* GCOVR_EXCL_LINE */
+   }
+   YAMLflowUnquoteKey(key);
+   if (key[0] == '\0')
+   {
+      YAMLflowMappingError(parent, "mapping keys must not be empty");
+      free(key);
+      return false;
+   }
+
+   value = YAMLflowDupTrimmed(val_begin, val_end);
+   if (!value)
+   {
+      free(key);
+      return false; /* GCOVR_EXCL_LINE */
+   }
+
+   child = YAMLnodeCreateWithFlowMapping(key, value, parent->level + 1);
+   free(key);
+   free(value);
+   if (!child)
+   {
+      return false;
+   }
+
+   hypredrv_YAMLnodeAddChild(parent, child);
+   return true;
+}
+
+static bool
+YAMLflowMappingAddChildren(YAMLnode *parent, const char *text)
+{
+   const char *begin = text ? text : "";
+   const char *end   = begin + strlen(begin);
+   const char *pos   = NULL;
+
+   begin = YAMLflowSkipSpace(begin, end);
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   {
+      end--;
+   }
+
+   if (begin == end || *begin != '{' || end[-1] != '}')
+   {
+      YAMLflowMappingError(parent, "expected matching '{' and '}'");
+      return false;
+   }
+
+   pos = begin + 1;
+   while (true)
+   {
+      const char *key_begin = NULL;
+      const char *key_end   = NULL;
+      const char *val_begin = NULL;
+      const char *val_end   = NULL;
+      char        quote     = '\0';
+      int         braces    = 0;
+      int         brackets  = 0;
+
+      pos = YAMLflowSkipSpace(pos, end - 1);
+      if (pos == end - 1)
+      {
+         return true;
+      }
+
+      key_begin = pos;
+      while (pos < end - 1)
+      {
+         if (YAMLflowAdvanceQuoted(&pos, end - 1, &quote))
+         {
+            continue;
+         }
+         if (*pos == ':')
+         {
+            break;
+         }
+         if (*pos == ',' || *pos == '}' || *pos == '{' || *pos == '[' || *pos == ']')
+         {
+            YAMLflowMappingError(parent, "expected ':' after a simple mapping key");
+            return false;
+         }
+         pos++;
+      }
+      if (quote)
+      {
+         YAMLflowMappingError(parent, "unterminated quoted mapping key");
+         return false;
+      }
+      if (pos == end - 1)
+      {
+         YAMLflowMappingError(parent, "expected ':' after mapping key");
+         return false;
+      }
+
+      key_end   = pos;
+      val_begin = ++pos;
+      quote     = '\0';
+
+      while (pos < end - 1)
+      {
+         if (YAMLflowAdvanceQuoted(&pos, end - 1, &quote))
+         {
+            continue;
+         }
+
+         if (*pos == '{')
+         {
+            braces++;
+         }
+         else if (*pos == '}')
+         {
+            if (braces == 0)
+            {
+               YAMLflowMappingError(parent, "unexpected '}' in mapping value");
+               return false;
+            }
+            braces--;
+         }
+         else if (*pos == '[')
+         {
+            brackets++;
+         }
+         else if (*pos == ']')
+         {
+            if (brackets == 0)
+            {
+               YAMLflowMappingError(parent, "unexpected ']' in mapping value");
+               return false;
+            }
+            brackets--;
+         }
+         else if (*pos == ',' && braces == 0 && brackets == 0)
+         {
+            break;
+         }
+         pos++;
+      }
+
+      if (quote)
+      {
+         YAMLflowMappingError(parent, "unterminated quoted mapping value");
+         return false;
+      }
+      if (braces != 0 || brackets != 0)
+      {
+         YAMLflowMappingError(parent, "unbalanced nested collection");
+         return false;
+      }
+
+      val_end = pos;
+      if (!YAMLflowMappingAddEntry(parent, key_begin, key_end, val_begin, val_end))
+      {
+         return false;
+      }
+
+      if (pos == end - 1)
+      {
+         return true;
+      }
+
+      /* Skip the comma. A trailing comma is valid YAML flow syntax. */
+      pos++;
+   }
+}
+
 static void
 YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
                         YAMLtree **tree_ptr)
@@ -1274,8 +1606,15 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
          return;
       }
 
-      YAMLnode *node = hypredrv_YAMLnodeCreate(token->key, token->val, token->level);
+      YAMLnode *node =
+         YAMLnodeCreateWithFlowMapping(token->key, token->val, token->level);
       YAMLnode *validation_node = node;
+
+      if (!node)
+      {
+         *tree_ptr = tree;
+         return;
+      }
 
       hypredrv_YAMLnodeAppend(node, &parent);
 
@@ -1284,8 +1623,13 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
       if (token->is_sequence_item && token->inline_key && token->inline_val)
       /* GCOVR_EXCL_BR_STOP */
       {
-         YAMLnode *inline_node = hypredrv_YAMLnodeCreate(
+         YAMLnode *inline_node = YAMLnodeCreateWithFlowMapping(
             token->inline_key, token->inline_val, token->level + 1);
+         if (!inline_node)
+         {
+            *tree_ptr = tree;
+            return;
+         }
          hypredrv_YAMLnodeAddChild(node, inline_node);
          parent          = inline_node;
          validation_node = inline_node;
@@ -1525,9 +1869,16 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          /* GCOVR_EXCL_BR_START */
          if (child->val && strlen(child->val) > 0) /* GCOVR_EXCL_BR_STOP */
          {
-            paths    = (char **)malloc(sizeof(char *));
-            paths[0] = strdup(child->val);
-            n_paths  = 1;
+            paths = (char **)malloc(sizeof(char *));
+            /* GCOVR_EXCL_BR_START */
+            if (!paths || !(paths[0] = strdup(child->val))) /* GCOVR_EXCL_BR_STOP */
+            {
+               free(paths);
+               hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+               hypredrv_ErrorMsgAdd("Failed to allocate memory for include paths");
+               return;
+            }
+            n_paths = 1;
          }
 
          YAML_NODE_ITERATE(child, inc_item)
@@ -1693,6 +2044,20 @@ YAMLargsFindConfigFileIndex(int argc, char **argv)
    return -1;
 }
 
+static bool
+YAMLargsTokenEndsOverrideList(const char *arg)
+{
+   if (!arg)
+   {
+      return false;
+   }
+
+   return hypredrv_IsYAMLFilename(arg) || strcmp(arg, "-h") == 0 ||
+          strcmp(arg, "--help") == 0 || strcmp(arg, "-i") == 0 ||
+          strcmp(arg, "--info") == 0 || strcmp(arg, "-p") == 0 ||
+          strcmp(arg, "--prec-preset") == 0;
+}
+
 /*-----------------------------------------------------------------------------
  * Helpers for hypredrv_YAMLtreeUpdate (must be file-scope for Clang; no nested functions)
  *-----------------------------------------------------------------------------*/
@@ -1714,81 +2079,98 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
       return; /* GCOVR_EXCL_LINE */
    }
 
-   YAMLnode *cur = node;
-   for (int i = start_idx; i < ctx->num_segments; i++)
-   {
-      const char *seg_const = ctx->segments[i];
-      bool        is_last   = (i == ctx->num_segments - 1);
+   const char *seg_const = ctx->segments[start_idx];
+   bool        is_last   = (start_idx == ctx->num_segments - 1);
 
-      if (!is_last) /* intermediate */
+   /* Overrides must apply to every occurrence of a duplicated key: section
+    * parsers iterate all children with last-wins semantics, so updating only
+    * the first occurrence would let a duplicate in the YAML input shadow this
+    * command-line override. */
+   if (!is_last) /* intermediate */
+   {
+      YAMLnode *child = NULL;
+      for (YAMLnode *walker = node->children; walker; walker = walker->next)
       {
-         YAMLnode *child = YAMLnodeGetOrCreateChild(cur, seg_const);
+         if (strcmp(walker->key, seg_const) != 0)
+         {
+            continue;
+         }
+
+         child = walker;
          YAMLnodeEnsureMapping(child);
 
          /* Check if this child has sequence items */
          if (YAMLnodeHasSequenceItems(child))
          {
             /* Apply remaining path to all sequence items */
-            YAMLnode *seq_walk = child->children;
-            while (seq_walk != NULL)
+            for (YAMLnode *seq_walk = child->children; seq_walk;
+                 seq_walk           = seq_walk->next)
             {
                /* GCOVR_EXCL_BR_START */
                if (!strcmp(seq_walk->key, "-")) /* GCOVR_EXCL_BR_STOP */
                {
-                  YAMLtreeUpdateApplyPathToNode(ctx, seq_walk, i + 1, value);
+                  YAMLtreeUpdateApplyPathToNode(ctx, seq_walk, start_idx + 1, value);
                }
-               seq_walk = seq_walk->next;
             }
-            return; /* Done with this branch */
-         }
-
-         cur = child;
-      }
-      else /* leaf */
-      {
-         /* Check if current node has sequence items */
-         /* GCOVR_EXCL_BR_START */
-         if (YAMLnodeHasSequenceItems(cur)) /* GCOVR_EXCL_BR_STOP */
-         {
-            YAMLnode *seq_walk = cur->children; /* GCOVR_EXCL_LINE */
-            while (seq_walk != NULL)            /* GCOVR_EXCL_LINE */
-            {
-               /* GCOVR_EXCL_BR_START */
-               if (!strcmp(seq_walk->key, "-"))
-               /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
-               {
-                  YAMLnode *item_leaf = hypredrv_YAMLnodeFindChildByKey(
-                     seq_walk, seg_const); /* GCOVR_EXCL_LINE */
-                  /* GCOVR_EXCL_BR_START */
-                  if (!item_leaf) /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
-                  {
-                     item_leaf = hypredrv_YAMLnodeCreate(
-                        seg_const, value, seq_walk->level + 1);      /* GCOVR_EXCL_LINE */
-                     hypredrv_YAMLnodeAddChild(seq_walk, item_leaf); /* GCOVR_EXCL_LINE */
-                  }
-                  else
-                  {
-                     YAMLnodeDestroyChildren(item_leaf);       /* GCOVR_EXCL_LINE */
-                     YAMLnodeSetScalarValue(item_leaf, value); /* GCOVR_EXCL_LINE */
-                  }
-               }
-               seq_walk = seq_walk->next; /* GCOVR_EXCL_LINE */
-            }
-            return; /* Done */ /* GCOVR_EXCL_LINE */
-         }
-
-         YAMLnode *leaf = hypredrv_YAMLnodeFindChildByKey(cur, seg_const);
-         if (!leaf)
-         {
-            leaf = hypredrv_YAMLnodeCreate(seg_const, value, cur->level + 1);
-            hypredrv_YAMLnodeAddChild(cur, leaf);
          }
          else
          {
-            YAMLnodeDestroyChildren(leaf);
-            YAMLnodeSetScalarValue(leaf, value);
+            YAMLtreeUpdateApplyPathToNode(ctx, child, start_idx + 1, value);
          }
       }
+
+      if (!child)
+      {
+         child = YAMLnodeGetOrCreateChild(node, seg_const);
+         YAMLnodeEnsureMapping(child);
+         YAMLtreeUpdateApplyPathToNode(ctx, child, start_idx + 1, value);
+      }
+      return;
+   }
+
+   /* Leaf: check if current node has sequence items */
+   /* GCOVR_EXCL_BR_START */
+   if (YAMLnodeHasSequenceItems(node)) /* GCOVR_EXCL_BR_STOP */
+   {
+      for (YAMLnode *seq_walk = node->children; seq_walk; seq_walk = seq_walk->next)
+      {
+         /* GCOVR_EXCL_BR_START */
+         if (!strcmp(seq_walk->key, "-")) /* GCOVR_EXCL_BR_STOP */
+         {
+            YAMLnode *item_leaf = NULL;
+            for (YAMLnode *walker = seq_walk->children; walker; walker = walker->next)
+            {
+               if (!strcmp(walker->key, seg_const))
+               {
+                  YAMLnodeDestroyChildren(walker);
+                  YAMLnodeSetScalarValue(walker, value);
+                  item_leaf = walker;
+               }
+            }
+            if (!item_leaf)
+            {
+               item_leaf = hypredrv_YAMLnodeCreate(seg_const, value, seq_walk->level + 1);
+               hypredrv_YAMLnodeAddChild(seq_walk, item_leaf);
+            }
+         }
+      }
+      return;
+   }
+
+   YAMLnode *leaf = NULL;
+   for (YAMLnode *walker = node->children; walker; walker = walker->next)
+   {
+      if (!strcmp(walker->key, seg_const))
+      {
+         YAMLnodeDestroyChildren(walker);
+         YAMLnodeSetScalarValue(walker, value);
+         leaf = walker;
+      }
+   }
+   if (!leaf)
+   {
+      leaf = hypredrv_YAMLnodeCreate(seg_const, value, node->level + 1);
+      hypredrv_YAMLnodeAddChild(node, leaf);
    }
 }
 
@@ -1809,12 +2191,11 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
     *      argv = ["--path:to:key", "val", ...]
     *
     * 2) Driver "full argv" mode:
-    *      argv contains many tokens including -q, config file, etc.
+    *      argv contains many tokens including -i, config file, etc.
     *      Overrides are only parsed after -a/--args and stop at the YAML filename
     *      if it appears after -a (some test harnesses append it at the end).
     */
    int  args_flag_idx  = YAMLargsFindFlagIndex(argc, argv, "-a", "--args");
-   int  cfg_idx        = YAMLargsFindConfigFileIndex(argc, argv);
    int  override_start = 0;
    int  override_end   = argc;
    bool full_argv_mode = (args_flag_idx >= 0);
@@ -1822,9 +2203,13 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
    if (full_argv_mode)
    {
       override_start = args_flag_idx + 1;
-      if (cfg_idx >= 0 && cfg_idx >= override_start)
+      for (int i = override_start; i < argc; i += 2)
       {
-         override_end = cfg_idx;
+         if (YAMLargsTokenEndsOverrideList(argv[i]))
+         {
+            override_end = i;
+            break;
+         }
       }
       /* GCOVR_EXCL_BR_START */
       if (override_start >= override_end) /* GCOVR_EXCL_BR_STOP */
@@ -2028,6 +2413,47 @@ hypredrv_YAMLtreeValidate(YAMLtree *tree)
    tree->is_validated = true; // Mark tree as validated
 }
 
+/* A node holding both mapping children and sequence items ("-") is mixed
+ * content: not expressible in strict YAML, and keys on either side become
+ * silently unreachable depending on which side a consumer reads. Flag the
+ * tree as invalid so parsers reject the input instead of using defaults. */
+static void
+YAMLnodeFlagMixedContent(YAMLnode *node)
+{
+   if (!node || hypredrv_ErrorCodeActive())
+   {
+      return;
+   }
+
+   bool has_mapping  = false;
+   bool has_sequence = false;
+   for (YAMLnode *child = node->children; child; child = child->next)
+   {
+      if (!strcmp(child->key, "-"))
+      {
+         has_sequence = true;
+      }
+      else
+      {
+         has_mapping = true;
+      }
+   }
+
+   if (has_mapping && has_sequence)
+   {
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+      hypredrv_ErrorMsgAdd(
+         "Invalid YAML content: node '%s' mixes mapping keys and sequence items",
+         node->key);
+      return;
+   }
+
+   for (YAMLnode *child = node->children; child; child = child->next)
+   {
+      YAMLnodeFlagMixedContent(child);
+   }
+}
+
 void
 hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
 {
@@ -2048,6 +2474,7 @@ hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
    }
    YAMLnodeExpandIncludesRecursive(tree->root, dir, bi, &ctx);
    YAMLincludeContextDestroy(&ctx);
+   YAMLnodeFlagMixedContent(tree->root);
 }
 
 /******************************************************************************
@@ -2062,10 +2489,17 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
 {
    YAMLnode *node = NULL;
 
-   node             = (YAMLnode *)malloc(sizeof(YAMLnode));
+   node = (YAMLnode *)malloc(sizeof(YAMLnode));
+   if (!node)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
    node->level      = level;
-   node->key        = hypredrv_StrTrim(strdup((char *)key));
+   node->key        = hypredrv_StrTrim(strdup(key ? key : ""));
    node->mapped_val = NULL;
+   node->avail_vals = STR_INT_MAP_ARRAY_VOID();
+   node->avail_keys = STR_ARRAY_VOID();
    node->valid      = YAML_NODE_UNKNOWN;
    node->parent     = NULL;
    node->children   = NULL;
@@ -2073,22 +2507,36 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
 
    /* If the key contains "name", "node->val" will be the same as "val".
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
-   if (strstr(key, "name"))
+   if (key && strstr(key, "name"))
    {
-      node->val = hypredrv_StrTrim(strdup((char *)val));
+      node->val = hypredrv_StrTrim(strdup(val ? val : ""));
    }
    else
    {
-      node->val = hypredrv_StrToLowerCase(hypredrv_StrTrim(strdup((char *)val)));
+      node->val = hypredrv_StrToLowerCase(hypredrv_StrTrim(strdup(val ? val : "")));
       /* Strip surrounding double quotes if present */
-      size_t len = strlen(node->val);
       /* GCOVR_EXCL_BR_START */
-      if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
-      /* GCOVR_EXCL_BR_STOP */
+      if (node->val) /* GCOVR_EXCL_BR_STOP */
       {
-         node->val[len - 1] = '\0';
-         memmove(node->val, node->val + 1, len - 1);
+         size_t len = strlen(node->val);
+         /* GCOVR_EXCL_BR_START */
+         if (len >= 2 && node->val[0] == '\"' && node->val[len - 1] == '\"')
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            node->val[len - 1] = '\0';
+            memmove(node->val, node->val + 1, len - 1);
+         }
       }
+   }
+
+   /* Propagate allocation failure of the key/val strings. */
+   if (!node->key || !node->val)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      free(node->key);
+      free(node->val);
+      free(node);
+      return NULL;
    }
 
    return node;
@@ -2242,10 +2690,30 @@ hypredrv_YAMLnodeValidate(YAMLnode *node)
       case YAML_NODE_INVALID_KEY:
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
          hypredrv_ErrorCodeSet(ERROR_MAYBE_INVALID_VAL);
+         if (node->avail_keys.size > 0)
+         {
+            char *avail = hypredrv_StrArrayToString(node->avail_keys);
+            if (avail)
+            {
+               hypredrv_ErrorMsgAddUnique("Unknown key \"%s\". Available keys: %s",
+                                          node->key, avail);
+               free(avail);
+            }
+         }
          break;
 
       case YAML_NODE_INVALID_VAL:
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         if (node->avail_vals.size > 0)
+         {
+            char *avail = hypredrv_StrIntMapArrayDomainToString(node->avail_vals);
+            if (avail)
+            {
+               hypredrv_ErrorMsgAddUnique("Available values for \"%s\": %s", node->key,
+                                          avail);
+               free(avail);
+            }
+         }
          break;
 
       case YAML_NODE_UNEXPECTED_VAL:
