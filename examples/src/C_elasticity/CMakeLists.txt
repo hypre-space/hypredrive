@@ -14,7 +14,6 @@ if(NOT TARGET HYPREDRV::HYPREDRV)
     find_package(HYPREDRV REQUIRED)
 endif()
 
-# Common build configuration
 add_executable(elasticity elasticity.c)
 target_link_libraries(elasticity PRIVATE HYPREDRV::HYPREDRV)
 hypredrv_add_hypre_build_dependency(elasticity)
@@ -104,7 +103,8 @@ if(HYPREDRV_ENABLE_TESTING)
         add_executable_test(elasticity_two_material_coarse_reuse_1proc elasticity 1
             ARGS --problem two-material --discretization mixed -n 13 5 5 --nu-top 0.4999
                  --coarse-schur -ns 3 -v 1
-                 -i ${CMAKE_CURRENT_SOURCE_DIR}/mgr2-gmres-reuse.yml
+                 -i ${CMAKE_CURRENT_SOURCE_DIR}/mgr2-gmres.yml
+                 -a --preconditioner:mgr:coarsest_level:reuse always
             RUN_SERIAL
             REQUIRE_CONTAINS
                 "Two-Material Bar"

@@ -1294,10 +1294,10 @@ extern "C"
     *        RAP product. The matrix must be sized to that level's compressed coarse
     *        (C-point) DOF set. Call once per level as needed.
     *
-    *        Ownership transfers to the linear system: it is freed at teardown and
-    *        the application must not free it. (The MGR preconditioner is destroyed
-    *        and recreated on every solve, so it cannot own a matrix that must
-    *        outlive individual solves.)
+    *        In standalone/driver mode ownership transfers to HYPREDRV. In library
+    *        mode the matrix is borrowed and the application retains ownership,
+    *        matching the other external matrix setters. Replacing a registered
+    *        matrix invalidates an existing MGR preconditioner.
     *
     * @param hypredrv The HYPREDRV object.
     * @param level    The MGR reduction level the operator applies to (0-based).

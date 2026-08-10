@@ -8,6 +8,7 @@
 #ifndef AMG_HEADER
 #define AMG_HEADER
 
+#include <stdint.h>
 #include "HYPRE_parcsr_ls.h"
 #include "internal/cheby.h"
 #include "internal/containers.h"
@@ -123,12 +124,14 @@ typedef struct AMG_args_struct
    HYPRE_Real tolerance;
 
    /* GM/LN interpolation variant implied by how the near-null space was built
-      (full system vs. projected onto an MGR F-block). Used when the YAML knob
+      (full system vs. projected onto an MGR subblock). Used when the YAML knob
       coarsening.interp_vec_variant is left on "auto". */
    HYPRE_Int       interp_vec_variant;
    HYPRE_Int       num_rbms;
    HYPRE_ParVector rbms[3];
-   HYPRE_Int       rbms_projected; /* RBMs live on an MGR F-block, not the full system */
+   uint64_t        rbm_source_generation;
+   size_t          rbm_source_labels_size;
+   uint64_t        rbm_source_labels_hash;
 } AMG_args;
 
 /*--------------------------------------------------------------------------
@@ -140,7 +143,7 @@ void hypredrv_AMGSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
 void hypredrv_AMGSetProjectedRBMs(AMG_args *, HYPRE_IJVector, const IntArray *,
-                                  const StackIntArray *);
+                                  uint64_t, const int *, size_t);
 void hypredrv_AMGDestroyRBMs(AMG_args *);
 void hypredrv_AMGSetDofFunc(const AMG_args *, const IntArray *, HYPRE_Solver,
                             HYPRE_IJMatrix);

@@ -260,14 +260,22 @@ run_two_material_study() {
                     # Pull the single STATISTICS SUMMARY data row. Columns are
                     # $2 entry, $3 LS build, $4 setup, $5 solve, $6 initial res,
                     # $7 relative res, $8 iters.
-                    row=$(${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks} ${EXEC} \
-                            --problem two-material --discretization "${disc}" \
-                            -n "${nx}" "${ny}" "${nz}" -P ${pgrid} -nu "${nu_bottom}" \
-                            --nu-top "${nu}" -ns 1 -v 1 ${extra} -i "${cfgdir}/${yml}" 2>&1 \
-                        | awk -F'|' '/^\|[[:space:]]*[0-9]+[[:space:]]*\|/ \
-                                     { for (i = 4; i <= 8; i++) gsub(/ /, "", $i); \
-                                       su=$4; so=$5; rr=$7; it=$8 } \
-                                     END { print it","rr","su","so }')
+                    if ! row=$(${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} ${ranks} ${EXEC} \
+                                  --problem two-material --discretization "${disc}" \
+                                  -n "${nx}" "${ny}" "${nz}" -P ${pgrid} -nu "${nu_bottom}" \
+                                  --nu-top "${nu}" -ns 1 -v 1 ${extra} \
+                                  -i "${cfgdir}/${yml}" 2>&1 \
+                               | awk -F'|' '/^\|[[:space:]]*[0-9]+[[:space:]]*\|/ \
+                                            { for (i = 4; i <= 8; i++) gsub(/ /, "", $i); \
+                                              su=$4; so=$5; rr=$7; it=$8; found=1 } \
+                                            END { if (found) print it","rr","su","so }'); then
+                        echo "    -> run failed; skipping this CSV row" >&2
+                        continue
+                    fi
+                    if [[ -z "${row}" ]]; then
+                        echo "    -> no statistics summary; skipping this CSV row" >&2
+                        continue
+                    fi
                     echo "${disc},${nu},${nx},${ny},${nz},${dofs},${row}" >> "${csv}"
                     echo "    -> iters,relres,setup,solve = ${row}"
                 done

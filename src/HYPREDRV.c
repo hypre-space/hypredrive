@@ -653,6 +653,24 @@ LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
    hypredrv->owns_mat_M = false;
 }
 
+static MGR_args *
+LinearSystemMGRArgs(HYPREDRV_t hypredrv)
+{
+   return (hypredrv->iargs && hypredrv->iargs->precon_method == PRECON_MGR)
+             ? &hypredrv->iargs->precon.mgr
+             : NULL;
+}
+
+static void
+LinearSystemSyncMGRDofmap(HYPREDRV_t hypredrv)
+{
+   MGR_args *mgr = LinearSystemMGRArgs(hypredrv);
+   if (mgr)
+   {
+      hypredrv_MGRSetDofmap(mgr, hypredrv->dofmap);
+   }
+}
+
 /*-----------------------------------------------------------------------------
  * Release the owned initial-guess vector before adopting a new one
  *-----------------------------------------------------------------------------*/
@@ -840,13 +858,14 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_nn);
    }
-   for (int i = 0; i < HYPREDRV_MGR_MAX_LEVELS; i++)
+   for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
-      if (hypredrv->mat_coarse_schur[i])
+      if (hypredrv->mat_coarse_schur[i] && hypredrv->owns_mat_coarse_schur[i])
       {
          HYPRE_IJMatrixDestroy(hypredrv->mat_coarse_schur[i]);
-         hypredrv->mat_coarse_schur[i] = NULL;
       }
+      hypredrv->mat_coarse_schur[i]      = NULL;
+      hypredrv->owns_mat_coarse_schur[i] = false;
    }
    if (hypredrv->mat_G && hypredrv->owns_mat_G)
    {
@@ -1059,9 +1078,10 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    hypredrv->vec_x0   = NULL;
    hypredrv->vec_xref = NULL;
    hypredrv->vec_nn   = NULL;
-   for (int i = 0; i < HYPREDRV_MGR_MAX_LEVELS; i++)
+   for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
-      hypredrv->mat_coarse_schur[i] = NULL;
+      hypredrv->mat_coarse_schur[i]      = NULL;
+      hypredrv->owns_mat_coarse_schur[i] = false;
    }
    hypredrv->vec_ns         = NULL;
    hypredrv->num_ns         = 0;
@@ -2281,6 +2301,11 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
    hypredrv_LinearSystemSetNearNullSpace(hypredrv->comm, &hypredrv->iargs->ls,
                                          hypredrv->mat_A, num_entries, num_components,
                                          values, &hypredrv->vec_nn);
+   MGR_args *mgr = LinearSystemMGRArgs(hypredrv);
+   if (mgr)
+   {
+      hypredrv_MGRSetNearNullSpace(mgr, hypredrv->vec_nn);
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2288,7 +2313,7 @@ HYPREDRV_LinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
 /*-----------------------------------------------------------------------------
  * Provide an application-assembled coarse (Schur-complement) operator for MGR.
  * Used when the MGR coarse_level_type is "user"; the matrix must be sized to the
- * coarse (C-point) DOF set. The handle is borrowed (the application owns it).
+ * coarse (C-point) DOF set. Driver mode takes ownership; library mode borrows it.
  *-----------------------------------------------------------------------------*/
 
 uint32_t
@@ -2296,21 +2321,48 @@ HYPREDRV_LinearSystemSetCoarseSchur(HYPREDRV_t hypredrv, int level, HYPRE_Matrix
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
 
-   if (level < 0 || level >= HYPREDRV_MGR_MAX_LEVELS)
+   if (level < 0 || level >= MAX_MGR_LEVELS - 1)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       return hypredrv_ErrorCodeGet();
    }
 
-   /* Ownership transfers to the linear system: freed at teardown (the MGR
-    * preconditioner is destroyed/recreated every solve, so it cannot own a
-    * matrix that must persist across solves). The application must not free it. */
-   if (hypredrv->mat_coarse_schur[level] &&
-       hypredrv->mat_coarse_schur[level] != (HYPRE_IJMatrix)mat_S)
+   HYPRE_IJMatrix new_mat = (HYPRE_IJMatrix)mat_S;
+   if (new_mat)
    {
-      HYPRE_IJMatrixDestroy(hypredrv->mat_coarse_schur[level]);
+      for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
+      {
+         if (i != level && hypredrv->mat_coarse_schur[i] == new_mat)
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd(
+               "A coarse Schur matrix cannot be registered at multiple MGR levels");
+            return hypredrv_ErrorCodeGet();
+         }
+      }
    }
-   hypredrv->mat_coarse_schur[level] = (HYPRE_IJMatrix)mat_S;
+
+   PrepareExplicitObjectForConfiguredExecution(hypredrv, new_mat, 1);
+
+   HYPRE_IJMatrix old_mat = hypredrv->mat_coarse_schur[level];
+   if (old_mat != new_mat && hypredrv->precon && hypredrv->iargs &&
+       hypredrv->iargs->precon_method == PRECON_MGR)
+   {
+      if (hypredrv->solver)
+      {
+         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
+      hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                             &hypredrv->precon, hypredrv->stats,
+                             hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+      hypredrv->precon_is_setup = false;
+   }
+   if (old_mat && old_mat != new_mat && hypredrv->owns_mat_coarse_schur[level])
+   {
+      HYPRE_IJMatrixDestroy(old_mat);
+   }
+   hypredrv->mat_coarse_schur[level]      = new_mat;
+   hypredrv->owns_mat_coarse_schur[level] = (bool)(!hypredrv->lib_mode && new_mat);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2727,6 +2779,7 @@ HYPREDRV_LinearSystemSetDofmap(HYPREDRV_t hypredrv, int size, const int *dofmap)
    /* Keep ownership clean when this is called multiple times */
    hypredrv_IntArrayDestroy(&hypredrv->dofmap);
    hypredrv_IntArrayBuild(hypredrv->comm, size, dofmap, &hypredrv->dofmap);
+   LinearSystemSyncMGRDofmap(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2744,6 +2797,7 @@ HYPREDRV_LinearSystemSetInterleavedDofmap(HYPREDRV_t hypredrv, int num_local_blo
    hypredrv_IntArrayDestroy(&hypredrv->dofmap);
    hypredrv_IntArrayBuildInterleaved(hypredrv->comm, num_local_blocks, num_dof_types,
                                      &hypredrv->dofmap);
+   LinearSystemSyncMGRDofmap(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2761,6 +2815,7 @@ HYPREDRV_LinearSystemSetContiguousDofmap(HYPREDRV_t hypredrv, int num_local_bloc
    hypredrv_IntArrayDestroy(&hypredrv->dofmap);
    hypredrv_IntArrayBuildContiguous(hypredrv->comm, num_local_blocks, num_dof_types,
                                     &hypredrv->dofmap);
+   LinearSystemSyncMGRDofmap(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2777,6 +2832,7 @@ HYPREDRV_LinearSystemReadDofmap(HYPREDRV_t hypredrv)
 
    hypredrv_LinearSystemReadDofmap(hypredrv->comm, &hypredrv->iargs->ls,
                                    &hypredrv->dofmap, hypredrv->stats);
+   LinearSystemSyncMGRDofmap(hypredrv);
 
    return hypredrv_ErrorCodeGet();
 }

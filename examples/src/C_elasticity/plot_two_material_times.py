@@ -47,11 +47,11 @@ def tint(hex_color, amount=0.55):
 # texture rather than by color alone.
 SETUP_HATCH = "..."
 
-rows = [r for r in csv.DictReader(open(CSV)) if r["disc"] == DISC]
+required = ("disc", "nu", "dofs", "iters", "relres", "setup", "solve")
+rows = [r for r in csv.DictReader(open(CSV))
+        if r.get("disc") == DISC and all(r.get(key) for key in required)]
 if not rows:
-    sys.exit(f"no rows with disc={DISC!r} in {CSV}")
-if "setup" not in rows[0] or "solve" not in rows[0]:
-    sys.exit(f"{CSV} has no setup/solve columns; re-run reproduce.sh --two-material")
+    sys.exit(f"no complete rows with disc={DISC!r} in {CSV}")
 
 dof_list = sorted({int(r["dofs"]) for r in rows})
 

@@ -239,9 +239,12 @@ hypredrv_AMGSetDefaultArgs(AMG_args *args)
    args->tolerance          = 0.0;
    args->interp_vec_variant = 2;
    args->num_rbms           = 0;
-   args->rbms[0]            = NULL;
-   args->rbms[1]            = NULL;
-   args->rbms[2]            = NULL;
+   args->rbms[0]               = NULL;
+   args->rbms[1]               = NULL;
+   args->rbms[2]               = NULL;
+   args->rbm_source_generation  = 0;
+   args->rbm_source_labels_size = 0;
+   args->rbm_source_labels_hash = 0;
 
    hypredrv_AMGintSetDefaultArgs(&args->interpolation);
    hypredrv_AMGaggSetDefaultArgs(&args->aggressive);
@@ -488,8 +491,11 @@ hypredrv_AMGDestroyRBMs(AMG_args *args)
       HYPRE_ParVectorDestroy(args->rbms[i]);
       args->rbms[i] = NULL;
    }
-   args->num_rbms       = 0;
-   args->rbms_projected = 0;
+   args->interp_vec_variant     = 2;
+   args->num_rbms               = 0;
+   args->rbm_source_generation  = 0;
+   args->rbm_source_labels_size = 0;
+   args->rbm_source_labels_hash = 0;
 }
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
@@ -669,14 +675,26 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 /*-----------------------------------------------------------------------------
  * hypredrv_AMGSetProjectedRBMs
  *
- * MGR F-relaxation acts on a row-filtered submatrix. Project the full-system
- * rigid-body modes onto the selected F labels while preserving each rank's row
- * order, which is also the ordering used by hypre's extracted F block.
+ * Project full-system rigid-body modes onto selected MGR labels while preserving
+ * each rank's row order, which is also the ordering of hypre's extracted block.
  *-----------------------------------------------------------------------------*/
+
+static uint64_t
+AMGSelectedDofsHash(const int *selected_dofs, size_t num_selected_dofs)
+{
+   uint64_t hash = UINT64_C(1469598103934665603);
+   for (size_t i = 0; i < num_selected_dofs; i++)
+   {
+      hash ^= (uint64_t)(uint32_t)selected_dofs[i];
+      hash *= UINT64_C(1099511628211);
+   }
+   return hash;
+}
 
 void
 hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
-                             const IntArray *dofmap, const StackIntArray *f_dofs)
+                             const IntArray *dofmap, uint64_t input_generation,
+                             const int *selected_dofs, size_t num_selected_dofs)
 {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    HYPRE_BigInt   jlower = 0, jupper = -1;
@@ -686,31 +704,48 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    uint64_t       projected_local  = 0;
    uint64_t       projected_global = 0;
    uint64_t       projected_scan   = 0;
+   int            *selected_labels = NULL;
    MPI_Comm       comm             = MPI_COMM_NULL;
 
    if (!args)
    {
       return;
    }
-   args->interp_vec_variant = 1;
-   hypredrv_AMGDestroyRBMs(args);
-   /* Flag the AMG even when no vectors end up being attached: it marks this AMG
-    * as living on an MGR F-block, so that a later hypredrv_AMGSetRBMs (e.g. from
-    * PreconCreate for a nested-Krylov F-relaxation) does not replace the modes
-    * with full-system ones sized to the whole saddle-point system. */
-   args->rbms_projected = 1;
-   if (!args->coarsening.nodal)
+   if (num_selected_dofs && !selected_dofs)
    {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       return;
    }
-   if (!vec_nn || !dofmap || !f_dofs || f_dofs->size == 0)
+   uint64_t labels_hash = AMGSelectedDofsHash(selected_dofs, num_selected_dofs);
+   if (!args->coarsening.nodal)
+   {
+      hypredrv_AMGDestroyRBMs(args);
+      args->interp_vec_variant = 1;
+      return;
+   }
+   if (!vec_nn || !dofmap)
    {
       /* Nodal AMG is valid without user interpolation vectors. Passing zero
        * vectors below preserves hypre's standard nodal-coarsening behavior. */
+      hypredrv_AMGDestroyRBMs(args);
+      args->interp_vec_variant = 1;
       return;
    }
 
    comm           = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
+   int local_cache_hit = args->interp_vec_variant == 1 &&
+                         args->rbm_source_generation == input_generation &&
+                         args->rbm_source_labels_size == num_selected_dofs &&
+                         args->rbm_source_labels_hash == labels_hash;
+   int global_cache_hit = 0;
+   MPI_Allreduce(&local_cache_hit, &global_cache_hit, 1, MPI_INT, MPI_MIN, comm);
+   if (global_cache_hit)
+   {
+      return;
+   }
+
+   hypredrv_AMGDestroyRBMs(args);
+   args->interp_vec_variant = 1;
    num_components = hypre_IJVectorNumComponents(vec_nn);
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
    num_entries     = (jupper >= jlower) ? (HYPRE_Int)(jupper - jlower + 1) : 0;
@@ -728,10 +763,15 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    }
 
    selected = (unsigned char *)calloc((size_t)num_entries, sizeof(unsigned char));
+   if (num_selected_dofs > 0)
+   {
+      selected_labels = (int *)malloc(num_selected_dofs * sizeof(*selected_labels));
+   }
    HYPRE_Int      vector_stride = 0, index_stride = 0;
    HYPRE_Complex *host_values =
       AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
-   int local_ok  = num_entries == 0 || (selected && host_values);
+   int local_ok = (num_selected_dofs == 0 || selected_labels) &&
+                  (num_entries == 0 || (selected && host_values));
    int global_ok = 0;
    MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!global_ok)
@@ -741,17 +781,22 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
          "Failed to allocate projected near-null-space buffers (%d entries)",
          (int)num_entries);
       free(selected);
+      free(selected_labels);
       hypre_TFree(host_values, HYPRE_MEMORY_HOST);
       return;
    }
 
-   int selected_labels[MAX_STACK_ARRAY_LENGTH];
-   memcpy(selected_labels, f_dofs->data, f_dofs->size * sizeof(selected_labels[0]));
-   qsort(selected_labels, f_dofs->size, sizeof(selected_labels[0]), AMGIntCompare);
+   if (num_selected_dofs > 0)
+   {
+      memcpy(selected_labels, selected_dofs,
+             num_selected_dofs * sizeof(*selected_labels));
+      qsort(selected_labels, num_selected_dofs, sizeof(*selected_labels), AMGIntCompare);
+   }
    for (HYPRE_Int i = 0; i < num_entries; i++)
    {
-      if (bsearch(&dofmap->data[i], selected_labels, f_dofs->size,
-                  sizeof(selected_labels[0]), AMGIntCompare))
+      if (num_selected_dofs > 0 &&
+          bsearch(&dofmap->data[i], selected_labels, num_selected_dofs,
+                  sizeof(*selected_labels), AMGIntCompare))
       {
          selected[i] = 1;
          projected_local++;
@@ -764,24 +809,57 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    if (projected_global == 0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("MGR F-label set selects no near-null-space entries");
+      hypredrv_ErrorMsgAdd("MGR label set selects no near-null-space entries");
    }
    else
    {
-      AMGCreateRBMsFromHost(args, comm, (HYPRE_BigInt)projected_global,
-                            (HYPRE_BigInt)(projected_scan - projected_local),
-                            (HYPRE_Int)projected_local, num_entries, selected,
-                            host_values, vector_stride, index_stride);
+      int local_nonzero = 0;
+      for (HYPRE_Int i = 0; i < num_entries && !local_nonzero; i++)
+      {
+         if (!selected[i])
+         {
+            continue;
+         }
+         for (HYPRE_Int mode = 0; mode < AMG_NUM_RBMS; mode++)
+         {
+            size_t source_index =
+               ((size_t)(AMG_FIRST_RBM_COMPONENT + mode) * (size_t)vector_stride) +
+               ((size_t)i * (size_t)index_stride);
+            if (hypre_cabs(host_values[source_index]) > 0.0)
+            {
+               local_nonzero = 1;
+               break;
+            }
+         }
+      }
+      int global_nonzero = 0;
+      MPI_Allreduce(&local_nonzero, &global_nonzero, 1, MPI_INT, MPI_MAX, comm);
+      if (global_nonzero)
+      {
+         AMGCreateRBMsFromHost(args, comm, (HYPRE_BigInt)projected_global,
+                               (HYPRE_BigInt)(projected_scan - projected_local),
+                               (HYPRE_Int)projected_local, num_entries, selected,
+                               host_values, vector_stride, index_stride);
+      }
+      args->interp_vec_variant = 1;
+      if (!hypredrv_ErrorCodeActive())
+      {
+         args->rbm_source_generation  = input_generation;
+         args->rbm_source_labels_size = num_selected_dofs;
+         args->rbm_source_labels_hash = labels_hash;
+      }
    }
-   args->rbms_projected = 1; /* AMGCreateRBMsFromHost resets it via DestroyRBMs */
 
    free(selected);
+   free(selected_labels);
    hypre_TFree(host_values, HYPRE_MEMORY_HOST);
 #else
    (void)args;
    (void)vec_nn;
    (void)dofmap;
-   (void)f_dofs;
+   (void)input_generation;
+   (void)selected_dofs;
+   (void)num_selected_dofs;
 #endif
 }
 
@@ -1037,7 +1115,7 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    if (args->coarsening.nodal)
    {
       /* Configurable GM/LN rigid-body-mode interpolation, used for both a
-         top-level elasticity AMG and an MGR F-block AMG. The "auto" defaults
+         top-level elasticity AMG and an MGR subblock AMG. The "auto" defaults
          reproduce the historical hard-coded setup; YAML can override them
          (coarsening.nodal_type / interp_vec_variant / smooth_interp_vecs /
          interp_vec_qmax / interp_vec_abs_q_trunc) to experiment toward an

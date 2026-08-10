@@ -3041,8 +3041,20 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
    ASSERT_TRUE(strstr(output, "MGR G-relax setup reuse at level 0: reuse=1") != NULL);
    ASSERT_TRUE(strstr(output, "MGR coarsest setup reuse: reuse=1") != NULL);
 
+   HYPRE_IJMatrix unused_coarse = create_test_ijmatrix_2x2(1.0, 0.0, 0.0, 1.0);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetCoarseSchur(
+                obj, 0, (HYPRE_Matrix)unused_coarse),
+             ERROR_NONE);
+   ASSERT_NULL(state->solver);
+   ASSERT_NULL(state->precon);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+
    ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(unused_coarse), 0);
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
    unsetenv("HYPREDRV_LOG_LEVEL");
@@ -4359,13 +4371,25 @@ test_HYPREDRV_LinearSystemSetNearNullSpace_public_wrapper(void)
    HYPREDRV_t obj = create_initialized_obj();
    parse_minimal_library_yaml(obj);
    ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   state->iargs->precon_method   = PRECON_MGR;
+   hypredrv_MGRSetDefaultArgs(&state->iargs->precon.mgr);
 
    HYPRE_IJMatrix mat_nn = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector vec_b_nn = create_test_ijvector_1x1(2.0);
    attach_library_scalar_system(obj, mat_nn, vec_b_nn);
 
+   const int dofmap[] = {0};
+   ASSERT_EQ(HYPREDRV_LinearSystemSetDofmap(obj, 1, dofmap), ERROR_NONE);
    HYPRE_Complex nn_val = 1.0;
    ASSERT_EQ(HYPREDRV_LinearSystemSetNearNullSpace(obj, 1, 1, &nn_val), ERROR_NONE);
+   ASSERT_TRUE(state->iargs->precon.mgr.dofmap == state->dofmap);
+   ASSERT_TRUE(state->iargs->precon.mgr.vec_nn == state->vec_nn);
+   ASSERT_EQ(state->iargs->precon.mgr.rbm_input_generation, 2);
+
+   /* Replacing the vector advances identity even if malloc recycles its address. */
+   ASSERT_EQ(HYPREDRV_LinearSystemSetNearNullSpace(obj, 1, 1, &nn_val), ERROR_NONE);
+   ASSERT_EQ(state->iargs->precon.mgr.rbm_input_generation, 3);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b_nn), 0);
@@ -5377,6 +5401,7 @@ test_HYPREDRV_linear_system_setters_explicit_nonlib_take_ownership(void)
 
    HYPRE_IJMatrix mat_A  = create_test_ijmatrix_1x1(1.0);
    HYPRE_IJMatrix mat_M  = create_test_ijmatrix_1x1(2.0);
+   HYPRE_IJMatrix mat_S  = create_test_ijmatrix_1x1(6.0);
    HYPRE_IJVector vec_b  = create_test_ijvector_1x1(3.0);
    HYPRE_IJVector vec_x0 = create_test_ijvector_1x1(4.0);
    HYPRE_IJVector vec_ref = create_test_ijvector_1x1(5.0);
@@ -5388,15 +5413,19 @@ test_HYPREDRV_linear_system_setters_explicit_nonlib_take_ownership(void)
    ASSERT_EQ(HYPREDRV_LinearSystemSetReferenceSolution(obj, (HYPRE_Vector)vec_ref),
              ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetPrecMatrix(obj, (HYPRE_Matrix)mat_M), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetCoarseSchur(obj, 0, (HYPRE_Matrix)mat_S),
+             ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
    ASSERT_TRUE(state->vec_x0 == vec_x0);
    ASSERT_TRUE(state->vec_xref == vec_ref);
    ASSERT_TRUE(state->mat_M == mat_M);
+   ASSERT_TRUE(state->mat_coarse_schur[0] == mat_S);
    ASSERT_TRUE(state->owns_vec_x0);
    ASSERT_TRUE(state->owns_vec_xref);
    ASSERT_TRUE(state->owns_mat_M);
+   ASSERT_TRUE(state->owns_mat_coarse_schur[0]);
    ASSERT_NOT_NULL(state->vec_x);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -5414,6 +5443,7 @@ test_HYPREDRV_linear_system_setters_explicit_library_mode_borrow(void)
 
    HYPRE_IJMatrix mat_A  = create_test_ijmatrix_1x1(1.0);
    HYPRE_IJMatrix mat_M  = create_test_ijmatrix_1x1(2.0);
+   HYPRE_IJMatrix mat_S  = create_test_ijmatrix_1x1(6.0);
    HYPRE_IJVector vec_b  = create_test_ijvector_1x1(3.0);
    HYPRE_IJVector vec_x0 = create_test_ijvector_1x1(4.0);
    HYPRE_IJVector vec_ref = create_test_ijvector_1x1(5.0);
@@ -5425,21 +5455,36 @@ test_HYPREDRV_linear_system_setters_explicit_library_mode_borrow(void)
    ASSERT_EQ(HYPREDRV_LinearSystemSetReferenceSolution(obj, (HYPRE_Vector)vec_ref),
              ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetPrecMatrix(obj, (HYPRE_Matrix)mat_M), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetCoarseSchur(obj, 0, (HYPRE_Matrix)mat_S),
+             ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
    ASSERT_TRUE(state->vec_x0 == vec_x0);
    ASSERT_TRUE(state->vec_xref == vec_ref);
    ASSERT_TRUE(state->mat_M == mat_M);
+   ASSERT_TRUE(state->mat_coarse_schur[0] == mat_S);
    ASSERT_TRUE(!state->owns_vec_x0);
    ASSERT_TRUE(!state->owns_vec_xref);
    ASSERT_TRUE(!state->owns_mat_M);
+   ASSERT_TRUE(!state->owns_mat_coarse_schur[0]);
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetCoarseSchur(obj, 1, (HYPRE_Matrix)mat_S),
+             ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   ASSERT_EQ(HYPREDRV_LinearSystemSetCoarseSchur(obj, MAX_MGR_LEVELS - 1,
+                                                (HYPRE_Matrix)mat_S),
+             ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_ref), 0);
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_x0), 0);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_M), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_S), 0);
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
 

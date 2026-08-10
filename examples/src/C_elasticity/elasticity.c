@@ -133,13 +133,6 @@ static const char *default_config_mixed =
    "        f_dofs: [0, 1, 2, 3, 4, 5]\n"
    "        f_relaxation:\n"
    "          amg:\n"
-   /* Two V-cycles of a rigid-body-aware (GM2) displacement AMG. Nodal coarsening
-      (nodal_type 2) keeps the hierarchy cheap (operator complexity ~2.0) while the
-      three rotational rigid-body modes -- injected automatically by MGR, restricted
-      to this level's F-points -- make each cycle resolve the elasticity rotation
-      modes. The result is nearly mesh-independent outer iterations at below-baseline
-      cost: at 1M DOFs / nu_top = 0.4999 it cuts a single plain V-cycle's 81
-      iterations to 42, and its lower complexity makes each of them cheaper. */
    "            max_iter: 2\n"
    "            tolerance: 0.0\n"
    "            interpolation:\n"
@@ -203,7 +196,6 @@ typedef struct
    HYPRE_Int  discretization;  /* 0 = mixed u-p top, 1 = standard CG, 2 = B-bar (Q1-P0) */
    HYPRE_Real E_top;           /* Top-material Young's modulus (two-material) */
    HYPRE_Real nu_top;          /* Top-material Poisson ratio (two-material) */
-   HYPRE_Int  prec_mass_schur; /* mixed: provide scaled pressure-mass Schur prec matrix */
    HYPRE_Int coarse_schur; /* mixed: provide pressure-mass Schur as MGR coarse operator */
    HYPRE_Int hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
    char    **hypredrv_argv; /* Hypredrive override args, starting at -a */
@@ -244,7 +236,7 @@ int      BuildElasticitySystem_Q1Hex(DistMesh *, ElasticParams *, HYPRE_IJMatrix
                                      HYPRE_IJVector *, MPI_Comm);
 int      BuildMixedTwoMaterialSystem(DistMesh *, ElasticParams *, HYPRE_IJMatrix *,
                                      HYPRE_IJVector *, int **, HYPRE_Int *, HYPRE_Real **,
-                                     HYPRE_IJMatrix *, HYPRE_IJMatrix *, MPI_Comm);
+                                     HYPRE_IJMatrix *, MPI_Comm);
 int      WriteVTKsolutionVector(DistMesh *, ElasticParams *, HYPRE_Real *);
 int      WriteVTKMixedSolution(DistMesh *, ElasticParams *, HYPRE_Real *, MPI_Comm);
 int      ComputeRigidBodyModes(DistMesh *, ElasticParams *, HYPRE_Real **);
@@ -277,7 +269,7 @@ PrintUsage(void)
    printf("  --solver-preset <name>\n");
    printf("                    : Solver preset selector (elasticity_3D | ");
    printf("elasticity_sdc_3D | elasticity_nodal_3D)\n");
-   printf("                      (ignored when --problem two-material)\n");
+   printf("                      (ignored with -i or --problem two-material)\n");
    printf(
       "  --problem <name>  : Problem configuration: single | two-material (single)\n");
    printf("                      two-material splits the bar at y=Ly/2 into a bottom\n");
@@ -344,7 +336,6 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
    params->discretization    = 0;    /* mixed u-p top (default for two-material) */
    params->E_top             = -1.0; /* sentinel: inherit E after parsing */
    params->nu_top            = 0.4999;
-   params->prec_mass_schur   = 0;
    params->coarse_schur      = 0;
    params->hypredrv_argc     = 0;
    params->hypredrv_argv     = NULL;
@@ -426,10 +417,6 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       else if (!strcmp(argv[i], "--nu-top"))
       {
          if (++i < argc) params->nu_top = atof(argv[i]);
-      }
-      else if (!strcmp(argv[i], "--prec-mass-schur"))
-      {
-         params->prec_mass_schur = 1;
       }
       else if (!strcmp(argv[i], "--coarse-schur"))
       {
@@ -588,6 +575,12 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       if (params->nu_top <= -1.0 || params->nu_top >= 0.5)
       {
          if (!myid) printf("Error: top Poisson ratio must be in (-1, 0.5)\n");
+         return 1;
+      }
+      if (params->discretization == 0 && params->nu_top <= 0.0)
+      {
+         if (!myid)
+            printf("Error: the mixed discretization requires --nu-top in (0, 0.5)\n");
          return 1;
       }
       /* The mixed (flipped-Y) layout requires each half to reach every rank.
@@ -903,6 +896,35 @@ q1_shape_ref(const HYPRE_Real xi, const HYPRE_Real eta, const HYPRE_Real zeta,
    }
 }
 
+static void
+Q1StrainBlock(HYPRE_Real gx, HYPRE_Real gy, HYPRE_Real gz, HYPRE_Real B[6][3])
+{
+   const HYPRE_Real block[6][3] = {{gx, 0.0, 0.0}, {0.0, gy, 0.0},
+                                    {0.0, 0.0, gz}, {0.0, gz, gy},
+                                    {gz, 0.0, gx},  {gy, gx, 0.0}};
+   memcpy(B, block, sizeof(block));
+}
+
+static void
+Q1AccumulateBtDB(const HYPRE_Real B[8][6][3], const HYPRE_Real D[6][6],
+                 HYPRE_Real weight, HYPRE_Real K[24][24])
+{
+   HYPRE_Real DB[8][6][3] = {{{0}}};
+   for (int b = 0; b < 8; b++)
+      for (int alpha = 0; alpha < 6; alpha++)
+         for (int j = 0; j < 3; j++)
+            for (int beta = 0; beta < 6; beta++)
+               DB[b][alpha][j] += D[alpha][beta] * B[b][beta][j];
+
+   for (int a = 0; a < 8; a++)
+      for (int b = 0; b < 8; b++)
+         for (int i = 0; i < 3; i++)
+            for (int j = 0; j < 3; j++)
+               for (int alpha = 0; alpha < 6; alpha++)
+                  K[3 * a + i][3 * b + j] +=
+                     weight * B[a][alpha][i] * DB[b][alpha][j];
+}
+
 /*--------------------------------------------------------------------------
  * Precompute Q1 hex templates (Ke, volume N integral, top-face N integral)
  *--------------------------------------------------------------------------*/
@@ -952,43 +974,10 @@ PrecomputeQ1HexTemplates(const HYPRE_Real hx, const HYPRE_Real hy, const HYPRE_R
                Nvol_t[a] += N[a] * w;
             }
 
+            HYPRE_Real B[8][6][3];
             for (int a = 0; a < 8; a++)
-            {
-               HYPRE_Real Ba[6][3] = {{dNx[a], 0.0, 0.0},    {0.0, dNy[a], 0.0},
-                                      {0.0, 0.0, dNz[a]},    {0.0, dNz[a], dNy[a]},
-                                      {dNz[a], 0.0, dNx[a]}, {dNy[a], dNx[a], 0.0}};
-               for (int b = 0; b < 8; b++)
-               {
-                  HYPRE_Real Bb[6][3]  = {{dNx[b], 0.0, 0.0},    {0.0, dNy[b], 0.0},
-                                          {0.0, 0.0, dNz[b]},    {0.0, dNz[b], dNy[b]},
-                                          {dNz[b], 0.0, dNx[b]}, {dNy[b], dNx[b], 0.0}};
-                  HYPRE_Real Kab[3][3] = {{0}};
-                  for (int i = 0; i < 3; i++)
-                  {
-                     for (int j = 0; j < 3; j++)
-                     {
-                        HYPRE_Real sum = 0.0;
-                        for (int alpha = 0; alpha < 6; alpha++)
-                        {
-                           for (int beta = 0; beta < 6; beta++)
-                           {
-                              sum += Ba[alpha][i] * D[alpha][beta] * Bb[beta][j];
-                           }
-                        }
-                        Kab[i][j] = sum * w;
-                     }
-                  }
-
-                  int ia = 3 * a, ib = 3 * b;
-                  for (int i = 0; i < 3; i++)
-                  {
-                     for (int j = 0; j < 3; j++)
-                     {
-                        Ke_t[ia + i][ib + j] += Kab[i][j];
-                     }
-                  }
-               }
-            }
+               Q1StrainBlock(dNx[a], dNy[a], dNz[a], B[a]);
+            Q1AccumulateBtDB(B, D, w, Ke_t);
          }
       }
    }
@@ -1084,45 +1073,15 @@ PrecomputeQ1HexBbar(const HYPRE_Real hx, const HYPRE_Real hy, const HYPRE_Real h
                HYPRE_Real gx = dxi[a] * Jinv[0];
                HYPRE_Real gy = deta[a] * Jinv[1];
                HYPRE_Real gz = dzeta[a] * Jinv[2];
-               HYPRE_Real c0 = (gbar[a][0] - gx) / 3.0;
-               HYPRE_Real c1 = (gbar[a][1] - gy) / 3.0;
-               HYPRE_Real c2 = (gbar[a][2] - gz) / 3.0;
-               /* normal rows xx,yy,zz: pointwise normal grad + averaged trace fix */
-               Bbar[a][0][0] = gx + c0;
-               Bbar[a][0][1] = c1;
-               Bbar[a][0][2] = c2;
-               Bbar[a][1][0] = c0;
-               Bbar[a][1][1] = gy + c1;
-               Bbar[a][1][2] = c2;
-               Bbar[a][2][0] = c0;
-               Bbar[a][2][1] = c1;
-               Bbar[a][2][2] = gz + c2;
-               /* shear rows yz,xz,xy: unchanged (match PrecomputeQ1HexTemplates) */
-               Bbar[a][3][0] = 0.0;
-               Bbar[a][3][1] = gz;
-               Bbar[a][3][2] = gy;
-               Bbar[a][4][0] = gz;
-               Bbar[a][4][1] = 0.0;
-               Bbar[a][4][2] = gx;
-               Bbar[a][5][0] = gy;
-               Bbar[a][5][1] = gx;
-               Bbar[a][5][2] = 0.0;
+               HYPRE_Real correction[3] = {(gbar[a][0] - gx) / 3.0,
+                                            (gbar[a][1] - gy) / 3.0,
+                                            (gbar[a][2] - gz) / 3.0};
+               Q1StrainBlock(gx, gy, gz, Bbar[a]);
+               for (int row = 0; row < 3; row++)
+                  for (int component = 0; component < 3; component++)
+                     Bbar[a][row][component] += correction[component];
             }
-
-            for (int a = 0; a < 8; a++)
-               for (int b = 0; b < 8; b++)
-               {
-                  int ia = 3 * a, ib = 3 * b;
-                  for (int i = 0; i < 3; i++)
-                     for (int j = 0; j < 3; j++)
-                     {
-                        HYPRE_Real sum = 0.0;
-                        for (int al = 0; al < 6; al++)
-                           for (int be = 0; be < 6; be++)
-                              sum += Bbar[a][al][i] * D[al][be] * Bbar[b][be][j];
-                        Ke_t[ia + i][ib + j] += sum * w;
-                     }
-               }
+            Q1AccumulateBtDB(Bbar, D, w, Ke_t);
          }
 }
 
@@ -1420,29 +1379,10 @@ PrecomputeMixedTopTemplates(const HYPRE_Real hx, const HYPRE_Real hy, const HYPR
             }
 
             /* A = int B^T D_A B */
+            HYPRE_Real Bblocks[8][6][3];
             for (int a = 0; a < 8; a++)
-            {
-               HYPRE_Real Ba[6][3] = {{dNx[a], 0.0, 0.0},    {0.0, dNy[a], 0.0},
-                                      {0.0, 0.0, dNz[a]},    {0.0, dNz[a], dNy[a]},
-                                      {dNz[a], 0.0, dNx[a]}, {dNy[a], dNx[a], 0.0}};
-               for (int b = 0; b < 8; b++)
-               {
-                  HYPRE_Real Bb[6][3] = {{dNx[b], 0.0, 0.0},    {0.0, dNy[b], 0.0},
-                                         {0.0, 0.0, dNz[b]},    {0.0, dNz[b], dNy[b]},
-                                         {dNz[b], 0.0, dNx[b]}, {dNy[b], dNx[b], 0.0}};
-                  for (int i = 0; i < 3; i++)
-                  {
-                     for (int j = 0; j < 3; j++)
-                     {
-                        HYPRE_Real sum = 0.0;
-                        for (int al = 0; al < 6; al++)
-                           for (int be = 0; be < 6; be++)
-                              sum += Ba[al][i] * D_A[al][be] * Bb[be][j];
-                        A_t[3 * a + i][3 * b + j] += sum * w;
-                     }
-                  }
-               }
-            }
+               Q1StrainBlock(dNx[a], dNy[a], dNz[a], Bblocks[a]);
+            Q1AccumulateBtDB(Bblocks, D_A, w, A_t);
 
             /* B[b][3a+i] = int N_b dN_a/dx_i ;  M[b][a] = int N_b N_a */
             for (int b = 0; b < 8; b++)
@@ -1461,7 +1401,7 @@ PrecomputeMixedTopTemplates(const HYPRE_Real hx, const HYPRE_Real hy, const HYPR
 
    /* C = (1/lambda) M + S, with PSPP stabilization
       S[a][b] = (1/(2G)) ( M[a][b] - m_a m_b / vol ). */
-   const HYPRE_Real inv_lam = (lam > 0.0) ? 1.0 / lam : 0.0;
+   const HYPRE_Real inv_lam = 1.0 / lam;
    for (int a = 0; a < 8; a++)
       for (int b = 0; b < 8; b++)
          C_t[a][b] =
@@ -1479,6 +1419,18 @@ PrecomputeMixedTopTemplates(const HYPRE_Real hx, const HYPRE_Real hy, const HYPR
       for (int a = 0; a < 8; a++)
          for (int b = 0; b < 8; b++) Mhat_t[a][b] = (1.0 / (2.0 * G) + inv_lam) * M[a][b];
    }
+}
+
+static HYPRE_Real
+MixedElementValue(int row, int col, int is_top, const HYPRE_Real Ke_bot[24][24],
+                  const HYPRE_Real A_t[24][24], const HYPRE_Real B_t[8][24],
+                  const HYPRE_Real C_t[8][8])
+{
+   if (!is_top) return Ke_bot[row][col];
+   if (row < 24 && col < 24) return A_t[row][col];
+   if (row < 24) return B_t[col - 24][row];
+   if (col < 24) return B_t[row - 24][col];
+   return -C_t[row - 24][col - 24];
 }
 
 /*--------------------------------------------------------------------------
@@ -1846,8 +1798,7 @@ int
 BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatrix *A_ptr,
                             HYPRE_IJVector *b_ptr, int **dofmap_ptr,
                             HYPRE_Int *local_rows_ptr, HYPRE_Real **rbm_ptr,
-                            HYPRE_IJMatrix *M_ptr, HYPRE_IJMatrix *Schur_ptr,
-                            MPI_Comm solver_comm)
+                            HYPRE_IJMatrix *Schur_ptr, MPI_Comm solver_comm)
 {
    MixedLayout *L = NULL;
    if (MixedLayoutCreate(mesh, &L))
@@ -1873,19 +1824,6 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
    HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    HYPREDRV_IJ_VECTOR_INIT_HOST(b);
-
-   /* Optional preconditioning matrix M: identical to A except the pressure (2,2)
-      block uses the SPD scaled mass Schur -Mhat instead of the PSPP block -C.
-      Used (with coarse_level_type: acc) to drive MGR's coarse solve with the
-      mass-matrix Schur preconditioner Mhat = (1/(2mu)+1/lambda) M_p. */
-   const int      build_prec = (M_ptr != NULL);
-   HYPRE_IJMatrix M          = NULL;
-   if (build_prec)
-   {
-      HYPRE_IJMatrixCreate(solver_comm, ilower, iupper, ilower, iupper, &M);
-      HYPRE_IJMatrixSetObjectType(M, HYPRE_PARCSR);
-      HYPREDRV_IJ_MATRIX_INIT_HOST(M);
-   }
 
    /* Optional coarse Schur operator Mhat = (1/(2mu)+1/lambda) M_p, assembled over
       the COMPRESSED coarse (pressure C-point) numbering MGR expects for
@@ -1921,7 +1859,7 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
 
    HYPRE_Real A_t[24][24], B_t[8][24], C_t[8][8], Mhat_t[8][8];
    PrecomputeMixedTopTemplates(hx, hy, hz, params->E_top, params->nu_top, A_t, B_t, C_t,
-                               Mhat_t);
+                               build_schur ? Mhat_t : NULL);
 
    const HYPRE_Real bforce[3] = {params->rho * params->g[0], params->rho * params->g[1],
                                  params->rho * params->g[2]};
@@ -1961,14 +1899,7 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
             HYPRE_Int    ndof = is_top ? 32 : 24;
             HYPRE_BigInt gid[32];
             int          is_dir[32];
-            HYPRE_Real   fe[32];
-            HYPRE_Real   Ke[32][32];
-
-            for (int i = 0; i < ndof; i++)
-            {
-               fe[i] = 0.0;
-               for (int j = 0; j < ndof; j++) Ke[i][j] = 0.0;
-            }
+            HYPRE_Real   fe[24];
 
             /* Displacement dofs (present in both materials) + body force */
             for (int a = 0; a < 8; a++)
@@ -1990,89 +1921,95 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                      fe[3 * a + i] += params->traction[i] * NfaceTop_t[a];
             }
 
-            if (!is_top)
-            {
-               for (int i = 0; i < 24; i++)
-                  for (int j = 0; j < 24; j++) Ke[i][j] = Ke_bot[i][j];
-            }
-            else
+            if (is_top)
             {
                for (int bb = 0; bb < 8; bb++)
                {
                   gid[24 + bb]    = ml_pdof(L, ng[bb][0], ng[bb][1], ng[bb][2]);
                   is_dir[24 + bb] = 0;
-                  fe[24 + bb]     = 0.0;
-               }
-               /* [ A    B^T ]
-                  [ B   -C   ]  (symmetric saddle point) */
-               for (int i = 0; i < 24; i++)
-                  for (int j = 0; j < 24; j++) Ke[i][j] = A_t[i][j];
-               for (int bb = 0; bb < 8; bb++)
-               {
-                  for (int a = 0; a < 8; a++)
-                     for (int i = 0; i < 3; i++)
-                     {
-                        Ke[3 * a + i][24 + bb] = B_t[bb][3 * a + i]; /* u-row, p-col */
-                        Ke[24 + bb][3 * a + i] = B_t[bb][3 * a + i]; /* p-row, u-col */
-                     }
-                  for (int cc = 0; cc < 8; cc++) Ke[24 + bb][24 + cc] = -C_t[bb][cc];
                }
             }
 
             /* Coarse Schur Mhat: accumulate the element pressure-mass block into
                the compressed coarse numbering, owned pressure rows only -- exactly
-               mirroring how A's -C pressure block is assembled above. */
+               mirroring A's -C pressure block, in one bounded element batch. */
             if (build_schur && is_top)
             {
+               HYPRE_Int    schur_nrows = 0;
+               HYPRE_Int    schur_ncols[8];
+               HYPRE_BigInt schur_rows[8], schur_cols[64];
+               HYPRE_Real   schur_vals[64];
                for (int bb = 0; bb < 8; bb++)
                {
                   HYPRE_BigInt prow = gid[24 + bb];
                   if (prow < ilower || prow > iupper) continue; /* owned pressure row */
 
-                  HYPRE_BigInt crow = ml_pdof_to_coarse(L, coarse_start, prow);
-                  HYPRE_BigInt ccols[8];
-                  HYPRE_Real   cvals[8];
-                  HYPRE_Int    cn = 8;
+                  schur_ncols[schur_nrows] = 8;
+                  schur_rows[schur_nrows] = ml_pdof_to_coarse(L, coarse_start, prow);
                   for (int cc = 0; cc < 8; cc++)
                   {
-                     ccols[cc] = ml_pdof_to_coarse(L, coarse_start, gid[24 + cc]);
+                     HYPRE_Int offset = 8 * schur_nrows + cc;
+                     schur_cols[offset] =
+                        ml_pdof_to_coarse(L, coarse_start, gid[24 + cc]);
                      /* -Mhat: MGR's coarse operator is the (negative) Schur, to
                         match the -C sign of the assembled (2,2) block. */
-                     cvals[cc] = -Mhat_t[bb][cc];
+                     schur_vals[offset] = -Mhat_t[bb][cc];
                   }
-                  HYPRE_IJMatrixAddToValues(Schur, 1, &cn, &crow, ccols, cvals);
+                  schur_nrows++;
+               }
+               HYPRE_Int max_batch = (params->max_rows_per_call > 0)
+                                        ? params->max_rows_per_call
+                                        : schur_nrows;
+               for (HYPRE_Int start = 0; start < schur_nrows; start += max_batch)
+               {
+                  HYPRE_Int count = (start + max_batch <= schur_nrows)
+                                       ? max_batch
+                                       : schur_nrows - start;
+                  HYPRE_IJMatrixAddToValues(
+                     Schur, count, &schur_ncols[start], &schur_rows[start],
+                     &schur_cols[8 * start], &schur_vals[8 * start]);
                }
             }
 
             /* Insert owned, non-Dirichlet rows; skip Dirichlet columns (the
-               clamp value is zero, so no RHS correction is needed). */
+               clamp value is zero, so no RHS correction is needed). Materialize
+               only the owned rows and submit them as one bounded element batch. */
+            HYPRE_Int    elem_nrows = 0, elem_ncols[32], elem_offsets[33] = {0};
+            HYPRE_BigInt elem_rows[32], elem_cols[32 * 32];
+            HYPRE_Real   elem_vals[32 * 32], elem_rhs[32];
             for (int i = 0; i < ndof; i++)
             {
                if (is_dir[i]) continue;
                HYPRE_BigInt row = gid[i];
                if (row < ilower || row > iupper) continue;
 
-               HYPRE_Int    ncols = 0;
-               HYPRE_BigInt cols[32];
-               HYPRE_Real   vals[32];
-               HYPRE_Real   vals_M[32];
+               elem_rows[elem_nrows]  = row;
+               elem_rhs[elem_nrows]   = (i < 24) ? fe[i] : 0.0;
+               elem_ncols[elem_nrows] = 0;
                for (int j = 0; j < ndof; j++)
                {
                   if (is_dir[j]) continue;
-                  cols[ncols] = gid[j];
-                  vals[ncols] = Ke[i][j];
-                  /* Prec matrix M differs from A only in the pressure (2,2)
-                     block: -Mhat (SPD scaled mass) instead of -C (PSPP). */
-                  vals_M[ncols] =
-                     (is_top && i >= 24 && j >= 24) ? -Mhat_t[i - 24][j - 24] : Ke[i][j];
-                  ncols++;
+                  HYPRE_Int offset = elem_offsets[elem_nrows] + elem_ncols[elem_nrows];
+                  elem_cols[offset] = gid[j];
+                  elem_vals[offset] =
+                     MixedElementValue(i, j, is_top, Ke_bot, A_t, B_t, C_t);
+                  elem_ncols[elem_nrows]++;
                }
-               HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
-               HYPRE_IJVectorAddToValues(b, 1, &row, &fe[i]);
-               if (build_prec)
-               {
-                  HYPRE_IJMatrixAddToValues(M, 1, &ncols, &row, cols, vals_M);
-               }
+               elem_nrows++;
+               elem_offsets[elem_nrows] =
+                  elem_offsets[elem_nrows - 1] + elem_ncols[elem_nrows - 1];
+            }
+            HYPRE_Int max_batch =
+               (params->max_rows_per_call > 0) ? params->max_rows_per_call : elem_nrows;
+            for (HYPRE_Int start = 0; start < elem_nrows; start += max_batch)
+            {
+               HYPRE_Int count = (start + max_batch <= elem_nrows)
+                                    ? max_batch
+                                    : elem_nrows - start;
+               HYPRE_IJMatrixAddToValues(A, count, &elem_ncols[start],
+                                         &elem_rows[start], &elem_cols[elem_offsets[start]],
+                                         &elem_vals[elem_offsets[start]]);
+               HYPRE_IJVectorAddToValues(b, count, &elem_rows[start], &elem_rhs[start]);
             }
          }
       }
@@ -2094,10 +2031,6 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
                HYPRE_Real zero = 0.0;
                HYPRE_IJMatrixSetValues(A, 1, &one, &row, &row, &diag);
                HYPRE_IJVectorSetValues(b, 1, &row, &zero);
-               if (build_prec)
-               {
-                  HYPRE_IJMatrixSetValues(M, 1, &one, &row, &row, &diag);
-               }
             }
          }
       }
@@ -2105,11 +2038,6 @@ BuildMixedTwoMaterialSystem(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
 
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJVectorAssemble(b);
-   if (build_prec)
-   {
-      HYPRE_IJMatrixAssemble(M);
-      *M_ptr = M;
-   }
    if (build_schur)
    {
       HYPRE_IJMatrixAssemble(Schur);
@@ -2849,7 +2777,6 @@ main(int argc, char *argv[])
    DistMesh      *mesh;
    HYPRE_IJMatrix A;
    HYPRE_IJVector b;
-   HYPRE_IJMatrix M_prec   = NULL;
    HYPRE_IJMatrix S_coarse = NULL;
    HYPRE_Real    *sol_data;
    HYPRE_Real    *rbms       = NULL;
@@ -2909,7 +2836,7 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
 #endif
    }
-   else if (params.problem && params.yaml_file)
+   else if (params.yaml_file)
    {
       HYPRE_Int n_print       = (params.verbose >= 1) ? 2 : 0;
       HYPRE_Int hypredrv_argc = 1 + params.hypredrv_argc + n_print;
@@ -2929,19 +2856,9 @@ main(int argc, char *argv[])
    }
    else
    {
-      if (params.yaml_file)
-      {
-         /* A user config fully specifies solver+preconditioner; do not also apply
-            the built-in precon preset (it would override e.g. nodal coarsening). */
-         char *args[2] = {params.yaml_file, NULL};
-         HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsParse(1, args, hypredrv));
-      }
-      else
-      {
-         HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
-         HYPREDRV_SAFE_CALL(
-            HYPREDRV_InputArgsSetPreconPreset(hypredrv, params.solver_preset));
-      }
+      HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetSolverPreset(hypredrv, "pcg"));
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_InputArgsSetPreconPreset(hypredrv, params.solver_preset));
    }
 
    /* Set HYPREDRV global options */
@@ -3005,7 +2922,6 @@ main(int argc, char *argv[])
    if (use_mixed)
    {
       BuildMixedTwoMaterialSystem(mesh, &params, &A, &b, &dofmap, &local_rows, &rbms,
-                                  params.prec_mass_schur ? &M_prec : NULL,
                                   params.coarse_schur ? &S_coarse : NULL, comm);
    }
    else
@@ -3033,15 +2949,12 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(
          HYPREDRV_LinearSystemSetDofmap(hypredrv, (int)local_rows, dofmap));
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetInitialGuess(hypredrv, NULL));
-      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(
-         hypredrv, params.prec_mass_schur ? (HYPRE_Matrix)M_prec : NULL));
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, NULL));
       if (params.coarse_schur)
       {
-         /* Provide the level-0 coarse (Schur) operator. Ownership transfers to
-            hypredrive, so S_coarse must NOT be destroyed by the application. */
+         /* Library mode borrows the level-0 coarse (Schur) operator. */
          HYPREDRV_SAFE_CALL(
             HYPREDRV_LinearSystemSetCoarseSchur(hypredrv, 0, (HYPRE_Matrix)S_coarse));
-         S_coarse = NULL;
       }
       HYPREDRV_SAFE_CALL(
          HYPREDRV_LinearSystemSetNearNullSpace(hypredrv, (int)local_rows, 6, rbms));
@@ -3096,7 +3009,6 @@ main(int argc, char *argv[])
    /* Free memory */
    HYPRE_IJMatrixDestroy(A);
    HYPRE_IJVectorDestroy(b);
-   if (M_prec) HYPRE_IJMatrixDestroy(M_prec);
    if (S_coarse) HYPRE_IJMatrixDestroy(S_coarse);
    DestroyDistMesh(&mesh);
    free(rbms);

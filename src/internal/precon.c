@@ -486,11 +486,9 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         /* Skip deriving full-system RBMs when projected ones were already set for
-          * an MGR F-block AMG (rbms_projected == 1). Those modes match the
-          * extracted A_FF partitioning; full-system RBMs would be sized to the
-          * whole system and overrun A_FF during GM interpolation setup. */
-         if (!args->amg.rbms_projected)
+         /* GM1 marks modes projected to an MGR subblock. Full-system vectors would
+          * not match that block's partitioning during interpolation setup. */
+         if (args->amg.interp_vec_variant != 1)
          {
             hypredrv_AMGSetRBMs(&args->amg, vec_nn);
          }

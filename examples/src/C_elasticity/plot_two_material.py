@@ -33,9 +33,13 @@ NU_LABEL = {n: r"$\nu_{\mathrm{top}}=%s$" % n for n in NU_ORDER}
 
 # Read CSV: disc,nu,nx,ny,nz,dofs,iters,relres
 rows = []
+required = ("disc", "nu", "dofs", "iters", "relres")
 with open(CSV) as f:
     for r in csv.DictReader(f):
-        rows.append(r)
+        if all(r.get(key) for key in required):
+            rows.append(r)
+if not rows:
+    sys.exit(f"no complete rows in {CSV}")
 
 # Mesh resolutions in run order (unique dofs, ascending).
 dof_list = sorted({int(r["dofs"]) for r in rows})
