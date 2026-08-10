@@ -486,13 +486,19 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         /* GM1 marks modes projected to an MGR subblock. Full-system vectors would
+          * not match that block's partitioning during interpolation setup. */
+         if (args->amg.interp_vec_variant != 1)
+         {
+            hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         }
          hypredrv_AMGCreate(&args->amg, &precon->main);
          break;
 
       case PRECON_MGR:
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
+         hypredrv_MGRSetCoarseSchur(&args->mgr, ops ? ops->coarse_schur : NULL);
          hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
          break;
 

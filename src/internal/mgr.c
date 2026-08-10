@@ -713,7 +713,11 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 
    if (!*ptr)
    {
-      *ptr = (NestedKrylov_args *)malloc(sizeof(NestedKrylov_args));
+      /* calloc (not malloc): zero-initialize the embedded solver/precon parameter
+         unions. They are otherwise read as garbage when MGR treats this object as
+         its F-relaxation solver (it mirrors the hypre_Solver layout), e.g. in
+         hypre_MGRSetupStats. */
+      *ptr = (NestedKrylov_args *)calloc(1, sizeof(NestedKrylov_args));
       if (*ptr)
       {
          hypredrv_NestedKrylovSetDefaultArgs(*ptr);
@@ -1329,8 +1333,10 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
    args->keep_csolver      = 0;
    args->num_active_levels = 0;
    memset(args->active_level_map, 0, sizeof(args->active_level_map));
-   args->vec_nn            = NULL;
-   args->point_marker_data = NULL;
+   args->vec_nn               = NULL;
+   args->rbm_input_generation = 0;
+   args->coarse_schur         = NULL;
+   args->point_marker_data    = NULL;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1687,7 +1693,7 @@ hypredrv_MGRlvlGetValidValues(const char *key)
       static StrIntMap map[] = {
          {"rap", 0},           {"galerkin", 0},       {"non-galerkin", 1},
          {"cpr-like-diag", 2}, {"cpr-like-bdiag", 3}, {"approx-inv", 4},
-         {"acc", 5},
+         {"acc", 5},           {"user", 6},
       };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
@@ -1884,12 +1890,20 @@ void
 hypredrv_MGRSetDofmap(MGR_args *args, IntArray *dofmap)
 {
    args->dofmap = dofmap;
+   args->rbm_input_generation++;
 }
 
 void
 hypredrv_MGRSetNearNullSpace(MGR_args *args, HYPRE_IJVector vec_nn)
 {
    args->vec_nn = vec_nn;
+   args->rbm_input_generation++;
+}
+
+void
+hypredrv_MGRSetCoarseSchur(MGR_args *args, const HYPRE_IJMatrix *coarse_schur)
+{
+   args->coarse_schur = coarse_schur;
 }
 
 /* GCOVR_EXCL_BR_START */
@@ -2492,14 +2506,119 @@ MGRDestroyDetachedGSolver(const MGRgrlx_args *g_relaxation, HYPRE_Solver *solver
 }
 
 static int
-MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args)
+MGRProjectNestedRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
+                     const int *selected_dofs, size_t num_selected_dofs)
+{
+   if (!krylov->has_precon || krylov->precon_method != PRECON_BOOMERAMG)
+   {
+      return 1;
+   }
+
+   hypredrv_AMGSetProjectedRBMs(&krylov->precon.amg, mgr_args->vec_nn, mgr_args->dofmap,
+                                mgr_args->rbm_input_generation, selected_dofs,
+                                num_selected_dofs);
+   return !hypredrv_ErrorCodeActive();
+}
+
+static int
+MGRProjectNestedRemainingRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
+                              int num_eliminated_levels)
+{
+   if (!krylov->has_precon || krylov->precon_method != PRECON_BOOMERAMG ||
+       num_eliminated_levels <= 0)
+   {
+      return 1;
+   }
+
+   const IntArray *dofmap      = mgr_args->dofmap;
+   const int      *source      = dofmap->unique_data ? dofmap->unique_data : dofmap->data;
+   size_t          source_size = dofmap->unique_data ? dofmap->unique_size : dofmap->size;
+   int *remaining = source_size ? (int *)malloc(source_size * sizeof(*remaining)) : NULL;
+   size_t num_remaining = 0;
+   if (source_size && !remaining)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+   }
+   else
+   {
+      for (size_t i = 0; i < source_size; i++)
+      {
+         int eliminated = 0;
+         for (int active_lvl = 0; active_lvl < num_eliminated_levels && !eliminated;
+              active_lvl++)
+         {
+            const StackIntArray *f_dofs =
+               &mgr_args->level[mgr_args->active_level_map[active_lvl]].f_dofs;
+            for (size_t j = 0; j < f_dofs->size; j++)
+            {
+               eliminated = (source[i] == f_dofs->data[j]);
+               if (eliminated)
+               {
+                  break;
+               }
+            }
+         }
+         if (!eliminated)
+         {
+            remaining[num_remaining++] = source[i];
+         }
+      }
+   }
+
+   int ok = MGRProjectNestedRBMs(krylov, mgr_args, remaining, num_remaining);
+   free(remaining);
+   return ok;
+}
+
+static int
+MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args,
+                             const StackIntArray *f_dofs, int num_eliminated_levels)
 {
    if (!krylov || !mgr_args)
    {
       return 0;
    }
 
+   AMG_args *amg = (krylov->has_precon && krylov->precon_method == PRECON_BOOMERAMG)
+                      ? &krylov->precon.amg
+                      : NULL;
+   int       keep_projected_rbms = amg && amg->interp_vec_variant == 1 &&
+                             amg->rbm_source_generation == mgr_args->rbm_input_generation;
+   HYPRE_Int       cached_num_rbms    = 0;
+   HYPRE_ParVector cached_rbms[3]     = {NULL, NULL, NULL};
+   size_t          cached_labels_size = 0;
+   uint64_t        cached_labels_hash = 0;
+   if (keep_projected_rbms)
+   {
+      cached_num_rbms    = amg->num_rbms;
+      cached_labels_size = amg->rbm_source_labels_size;
+      cached_labels_hash = amg->rbm_source_labels_hash;
+      for (int i = 0; i < 3; i++)
+      {
+         cached_rbms[i] = amg->rbms[i];
+         amg->rbms[i]   = NULL;
+      }
+      amg->num_rbms = 0;
+   }
    hypredrv_NestedKrylovDestroy(krylov);
+   if (keep_projected_rbms)
+   {
+      amg->num_rbms               = cached_num_rbms;
+      amg->interp_vec_variant     = 1;
+      amg->rbm_source_generation  = mgr_args->rbm_input_generation;
+      amg->rbm_source_labels_size = cached_labels_size;
+      amg->rbm_source_labels_hash = cached_labels_hash;
+      for (int i = 0; i < 3; i++)
+      {
+         amg->rbms[i] = cached_rbms[i];
+      }
+   }
+   if ((f_dofs && !MGRProjectNestedRBMs(krylov, mgr_args, f_dofs->data, f_dofs->size)) ||
+       (!f_dofs &&
+        !MGRProjectNestedRemainingRBMs(krylov, mgr_args, num_eliminated_levels)))
+   {
+      return 0;
+   }
    hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, krylov, mgr_args->dofmap, mgr_args->vec_nn,
                                &krylov->base_solver);
    return !hypredrv_ErrorCodeActive();
@@ -2527,7 +2646,8 @@ MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
    if (f_relaxation->type == 2)
    {
       hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn, args->dofmap,
-                                   f_dofs);
+                                   args->rbm_input_generation, f_dofs->data,
+                                   f_dofs->size);
       if (hypredrv_ErrorCodeActive())
       {
          return NULL;
@@ -2789,7 +2909,8 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
 
    if (level_args->f_relaxation.use_krylov && level_args->f_relaxation.krylov)
    {
-      if (!MGRRebuildNestedKrylovSolver(level_args->f_relaxation.krylov, args))
+      if (!MGRRebuildNestedKrylovSolver(level_args->f_relaxation.krylov, args,
+                                        &level_args->f_dofs, -1))
       {
          return;
       }
@@ -2826,7 +2947,8 @@ MGRRefreshGRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
 
    if (level_args->g_relaxation.use_krylov && level_args->g_relaxation.krylov)
    {
-      if (!MGRRebuildNestedKrylovSolver(level_args->g_relaxation.krylov, args))
+      if (!MGRRebuildNestedKrylovSolver(level_args->g_relaxation.krylov, args, NULL,
+                                        active_lvl))
       {
          return;
       }
@@ -2860,7 +2982,8 @@ MGRRefreshCoarseSolver(MGR_args *args, HYPRE_Solver mgr_solver)
 {
    if (args->coarsest_level.use_krylov && args->coarsest_level.krylov)
    {
-      if (!MGRRebuildNestedKrylovSolver(args->coarsest_level.krylov, args))
+      if (!MGRRebuildNestedKrylovSolver(args->coarsest_level.krylov, args, NULL,
+                                        args->num_active_levels))
       {
          return;
       }
@@ -3889,6 +4012,46 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
 #endif
 }
 
+/* Install and validate exactly the matrices selected by coarse_level_type: user. */
+static int
+MGRInstallUserCoarseMatrices(HYPRE_Solver precon, MGR_args *args,
+                             const MGRCreatePlan *plan)
+{
+#if !HYPRE_CHECK_MIN_VERSION(30100, 77)
+   (void)precon;
+#endif
+   for (HYPRE_Int i = 0; i < plan->num_levels - 1; i++)
+   {
+      HYPRE_Int orig_lvl = plan->active_level_map[i];
+      if (args->level[orig_lvl].coarse_level_type != 6)
+      {
+         continue;
+      }
+#if !HYPRE_CHECK_MIN_VERSION(30100, 77)
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR coarse_level_type 'user' requires hypre >= 3.1.0 "
+                           "(develop 77), which provides "
+                           "HYPRE_MGRSetCoarseGridMatrixAtLevel");
+      return 0;
+#else
+      HYPRE_ParCSRMatrix coarse_par = NULL;
+      if (!args->coarse_schur || !args->coarse_schur[orig_lvl] ||
+          HYPRE_IJMatrixGetObject(args->coarse_schur[orig_lvl], (void **)&coarse_par) ||
+          !coarse_par)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR coarse_level_type 'user' requires an assembled application-provided "
+            "coarse matrix for level %d",
+            (int)orig_lvl);
+         return 0;
+      }
+      HYPRE_MGRSetCoarseGridMatrixAtLevel(precon, i, coarse_par);
+#endif
+   }
+   return 1;
+}
+
 /*-----------------------------------------------------------------------------
  * Configure the hypredrive-managed F-relaxation handle on one level, reusing
  * a cached solver when available.
@@ -3940,6 +4103,16 @@ MGRConfigFRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
          int krylov_was_cached = (level_args->f_relaxation.krylov->base_solver != NULL);
          if (!krylov_was_cached)
          {
+            /* Nested-Krylov F-relaxation whose preconditioner is a nodal AMG:
+             * project the rigid-body modes onto this level's F-points before the
+             * AMG is built, so its GM interpolation resolves the elasticity
+             * rotation modes. Without this, PreconCreate would attach full-system
+             * modes that overrun the extracted A_FF during interpolation setup. */
+            if (!MGRProjectNestedRBMs(level_args->f_relaxation.krylov, args,
+                                      level_args->f_dofs.data, level_args->f_dofs.size))
+            {
+               return 0;
+            }
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->f_relaxation.krylov,
                                         args->dofmap, args->vec_nn,
                                         &level_args->f_relaxation.krylov->base_solver);
@@ -4162,6 +4335,10 @@ MGRConfigGRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
          int krylov_was_cached = (level_args->g_relaxation.krylov->base_solver != NULL);
          if (!krylov_was_cached)
          {
+            if (!MGRProjectNestedRemainingRBMs(level_args->g_relaxation.krylov, args, i))
+            {
+               return 0;
+            }
             hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->g_relaxation.krylov,
                                         args->dofmap, args->vec_nn,
                                         &level_args->g_relaxation.krylov->base_solver);
@@ -4255,6 +4432,11 @@ MGRConfigCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
       int krylov_was_cached = (args->coarsest_level.krylov->base_solver != NULL);
       if (!krylov_was_cached)
       {
+         if (!MGRProjectNestedRemainingRBMs(args->coarsest_level.krylov, args,
+                                            args->num_active_levels))
+         {
+            return 0;
+         }
          hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov,
                                      args->dofmap, args->vec_nn,
                                      &args->coarsest_level.krylov->base_solver);
@@ -4405,7 +4587,8 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    /* GCOVR_EXCL_BR_START */
    MGRApplyLevelSettings(precon, args, &plan, stats, next_ls_id);
 
-   if (!MGRConfigFRelaxSolvers(args, precon, &plan, stats, next_ls_id) ||
+   if (!MGRInstallUserCoarseMatrices(precon, args, &plan) ||
+       !MGRConfigFRelaxSolvers(args, precon, &plan, stats, next_ls_id) ||
        !MGRConfigGRelaxSolvers(args, precon, &plan, stats, next_ls_id) ||
        !MGRConfigCoarsestSolver(args, precon, stats, next_ls_id))
    {

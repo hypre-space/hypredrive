@@ -43,6 +43,13 @@ data/*
 !data/README.md
 data/spe10_case2a/
 examples/src/C_darcy/reproduce-out/
+# reproduce.sh outputs for the elasticity example (the figures kept under
+# version control are the copies in docs/usrman-src/figures/)
+examples/src/C_elasticity/*.out
+examples/src/C_elasticity/iters_elasticity_presets_dofs.png
+examples/src/C_elasticity/total_elasticity_presets_dofs.png
+examples/src/C_elasticity/iters_two_material_bars.png
+examples/src/C_elasticity/times_two_material_mixed.png
 
 ###########
 # Autotools

@@ -8,6 +8,7 @@
 #ifndef AMG_HEADER
 #define AMG_HEADER
 
+#include <stdint.h>
 #include "HYPRE_parcsr_ls.h"
 #include "internal/cheby.h"
 #include "internal/containers.h"
@@ -79,6 +80,11 @@ typedef struct AMGcsn_args_struct
    HYPRE_Int  num_functions;
    HYPRE_Int  filter_functions;
    HYPRE_Int  nodal;
+   HYPRE_Int  nodal_type;         /* HYPRE_BoomerAMGSetNodal mode for GM/LN interp */
+   HYPRE_Int  interp_vec_variant; /* -1 = auto, 1 = GM1, 2 = GM2, 3+ = LN interp */
+   HYPRE_Int  smooth_interp_vecs; /* -1 = auto; smooth the interp (rigid-body) vectors */
+   HYPRE_Int  interp_vec_qmax; /* -1 = auto; max nnz per row added by GM/LN expansion */
+   HYPRE_Real interp_vec_abs_q_trunc; /* drop GM/LN Q entries below this magnitude */
    HYPRE_Int  seq_amg_th;
    HYPRE_Int  min_coarse_size;
    HYPRE_Int  max_coarse_size;
@@ -117,9 +123,15 @@ typedef struct AMG_args_struct
    HYPRE_Int  print_level;
    HYPRE_Real tolerance;
 
+   /* GM/LN interpolation variant implied by how the near-null space was built
+      (full system vs. projected onto an MGR subblock). Used when the YAML knob
+      coarsening.interp_vec_variant is left on "auto". */
    HYPRE_Int       interp_vec_variant;
    HYPRE_Int       num_rbms;
    HYPRE_ParVector rbms[3];
+   uint64_t        rbm_source_generation;
+   size_t          rbm_source_labels_size;
+   uint64_t        rbm_source_labels_hash;
 } AMG_args;
 
 /*--------------------------------------------------------------------------
@@ -130,8 +142,8 @@ void hypredrv_AMGSetDefaultArgs(AMG_args *);
 void hypredrv_AMGSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
-void hypredrv_AMGSetProjectedRBMs(AMG_args *, HYPRE_IJVector, const IntArray *,
-                                  const StackIntArray *);
+void hypredrv_AMGSetProjectedRBMs(AMG_args *, HYPRE_IJVector, const IntArray *, uint64_t,
+                                  const int *, size_t);
 void hypredrv_AMGDestroyRBMs(AMG_args *);
 void hypredrv_AMGSetDofFunc(const AMG_args *, const IntArray *, HYPRE_Solver,
                             HYPRE_IJMatrix);
