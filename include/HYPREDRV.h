@@ -1304,8 +1304,8 @@ extern "C"
     * @param mat_S    The coarse Schur-complement matrix (HYPRE_Matrix), or NULL.
     * @return uint32_t error code (0 on success).
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemSetCoarseSchur(HYPREDRV_t hypredrv, int level, HYPRE_Matrix mat_S);
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetCoarseSchur(
+      HYPREDRV_t hypredrv, int level, HYPRE_Matrix mat_S);
 
    /**
     * @brief Set exact null space modes for the current linear system.

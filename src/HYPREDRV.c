@@ -1048,17 +1048,17 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    MPI_Comm_rank(comm, &hypredrv->mypid);
    MPI_Comm_size(comm, &hypredrv->nprocs);
 
-   hypredrv->comm           = comm;
-   hypredrv->nstates        = 0;
-   hypredrv->states         = NULL;
-   hypredrv->iargs          = NULL;
-   hypredrv->mat_A          = NULL;
-   hypredrv->mat_M          = NULL;
-   hypredrv->vec_b          = NULL;
-   hypredrv->vec_x          = NULL;
-   hypredrv->vec_x0         = NULL;
-   hypredrv->vec_xref       = NULL;
-   hypredrv->vec_nn         = NULL;
+   hypredrv->comm     = comm;
+   hypredrv->nstates  = 0;
+   hypredrv->states   = NULL;
+   hypredrv->iargs    = NULL;
+   hypredrv->mat_A    = NULL;
+   hypredrv->mat_M    = NULL;
+   hypredrv->vec_b    = NULL;
+   hypredrv->vec_x    = NULL;
+   hypredrv->vec_x0   = NULL;
+   hypredrv->vec_xref = NULL;
+   hypredrv->vec_nn   = NULL;
    for (int i = 0; i < HYPREDRV_MGR_MAX_LEVELS; i++)
    {
       hypredrv->mat_coarse_schur[i] = NULL;
@@ -2306,11 +2306,11 @@ HYPREDRV_LinearSystemSetCoarseSchur(HYPREDRV_t hypredrv, int level, HYPRE_Matrix
     * preconditioner is destroyed/recreated every solve, so it cannot own a
     * matrix that must persist across solves). The application must not free it. */
    if (hypredrv->mat_coarse_schur[level] &&
-       hypredrv->mat_coarse_schur[level] != (HYPRE_IJMatrix) mat_S)
+       hypredrv->mat_coarse_schur[level] != (HYPRE_IJMatrix)mat_S)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_coarse_schur[level]);
    }
-   hypredrv->mat_coarse_schur[level] = (HYPRE_IJMatrix) mat_S;
+   hypredrv->mat_coarse_schur[level] = (HYPRE_IJMatrix)mat_S;
 
    return hypredrv_ErrorCodeGet();
 }

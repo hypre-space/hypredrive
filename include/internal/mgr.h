@@ -149,7 +149,8 @@ struct MGR_args_struct
 {
    IntArray      *dofmap;
    HYPRE_IJVector vec_nn;
-   const HYPRE_IJMatrix *coarse_schur; /* per-level app coarse (Schur) operators (coarse_level_type: user) */
+   /* Per-level application-provided coarse (Schur) operators (coarse_level_type: user) */
+   const HYPRE_IJMatrix *coarse_schur;
 
    HYPRE_Int  non_c_to_f;
    HYPRE_Int  pmax;
