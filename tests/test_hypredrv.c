@@ -1673,6 +1673,55 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
 }
 
 static void
+test_HYPREDRV_matched_schur_requires_fgmres(void)
+{
+#ifndef HYPRE_MGR_HAS_MATCHED_SCHUR_GMRES1
+   return;
+#else
+   reset_state();
+   HYPREDRV_t obj = create_initialized_obj();
+   parse_minimal_library_yaml(obj);
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+
+   state->iargs->precon_method = PRECON_MGR;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &state->iargs->precon);
+   MGR_args *mgr = &state->iargs->precon.mgr;
+   mgr->num_levels = 2;
+   mgr->level[0].f_dofs.size = 1;
+   mgr->level[0].f_dofs.data[0] = 0;
+   mgr->level[0].prolongation_type = 2;
+   mgr->level[0].restriction_type = 0;
+   mgr->level[0].coarse_level_type = 0;
+   mgr->level[0].matched_f_backsolve = 2;
+   mgr->level[0].f_relaxation.type = 2;
+   mgr->level[0].f_relaxation.num_sweeps = 1;
+   mgr->level[0].f_relaxation.symmetric_diagonal_scaling = 1;
+   mgr->level[0].f_relaxation.amg.max_iter = 1;
+   mgr->level[0].f_relaxation.amg.tolerance = 0.0;
+   mgr->level[0].g_relaxation.type = -1;
+   mgr->coarsest_level.type = 0;
+   mgr->coarsest_level.amg.max_iter = 1;
+   mgr->coarsest_level.amg.tolerance = 0.0;
+   ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
+
+   state->iargs->solver_method = SOLVER_GMRES;
+
+   uint32_t code = HYPREDRV_PreconCreate(obj);
+   ASSERT_HAS_FLAG(code, ERROR_INVALID_SOLVER);
+   ASSERT_NULL(state->precon);
+
+   hypredrv_ErrorCodeResetAll();
+   HYPRE_ClearAllErrors();
+   state->iargs->solver_method = SOLVER_FGMRES;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(state->precon);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
+}
+
+static void
 test_HYPREDRV_LinearSolverApply_with_xref(void)
 {
    reset_state();
@@ -5574,6 +5623,7 @@ run_hypredrv_solver_and_reuse(void)
 {
    RUN_TEST(test_create_parse_and_destroy);
    RUN_TEST(test_HYPREDRV_PreconCreate_reuse_logic);
+   RUN_TEST(test_HYPREDRV_matched_schur_requires_fgmres);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
    RUN_TEST(test_HYPREDRV_driver_precon_ilu_lifecycle);
 #endif

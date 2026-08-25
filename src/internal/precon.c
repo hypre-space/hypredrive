@@ -598,6 +598,64 @@ hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
       }
    }
 
+   if (precon_method == PRECON_MGR && args->mgr.interp_sweeps > 0)
+   {
+      if (reason && reason_size)
+      {
+         snprintf(reason, reason_size,
+                  "MGR P2 interpolation refinement is currently CPU-only");
+      }
+      return 0;
+   }
+
+   if (precon_method == PRECON_MGR)
+   {
+      if (hypredrv_MGRHasMatchedSchurGMRES1(&args->mgr))
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "MGR matched Schur GMRES(1) is currently CPU-only");
+         }
+         return 0;
+      }
+      int fine_levels = args->mgr.num_levels > 0 ? args->mgr.num_levels - 1 : 0;
+      for (int level = 0; level < fine_levels; level++)
+      {
+         if (args->mgr.level[level].matched_f_backsolve)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size,
+                        "MGR level %d matched %s is currently CPU-only", level,
+                        args->mgr.level[level].matched_f_backsolve == 2 ?
+                        "Schur GMRES(1)" : "F backsolve");
+            }
+            return 0;
+         }
+         if (args->mgr.level[level].matched_q)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size, "MGR level %d matched %s Q is currently CPU-only",
+                        level, args->mgr.level[level].matched_q == 2 ?
+                        "adaptive FSAI" : "sparse");
+            }
+            return 0;
+         }
+         if (args->mgr.level[level].f_relaxation.symmetric_diagonal_scaling)
+         {
+            if (reason && reason_size)
+            {
+               snprintf(reason, reason_size,
+                        "MGR level %d symmetric diagonal F-solver scaling is CPU-only",
+                        level);
+            }
+            return 0;
+         }
+      }
+   }
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    if (precon_method == PRECON_MGR)
    {

@@ -4093,6 +4093,43 @@ test_PreconSupportsDevice(void)
       hypredrv_PreconSupportsDevice(PRECON_BOOMERAMG, &args, reason, sizeof(reason)));
    ASSERT_NOT_NULL(strstr(reason, "interpolation type 8"));
 
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.interp_sweeps = 1;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "P2 interpolation refinement"));
+
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.num_levels              = 2;
+   args.mgr.level[0].matched_q      = 1;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "matched sparse Q"));
+
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.num_levels              = 2;
+   args.mgr.level[0].matched_q      = 2;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "matched adaptive FSAI Q"));
+
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.num_levels                         = 2;
+   args.mgr.level[0].matched_f_backsolve       = 1;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason,
+                                               sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "matched F backsolve"));
+
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.num_levels                         = 2;
+   args.mgr.level[0].matched_f_backsolve       = 2;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason,
+                                               sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "matched Schur GMRES(1)"));
+
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+   args.mgr.num_levels = 2;
+   args.mgr.level[0].f_relaxation.symmetric_diagonal_scaling = 1;
+   ASSERT_FALSE(hypredrv_PreconSupportsDevice(PRECON_MGR, &args, reason, sizeof(reason)));
+   ASSERT_NOT_NULL(strstr(reason, "symmetric diagonal"));
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
    args.mgr.num_levels                 = 2;
@@ -5119,6 +5156,289 @@ precon_test_intarray_plain_data_only(int n, const int *vals)
    IntArray *a = hypredrv_IntArrayCreate((size_t)n);
    memcpy(a->data, vals, (size_t)n * sizeof(int));
    return a;
+}
+
+static void
+test_MGRCreate_matched_f_backsolve_validation(void)
+{
+#ifndef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
+   return;
+#else
+   TEST_HYPRE_INIT();
+
+   const int vals[2] = {0, 1};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(2, vals);
+
+   /* Variant zero is the exact supported contract. The remaining variants
+    * each violate one independent guard and must fail before publication. */
+   for (int variant = 0; variant < 8; variant++)
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+      mgr.level[0].f_dofs.size = 1;
+      mgr.level[0].f_dofs.data[0] = 0;
+      mgr.level[0].prolongation_type = 2;
+      mgr.level[0].restriction_type = 0;
+      mgr.level[0].coarse_level_type = 0;
+      mgr.level[0].matched_f_backsolve = 1;
+      mgr.level[0].f_relaxation.type = 2;
+      mgr.level[0].f_relaxation.num_sweeps = 1;
+      mgr.level[0].f_relaxation.symmetric_diagonal_scaling = 1;
+      mgr.level[0].f_relaxation.amg.max_iter = 1;
+      mgr.level[0].f_relaxation.amg.tolerance = 0.0;
+      mgr.level[0].g_relaxation.type = -1;
+
+      if (variant == 1)
+      {
+         mgr.cycle_smooth_pos = 3;
+      }
+      else if (variant == 2)
+      {
+         mgr.level[0].f_relaxation.symmetric_diagonal_scaling = 0;
+      }
+      else if (variant == 3)
+      {
+         mgr.level[0].f_relaxation.amg.max_iter = 2;
+      }
+      else if (variant == 4)
+      {
+         mgr.level[0].matched_q = 1;
+      }
+      else if (variant == 5)
+      {
+         mgr.coarse_th = 1.0e-6;
+      }
+      else if (variant == 6)
+      {
+         mgr.level[0].g_relaxation.type = 7;
+      }
+      else if (variant == 7)
+      {
+         mgr.num_levels = 3;
+         mgr.level[1].f_dofs.size = 1;
+         mgr.level[1].f_dofs.data[0] = 1;
+      }
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+      if (variant == 0)
+      {
+         ASSERT_FALSE(hypredrv_ErrorCodeActive());
+         ASSERT_NOT_NULL(precon);
+      }
+      else
+      {
+         ASSERT_TRUE(hypredrv_ErrorCodeActive());
+         ASSERT_NULL(precon);
+      }
+
+      if (precon)
+      {
+         HYPRE_MGRDestroy(precon);
+      }
+      hypredrv_MGRDestroyCachedSolvers(&mgr, precon != NULL);
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+
+#ifdef HYPRE_MGR_HAS_MATCHED_SCHUR_GMRES1
+   /* Mode 2 additionally fixes the coarse direction to one managed AMG
+    * application. Each nonzero variant violates one independent condition. */
+   for (int variant = 0; variant < 6; variant++)
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+      mgr.level[0].f_dofs.size = 1;
+      mgr.level[0].f_dofs.data[0] = 0;
+      mgr.level[0].prolongation_type = 2;
+      mgr.level[0].restriction_type = 0;
+      mgr.level[0].coarse_level_type = 0;
+      mgr.level[0].matched_f_backsolve = 2;
+      mgr.level[0].f_relaxation.type = 2;
+      mgr.level[0].f_relaxation.num_sweeps = 1;
+      mgr.level[0].f_relaxation.symmetric_diagonal_scaling = 1;
+      mgr.level[0].f_relaxation.amg.max_iter = 1;
+      mgr.level[0].f_relaxation.amg.tolerance = 0.0;
+      mgr.level[0].g_relaxation.type = -1;
+      mgr.coarsest_level.type = 0;
+      mgr.coarsest_level.amg.max_iter = 1;
+      mgr.coarsest_level.amg.tolerance = 0.0;
+
+      if (variant == 1)
+      {
+         mgr.coarsest_level.type = 32;
+      }
+      else if (variant == 2)
+      {
+         mgr.coarsest_level.amg.max_iter = 2;
+      }
+      else if (variant == 3)
+      {
+         mgr.coarsest_level.amg.tolerance = 1.0e-6;
+      }
+      else if (variant == 4)
+      {
+         mgr.coarsest_level.use_krylov = 1;
+      }
+      else if (variant == 5)
+      {
+         mgr.coarsest_level.reuse.present = 1;
+      }
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+      if (variant == 0)
+      {
+         ASSERT_FALSE(hypredrv_ErrorCodeActive());
+         ASSERT_NOT_NULL(precon);
+      }
+      else
+      {
+         ASSERT_TRUE(hypredrv_ErrorCodeActive());
+         ASSERT_NULL(precon);
+      }
+      if (precon)
+      {
+         HYPRE_MGRDestroy(precon);
+      }
+      hypredrv_MGRDestroyCachedSolvers(&mgr, precon != NULL);
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+
+   /* Flexible-outer detection must see mode 2 below a nested MGR too. */
+   {
+      MGR_args outer;
+      MGR_args nested;
+      hypredrv_MGRSetDefaultArgs(&outer);
+      hypredrv_MGRSetDefaultArgs(&nested);
+      outer.num_levels = 2;
+      nested.num_levels = 2;
+      ASSERT_FALSE(hypredrv_MGRHasMatchedSchurGMRES1(&outer));
+      nested.level[0].matched_f_backsolve = 2;
+      outer.level[0].f_relaxation.mgr = &nested;
+      ASSERT_TRUE(hypredrv_MGRHasMatchedSchurGMRES1(&outer));
+      outer.level[0].f_relaxation.mgr = NULL;
+   }
+#endif
+
+   /* A selected configured level with no active F label compacts away and is
+    * deliberately a no-op for that system. */
+   {
+      const int absent_vals[1] = {1};
+      IntArray *absent_dofmap = precon_test_intarray_plain_data_only(1, absent_vals);
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+      hypredrv_MGRSetDofmap(&mgr, absent_dofmap);
+      mgr.level[0].f_dofs.size = 1;
+      mgr.level[0].f_dofs.data[0] = 0;
+      mgr.level[0].matched_f_backsolve = 1;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(precon);
+      HYPRE_MGRDestroy(precon);
+      hypredrv_MGRDestroyCachedSolvers(&mgr, 1);
+      free(mgr.point_marker_data);
+      hypredrv_IntArrayDestroy(&absent_dofmap);
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+#endif
+}
+
+static void
+test_MGRCreate_matched_afsai_validation(void)
+{
+   TEST_HYPRE_INIT();
+
+   const int vals[2] = {0, 1};
+   IntArray *dofmap = precon_test_intarray_plain_data_only(2, vals);
+
+   for (int variant = 0; variant < 3; variant++)
+   {
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+      mgr.pmax = variant == 1 ? 3 : 4;
+      hypredrv_MGRSetDofmap(&mgr, dofmap);
+      mgr.level[0].f_dofs.size = 1;
+      mgr.level[0].f_dofs.data[0] = 0;
+      mgr.level[0].prolongation_type = 2;
+      mgr.level[0].restriction_type = 0;
+      mgr.level[0].coarse_level_type = 0;
+      mgr.level[0].matched_q = variant == 2 ? 3 : 2;
+      mgr.level[0].f_relaxation.type = 7;
+      mgr.level[0].f_relaxation.num_sweeps = 1;
+      mgr.level[0].g_relaxation.type = -1;
+
+      /* Leave polynomial-only sweeps at their default zero. */
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+      if (variant == 0)
+      {
+#if defined(HYPRE_MGR_HAS_MATCHED_Q) && defined(HYPRE_MGR_HAS_MATCHED_FSAI_Q)
+         ASSERT_FALSE(hypredrv_ErrorCodeActive());
+         ASSERT_NOT_NULL(precon);
+#else
+         /* Older, device-only, or complex hypre builds must reject an active
+          * afsai selection before calling an unavailable setter/mode. */
+         ASSERT_TRUE(hypredrv_ErrorCodeActive());
+         ASSERT_NULL(precon);
+#endif
+      }
+      else
+      {
+         ASSERT_TRUE(hypredrv_ErrorCodeActive());
+         ASSERT_NULL(precon);
+      }
+      if (precon)
+      {
+         HYPRE_MGRDestroy(precon);
+      }
+      hypredrv_MGRDestroyCachedSolvers(&mgr, precon != NULL);
+      free(mgr.point_marker_data);
+      mgr.point_marker_data = NULL;
+   }
+
+   /* A configured mode-2 level whose F label is absent compacts away before
+    * feature and construction checks, and is intentionally a no-op even for a
+    * hypre build that does not advertise matched aFSAI Q. */
+   {
+      const int absent_vals[1] = {1};
+      IntArray *absent_dofmap = precon_test_intarray_plain_data_only(1, absent_vals);
+      MGR_args mgr;
+      hypredrv_MGRSetDefaultArgs(&mgr);
+      mgr.num_levels = 2;
+      hypredrv_MGRSetDofmap(&mgr, absent_dofmap);
+      mgr.level[0].f_dofs.size = 1;
+      mgr.level[0].f_dofs.data[0] = 0;
+      mgr.level[0].matched_q = 2;
+
+      HYPRE_Solver precon = NULL;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(precon);
+      HYPRE_MGRDestroy(precon);
+      hypredrv_MGRDestroyCachedSolvers(&mgr, 1);
+      free(mgr.point_marker_data);
+      hypredrv_IntArrayDestroy(&absent_dofmap);
+   }
+
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -6816,6 +7136,8 @@ main(int argc, char **argv)
 #endif
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
    RUN_TEST(test_MGRCreate_missing_dofmap);
+   RUN_TEST(test_MGRCreate_matched_f_backsolve_validation);
+   RUN_TEST(test_MGRCreate_matched_afsai_validation);
    RUN_TEST(test_MGRCreate_plain_dofmap_data_only_branch);
    RUN_TEST(test_MGRCreate_unique_data_dofmap_branch);
    RUN_TEST(test_MGRCreate_g_unique_unsorted_dense_fallback);

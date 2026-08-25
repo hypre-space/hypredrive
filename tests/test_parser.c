@@ -11,11 +11,11 @@
 #include "internal/fsai.h"
 #include "internal/gmres.h"
 #include "internal/ilu.h"
-#include "internal/mgr.h"
 #include "internal/krylov.h"
+#include "internal/mgr.h"
 #include "internal/pcg.h"
-#include "test_helpers.h"
 #include "internal/yaml.h"
+#include "test_helpers.h"
 
 /* Internal/generated functions not in public headers */
 void           hypredrv_AMGSetArgsFromYAML(void *, YAMLnode *);
@@ -289,7 +289,8 @@ build_scalar_children(StrArray keys, StrIntMapArray (*get_vals)(const char *), i
 }
 
 static void
-exercise_solver_component(void (*set_args)(void *, YAMLnode *), StrArray (*get_keys)(void),
+exercise_solver_component(void (*set_args)(void *, YAMLnode *),
+                          StrArray (*get_keys)(void),
                           StrIntMapArray (*get_vals)(const char *), void *args)
 {
    YAMLnode *parent = build_scalar_children(get_keys(), get_vals, 1);
@@ -314,11 +315,11 @@ exercise_component_flat(void (*set_args)(void *, YAMLnode *), void *args, const 
 static void
 test_exhaustive_solver_parsers(void)
 {
-   PCG_args pcg;
-   GMRES_args gmres;
-   FGMRES_args fgmres;
+   PCG_args      pcg;
+   GMRES_args    gmres;
+   FGMRES_args   fgmres;
    BiCGSTAB_args bicg;
-   Cheby_args cheby;
+   Cheby_args    cheby;
 
    hypredrv_PCGSetDefaultArgs(&pcg);
    hypredrv_GMRESSetDefaultArgs(&gmres);
@@ -326,21 +327,24 @@ test_exhaustive_solver_parsers(void)
    hypredrv_BiCGSTABSetDefaultArgs(&bicg);
    hypredrv_ChebySetDefaultArgs(&cheby);
 
-   exercise_solver_component(hypredrv_PCGSetArgsFromYAML, hypredrv_PCGGetValidKeys, hypredrv_PCGGetValidValues, &pcg);
-   exercise_solver_component(hypredrv_GMRESSetArgsFromYAML, hypredrv_GMRESGetValidKeys, hypredrv_GMRESGetValidValues,
-                             &gmres);
-   exercise_solver_component(hypredrv_FGMRESSetArgsFromYAML, hypredrv_FGMRESGetValidKeys, hypredrv_FGMRESGetValidValues,
-                             &fgmres);
-   exercise_solver_component(hypredrv_BiCGSTABSetArgsFromYAML, hypredrv_BiCGSTABGetValidKeys,
+   exercise_solver_component(hypredrv_PCGSetArgsFromYAML, hypredrv_PCGGetValidKeys,
+                             hypredrv_PCGGetValidValues, &pcg);
+   exercise_solver_component(hypredrv_GMRESSetArgsFromYAML, hypredrv_GMRESGetValidKeys,
+                             hypredrv_GMRESGetValidValues, &gmres);
+   exercise_solver_component(hypredrv_FGMRESSetArgsFromYAML, hypredrv_FGMRESGetValidKeys,
+                             hypredrv_FGMRESGetValidValues, &fgmres);
+   exercise_solver_component(hypredrv_BiCGSTABSetArgsFromYAML,
+                             hypredrv_BiCGSTABGetValidKeys,
                              hypredrv_BiCGSTABGetValidValues, &bicg);
-   exercise_solver_component(hypredrv_ChebySetArgsFromYAML, hypredrv_ChebyGetValidKeys, hypredrv_ChebyGetValidValues,
-                             &cheby);
+   exercise_solver_component(hypredrv_ChebySetArgsFromYAML, hypredrv_ChebyGetValidKeys,
+                             hypredrv_ChebyGetValidValues, &cheby);
 
    /* Also exercise the flat-value SetArgsFromYAML branch (no children) */
    exercise_component_flat(hypredrv_PCGSetArgsFromYAML, &pcg, "pcg", "pcg");
    exercise_component_flat(hypredrv_GMRESSetArgsFromYAML, &gmres, "gmres", "gmres");
    exercise_component_flat(hypredrv_FGMRESSetArgsFromYAML, &fgmres, "fgmres", "fgmres");
-   exercise_component_flat(hypredrv_BiCGSTABSetArgsFromYAML, &bicg, "bicgstab", "bicgstab");
+   exercise_component_flat(hypredrv_BiCGSTABSetArgsFromYAML, &bicg, "bicgstab",
+                           "bicgstab");
    exercise_component_flat(hypredrv_ChebySetArgsFromYAML, &cheby, "cheby", "cheby");
 }
 
@@ -352,13 +356,15 @@ test_exhaustive_ilu_fsai_parsers(void)
    hypredrv_ILUSetDefaultArgs(&ilu);
    hypredrv_FSAISetDefaultArgs(&fsai);
 
-   YAMLnode *ilu_parent = build_scalar_children(hypredrv_ILUGetValidKeys(), hypredrv_ILUGetValidValues, 1);
+   YAMLnode *ilu_parent =
+      build_scalar_children(hypredrv_ILUGetValidKeys(), hypredrv_ILUGetValidValues, 1);
    hypredrv_ErrorCodeResetAll();
    hypredrv_ILUSetArgsFromYAML(&ilu, ilu_parent);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    hypredrv_YAMLnodeDestroy(ilu_parent);
 
-   YAMLnode *fsai_parent = build_scalar_children(hypredrv_FSAIGetValidKeys(), hypredrv_FSAIGetValidValues, 1);
+   YAMLnode *fsai_parent =
+      build_scalar_children(hypredrv_FSAIGetValidKeys(), hypredrv_FSAIGetValidValues, 1);
    hypredrv_ErrorCodeResetAll();
    hypredrv_FSAISetArgsFromYAML(&fsai, fsai_parent);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
@@ -384,7 +390,8 @@ test_exhaustive_amg_parser(void)
    hypredrv_YAMLnodeDestroy(root);
 
    /* Flat-value branch (no children) */
-   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_AMGSetArgsFromYAML, &args, "amg", "amg");
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_AMGSetArgsFromYAML,
+                           &args, "amg", "amg");
 }
 
 static void
@@ -399,6 +406,11 @@ test_exhaustive_mgr_parser(void)
    add_child(mgr, "max_iter", "2", 1);
    add_child(mgr, "num_levels", "2", 1);
    add_child(mgr, "pmax", "7", 1);
+   add_child(mgr, "interp_sweeps", "3", 1);
+   add_child(mgr, "interp_weight", "0.63", 1);
+   add_child(mgr, "injection_upcycle", "on", 1);
+   add_child(mgr, "matched_q_sweeps", "2", 1);
+   add_child(mgr, "matched_q_weight", "0.44", 1);
    add_child(mgr, "relax_type", pick_value(hypredrv_MGRGetValidValues("relax_type")), 1);
    add_child(mgr, "print_level", "0", 1);
 
@@ -408,14 +420,17 @@ test_exhaustive_mgr_parser(void)
    /* level 0 */
    YAMLnode *lvl0 = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
-   add_child(lvl0, "prolongation_type", pick_value(hypredrv_MGRlvlGetValidValues("prolongation_type")), 3);
-   add_child(lvl0, "restriction_type", pick_value(hypredrv_MGRlvlGetValidValues("restriction_type")), 3);
-   add_child(lvl0, "coarse_level_type", pick_value(hypredrv_MGRlvlGetValidValues("coarse_level_type")), 3);
-   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   add_child(lvl0, "prolongation_type",
+             pick_value(hypredrv_MGRlvlGetValidValues("prolongation_type")), 3);
+   add_child(lvl0, "restriction_type",
+             pick_value(hypredrv_MGRlvlGetValidValues("restriction_type")), 3);
+   add_child(lvl0, "coarse_level_type",
+             pick_value(hypredrv_MGRlvlGetValidValues("coarse_level_type")), 3);
+   YAMLnode *f0       = add_child(lvl0, "f_relaxation", "", 3);
    YAMLnode *f0_gmres = add_child(f0, "gmres", "", 4);
    add_child(f0_gmres, "max_iter", "2", 5);
    YAMLnode *f0_prec = add_child(f0_gmres, "preconditioner", "", 5);
-   YAMLnode *f0_amg = add_child(f0_prec, "amg", "", 6);
+   YAMLnode *f0_amg  = add_child(f0_prec, "amg", "", 6);
    add_child(f0_amg, "max_iter", "1", 7);
 
    YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
@@ -427,8 +442,11 @@ test_exhaustive_mgr_parser(void)
    /* level 1 */
    YAMLnode *lvl1 = add_child(levels, "1", "", 2);
    add_child(lvl1, "f_dofs", "[1]", 3);
-   add_child(lvl1, "f_relaxation", "none", 3); /* triggers num_sweeps special-case logic */
-   YAMLnode *g1 = add_child(lvl1, "g_relaxation", "", 3);
+   add_child(lvl1, "matched_q", "on", 3);
+   add_child(lvl1, "matched_f_backsolve", "gmres1", 3);
+   add_child(lvl1, "f_relaxation", "none",
+             3); /* triggers num_sweeps special-case logic */
+   YAMLnode *g1       = add_child(lvl1, "g_relaxation", "", 3);
    YAMLnode *g1_gmres = add_child(g1, "gmres", "", 4);
    add_child(g1_gmres, "max_iter", "3", 5);
 
@@ -436,13 +454,20 @@ test_exhaustive_mgr_parser(void)
    YAMLnode *lvl_bad = add_child(levels, "99", "", 2);
 
    /* coarsest solver */
-   YAMLnode *cls = add_child(mgr, "coarsest_level", "", 1);
+   YAMLnode *cls     = add_child(mgr, "coarsest_level", "", 1);
    YAMLnode *cls_ilu = add_child(cls, "ilu", "", 2);
    add_child(cls_ilu, "type", "bj-iluk", 3);
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_MGRSetArgsFromYAML(&args, mgr);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.interp_sweeps, 3);
+   ASSERT_EQ_DOUBLE((double)args.interp_weight, 0.63, 1.0e-15);
+   ASSERT_EQ((int)args.injection_upcycle, 1);
+   ASSERT_EQ((int)args.matched_q_sweeps, 2);
+   ASSERT_EQ_DOUBLE((double)args.matched_q_weight, 0.44, 1.0e-15);
+   ASSERT_EQ((int)args.level[1].matched_q, 1);
+   ASSERT_EQ((int)args.level[1].matched_f_backsolve, 2);
 
    ASSERT_TRUE(args.level[0].f_relaxation.use_krylov);
    ASSERT_NOT_NULL(args.level[0].f_relaxation.krylov);
@@ -463,19 +488,20 @@ test_exhaustive_mgr_parser(void)
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
-/* Flat coarsest_level / relaxation scalars; g_relaxation nested Krylov promotes type < 0 */
+/* Flat coarsest_level / relaxation scalars; g_relaxation nested Krylov promotes type < 0
+ */
 static void
 test_mgr_parser_flat_scalars_and_grelax_krylov_type_promotion(void)
 {
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
    add_child(lvl0, "f_relaxation", "jacobi", 3);
-   YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
+   YAMLnode *g0       = add_child(lvl0, "g_relaxation", "", 3);
    YAMLnode *g0_gmres = add_child(g0, "gmres", "", 4);
    add_child(g0_gmres, "max_iter", "2", 5);
    add_child(mgr, "coarsest_level", "amg", 1);
@@ -497,10 +523,10 @@ test_mgr_f_dofs_yaml_block_sequence_extra_non_dash_keys(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
-   YAMLnode *fd = add_child(lvl0, "f_dofs", "", 3);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
+   YAMLnode *fd     = add_child(lvl0, "f_dofs", "", 3);
    add_child(fd, "-", "0", 4);
    add_child(fd, "extra", "ignored", 4);
    add_child(mgr, "coarsest_level", "amg", 1);
@@ -526,9 +552,9 @@ test_mgr_f_dofs_symbolic_flow_sequence_with_dof_labels(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[v_x]", 3);
    add_child(mgr, "coarsest_level", "amg", 1);
 
@@ -550,9 +576,9 @@ test_mgr_scalar_level_is_rejected(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "not-a-mapping", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "not-a-mapping", 2);
    add_child(mgr, "coarsest_level", "amg", 1);
 
    hypredrv_ErrorCodeResetAll();
@@ -579,10 +605,10 @@ test_mgr_f_dofs_symbolic_block_sequence_with_dof_labels(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
-   YAMLnode *fd = add_child(lvl0, "f_dofs", "", 3);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
+   YAMLnode *fd     = add_child(lvl0, "f_dofs", "", 3);
    add_child(fd, "-", "v_x", 4);
    add_child(fd, "-", "v_y", 4);
    add_child(mgr, "coarsest_level", "amg", 1);
@@ -608,9 +634,9 @@ test_mgr_f_dofs_symbolic_without_dof_labels_errors(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[v_x]", 3);
    add_child(mgr, "coarsest_level", "amg", 1);
 
@@ -631,10 +657,10 @@ test_mgr_f_dofs_block_sequence_symbolic_error_returns_early(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
-   YAMLnode *fd = add_child(lvl0, "f_dofs", "", 3);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
+   YAMLnode *fd     = add_child(lvl0, "f_dofs", "", 3);
    add_child(fd, "-", "v_x", 4);
    add_child(mgr, "coarsest_level", "amg", 1);
 
@@ -653,9 +679,9 @@ test_mgr_explicit_type_key_triggers_apply_type_defaults(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
    YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
    add_child(f0, "type", "jacobi", 4);
@@ -687,9 +713,9 @@ test_mgr_f_dofs_unknown_symbolic_label_errors(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[v_y]", 3);
    add_child(mgr, "coarsest_level", "amg", 1);
 
@@ -710,11 +736,11 @@ test_mgr_f_relaxation_ilu_nested_block(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
-   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *f0     = add_child(lvl0, "f_relaxation", "", 3);
    YAMLnode *f0_ilu = add_child(f0, "ilu", "", 4);
    add_child(f0_ilu, "type", "bj-ilut", 5);
    add_child(f0_ilu, "fill_level", "1", 5);
@@ -737,22 +763,22 @@ test_mgr_schwarz_nested_blocks_for_f_g_and_coarsest(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
 
-   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *f0         = add_child(lvl0, "f_relaxation", "", 3);
    YAMLnode *f0_schwarz = add_child(f0, "schwarz", "", 4);
    add_child(f0_schwarz, "variant", "ras-iluk", 5);
    add_child(f0_schwarz, "overlap", "2", 5);
 
-   YAMLnode *g0 = add_child(lvl0, "g_relaxation", "", 3);
+   YAMLnode *g0         = add_child(lvl0, "g_relaxation", "", 3);
    YAMLnode *g0_schwarz = add_child(g0, "schwarz", "", 4);
    add_child(g0_schwarz, "variant", "ras-ilut", 5);
    add_child(g0_schwarz, "local_solver_type", "ilut", 5);
 
-   YAMLnode *cls = add_child(mgr, "coarsest_level", "", 1);
+   YAMLnode *cls         = add_child(mgr, "coarsest_level", "", 1);
    YAMLnode *cls_schwarz = add_child(cls, "schwarz", "", 2);
    add_child(cls_schwarz, "variant", "ras-spdirect", 3);
 
@@ -779,18 +805,77 @@ test_mgr_cls_frxl_grlx_flat_scalar_branches(void)
 {
    MGRcls_args cls;
    hypredrv_MGRclsSetDefaultArgs(&cls);
-   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRclsSetArgsFromYAML, &cls,
-                           "ilu", "ilu");
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRclsSetArgsFromYAML,
+                           &cls, "ilu", "ilu");
 
    MGRfrlx_args frlx;
    hypredrv_MGRfrlxSetDefaultArgs(&frlx);
-   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRfrlxSetArgsFromYAML, &frlx,
-                           "ilu", "ilu");
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRfrlxSetArgsFromYAML,
+                           &frlx, "ilu", "ilu");
 
    MGRgrlx_args grlx;
    hypredrv_MGRgrlxSetDefaultArgs(&grlx);
-   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRgrlxSetArgsFromYAML, &grlx,
-                           "ilu", "ilu");
+   exercise_component_flat((void (*)(void *, YAMLnode *))hypredrv_MGRgrlxSetArgsFromYAML,
+                           &grlx, "ilu", "ilu");
+}
+
+static void
+test_mgr_frelax_symmetric_diagonal_scaling_parse(void)
+{
+   MGR_args mgr;
+   hypredrv_MGRSetDefaultArgs(&mgr);
+   ASSERT_EQ((int)mgr.level[0].matched_f_backsolve, 0);
+   StrIntMapArray backsolve_map =
+      hypredrv_MGRlvlGetValidValues("matched_f_backsolve");
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(backsolve_map, "off"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(backsolve_map, "on"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(backsolve_map, "gmres1"), 2);
+   StrIntMapArray matched_q_map = hypredrv_MGRlvlGetValidValues("matched_q");
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "off"), 0);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "on"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "polynomial"), 1);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "afsai"), 2);
+
+   MGRfrlx_args frlx;
+   hypredrv_MGRfrlxSetDefaultArgs(&frlx);
+   ASSERT_EQ((int)frlx.symmetric_diagonal_scaling, 0);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("f_relaxation", "", 0);
+   add_child(parent, "amg", "", 1);
+   add_child(parent, "symmetric_diagonal_scaling", "on", 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRfrlxSetArgsFromYAML(&frlx, parent);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)frlx.type, 2);
+   ASSERT_EQ((int)frlx.symmetric_diagonal_scaling, 1);
+
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_mgr_matched_afsai_parse(void)
+{
+   MGR_args args;
+   hypredrv_MGRSetDefaultArgs(&args);
+
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *levels = add_child(mgr, "level", "", 1);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
+   add_child(mgr, "pmax", "4", 1);
+   add_child(lvl0, "f_dofs", "[0]", 3);
+   add_child(lvl0, "matched_q", "afsai", 3);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRSetArgsFromYAML(&args, mgr);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ((int)args.pmax, 4);
+   ASSERT_EQ((int)args.level[0].matched_q, 2);
+   ASSERT_EQ((int)args.matched_q_sweeps, 0);
+   ASSERT_EQ_DOUBLE((double)args.matched_q_weight, 1.0, 1.0e-15);
+
+   hypredrv_YAMLnodeDestroy(mgr);
+   hypredrv_MGRDestroyNestedSolverArgs(&args);
 }
 
 static void
@@ -878,7 +963,7 @@ test_nested_krylov_parse_precon_errors(void)
       YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
       add_child(solver, "max_iter", "2", 1);
       YAMLnode *prec = add_child(solver, "preconditioner", "", 1);
-      YAMLnode *bad = add_child(prec, "not_a_precon", "", 2);
+      YAMLnode *bad  = add_child(prec, "not_a_precon", "", 2);
 
       hypredrv_ErrorCodeResetAll();
       hypredrv_NestedKrylovSetArgsFromYAML(&args, solver);
@@ -896,7 +981,8 @@ test_nested_krylov_parser_extra_coverage(void)
 {
    NestedKrylov_args args;
 
-   /* Unknown nested solver key (hypredrv_NestedKrylovSetArgsFromYAML invalid-key branch). */
+   /* Unknown nested solver key (hypredrv_NestedKrylovSetArgsFromYAML invalid-key branch).
+    */
    hypredrv_NestedKrylovSetDefaultArgs(&args);
    {
       YAMLnode *solver = hypredrv_YAMLnodeCreate("not_a_nested_solver_type", "", 0);
@@ -909,7 +995,8 @@ test_nested_krylov_parser_extra_coverage(void)
       hypredrv_YAMLnodeDestroy(solver);
    }
 
-   /* Scalar nested preconditioner success: preconditioner: amg (NestedKrylovParsePrecon). */
+   /* Scalar nested preconditioner success: preconditioner: amg (NestedKrylovParsePrecon).
+    */
    hypredrv_NestedKrylovSetDefaultArgs(&args);
    {
       YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
@@ -969,7 +1056,8 @@ test_nested_krylov_parser_extra_coverage(void)
       hypredrv_YAMLnodeDestroy(solver);
    }
 
-   /* preconditioner first child: detach prev==NULL, restore prepend (NestedKrylovDetach/RestorePrecon). */
+   /* preconditioner first child: detach prev==NULL, restore prepend
+    * (NestedKrylovDetach/RestorePrecon). */
    hypredrv_NestedKrylovSetDefaultArgs(&args);
    {
       YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
@@ -1033,18 +1121,18 @@ test_mgr_nested_krylov_accepts_mgr_precon(void)
    MGR_args args;
    hypredrv_MGRSetDefaultArgs(&args);
 
-   YAMLnode *mgr = hypredrv_YAMLnodeCreate("mgr", "", 0);
+   YAMLnode *mgr    = hypredrv_YAMLnodeCreate("mgr", "", 0);
    YAMLnode *levels = add_child(mgr, "level", "", 1);
-   YAMLnode *lvl0 = add_child(levels, "0", "", 2);
+   YAMLnode *lvl0   = add_child(levels, "0", "", 2);
    add_child(lvl0, "f_dofs", "[0]", 3);
 
-   YAMLnode *f0 = add_child(lvl0, "f_relaxation", "", 3);
-   YAMLnode *gmres = add_child(f0, "gmres", "", 4);
-   YAMLnode *prec = add_child(gmres, "preconditioner", "", 5);
+   YAMLnode *f0       = add_child(lvl0, "f_relaxation", "", 3);
+   YAMLnode *gmres    = add_child(f0, "gmres", "", 4);
+   YAMLnode *prec     = add_child(gmres, "preconditioner", "", 5);
    YAMLnode *mgr_prec = add_child(prec, "mgr", "", 6);
    add_child(mgr_prec, "max_iter", "2", 7);
    YAMLnode *coarsest = add_child(mgr_prec, "coarsest_level", "", 7);
-   YAMLnode *amg = add_child(coarsest, "amg", "", 8);
+   YAMLnode *amg      = add_child(coarsest, "amg", "", 8);
    add_child(amg, "print_level", "0", 9);
 
    hypredrv_ErrorCodeResetAll();
@@ -1066,9 +1154,9 @@ test_mgr_nested_krylov_accepts_mgr_precon(void)
 static void
 test_relaxation_values_use_canonical_l1_jacobi_spelling(void)
 {
-   StrIntMapArray mgr_map = hypredrv_MGRGetValidValues("relax_type");
+   StrIntMapArray mgr_map        = hypredrv_MGRGetValidValues("relax_type");
    StrIntMapArray mgr_frelax_map = hypredrv_MGRlvlGetValidValues("f_relaxation");
-   StrIntMapArray amg_map = hypredrv_AMGrlxGetValidValues("down_type");
+   StrIntMapArray amg_map        = hypredrv_AMGrlxGetValidValues("down_type");
 
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_map, "l1-jacobi"));
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_frelax_map, "l1-jacobi"));
@@ -1101,10 +1189,30 @@ test_mgr_air_restriction_values_require_hypre_232(void)
 }
 
 static void
+test_mgr_extended_interpolation_values(void)
+{
+   StrIntMapArray map = hypredrv_MGRlvlGetValidValues("prolongation_type");
+
+#if HYPRE_CHECK_MIN_VERSION(22400, 0)
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+i"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+e"));
+
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm-ext"), 5);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm-ext+i"), 6);
+   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm-ext+e"), 7);
+#else
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+i"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+e"));
+#endif
+}
+
+static void
 test_amg_relaxation_values_accept_forward_and_backward_hl1gs(void)
 {
-   StrIntMapArray down_map = hypredrv_AMGrlxGetValidValues("down_type");
-   StrIntMapArray up_map = hypredrv_AMGrlxGetValidValues("up_type");
+   StrIntMapArray down_map   = hypredrv_AMGrlxGetValidValues("down_type");
+   StrIntMapArray up_map     = hypredrv_AMGrlxGetValidValues("up_type");
    StrIntMapArray coarse_map = hypredrv_AMGrlxGetValidValues("coarse_type");
 
    ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(down_map, "forward-hl1gs"));
@@ -1145,6 +1253,8 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_schwarz_nested_blocks_for_f_g_and_coarsest);
 #endif
    RUN_TEST(test_mgr_cls_frxl_grlx_flat_scalar_branches);
+   RUN_TEST(test_mgr_frelax_symmetric_diagonal_scaling_parse);
+   RUN_TEST(test_mgr_matched_afsai_parse);
    RUN_TEST(test_mgr_MGR_setters_null_parent_early_return);
    RUN_TEST(test_mgr_MGRDestroyNestedSolverArgs_null);
    RUN_TEST(test_nested_krylov_parse_precon_errors);
@@ -1153,6 +1263,7 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_nested_krylov_accepts_mgr_precon);
    RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);
    RUN_TEST(test_mgr_air_restriction_values_require_hypre_232);
+   RUN_TEST(test_mgr_extended_interpolation_values);
    RUN_TEST(test_amg_relaxation_values_accept_forward_and_backward_hl1gs);
 
    MPI_Finalize();

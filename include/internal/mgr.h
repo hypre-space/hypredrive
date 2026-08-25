@@ -82,6 +82,7 @@ typedef struct MGRfrlx_args_struct
 {
    HYPRE_Int              type;
    HYPRE_Int              num_sweeps;
+   HYPRE_Int              symmetric_diagonal_scaling;
    MGRComponentReuse_args reuse;
 
    int                              use_krylov;
@@ -136,6 +137,8 @@ typedef struct MGRlvl_args_struct
    HYPRE_Int prolongation_type;
    HYPRE_Int restriction_type;
    HYPRE_Int coarse_level_type;
+   HYPRE_Int matched_q; /* 0=off, 1=bounded polynomial, 2=matched aFSAI */
+   HYPRE_Int matched_f_backsolve;
 
    MGRfrlx_args f_relaxation;
    MGRgrlx_args g_relaxation;
@@ -152,6 +155,9 @@ struct MGR_args_struct
 
    HYPRE_Int  non_c_to_f;
    HYPRE_Int  pmax;
+   HYPRE_Int  interp_sweeps;
+   HYPRE_Int  injection_upcycle;
+   HYPRE_Int  matched_q_sweeps; /* polynomial matched-Q only */
    HYPRE_Int  max_iter;
    HYPRE_Int  num_levels;
    HYPRE_Int  relax_type; /* TODO: we shouldn't need this */
@@ -161,6 +167,8 @@ struct MGR_args_struct
    HYPRE_Int  nonglk_max_elmts;
    HYPRE_Real tolerance;
    HYPRE_Real coarse_th;
+   HYPRE_Real interp_weight;
+   HYPRE_Real matched_q_weight; /* polynomial matched-Q only */
 
    MGRlvl_args level[MAX_MGR_LEVELS - 1];
    MGRcls_args coarsest_level;
@@ -186,6 +194,7 @@ void hypredrv_MGRSetArgs(void *, const struct YAMLnode_struct *);
 void hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
 void hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
+int  hypredrv_MGRHasMatchedSchurGMRES1(const MGR_args *);
 void hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *, const IntArray *,
