@@ -145,15 +145,19 @@ precon_test_ij_vector_1x1(double value)
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
 static HYPRE_IJVector
-precon_test_ij_multivector(HYPRE_Int num_entries, HYPRE_Int num_components,
-                           const HYPRE_Complex *values)
+precon_test_ij_multivector_comm(MPI_Comm comm, HYPRE_Int num_entries,
+                                HYPRE_Int num_components,
+                                const HYPRE_Complex *values)
 {
    HYPRE_IJVector vec = NULL;
    ASSERT_GT(num_entries, 0);
    ASSERT_GT(num_components, 0);
    ASSERT_NOT_NULL(values);
 
-   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, num_entries - 1, &vec), 0);
+   int rank = 0;
+   MPI_Comm_rank(comm, &rank);
+   HYPRE_BigInt jlower = (HYPRE_BigInt)rank * num_entries;
+   ASSERT_EQ(HYPRE_IJVectorCreate(comm, jlower, jlower + num_entries - 1, &vec), 0);
    ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
    ASSERT_EQ(HYPRE_IJVectorSetNumComponents(vec, num_components), 0);
    ASSERT_EQ(HYPRE_IJVectorInitialize_v2(vec, HYPRE_MEMORY_HOST), 0);
@@ -162,7 +166,7 @@ precon_test_ij_multivector(HYPRE_Int num_entries, HYPRE_Int num_components,
    ASSERT_NOT_NULL(indices);
    for (HYPRE_Int i = 0; i < num_entries; i++)
    {
-      indices[i] = i;
+      indices[i] = jlower + i;
    }
 
    for (HYPRE_Int component = 0; component < num_components; component++)
@@ -176,6 +180,14 @@ precon_test_ij_multivector(HYPRE_Int num_entries, HYPRE_Int num_components,
    ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
    free(indices);
    return vec;
+}
+
+static HYPRE_IJVector
+precon_test_ij_multivector(HYPRE_Int num_entries, HYPRE_Int num_components,
+                           const HYPRE_Complex *values)
+{
+   return precon_test_ij_multivector_comm(MPI_COMM_SELF, num_entries, num_components,
+                                          values);
 }
 
 static void
@@ -250,9 +262,27 @@ test_AMGSetRBMs_full_and_projected_modes(void)
    f_dofs.data[0]          = 2;
    f_dofs.data[1]          = 0;
    f_dofs.size             = 2;
-   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, 1, f_dofs.data,
+                                f_dofs.size);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(args.interp_vec_variant, 1);
+   assert_amg_rbm_values(&args, 3, expected_projected);
+
+   HYPRE_ParVector projected_rbms[3] = {args.rbms[0], args.rbms[1], args.rbms[2]};
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, 1, f_dofs.data,
+                                f_dofs.size);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   for (int i = 0; i < 3; i++)
+   {
+      ASSERT_TRUE(args.rbms[i] == projected_rbms[i]);
+   }
+
+   /* A setter generation change invalidates the cache even if allocator reuse
+      leaves both input handles numerically unchanged. */
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, 2, f_dofs.data,
+                                f_dofs.size);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.rbm_source_generation, 2);
    assert_amg_rbm_values(&args, 3, expected_projected);
 
    /* Rebuilding in the other direction also replaces the cached vectors. */
@@ -263,6 +293,7 @@ test_AMGSetRBMs_full_and_projected_modes(void)
    assert_amg_rbm_values(&args, 4, expected_full);
 
    hypredrv_AMGDestroyRBMs(&args);
+   ASSERT_EQ(args.interp_vec_variant, 2);
    HYPRE_IJVectorDestroy(vec_nn);
    TEST_HYPRE_FINALIZE();
 }
@@ -285,7 +316,7 @@ test_AMGSetRBMs_validation_paths(void)
    hypredrv_AMGSetRBMs(&args, vec_nn);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(args.num_rbms, 0);
-   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, NULL, NULL);
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, NULL, 1, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    args.coarsening.nodal = 4;
@@ -295,7 +326,7 @@ test_AMGSetRBMs_validation_paths(void)
    ASSERT_EQ(args.num_rbms, 0);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_AMGSetProjectedRBMs(&args, NULL, NULL, NULL);
+   hypredrv_AMGSetProjectedRBMs(&args, NULL, NULL, 1, NULL, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(args.num_rbms, 0);
 
@@ -306,19 +337,68 @@ test_AMGSetRBMs_validation_paths(void)
    f_dofs.size             = 1;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, &f_dofs);
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, 1, f_dofs.data,
+                                f_dofs.size);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(args.num_rbms, 0);
 
    HYPRE_IJVector short_vec = precon_test_ij_multivector(4, 1, &values[0][0]);
    f_dofs.data[0]           = 0;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_AMGSetProjectedRBMs(&args, short_vec, &dofmap, &f_dofs);
+   hypredrv_AMGSetProjectedRBMs(&args, short_vec, &dofmap, 2, f_dofs.data,
+                                f_dofs.size);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(args.num_rbms, 0);
 
    hypredrv_AMGDestroyRBMs(NULL);
    HYPRE_IJVectorDestroy(short_vec);
+   HYPRE_IJVectorDestroy(vec_nn);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_AMGSetProjectedRBMs_collective_cache_miss(void)
+{
+   static const HYPRE_Complex values[6][4] = {
+      {0.0, 0.0, 0.0, 0.0},     {1.0, 1.0, 1.0, 1.0},     {2.0, 2.0, 2.0, 2.0},
+      {30.0, 31.0, 32.0, 33.0}, {40.0, 41.0, 42.0, 43.0}, {50.0, 51.0, 52.0, 53.0},
+   };
+   static const HYPRE_Complex expected[3][4] = {
+      {30.0, 32.0, 33.0, 0.0},
+      {40.0, 42.0, 43.0, 0.0},
+      {50.0, 52.0, 53.0, 0.0},
+   };
+
+   TEST_HYPRE_INIT();
+   HYPRE_IJVector vec_nn =
+      precon_test_ij_multivector_comm(MPI_COMM_WORLD, 4, 6, &values[0][0]);
+   int labels[4] = {2, 1, 2, 0};
+   int selected[2] = {2, 0};
+   IntArray dofmap = {.data = labels, .size = 4};
+   AMG_args args;
+   hypredrv_AMGSetDefaultArgs(&args);
+   args.coarsening.nodal = 4;
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, 1, selected, 2);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   int rank = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   if (rank == 0)
+   {
+      hypredrv_AMGDestroyRBMs(&args);
+   }
+   MPI_Barrier(MPI_COMM_WORLD);
+
+   /* Rank zero misses while its peers hit. The collective decision makes every
+      rank rebuild instead of letting the peers skip the reductions below. */
+   hypredrv_AMGSetProjectedRBMs(&args, vec_nn, &dofmap, 1, selected, 2);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.rbm_source_generation, 1);
+   assert_amg_rbm_values(&args, 3, expected);
+
+   hypredrv_AMGDestroyRBMs(&args);
    HYPRE_IJVectorDestroy(vec_nn);
    TEST_HYPRE_FINALIZE();
 }
@@ -4469,20 +4549,27 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(30100, 2)
    return;
-#endif
+#else
    TEST_HYPRE_INIT();
 
    precon_args args;
    hypredrv_PreconSetDefaultArgs(&args);
    hypredrv_MGRSetDefaultArgs(&args.mgr);
 
-   args.mgr.num_levels = 1; /* minimal valid MGR setup (num_levels-1 == 0) */
+   args.mgr.num_levels                         = 2;
+   args.mgr.level[0].f_dofs.data[0]            = 0;
+   args.mgr.level[0].f_dofs.size               = 1;
+   args.mgr.level[0].f_relaxation.type         = 0;
 
-   /* Minimal dofmap required by MGR */
+   /* The coarse operator retains only label 1, where every rigid-body mode is zero. */
    IntArray *dofmap = NULL;
-   const int map[1] = {0};
-   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   const int map[2] = {0, 1};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
+   static const HYPRE_Complex values[6][2] = {
+      {0.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}, {2.0, 0.0}, {3.0, 0.0},
+   };
+   HYPRE_IJVector vec_nn = precon_test_ij_multivector(2, 6, &values[0][0]);
 
    args.mgr.coarsest_level.use_krylov = 1;
    args.mgr.coarsest_level.krylov =
@@ -4498,20 +4585,93 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
    args.mgr.coarsest_level.krylov->precon_method         = PRECON_BOOMERAMG;
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG,
                                            &args.mgr.coarsest_level.krylov->precon);
-   args.mgr.coarsest_level.krylov->precon.amg.max_iter = 1;
+   args.mgr.coarsest_level.krylov->precon.amg.max_iter          = 1;
+   args.mgr.coarsest_level.krylov->precon.amg.coarsening.nodal = 1;
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
+   ASSERT_EQ(args.mgr.coarsest_level.krylov->precon.amg.interp_vec_variant, 1);
+   ASSERT_EQ(args.mgr.coarsest_level.krylov->precon.amg.num_rbms, 0);
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
    ASSERT_NULL(precon);
 
    hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   HYPRE_IJVectorDestroy(vec_nn);
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
+#endif
+}
+
+static void
+precon_test_configure_compacted_coarse_mgr(precon_args *args, HYPRE_Int coarse_type)
+{
+   hypredrv_PreconSetDefaultArgs(args);
+   hypredrv_MGRSetDefaultArgs(&args->mgr);
+   args->mgr.num_levels                  = 3;
+   args->mgr.level[0].f_dofs.data[0]     = 99; /* absent, so this level is compacted */
+   args->mgr.level[0].f_dofs.size        = 1;
+   args->mgr.level[0].f_relaxation.type  = 0;
+   args->mgr.level[1].f_dofs.data[0]     = 0;
+   args->mgr.level[1].f_dofs.size        = 1;
+   args->mgr.level[1].f_relaxation.type  = 0;
+   args->mgr.level[1].coarse_level_type  = coarse_type;
+}
+
+static void
+test_PreconCreate_mgr_user_coarse_matrix_validation_and_compaction(void)
+{
+#if !HYPRE_CHECK_MIN_VERSION(30100, 77)
+   return;
+#else
+   TEST_HYPRE_INIT();
+
+   IntArray *dofmap = NULL;
+   const int map[3] = {0, 1, 2};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   HYPRE_IJMatrix assembled = precon_test_ij_matrix_2x2();
+   HYPRE_IJMatrix unassembled = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 1, 0, 1, &unassembled), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(unassembled, HYPRE_PARCSR), 0);
+
+   HYPRE_IJMatrix slots[MAX_MGR_LEVELS - 1] = {0};
+   PreconOperators ops                       = {0};
+   ops.coarse_schur                          = slots;
+   precon_args args;
+   HYPRE_Precon precon = NULL;
+
+   precon_test_configure_compacted_coarse_mgr(&args, 6);
+   slots[1] = assembled;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, &ops);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
+
+   precon_test_configure_compacted_coarse_mgr(&args, 6);
+   slots[1] = unassembled;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, &ops);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);
+   ASSERT_NULL(precon);
+
+   precon_test_configure_compacted_coarse_mgr(&args, 0);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, &ops);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(precon);
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
+
+   HYPRE_IJMatrixDestroy(unassembled);
+   HYPRE_IJMatrixDestroy(assembled);
+   hypredrv_IntArrayDestroy(&dofmap);
+   TEST_HYPRE_FINALIZE();
+#endif
 }
 
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
@@ -6167,6 +6327,11 @@ test_PreconDestroy_mgr_frelax_krylov_nested(void)
    const int map[3] = {0, 1, 2};
    hypredrv_IntArrayBuild(MPI_COMM_SELF, 3, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
+   static const HYPRE_Complex values[6][3] = {
+      {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0}, {0.0, 0.0, 0.0},
+      {1.0, 0.0, 0.0}, {2.0, 0.0, 0.0}, {3.0, 0.0, 0.0},
+   };
+   HYPRE_IJVector vec_nn = precon_test_ij_multivector(3, 6, &values[0][0]);
 
    args.mgr.num_levels                 = 2;
    args.mgr.level[0].f_dofs.size       = 1;
@@ -6187,18 +6352,31 @@ test_PreconDestroy_mgr_frelax_krylov_nested(void)
    args.mgr.level[0].f_relaxation.krylov->precon_method         = PRECON_BOOMERAMG;
    hypredrv_PreconArgsSetDefaultsForMethod(
       PRECON_BOOMERAMG, &args.mgr.level[0].f_relaxation.krylov->precon);
-   args.mgr.level[0].f_relaxation.krylov->precon.amg.max_iter = 1;
+   args.mgr.level[0].f_relaxation.krylov->precon.amg.max_iter          = 1;
+   args.mgr.level[0].f_relaxation.krylov->precon.amg.coarsening.nodal = 1;
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, vec_nn, &precon, NULL, 0, NULL);
    ASSERT_NOT_NULL(precon);
+   AMG_args *amg = &args.mgr.level[0].f_relaxation.krylov->precon.amg;
+   ASSERT_EQ(amg->num_rbms, 3);
+   HYPRE_ParVector projected_rbms[3] = {amg->rbms[0], amg->rbms[1], amg->rbms[2]};
+
+   hypredrv_MGRRefreshComponentsForSetup(&args.mgr, precon->main, NULL, NULL, 1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(amg->num_rbms, 3);
+   for (int i = 0; i < 3; i++)
+   {
+      ASSERT_TRUE(amg->rbms[i] == projected_rbms[i]);
+   }
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
    ASSERT_NULL(precon);
 
    hypredrv_MGRDestroyNestedSolverArgs(&args.mgr);
+   HYPRE_IJVectorDestroy(vec_nn);
    hypredrv_IntArrayDestroy(&dofmap);
    TEST_HYPRE_FINALIZE();
 }
@@ -7103,6 +7281,7 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_AMGSetRBMs_full_and_projected_modes);
    RUN_TEST(test_AMGSetRBMs_validation_paths);
+   RUN_TEST(test_AMGSetProjectedRBMs_collective_cache_miss);
 #endif
    RUN_TEST(test_AMGCreate_grid_relax_points_air);
    RUN_TEST(test_PreconApply_default_case);
@@ -7115,6 +7294,7 @@ main(int argc, char **argv)
    RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
    RUN_TEST(test_MGRForgetCachedSolvers_destroys_projected_rbms);
    RUN_TEST(test_PreconCreate_mgr_coarsest_level_krylov_nested);
+   RUN_TEST(test_PreconCreate_mgr_user_coarse_matrix_validation_and_compaction);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)
    RUN_TEST(test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr);
 #endif

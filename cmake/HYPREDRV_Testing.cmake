@@ -899,6 +899,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
     hypredrv_check_hypre_version(30100 55)
+    hypredrv_check_hypre_version(30100 77)
 
     # Check for optional hypre features used to gate tests.
     hypredrv_check_hypre_symbol(HYPRE_DEVELOP_NUMBER)

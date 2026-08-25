@@ -486,13 +486,19 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
    switch (precon_method)
    {
       case PRECON_BOOMERAMG:
-         hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         /* GM1 marks modes projected to an MGR subblock. Full-system vectors would
+          * not match that block's partitioning during interpolation setup. */
+         if (args->amg.interp_vec_variant != 1)
+         {
+            hypredrv_AMGSetRBMs(&args->amg, vec_nn);
+         }
          hypredrv_AMGCreate(&args->amg, &precon->main);
          break;
 
       case PRECON_MGR:
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
+         hypredrv_MGRSetCoarseSchur(&args->mgr, ops ? ops->coarse_schur : NULL);
          hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
          break;
 
@@ -628,8 +634,8 @@ hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
             {
                snprintf(reason, reason_size,
                         "MGR level %d matched %s is currently CPU-only", level,
-                        args->mgr.level[level].matched_f_backsolve == 2 ?
-                        "Schur GMRES(1)" : "F backsolve");
+                        args->mgr.level[level].matched_f_backsolve == 2 ? "Schur GMRES(1)"
+                                                                        : "F backsolve");
             }
             return 0;
          }
@@ -637,9 +643,10 @@ hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
          {
             if (reason && reason_size)
             {
-               snprintf(reason, reason_size, "MGR level %d matched %s Q is currently CPU-only",
-                        level, args->mgr.level[level].matched_q == 2 ?
-                        "adaptive FSAI" : "sparse");
+               snprintf(reason, reason_size,
+                        "MGR level %d matched %s Q is currently CPU-only", level,
+                        args->mgr.level[level].matched_q == 2 ? "adaptive FSAI"
+                                                              : "sparse");
             }
             return 0;
          }

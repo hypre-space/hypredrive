@@ -575,6 +575,13 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetNearNullSpace(handle_, n, c, values));
    }
+   /// @brief C++ wrapper for HYPREDRV_LinearSystemSetCoarseSchur.
+   /// @see HYPREDRV_LinearSystemSetCoarseSchur
+   void
+   set_coarse_schur(int level, HYPRE_Matrix mat_S)
+   {
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetCoarseSchur(handle_, level, mat_S));
+   }
    /// @brief C++ wrapper for HYPREDRV_LinearSystemSetNullSpace.
    /// @see HYPREDRV_LinearSystemSetNullSpace
    void

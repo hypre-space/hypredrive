@@ -1120,7 +1120,8 @@ static const HelpKeyDoc ADSKeyDocs[] = {
 
 static const HelpKeyDoc MGRKeyDocs[] = {
    {"non_c_to_f", "Treat non-C-points as F-points"},
-   {"pmax", "Maximum interpolation stencil size; afsai matched_q requires 4 as its G-row contract"},
+   {"pmax", "Maximum interpolation stencil size; afsai matched_q requires 4 as its G-row "
+            "contract"},
    {"matched_q_sweeps", "Richardson updates for polynomial matched_q; ignored by afsai"},
    {"matched_q_weight", "Richardson damping for polynomial matched_q; ignored by afsai"},
    {"relax_type", "Default MGR relaxation type"},

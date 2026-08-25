@@ -1289,6 +1289,26 @@ extern "C"
                                          int num_components, const HYPRE_Complex *values);
 
    /**
+    * @brief Provide an application-assembled coarse (Schur-complement) operator
+    *        for a given MGR level, used when that level's coarse_level_type is
+    *        "user". MGR uses it as the coarse-grid operator instead of the Galerkin
+    *        RAP product. The matrix must be sized to that level's compressed coarse
+    *        (C-point) DOF set. Call once per level as needed.
+    *
+    *        In standalone/driver mode ownership transfers to HYPREDRV. In library
+    *        mode the matrix is borrowed and the application retains ownership,
+    *        matching the other external matrix setters. Replacing a registered
+    *        matrix invalidates an existing MGR preconditioner.
+    *
+    * @param hypredrv The HYPREDRV object.
+    * @param level    The MGR reduction level the operator applies to (0-based).
+    * @param mat_S    The coarse Schur-complement matrix (HYPRE_Matrix), or NULL.
+    * @return uint32_t error code (0 on success).
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemSetCoarseSchur(
+      HYPREDRV_t hypredrv, int level, HYPRE_Matrix mat_S);
+
+   /**
     * @brief Set exact null space modes for the current linear system.
     *
     * The modes are orthonormalized and projected out of the computed solution at the

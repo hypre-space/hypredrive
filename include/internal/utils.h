@@ -71,7 +71,7 @@ hypredrv_MultipartRange(uint64_t num_parts, int num_procs, int rank, uint64_t *f
    uint64_t rem   = num_parts % (uint64_t)num_procs;
    uint64_t urank = (uint64_t)rank;
 
-   *first_part      = urank * base + (urank < rem ? urank : rem);
+   *first_part      = (urank * base) + (urank < rem ? urank : rem);
    *num_local_parts = base + (urank < rem ? 1u : 0u);
 }
 

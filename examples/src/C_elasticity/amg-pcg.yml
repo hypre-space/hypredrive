@@ -1,0 +1,34 @@
+# Two-material elasticity, STANDARD CG discretization (displacement-only, SPD).
+#
+# PCG + unknown-based (num_functions = 3) BoomerAMG. The two-material bar with a
+# pure displacement Q1 discretization is symmetric positive definite, so conjugate
+# gradients is the natural Krylov method. The AMG V-cycle uses a symmetric sweep
+# (forward l1-hybrid-GS going down, backward going up), keeping the preconditioner
+# SPD as PCG requires.
+#
+# This is the locking-prone formulation: as the top material approaches
+# incompressibility (nu_top -> 1/2) the volumetric stiffness lambda ~ 1/(1-2nu)
+# blows up the operator condition number and AMG cannot resolve the
+# near-incompressible modes, so the iteration count diverges and eventually hits
+# the cap. Contrast with mgr2-gmres.yml (mixed u-p), which stays bounded.
+solver:
+  pcg:
+    max_iter: 100
+    relative_tol: 1.0e-6
+    absolute_tol: 0.0
+    print_level: 0
+
+preconditioner:
+  amg:
+    max_iter: 1
+    print_level: 0
+    interpolation:
+      prolongation_type: extended+i
+    coarsening:
+      type: hmis
+      strong_th: 0.5
+      num_functions: 3
+    relaxation:
+      down_type: forward-hl1gs
+      up_type: backward-hl1gs
+      coarse_type: ge
