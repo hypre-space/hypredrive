@@ -450,7 +450,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         build_type: [Debug]
         compiler: [gcc, clang]
-        hypre_version: [master, v3.1.0, v2.20.0]
+        hypre_version: [master, v3.2.0, v2.20.0]
         exclude:
           - os: macos-latest
             compiler: gcc
@@ -750,7 +750,7 @@ jobs:
           - name: SuperLU_DIST
             cache_key: superlu-dist
             build_dir: build-superlu-dist
-            hypre_version: v3.1.0
+            hypre_version: v3.2.0
             cmake_options: -DHYPREDRV_BUILD_DSUPERLU=ON
             build_shared_libs: 'OFF'
             apt_packages: libopenblas-dev
