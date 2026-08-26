@@ -9,7 +9,7 @@ if(NOT HYPREDRV_ENABLE_DATA)
   return()
 endif()
 
-set(HYPREDRV_DATA_ZENODO_RECORD "17471036" CACHE STRING "Zenodo record id for datasets")
+set(HYPREDRV_DATA_ZENODO_RECORD "22116856" CACHE STRING "Zenodo record id for datasets")
 set(HYPREDRV_DATA_BASE_URL "https://zenodo.org/api/records/${HYPREDRV_DATA_ZENODO_RECORD}/files" CACHE STRING "Base URL for dataset files on Zenodo API")
 
 set(HYPREDRV_DATASETS "alcontact1k;cmpf1k;cmphyb1k;cmpres1k;cmpreshyb1k;compflow6k;hspporo1k;hydrofrac1k;immf1k;lcontact1k;lcontactbs1k;mhd2dldc1k;mhd3ddbdt1k;mpporo1k;mpporores1k;poromech2k;ps3d10pt7;rcmpobl1k;smef1k;sphyb1k;spporo1k;spporocf1k;spporoef1k;spporores1k;spres1k;spreshyb1k;tcmpf1k;tcmpres1k;tmpporo1k;tspporo1k;tspporores1k;tspres1k" CACHE STRING "Datasets to fetch from Zenodo")
