@@ -396,7 +396,7 @@ Example packing command:
       --rhs-filename IJ.out.b \
       --dofmap-filename dofmap.out \
       --init-suffix 0 \
-      --last-suffix 24 \
+      --last-suffix 4 \
       --algo zstd \
       --output poromech2k_np1_lsseq
 

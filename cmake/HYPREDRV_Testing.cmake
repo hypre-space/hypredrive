@@ -1251,7 +1251,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1277,7 +1277,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-grelax-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|grelax=1|MGR G-relax setup reuse at level 2: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|grelax=1|MGR G-relax setup reuse at level 2: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1303,7 +1303,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-coarse-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|coarse=1|MGR coarsest setup reuse: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|coarse=1|MGR coarsest setup reuse: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1329,7 +1329,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-ilu-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|frelax=1|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|frelax=1|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1346,6 +1346,56 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         endif()
 
         hypredrv_flush_batched_hypredrive_tests()
+
+        # The GEOS MGR strategy datasets keep their own input YAML in each
+        # MPI-layout directory.  Run each layout from that directory so the
+        # relative IJ filenames in the YAML resolve to the matching dataset.
+        file(GLOB _hypredrv_dataset_inputs CONFIGURE_DEPENDS
+            "${CMAKE_SOURCE_DIR}/data/*/np1/input.yml"
+            "${CMAKE_SOURCE_DIR}/data/*/np4/input.yml"
+        )
+        foreach(_dataset_input IN LISTS _hypredrv_dataset_inputs)
+            get_filename_component(_dataset_variant_dir
+                "${_dataset_input}" DIRECTORY)
+            get_filename_component(_dataset_variant
+                "${_dataset_variant_dir}" NAME)
+            if(_dataset_variant STREQUAL "np1")
+                set(_dataset_num_procs 1)
+            elseif(_dataset_variant STREQUAL "np4")
+                set(_dataset_num_procs 4)
+            else()
+                continue()
+            endif()
+
+            get_filename_component(_dataset_parent_dir
+                "${_dataset_variant_dir}" DIRECTORY)
+            get_filename_component(_dataset_name
+                "${_dataset_parent_dir}" NAME)
+            string(MAKE_C_IDENTIFIER
+                "${_dataset_name}_${_dataset_variant}" _dataset_test_suffix)
+            set(_dataset_test_name
+                "hypredrive_test_${_dataset_test_suffix}")
+
+            add_executable_test(${_dataset_test_name} hypredrive-cli
+                ${_dataset_num_procs}
+                WORKING_DIRECTORY "${_dataset_variant_dir}"
+                ARGS input.yml
+                REQUIRE_CONTAINS "Solving linear system #0"
+            )
+            set_tests_properties(${_dataset_test_name}
+                PROPERTIES
+                    LABELS "integration;hypredrive;dataset"
+            )
+        endforeach()
+        unset(_hypredrv_dataset_inputs)
+        unset(_dataset_input)
+        unset(_dataset_variant_dir)
+        unset(_dataset_variant)
+        unset(_dataset_num_procs)
+        unset(_dataset_parent_dir)
+        unset(_dataset_name)
+        unset(_dataset_test_suffix)
+        unset(_dataset_test_name)
 
         # Test main.c help/usage/error branches
         # Note: --help exits with 0, so we need to allow that

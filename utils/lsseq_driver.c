@@ -362,7 +362,7 @@ PrintUsage(const char *prog)
            "\n"
            "Examples:\n"
            "  %s --dirname hypre-data_lidcavity_Re100_16x16_4x4 --output lidcavity_lsseq\n"
-           "  %s --dirname data/poromech2k/np1/ls --last-suffix 24 --output poro_lsseq\n",
+           "  %s --dirname data/poromech2k/np1/ls --last-suffix 4 --output poro_lsseq\n",
            prog, prog, prog);
 }
 

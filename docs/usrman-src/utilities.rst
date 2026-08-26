@@ -424,7 +424,7 @@ Pack a sequence:
      --rhs-filename IJ.out.b \
      --dofmap-filename dofmap.out \
      --init-suffix 0 \
-     --last-suffix 24 \
+     --last-suffix 4 \
      --digits-suffix 5 \
      --algo zstd \
      --output build/poromech2k_np1_lsseq

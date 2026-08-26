@@ -402,7 +402,7 @@ of this page explain how to retrieve it.
 
 .. code-block:: bash
 
-   $ scripts/spyplot.py -d data/poromech2k/np1 -r 0:24 -l -t 1e-20
+   $ scripts/spyplot.py -d data/poromech2k/np1 -r 0:4 -l -t 1e-20
 
 .. _Example8:
 

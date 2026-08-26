@@ -20,26 +20,42 @@ cmake --build <build-dir> --target data
 
 Alternatively, you can download the datasets manually from the Zenodo record and extract them into this directory.
 
-For release preparation, run `scripts/pack_datasets.py` to create one
-deterministic tarball per dataset, plus MD5/SHA256 checksums and a v0.3.0
-manifest under `/tmp/hypredrive-datasets-v0.3.0`.
-
 ## Datasets
 
-- ps3d10pt7: 3D Laplacian (scalar) with the standard 7‑point finite difference stencil
+- ps3d10pt7: 3D Laplacian (scalar) with the standard 7‑point finite difference stencil.
 - compflow6k: compositional multiphase flow problem simulated in GEOS.
-- poromech2k: sequence of linear systems a multiphase poromechanics simulation in GEOS.
-- MGR strategy datasets: 27 small offline cases, one for every GEOS MGR strategy, with np1 and np4 variants.
-
-The MGR strategy datasets are not checked into the hypredrive sources. Include
-their top-level short-named directories (for example, `spres1k` and
-`cmpres1k`) in the same Zenodo archive as the other datasets. The generated
-`mgr_strategy_cases.md` file lists every case, its GEOS strategy, and its total
-DOF count. Run serial cases from their `np1/` directory with
-`hypredrive-cli input.yml`, or run the four-rank `np4/` variant with
-`mpiexec -n 4 hypredrive-cli input.yml`.
+- poromech2k: sequence of linear systems from a multiphase poromechanics simulation in GEOS.
+- spres1k: single phase flow in reservoir coupled with wells simulated in GEOS.
+- tspres1k: thermal single phase flow in reservoir coupled with wells simulated in GEOS.
+- sphyb1k: single phase flow using a hybrid formulation simulated in GEOS.
+- spreshyb1k: single phase flow in reservoir using a hybrid formulation coupled with wells simulated in GEOS.
+- spporo1k: single phase poromechanics simulated in GEOS.
+- tspporo1k: thermal single phase poromechanics simulated in GEOS.
+- hspporo1k: hybrid single phase poromechanics simulated in GEOS.
+- spporoef1k: single phase poromechanics with embedded fractures simulated in GEOS.
+- spporocf1k: single phase poromechanics with conforming fractures simulated in GEOS.
+- spporores1k: single phase poromechanics in reservoir coupled with wells simulated in GEOS.
+- tspporores1k: thermal single phase poromechanics in reservoir coupled with wells simulated in GEOS.
+- cmpf1k: compositional multiphase flow simulated in GEOS.
+- cmphyb1k: compositional multiphase flow using a hybrid formulation simulated in GEOS.
+- cmpres1k: compositional multiphase flow in reservoir coupled with wells simulated in GEOS.
+- cmpreshyb1k: compositional multiphase flow in reservoir using a hybrid formulation coupled with wells simulated in GEOS.
+- immf1k: immiscible multiphase flow simulated in GEOS.
+- rcmpobl1k: reactive compositional multiphase flow using operator-based linearization simulated in GEOS.
+- tcmpf1k: thermal compositional multiphase flow simulated in GEOS.
+- tcmpres1k: thermal compositional multiphase flow in reservoir coupled with wells simulated in GEOS.
+- mpporo1k: multiphase poromechanics simulated in GEOS.
+- mpporores1k: multiphase poromechanics in reservoir coupled with wells simulated in GEOS.
+- tmpporo1k: thermal multiphase poromechanics simulated in GEOS.
+- hydrofrac1k: hydrofracture simulation in GEOS.
+- lcontact1k: Lagrangian contact mechanics simulated in GEOS.
+- alcontact1k: augmented Lagrangian contact mechanics simulated in GEOS.
+- lcontactbs1k: Lagrangian contact mechanics with bubble stabilization simulated in GEOS.
+- smef1k: solid mechanics with embedded fractures simulated in GEOS.
+- mhd3ddbdt1k: 3D coupled full-induction magnetohydrodynamics from a duct flow problem simulated in VERTEX-CFD.
+- mhd2dldc1k: 2D coupled full-induction magnetohydrodynamics from a lid-driven cavity problem simulated in VERTEX-CFD.
 
 ## Notes
 
 - Binary IJ files encode indices and values with widths recorded in the file header; hypredrive detects these automatically.
-- For provenance of third‑party inputs, see the dataset-specific READMEs.
+- For provenance of third-party inputs, see the dataset-specific READMEs.
