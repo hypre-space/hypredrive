@@ -538,9 +538,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v1
+          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v1
+            datasets-v2-
 
       - name: Build HYPRE
         id: build-hypre
@@ -590,15 +590,13 @@ jobs:
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
 
-      - name: Fetch datasets (optional)
+      - name: Fetch datasets
         run: |
           set -euxo pipefail
-          # Only download if datasets are not already cached
-          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
-            cmake --build $BUILD_DIR --target data --parallel
-          else
-            echo "Datasets already cached, skipping download"
-          fi
+          # The data target validates every configured dataset and fetches any
+          # missing or incomplete archive.  Do not use one legacy dataset as a
+          # proxy for the complete cache.
+          cmake --build "$BUILD_DIR" --target data --parallel
 
       - name: Run tests
         timeout-minutes: 5
@@ -677,9 +675,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v1
+          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v1
+            datasets-v2-
 
       - name: Build HYPRE
         id: build-hypre
@@ -693,19 +691,14 @@ jobs:
           os: ubuntu-latest
           mpi_flavor: ${{ env.HYPRE_MPI_FLAVOR }}
 
-      - name: Fetch datasets (optional)
+      - name: Fetch datasets
         run: |
           set -euxo pipefail
-          # Only download if datasets are not already cached
-          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
-            cmake -S . -B build-data \
-              -DHYPREDRV_ENABLE_DATA=ON \
-              -DHYPREDRV_DATASETS=ps3d10pt7 \
-              -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
-            cmake --build build-data --target data --parallel
-          else
-            echo "Datasets already cached, skipping download"
-          fi
+          cmake -S . -B build-data \
+            -DHYPREDRV_ENABLE_DATA=ON \
+            -DHYPREDRV_DATASETS=ps3d10pt7 \
+            -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
+          cmake --build build-data --target data --parallel
 
       - name: Build and test (autotools)
         run: |
@@ -788,9 +781,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v1
+          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v1
+            datasets-v2-
 
       - name: Configure hypredrive with ${{ matrix.dependency.name }}
         run: |
@@ -808,22 +801,10 @@ jobs:
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
 
-      - name: Fetch datasets (optional)
-        env:
-          REQUIRED_DATASETS: ${{ matrix.dependency.required_datasets }}
+      - name: Fetch datasets
         run: |
           set -euxo pipefail
-          missing=0
-          for dataset in ${REQUIRED_DATASETS//;/ }; do
-            if [ ! -d "data/${dataset}" ] || [ -z "$(ls -A "data/${dataset}" 2>/dev/null)" ]; then
-              missing=1
-            fi
-          done
-          if [ "${missing}" -ne 0 ]; then
-            cmake --build $BUILD_DIR --target data --parallel
-          else
-            echo "Required datasets already cached, skipping download"
-          fi
+          cmake --build "$BUILD_DIR" --target data --parallel
 
       - name: Run tests with ${{ matrix.dependency.name }}
         timeout-minutes: 5
@@ -900,9 +881,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data
-          key: datasets-v1
+          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v1
+            datasets-v2-
 
       - name: Build HYPRE (mixedint)
         id: build-hypre
@@ -928,14 +909,10 @@ jobs:
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
 
-      - name: Fetch datasets (optional)
+      - name: Fetch datasets
         run: |
           set -euxo pipefail
-          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
-            cmake --build $BUILD_DIR --target data --parallel
-          else
-            echo "Datasets already cached, skipping download"
-          fi
+          cmake --build "$BUILD_DIR" --target data --parallel
 
       - name: Run tests
         timeout-minutes: 5

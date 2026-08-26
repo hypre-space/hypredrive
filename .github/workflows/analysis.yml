@@ -202,7 +202,7 @@ jobs:
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
 
-      - name: Fetch datasets (optional)
+      - name: Fetch datasets
         run: cmake --build $BUILD_DIR --target data --parallel
 
       - name: Run tests with sanitizers

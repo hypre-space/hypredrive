@@ -1350,29 +1350,17 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
 
         if(HYPREDRV_HAVE_HYPRE_22100_DEV0)
             # The GEOS MGR strategy datasets keep their own input YAML in each
-            # MPI-layout directory.  Run each layout from that directory so the
-            # relative IJ filenames in the YAML resolve to the matching dataset.
-            file(GLOB _hypredrv_dataset_inputs CONFIGURE_DEPENDS
-                "${CMAKE_SOURCE_DIR}/data/*/np1/input.yml"
-                "${CMAKE_SOURCE_DIR}/data/*/np4/input.yml"
-            )
-            foreach(_dataset_input IN LISTS _hypredrv_dataset_inputs)
-                get_filename_component(_dataset_variant_dir
-                    "${_dataset_input}" DIRECTORY)
-                get_filename_component(_dataset_variant
-                    "${_dataset_variant_dir}" NAME)
-                if(_dataset_variant STREQUAL "np1")
-                    set(_dataset_num_procs 1)
-                elseif(_dataset_variant STREQUAL "np4")
-                    set(_dataset_num_procs 4)
-                else()
+            # MPI-layout directory.  Use the configured data list instead of
+            # globbing the source tree: datasets are downloaded after configure
+            # in CI and are intentionally ignored by git.
+            foreach(_dataset_name IN LISTS HYPREDRV_DATASETS)
+                # These datasets use different input arrangements and have
+                # dedicated regressions elsewhere in this file.
+                if(_dataset_name STREQUAL "compflow6k" OR
+                   _dataset_name STREQUAL "poromech2k" OR
+                   _dataset_name STREQUAL "ps3d10pt7")
                     continue()
                 endif()
-
-                get_filename_component(_dataset_parent_dir
-                    "${_dataset_variant_dir}" DIRECTORY)
-                get_filename_component(_dataset_name
-                    "${_dataset_parent_dir}" NAME)
 
                 # The MHD strategy inputs use nested MGR F-relaxation, which was
                 # added on the HYPRE 3.1 development stream at develop >= 5.
@@ -1381,37 +1369,44 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 # feature they cannot provide.
                 if(_dataset_name MATCHES "^mhd" AND NOT HYPREDRV_HAVE_HYPRE_30100_DEV5)
                     message(STATUS
-                        "Skipping ${_dataset_name} ${_dataset_variant}: "
+                        "Skipping ${_dataset_name} dataset regressions: "
                         "nested MGR F-relaxation requires HYPRE >= 3.1.0 develop >= 5")
                     continue()
                 endif()
 
-                string(MAKE_C_IDENTIFIER
-                    "${_dataset_name}_${_dataset_variant}" _dataset_test_suffix)
-                set(_dataset_test_name
-                    "hypredrive_test_${_dataset_test_suffix}")
+                foreach(_dataset_variant IN ITEMS np1 np4)
+                    if(_dataset_variant STREQUAL "np1")
+                        set(_dataset_num_procs 1)
+                    else()
+                        set(_dataset_num_procs 4)
+                    endif()
 
-                add_executable_test(${_dataset_test_name} hypredrive-cli
-                    ${_dataset_num_procs}
-                    WORKING_DIRECTORY "${_dataset_variant_dir}"
-                    ARGS input.yml
-                    REQUIRE_CONTAINS "Solving linear system #0"
-                )
-                set_tests_properties(${_dataset_test_name}
-                    PROPERTIES
-                        LABELS "integration;hypredrive;dataset"
-                )
+                    set(_dataset_variant_dir
+                        "${CMAKE_SOURCE_DIR}/data/${_dataset_name}/${_dataset_variant}")
+                    string(MAKE_C_IDENTIFIER
+                        "${_dataset_name}_${_dataset_variant}" _dataset_test_suffix)
+                    set(_dataset_test_name
+                        "hypredrive_test_${_dataset_test_suffix}")
+
+                    add_executable_test(${_dataset_test_name} hypredrive-cli
+                        ${_dataset_num_procs}
+                        WORKING_DIRECTORY "${_dataset_variant_dir}"
+                        ARGS input.yml
+                        REQUIRE_CONTAINS "Solving linear system #0"
+                    )
+                    set_tests_properties(${_dataset_test_name}
+                        PROPERTIES
+                            LABELS "integration;hypredrive;dataset"
+                    )
+                endforeach()
             endforeach()
         else()
             message(STATUS
                 "Skipping GEOS MGR dataset tests: HYPRE >= 2.21.0 is required")
         endif()
-        unset(_hypredrv_dataset_inputs)
-        unset(_dataset_input)
         unset(_dataset_variant_dir)
         unset(_dataset_variant)
         unset(_dataset_num_procs)
-        unset(_dataset_parent_dir)
         unset(_dataset_name)
         unset(_dataset_test_suffix)
         unset(_dataset_test_name)
