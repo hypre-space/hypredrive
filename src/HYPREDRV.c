@@ -2752,7 +2752,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
       HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv)); /* GCOVR_EXCL_BR_LINE */
       const LS_args *ls             = &hypredrv->iargs->ls;
       bool           fixed_sequence = (bool)((ls->precmat_sequence_filename[0] != '\0') &&
-                                             (ls->precmat_sequence_system_id >= 0));
+                                   (ls->precmat_sequence_system_id >= 0));
       if (fixed_sequence && hypredrv->mat_M && hypredrv->owns_mat_M &&
           hypredrv->precmat_sequence_cache_args == hypredrv->iargs)
       {

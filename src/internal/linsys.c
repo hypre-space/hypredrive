@@ -2210,9 +2210,9 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    MPI_Comm        log_comm = LinearSystemCommFromVector(x_ptr ? x_ptr : x0_ptr);
    /* Reports the current system rather than the next one; clamp so a NULL stats
     * logs system 0 instead of -1. */
-   int             ls_id = hypredrv_StatsGetLinearSystemID(stats);
-   char            log_name_buf[32];
-   const char     *log_object_name =
+   int         ls_id = hypredrv_StatsGetLinearSystemID(stats);
+   char        log_name_buf[32];
+   const char *log_object_name =
       hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
 
    ls_id = (ls_id < 0) ? 0 : ls_id;
