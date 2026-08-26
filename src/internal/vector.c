@@ -244,6 +244,15 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    {
       indices = d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
       vals = d_vals = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+      /* LCOV_EXCL_START */
+      if (nrows_max > 0 && (!d_indices || !d_vals))
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate device vector read buffers (%llu rows)",
+                              (unsigned long long)nrows_max);
+         goto cleanup;
+      }
+      /* LCOV_EXCL_STOP */
    }
    else
 #endif

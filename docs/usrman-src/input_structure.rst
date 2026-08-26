@@ -1693,6 +1693,10 @@ preconditioner:
     coarsest-level AMG with ``max_iter: 1`` and ``tolerance: 0`` (no nested
     Krylov or component reuse). If the selected configured level has no F labels
     in a system and is compacted away, the option is a no-op for that system.
+    The outer-solver requirement is scoped to the configuration rather than to
+    an individual system, so ``gmres1`` requires ``fgmres`` even when the
+    selected level is compacted away; the configuration is therefore accepted or
+    rejected identically for every system in a sequence.
 
   - ``f_relaxation`` - relaxation method targeting F points. For available options, see
     `HYPRE_MGRSetLevelFRelaxType

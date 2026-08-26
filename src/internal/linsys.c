@@ -817,12 +817,6 @@ LinearSystemMemoryLocationGet(const LS_args *args)
    /* GCOVR_EXCL_BR_STOP */
 }
 
-static int
-LinearSystemStatsIDGet(const Stats *stats)
-{
-   return hypredrv_StatsGetLinearSystemID(stats);
-}
-
 static MPI_Comm
 LinearSystemCommFromVector(HYPRE_IJVector vec)
 {
@@ -2002,7 +1996,7 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
                                      HYPRE_IJVector *x_ptr, const Stats *stats)
 {
    (void)mat;
-   int         ls_id = LinearSystemStatsIDGet(stats) + 1;
+   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
       hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
@@ -2214,10 +2208,14 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
    MPI_Comm        log_comm = LinearSystemCommFromVector(x_ptr ? x_ptr : x0_ptr);
-   int             ls_id    = LinearSystemStatsIDGet(stats);
+   /* Reports the current system rather than the next one; clamp so a NULL stats
+    * logs system 0 instead of -1. */
+   int             ls_id = hypredrv_StatsGetLinearSystemID(stats);
    char            log_name_buf[32];
    const char     *log_object_name =
       hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+
+   ls_id = (ls_id < 0) ? 0 : ls_id;
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
    HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset begin");
@@ -2649,7 +2647,7 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
                                    HYPRE_IJMatrix *precmat_ptr, const Stats *stats)
 {
    char        matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int         ls_id                                = LinearSystemStatsIDGet(stats) + 1;
+   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
       hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));

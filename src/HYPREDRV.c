@@ -2752,7 +2752,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
       HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv)); /* GCOVR_EXCL_BR_LINE */
       const LS_args *ls             = &hypredrv->iargs->ls;
       bool           fixed_sequence = (bool)((ls->precmat_sequence_filename[0] != '\0') &&
-                                   (ls->precmat_sequence_system_id >= 0));
+                                             (ls->precmat_sequence_system_id >= 0));
       if (fixed_sequence && hypredrv->mat_M && hypredrv->owns_mat_M &&
           hypredrv->precmat_sequence_cache_args == hypredrv->iargs)
       {
@@ -2917,8 +2917,18 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    bool                should_create = false;
    if (hypredrv->iargs->precon_method == PRECON_MGR &&
        !hypredrv_MGRValidateOuterSolver(&hypredrv->iargs->precon.mgr,
-                                        hypredrv->iargs->solver_method, "MGR"))
+                                        (int)hypredrv->iargs->solver_method, "MGR"))
    {
+      /* Drop a preconditioner built for an earlier system: this configuration is
+       * invalid for the current outer solver, and leaving the previous object
+       * installed lets a caller that only logs the error keep applying it. */
+      if (hypredrv->precon)
+      {
+         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+      }
+      hypredrv->precon_is_setup = false;
       goto cleanup;
    }
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));

@@ -1679,7 +1679,7 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
 static void
 test_HYPREDRV_matched_schur_requires_fgmres(void)
 {
-#if !HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
    return;
 #else
    reset_state();

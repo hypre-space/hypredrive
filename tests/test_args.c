@@ -118,9 +118,9 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
-   ASSERT_EQ((int)(args->general.dev_pool_size / GB_TO_BYTES), 2);
-   ASSERT_EQ((int)(args->general.uvm_pool_size / GB_TO_BYTES), 3);
-   ASSERT_EQ((int)(args->general.host_pool_size / GB_TO_BYTES), 4);
+   ASSERT_EQ((int)(args->general.dev_pool_size / (double)GB_TO_BYTES), 2);
+   ASSERT_EQ((int)(args->general.uvm_pool_size / (double)GB_TO_BYTES), 3);
+   ASSERT_EQ((int)(args->general.host_pool_size / (double)GB_TO_BYTES), 4);
    ASSERT_TRUE(args->general.pinned_pool_size > 0);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
 

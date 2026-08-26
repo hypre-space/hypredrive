@@ -108,8 +108,8 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
    int    entry_id = 0, num_solves = 0, linear_iters = 0;
    double setup_time = 0.0, solve_time = 0.0;
 
-   int ret = hypredrv_StatsLevelGetEntrySummary(s, 0, 0, &entry_id, &num_solves,
-                                                &linear_iters, &setup_time, &solve_time);
+   uint32_t ret = hypredrv_StatsLevelGetEntrySummary(s, 0, 0, &entry_id, &num_solves,
+                                                     &linear_iters, &setup_time, &solve_time);
    ASSERT_EQ(ret, 0);
    ASSERT_EQ(entry_id, 7);
    ASSERT_EQ(num_solves, 2);

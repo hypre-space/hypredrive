@@ -55,8 +55,12 @@ runs:
           SHA="${{ inputs.hypre_version }}"
         fi
         SHORT="${SHA:0:7}"
+        # Match only vX.Y.Z release tags, mirroring the post-clone
+        # `git describe --match 'v*' --exact-match` probe below.  A looser match
+        # (nightly-*, rc tags) would wrongly mark a moving ref as an exact
+        # release and skip the HYPRE_DEVELOP_NUMBER guards.
         TAG_REF=$(git ls-remote --tags https://github.com/hypre-space/hypre.git |
-          awk -v sha="$SHA" '$1 == sha {print $2; exit}')
+          awk -v sha="$SHA" '$1 == sha && $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ {print $2; exit}')
         echo "sha_short=$SHORT" >> $GITHUB_OUTPUT
         echo "install_suffix=${{ inputs.hypre_version }}-${SHORT}" >> $GITHUB_OUTPUT
         if [ -n "$TAG_REF" ]; then
@@ -163,7 +167,7 @@ runs:
           # Exact release tags intentionally omit HYPRE_DEVELOP_NUMBER.  Only
           # require that metadata for a moving ref or post-release commit,
           # where HYPRE's version probes depend on the tag distance.
-          if git -C hypre describe --match 'v*' --exact-match --tags HEAD >/dev/null 2>&1; then
+          if git -C hypre tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             HYPRE_EXACT_TAG=1
           fi
         fi

@@ -3797,7 +3797,7 @@ test_MGRCreate_interp_weight_and_block_interp_validation(void)
    free(mgr.point_marker_data);
    mgr.point_marker_data = NULL;
 
-#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
+#if HYPREDRV_HAS_MGR_DEV_FEATURES
    for (int type = 12; type <= 14; type++)
    {
       mgr.interp_sweeps = 1;
@@ -4423,7 +4423,7 @@ test_Precon_lifecycle_ams_1x1(void)
    HYPRE_IJVector  cx  = precon_test_ij_vector_1x1(0.0);
    HYPRE_IJVector  cy  = precon_test_ij_vector_1x1(0.0);
    HYPRE_IJVector  cz  = precon_test_ij_vector_1x1(0.0);
-   PreconOperators ops = {G, NULL, {cx, cy, cz}};
+   PreconOperators ops = {G, NULL, {cx, cy, cz}, NULL};
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
@@ -4479,7 +4479,7 @@ test_Precon_lifecycle_ads_1x1(void)
    HYPRE_IJVector  cx  = precon_test_ij_vector_1x1(0.0);
    HYPRE_IJVector  cy  = precon_test_ij_vector_1x1(0.0);
    HYPRE_IJVector  cz  = precon_test_ij_vector_1x1(0.0);
-   PreconOperators ops = {G, C, {cx, cy, cz}};
+   PreconOperators ops = {G, C, {cx, cy, cz}, NULL};
 
    HYPRE_Precon precon = NULL;
    hypredrv_ErrorCodeResetAll();
@@ -5609,7 +5609,7 @@ precon_test_intarray_plain_data_only(int n, const int *vals)
 static void
 test_MGRCreate_matched_f_backsolve_validation(void)
 {
-#if !HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
    return;
 #else
    TEST_HYPRE_INIT();
@@ -5692,7 +5692,7 @@ test_MGRCreate_matched_f_backsolve_validation(void)
       mgr.point_marker_data = NULL;
    }
 
-#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
+#if HYPREDRV_HAS_MGR_DEV_FEATURES
    /* Mode 2 additionally fixes the coarse direction to one managed AMG
     * application. Each nonzero variant violates one independent condition. */
    for (int variant = 0; variant < 6; variant++)
@@ -5836,7 +5836,7 @@ test_MGRCreate_matched_afsai_validation(void)
       hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       if (variant == 0)
       {
-#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71) && !defined(HYPRE_COMPLEX)
+#if HYPREDRV_HAS_MGR_DEV_FEATURES && !defined(HYPRE_COMPLEX)
          ASSERT_FALSE(hypredrv_ErrorCodeActive());
          ASSERT_NOT_NULL(precon);
 #else

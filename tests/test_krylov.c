@@ -448,7 +448,7 @@ test_nested_krylov_destroy_clears_mgr_runtime_state(void)
 static void
 test_nested_krylov_matched_schur_requires_fgmres(void)
 {
-#if !HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
    return;
 #else
    const int map[2] = {0, 1};
