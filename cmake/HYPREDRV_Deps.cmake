@@ -31,6 +31,55 @@ function(_hypredrv_patch_hypre_mgr_col_lumped_bcf_leak hypre_source_dir)
         return()
     endif()
 
+    # HYPRE fixed this leak upstream in the 3.2.0 development stream.  Keep
+    # the compatibility patch for the 3.2.0 release (develop number 0) and
+    # older releases, but do not add a second destroy for newer snapshots.
+    set(_hypredrv_hypre_release_number 0)
+    set(_hypredrv_hypre_develop_number 0)
+    set(_hypredrv_hypre_cmake_file "${hypre_source_dir}/src/CMakeLists.txt")
+    if(EXISTS "${_hypredrv_hypre_cmake_file}")
+        file(READ "${_hypredrv_hypre_cmake_file}" _hypredrv_hypre_cmake_content)
+        string(REGEX MATCH
+               "set\\(HYPRE_NUMBER[ \\t]+([0-9]+)\\)"
+               _hypredrv_hypre_number_match
+               "${_hypredrv_hypre_cmake_content}")
+        if(_hypredrv_hypre_number_match)
+            set(_hypredrv_hypre_release_number "${CMAKE_MATCH_1}")
+        endif()
+    endif()
+
+    if(_hypredrv_hypre_release_number GREATER 30200)
+        message(STATUS
+            "  HYPRE MGR block-column-sum leak fix already provided by HYPRE; "
+            "compatibility patch not needed")
+        return()
+    elseif(_hypredrv_hypre_release_number EQUAL 30200)
+        execute_process(
+            COMMAND git -C "${hypre_source_dir}" describe --match "v*"
+                    --abbrev=0 --always
+            OUTPUT_VARIABLE _hypredrv_hypre_last_tag
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+            RESULT_VARIABLE _hypredrv_hypre_describe_result)
+        if(_hypredrv_hypre_describe_result EQUAL 0 AND
+           _hypredrv_hypre_last_tag)
+            execute_process(
+                COMMAND git -C "${hypre_source_dir}" rev-list --count
+                        "${_hypredrv_hypre_last_tag}..HEAD"
+                OUTPUT_VARIABLE _hypredrv_hypre_develop_number
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+                RESULT_VARIABLE _hypredrv_hypre_revlist_result)
+            if(_hypredrv_hypre_revlist_result EQUAL 0 AND
+               _hypredrv_hypre_develop_number GREATER_EQUAL 1)
+                message(STATUS
+                    "  HYPRE MGR block-column-sum leak fix already provided by "
+                    "HYPRE 3.2.0 development snapshot; compatibility patch not needed")
+                return()
+            endif()
+        endif()
+    endif()
+
     file(READ "${_hypredrv_hypre_mgr_interp_file}"
          _hypredrv_hypre_mgr_interp_content)
     if(_hypredrv_hypre_mgr_interp_content MATCHES
