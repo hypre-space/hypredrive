@@ -649,8 +649,9 @@ LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
       HYPRE_IJMatrixDestroy(hypredrv->mat_M);
    }
 
-   hypredrv->mat_M      = NULL;
-   hypredrv->owns_mat_M = false;
+   hypredrv->mat_M                       = NULL;
+   hypredrv->owns_mat_M                  = false;
+   hypredrv->precmat_sequence_cache_args = NULL;
 }
 
 static MGR_args *
@@ -1067,17 +1068,18 @@ HYPREDRV_Create(MPI_Comm comm, HYPREDRV_t *hypredrv_ptr)
    MPI_Comm_rank(comm, &hypredrv->mypid);
    MPI_Comm_size(comm, &hypredrv->nprocs);
 
-   hypredrv->comm     = comm;
-   hypredrv->nstates  = 0;
-   hypredrv->states   = NULL;
-   hypredrv->iargs    = NULL;
-   hypredrv->mat_A    = NULL;
-   hypredrv->mat_M    = NULL;
-   hypredrv->vec_b    = NULL;
-   hypredrv->vec_x    = NULL;
-   hypredrv->vec_x0   = NULL;
-   hypredrv->vec_xref = NULL;
-   hypredrv->vec_nn   = NULL;
+   hypredrv->comm                        = comm;
+   hypredrv->nstates                     = 0;
+   hypredrv->states                      = NULL;
+   hypredrv->iargs                       = NULL;
+   hypredrv->mat_A                       = NULL;
+   hypredrv->mat_M                       = NULL;
+   hypredrv->precmat_sequence_cache_args = NULL;
+   hypredrv->vec_b                       = NULL;
+   hypredrv->vec_x                       = NULL;
+   hypredrv->vec_x0                      = NULL;
+   hypredrv->vec_xref                    = NULL;
+   hypredrv->vec_nn                      = NULL;
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
       hypredrv->mat_coarse_schur[i]      = NULL;
@@ -1239,6 +1241,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    char log_object_name[32];
    HYPREDRV_CHECK_INIT_AND_OBJ();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse begin (argc=%d)", argc);
+   hypredrv->precmat_sequence_cache_args = NULL;
 
    /* If preset/defaults were configured before parsing, clear old args first.
     * Tear down active solver/preconditioner objects so HYPRE handles are not
@@ -2747,13 +2750,28 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
    if (!mat)
    {
       HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv)); /* GCOVR_EXCL_BR_LINE */
+      const LS_args *ls             = &hypredrv->iargs->ls;
+      bool           fixed_sequence = (bool)((ls->precmat_sequence_filename[0] != '\0') &&
+                                   (ls->precmat_sequence_system_id >= 0));
+      if (fixed_sequence && hypredrv->mat_M && hypredrv->owns_mat_M &&
+          hypredrv->precmat_sequence_cache_args == hypredrv->iargs)
+      {
+         HYPREDRV_LOG_OBJECTF(3, hypredrv,
+                              "reusing fixed preconditioner matrix from sequence file "
+                              "'%s', system %d",
+                              ls->precmat_sequence_filename,
+                              (int)ls->precmat_sequence_system_id);
+         return hypredrv_ErrorCodeGet();
+      }
       LinearSystemDropOwnedPrecMatrix(hypredrv);
-      hypredrv_LinearSystemSetPrecMatrix(hypredrv->comm, &hypredrv->iargs->ls,
-                                         hypredrv->mat_A, &hypredrv->mat_M,
+      hypredrv_LinearSystemSetPrecMatrix(hypredrv->comm, ls, hypredrv->mat_A,
+                                         &hypredrv->mat_M,
                                          hypredrv->stats); /* GCOVR_EXCL_BR_LINE */
       hypredrv->owns_mat_M =
          (bool)(hypredrv->mat_M != NULL &&
                 hypredrv->mat_M != hypredrv->mat_A); /* GCOVR_EXCL_BR_LINE */
+      hypredrv->precmat_sequence_cache_args =
+         (fixed_sequence && hypredrv->owns_mat_M) ? hypredrv->iargs : NULL;
    }
    else
    {
@@ -2894,11 +2912,29 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_ARGS();
    hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconCreate begin");
+   int                 next_ls_id    = 0;
+   PreconReuseDecision decision      = {0};
+   bool                should_create = false;
+   if (hypredrv->iargs->precon_method == PRECON_MGR &&
+       !hypredrv_MGRValidateOuterSolver(&hypredrv->iargs->precon.mgr,
+                                        (int)hypredrv->iargs->solver_method, "MGR"))
+   {
+      /* Drop a preconditioner built for an earlier system: this configuration is
+       * invalid for the current outer solver, and leaving the previous object
+       * installed lets a caller that only logs the error keep applying it. */
+      if (hypredrv->precon)
+      {
+         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+      }
+      hypredrv->precon_is_setup = false;
+      goto cleanup;
+   }
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
-   int                 next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
-   PreconReuseDecision decision;
-   bool                should_create = (hypredrv->precon == NULL);
+   next_ls_id    = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   should_create = (hypredrv->precon == NULL);
    if (!should_create)
    {
       should_create =
@@ -2983,6 +3019,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
                            "reusing existing preconditioner without recreation");
    }
 
+cleanup:
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconCreate end");
 
    return hypredrv_ErrorCodeGet();

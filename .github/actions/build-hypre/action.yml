@@ -55,8 +55,19 @@ runs:
           SHA="${{ inputs.hypre_version }}"
         fi
         SHORT="${SHA:0:7}"
+        # Match only vX.Y.Z release tags, mirroring the post-clone
+        # `git describe --match 'v*' --exact-match` probe below.  A looser match
+        # (nightly-*, rc tags) would wrongly mark a moving ref as an exact
+        # release and skip the HYPRE_DEVELOP_NUMBER guards.
+        TAG_REF=$(git ls-remote --tags https://github.com/hypre-space/hypre.git |
+          awk -v sha="$SHA" '$1 == sha && $2 ~ /^refs\/tags\/v[0-9]+\.[0-9]+\.[0-9]+(\^\{\})?$/ {print $2; exit}')
         echo "sha_short=$SHORT" >> $GITHUB_OUTPUT
         echo "install_suffix=${{ inputs.hypre_version }}-${SHORT}" >> $GITHUB_OUTPUT
+        if [ -n "$TAG_REF" ]; then
+          echo "exact_tag=1" >> $GITHUB_OUTPUT
+        else
+          echo "exact_tag=0" >> $GITHUB_OUTPUT
+        fi
 
     - name: Cache HYPRE install
       uses: actions/cache@v5
@@ -73,6 +84,7 @@ runs:
         PREFIX="${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}"
         HYPRE_CONFIG_HEADER="$PREFIX/include/HYPRE_config.h"
         REQUIRE_DEVELOP_METADATA=0
+        HYPRE_EXACT_TAG="${{ steps.resolve-sha.outputs.exact_tag }}"
         if [[ ! "${{ inputs.hypre_version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
           REQUIRE_DEVELOP_METADATA=1
         fi
@@ -89,6 +101,7 @@ runs:
           HAVE_INSTALL=0
         fi
         if [ "$HAVE_INSTALL" -eq 1 ] && [ "$REQUIRE_DEVELOP_METADATA" -eq 1 ] && \
+           [ "$HYPRE_EXACT_TAG" -eq 0 ] && \
            ! grep -Eq '^[[:space:]]*#define[[:space:]]+HYPRE_DEVELOP_NUMBER[[:space:]]+[0-9]+' "$HYPRE_CONFIG_HEADER"; then
           echo "Cached HYPRE install is missing HYPRE_DEVELOP_NUMBER; rebuilding"
           HAVE_INSTALL=0
@@ -150,12 +163,19 @@ runs:
             cmake --build hypre/build --parallel
             cmake --install hypre/build
           fi
+
+          # Exact release tags intentionally omit HYPRE_DEVELOP_NUMBER.  Only
+          # require that metadata for a moving ref or post-release commit,
+          # where HYPRE's version probes depend on the tag distance.
+          if git -C hypre tag --points-at HEAD | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            HYPRE_EXACT_TAG=1
+          fi
         fi
         if [ ! -f "$HYPRE_CONFIG_HEADER" ]; then
           echo "::error::HYPRE install is missing include/HYPRE_config.h"
           exit 1
         fi
-        if [ "$REQUIRE_DEVELOP_METADATA" -eq 1 ] && \
+        if [ "$REQUIRE_DEVELOP_METADATA" -eq 1 ] && [ "$HYPRE_EXACT_TAG" -eq 0 ] && \
            ! grep -Eq '^[[:space:]]*#define[[:space:]]+HYPRE_DEVELOP_NUMBER[[:space:]]+[0-9]+' "$HYPRE_CONFIG_HEADER"; then
           echo "::error::HYPRE install is missing HYPRE_DEVELOP_NUMBER; development builds require full git history and tags."
           exit 1

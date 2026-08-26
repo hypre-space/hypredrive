@@ -631,15 +631,19 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    args->interp_vec_variant = 2;
    hypredrv_AMGDestroyRBMs(args);
 
-   /* Sanity: check if the near null space vector is set
-      We do not error out when NOT using nodal coarsening. */
+   /* A nodal hierarchy can use hypre's built-in interpolation without caller
+    * supplied near-null-space vectors.  Keep the default GM2 settings and let
+    * hypre build the hierarchy with zero interpolation vectors in that case,
+    * but say so: a nodal configuration that silently loses its rigid-body modes
+    * converges far more slowly with nothing pointing at the cause. */
    if (!vec_nn || !args->coarsening.nodal)
    {
-      if (args->coarsening.nodal)
+      if (args->coarsening.nodal && !vec_nn)
       {
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("Near null space vectors (RBMs) required"
-                              " for nodal coarsening, but not set");
+         HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0,
+                            "warning: nodal coarsening requested without near-null-space "
+                            "vectors (RBMs); building the hierarchy with zero "
+                            "interpolation vectors");
       }
       return;
    }

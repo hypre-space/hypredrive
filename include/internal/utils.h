@@ -61,6 +61,31 @@ void  hypredrv_CombineFilename(const char *, const char *, char **);
 bool  hypredrv_IsYAMLFilename(const char *);
 bool  hypredrv_PathIsUnderRoot(const char *, const char *);
 
+/* Assign a contiguous block of stored parts to a runtime rank.  The first
+ * remainder ranks receive one extra part. */
+static inline void
+hypredrv_MultipartRange(uint64_t num_parts, int num_procs, int rank, uint64_t *first_part,
+                        uint64_t *num_local_parts)
+{
+   if (!first_part || !num_local_parts)
+   {
+      return;
+   }
+   if (num_procs <= 0 || rank < 0 || rank >= num_procs)
+   {
+      *first_part      = 0;
+      *num_local_parts = 0;
+      return;
+   }
+
+   uint64_t base  = num_parts / (uint64_t)num_procs;
+   uint64_t rem   = num_parts % (uint64_t)num_procs;
+   uint64_t urank = (uint64_t)rank;
+
+   *first_part      = (urank * base) + (urank < rem ? urank : rem);
+   *num_local_parts = base + (urank < rem ? 1u : 0u);
+}
+
 /* Clear hypre's sticky error flag after a public setup/solve boundary call.
  * Convergence and argument-flag warnings are treated as soft results.
  * Use this at API edges that previously called HYPRE_ClearAllErrors(). For
@@ -104,6 +129,16 @@ hypredrv_DoubleIsFinite(double value)
    HYPRE_DEVELOP_NUMBER is defined and greater or equal than a given value */
 #define HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(release, develop) \
    (HYPREDRV_HYPRE_RELEASE_NUMBER == (release) && HYPRE_DEVELOP_NUMBER_GE(develop))
+
+/* MGR capabilities (matched sparse Q, matched F backsolve, bounded P2 interp
+ * refinement, injection upcycling) that so far exist only on the hypre 3.1.0
+ * development stream at develop >= 71.  The gate is deliberately release-exact:
+ * HYPRE_MGRSetMatchedQSweeps, HYPRE_MGRSetInjectionUpcycle and
+ * HYPRE_MGRSetP2InterpRefinement are declared in no tagged release, v3.2.0
+ * included, so a >= gate would fail to link.  Widen this one definition (or
+ * replace it with a configure-time symbol probe) once a release ships them. */
+#define HYPREDRV_HAS_MGR_DEV_FEATURES \
+   HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
 
 /* Check for minimum HYPRE version in order to allow certain features.
  *

@@ -580,6 +580,112 @@ hypredrv_PreconMethodRequiresOperators(precon_t precon_method)
  * hypredrv_PreconSupportsDevice
  *-----------------------------------------------------------------------------*/
 
+static int PreconMGRSupportsDeviceAtDepth(const MGR_args *, char *, size_t, int);
+
+static int
+PreconNestedKrylovMGRSupportsDevice(const NestedKrylov_args *args, char *reason,
+                                    size_t reason_size, int depth)
+{
+   if (!args || !args->has_precon || args->precon_method != PRECON_MGR)
+   {
+      return 1;
+   }
+   return PreconMGRSupportsDeviceAtDepth(&args->precon.mgr, reason, reason_size,
+                                         depth + 1);
+}
+
+static int
+PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason_size,
+                               int depth)
+{
+   if (!args || depth >= MAX_MGR_LEVELS)
+   {
+      return 1;
+   }
+
+   if (args->interp_sweeps > 0)
+   {
+      if (reason && reason_size)
+      {
+         snprintf(reason, reason_size,
+                  "MGR P2 interpolation refinement is currently CPU-only");
+      }
+      return 0;
+   }
+
+   int fine_levels = args->num_levels > 0 ? args->num_levels - 1 : 0;
+   for (int level = 0; level < fine_levels; level++)
+   {
+      const MGRfrlx_args *frelax = &args->level[level].f_relaxation;
+      const MGRgrlx_args *grelax = &args->level[level].g_relaxation;
+
+      if (args->level[level].matched_f_backsolve)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size, "MGR level %d matched %s is currently CPU-only",
+                     level,
+                     args->level[level].matched_f_backsolve == 2 ? "Schur GMRES(1)"
+                                                                 : "F backsolve");
+         }
+         return 0;
+      }
+      if (args->level[level].matched_q)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "MGR level %d matched %s Q is currently CPU-only", level,
+                     args->level[level].matched_q == 2 ? "adaptive FSAI" : "sparse");
+         }
+         return 0;
+      }
+      if (frelax->symmetric_diagonal_scaling)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "MGR level %d symmetric diagonal F-solver scaling is CPU-only",
+                     level);
+         }
+         return 0;
+      }
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+      if (frelax->type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "MGR level %d Schwarz F-relaxation is not ported to GPUs", level);
+         }
+         return 0;
+      }
+      if (grelax->type == MGR_SOLVER_TYPE_SCHWARZ)
+      {
+         if (reason && reason_size)
+         {
+            snprintf(reason, reason_size,
+                     "MGR level %d Schwarz global relaxation is not ported to GPUs",
+                     level);
+         }
+         return 0;
+      }
+#endif
+      if ((frelax->mgr && !PreconMGRSupportsDeviceAtDepth(frelax->mgr, reason,
+                                                          reason_size, depth + 1)) ||
+          !PreconNestedKrylovMGRSupportsDevice(frelax->krylov, reason, reason_size,
+                                               depth) ||
+          !PreconNestedKrylovMGRSupportsDevice(grelax->krylov, reason, reason_size,
+                                               depth))
+      {
+         return 0;
+      }
+   }
+
+   return PreconNestedKrylovMGRSupportsDevice(args->coarsest_level.krylov, reason,
+                                              reason_size, depth);
+}
+
 int
 hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
                               char *reason, size_t reason_size)
@@ -604,34 +710,11 @@ hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
       }
    }
 
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-   if (precon_method == PRECON_MGR)
+   if (precon_method == PRECON_MGR &&
+       !PreconMGRSupportsDeviceAtDepth(&args->mgr, reason, reason_size, 0))
    {
-      int fine_levels = args->mgr.num_levels > 0 ? args->mgr.num_levels - 1 : 0;
-      for (int level = 0; level < fine_levels; level++)
-      {
-         if (args->mgr.level[level].f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
-         {
-            if (reason && reason_size)
-            {
-               snprintf(reason, reason_size,
-                        "MGR level %d Schwarz F-relaxation is not ported to GPUs", level);
-            }
-            return 0;
-         }
-         if (args->mgr.level[level].g_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
-         {
-            if (reason && reason_size)
-            {
-               snprintf(reason, reason_size,
-                        "MGR level %d Schwarz global relaxation is not ported to GPUs",
-                        level);
-            }
-            return 0;
-         }
-      }
+      return 0;
    }
-#endif
 
    if (reason && reason_size)
    {

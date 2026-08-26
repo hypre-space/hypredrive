@@ -14,7 +14,8 @@
 #include "test_helpers.h"
 
 static void
-write_vector_part_file(const char *prefix, int part_id, uint64_t nrows, const double *values)
+write_vector_part_file(const char *prefix, int part_id, uint64_t nrows,
+                       const double *values)
 {
    char filename[256];
    snprintf(filename, sizeof(filename), "%s.%05d.bin", prefix, part_id);
@@ -76,9 +77,57 @@ test_two_ranks_multipart(void)
    {
       HYPRE_IJVector vec = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_WORLD, 2, HYPRE_MEMORY_HOST, &vec);
+      hypredrv_IJVectorReadMultipartBinary(prefix, MPI_COMM_WORLD, 2, HYPRE_MEMORY_HOST,
+                                           &vec);
       ASSERT_NOT_NULL(vec);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      HYPRE_IJVectorDestroy(vec);
+   }
+   if (myid == 0)
+   {
+      cleanup_temp_files();
+   }
+   MPI_Barrier(MPI_COMM_WORLD);
+
+   /* g_nparts=3 on 2 ranks: rank0 must concatenate parts {0,1}, while rank1
+    * reads part {2}.  This catches multipart SetValues calls that restart at
+    * the rank's first local row and overwrite the preceding part. */
+   const char *prefix_three = "test_vector_mpi_gp3";
+   if (myid == 0)
+   {
+      double v0[1] = {10.0};
+      double v1[2] = {20.0, 30.0};
+      double v2[1] = {40.0};
+      write_vector_part_file(prefix_three, 0, 1, v0);
+      write_vector_part_file(prefix_three, 1, 2, v1);
+      write_vector_part_file(prefix_three, 2, 1, v2);
+   }
+   MPI_Barrier(MPI_COMM_WORLD);
+
+   {
+      HYPRE_IJVector vec    = NULL;
+      HYPRE_BigInt   ilower = 0, iupper = -1;
+      HYPRE_BigInt   indices[3] = {0, 0, 0};
+      HYPRE_Complex  values[3]  = {0.0, 0.0, 0.0};
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_IJVectorReadMultipartBinary(prefix_three, MPI_COMM_WORLD, 3,
+                                           HYPRE_MEMORY_HOST, &vec);
+      ASSERT_NOT_NULL(vec);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(HYPRE_IJVectorGetLocalRange(vec, &ilower, &iupper), 0);
+
+      HYPRE_Int nlocal = (HYPRE_Int)(iupper - ilower + 1);
+      ASSERT_EQ(nlocal, myid == 0 ? 3 : 1);
+      for (HYPRE_Int i = 0; i < nlocal; i++)
+      {
+         indices[i] = ilower + i;
+      }
+      ASSERT_EQ(HYPRE_IJVectorGetValues(vec, nlocal, indices, values), 0);
+      for (HYPRE_Int i = 0; i < nlocal; i++)
+      {
+         ASSERT_EQ_DOUBLE((double)values[i], 10.0 * (double)(indices[i] + 1), 1.0e-12);
+      }
       HYPRE_IJVectorDestroy(vec);
    }
    if (myid == 0)

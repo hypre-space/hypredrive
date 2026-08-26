@@ -11,21 +11,22 @@
 typedef struct hypredrv_struct
 {
    /* Pointers, opaque HYPRE handles, and aggregates (8-byte aligned). */
-   MPI_Comm        comm;
-   int            *states;   /* Array of state indices */
-   input_args     *iargs;    /* Input arguments (passed via YAML) */
-   IntArray       *dofmap;   /* Mapping array for degrees-of-freedom */
-   HYPRE_IJMatrix  mat_A;    /* System matrix */
-   HYPRE_IJMatrix  mat_M;    /* Matrix used to build the preconditioner */
-   HYPRE_IJVector  vec_b;    /* Right-hand side vector */
-   HYPRE_IJVector  vec_x;    /* Solution vector */
-   HYPRE_IJVector  vec_x0;   /* Initial solution vector */
-   HYPRE_IJVector  vec_xref; /* Reference solution vector */
-   HYPRE_IJVector  vec_nn;   /* Near-null space modes */
-   HYPRE_IJVector  vec_ns;   /* Orthonormalized null space modes projected out of sol. */
-   HYPRE_IJVector *vec_s;    /* Array of vector states */
-   HYPRE_IJMatrix  mat_G;    /* Discrete gradient */
-   HYPRE_IJMatrix  mat_C;    /* Discrete curl */
+   MPI_Comm          comm;
+   int              *states; /* Array of state indices */
+   input_args       *iargs;  /* Input arguments (passed via YAML) */
+   IntArray         *dofmap; /* Mapping array for degrees-of-freedom */
+   HYPRE_IJMatrix    mat_A;  /* System matrix */
+   HYPRE_IJMatrix    mat_M;  /* Matrix used to build the preconditioner */
+   const input_args *precmat_sequence_cache_args;
+   HYPRE_IJVector    vec_b;    /* Right-hand side vector */
+   HYPRE_IJVector    vec_x;    /* Solution vector */
+   HYPRE_IJVector    vec_x0;   /* Initial solution vector */
+   HYPRE_IJVector    vec_xref; /* Reference solution vector */
+   HYPRE_IJVector    vec_nn;   /* Near-null space modes */
+   HYPRE_IJVector    vec_ns; /* Orthonormalized null space modes projected out of sol. */
+   HYPRE_IJVector   *vec_s;  /* Array of vector states */
+   HYPRE_IJMatrix    mat_G;  /* Discrete gradient */
+   HYPRE_IJMatrix    mat_C;  /* Discrete curl */
    /* Per-reduction-level app-provided coarse operators; MGR borrows the ParCSR. */
    HYPRE_IJMatrix          mat_coarse_schur[MAX_MGR_LEVELS - 1];
    HYPRE_Precon            precon;      /* Preconditioner object */

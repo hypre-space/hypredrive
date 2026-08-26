@@ -1064,8 +1064,9 @@ extern "C"
     * set.
     *
     * @param mat Optional preconditioner matrix. If NULL, the preconditioner matrix is
-    * resolved by current file/default behavior (`precmat_filename`/`precmat_basename`
-    * with fallback to the system matrix). If non-NULL, this matrix is used directly.
+    * resolved by current file/default behavior (`precmat_sequence_filename`,
+    * `precmat_filename`, or `precmat_basename`, with fallback to the system matrix).
+    * If non-NULL, this matrix is used directly.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using

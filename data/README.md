@@ -20,11 +20,24 @@ cmake --build <build-dir> --target data
 
 Alternatively, you can download the datasets manually from the Zenodo record and extract them into this directory.
 
+For release preparation, run `scripts/pack_datasets.py` to create one
+deterministic tarball per dataset, plus MD5/SHA256 checksums and a v0.3.0
+manifest under `/tmp/hypredrive-datasets-v0.3.0`.
+
 ## Datasets
 
 - ps3d10pt7: 3D Laplacian (scalar) with the standard 7‑point finite difference stencil
 - compflow6k: compositional multiphase flow problem simulated in GEOS.
 - poromech2k: sequence of linear systems a multiphase poromechanics simulation in GEOS.
+- MGR strategy datasets: 27 small offline cases, one for every GEOS MGR strategy, with np1 and np4 variants.
+
+The MGR strategy datasets are not checked into the hypredrive sources. Include
+their top-level short-named directories (for example, `spres1k` and
+`cmpres1k`) in the same Zenodo archive as the other datasets. The generated
+`mgr_strategy_cases.md` file lists every case, its GEOS strategy, and its total
+DOF count. Run serial cases from their `np1/` directory with
+`hypredrive-cli input.yml`, or run the four-rank `np4/` variant with
+`mpiexec -n 4 hypredrive-cli input.yml`.
 
 ## Notes
 

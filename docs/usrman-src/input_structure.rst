@@ -192,6 +192,16 @@ Degrees of Freedom Map
   directory, filename, or basename fields. Container metadata gives the number
   of systems.
 
+- ``precmat_sequence_filename`` - (Optional) Path to a lossless compressed sequence
+  container whose matrix is used to build the preconditioner. This avoids unpacking
+  an auxiliary matrix archive. It cannot be combined with ``precmat_filename`` or
+  ``precmat_basename``.
+
+- ``precmat_sequence_system_id`` - (Optional) Zero-based matrix index in
+  ``precmat_sequence_filename``. The default value, ``-1``, selects the current
+  linear-system index. Set this to ``0`` to reuse the only matrix in a one-system
+  archive while solving another sequence.
+
 - ``matrix_basename`` - (Possibly required) Common prefix for matrix filenames.
   Use it to solve multiple matrices in a shared directory. This parameter has
   no default.
@@ -411,6 +421,17 @@ Example use in YAML:
 
     linear_system:
       sequence_filename: poromech2k_np1_lsseq.zst.bin
+      rhs_mode: file
+
+An independently packed matrix can be used for preconditioner construction without
+unpacking either archive:
+
+.. code-block:: yaml
+
+    linear_system:
+      sequence_filename: operator.zst.bin
+      precmat_sequence_filename: approximate-operator.zst.bin
+      precmat_sequence_system_id: 0
       rhs_mode: file
 
 When ``sequence_filename`` is present, hypredrive reads the matrix, right-hand
@@ -1559,6 +1580,31 @@ preconditioner:
   values are any non-negative floating point numbers. Default value is `0.0`, which means
   no dropping.
 
+- ``interp_sweeps`` and ``interp_weight`` - opt-in damped Jacobi refinement of
+  type-2 (``jacobi``) prolongation. Defaults are `0` and `1.0`, respectively.
+  The damping weight must lie in ``[HYPRE_REAL_MIN, 1]``.
+  Positive sweeps require a HYPRE build advertising bounded P2 refinement, CPU
+  execution, ``pmax > 0``, injection restriction, and Galerkin coarse operators.
+  Each sweep retains at most the ``pmax`` largest-magnitude entries per row
+  without row-sum rescaling, and the refined prolongation is used by the full
+  RAP product so its Schur correction is consistent.
+
+- ``injection_upcycle`` - default-off, block-LDU-shaped solve mode. With ``on``, MGR
+  retains type-2 (Jacobi) interpolation when constructing the Galerkin coarse
+  operator, but uses injection for the upward correction; post-F relaxation
+  then performs the fine-variable backsolve. This bounded mode requires
+  ``cycle: v(1,1)``, ``interp_sweeps: 0``, and P2/R0/Galerkin with active F
+  relaxation at every reduction level. It becomes an exact block-LDU action
+  only when the configured F solver applies the exact inverse of its F block.
+
+- ``matched_q_sweeps`` and ``matched_q_weight`` - construction controls for the
+  per-level ``matched_q: polynomial`` mode (``on`` is an alias). Defaults are
+  ``0`` and ``1.0``. A polynomial-selected level requires at least one sweep
+  and a weight in ``[HYPRE_REAL_MIN, 1]``. ``matched_q: afsai`` ignores both
+  keys. They are separate from ``interp_sweeps`` so an earlier TPFA level can
+  retain ordinary Jacobi prolongation while a later, much larger MFD block uses
+  matched sparse-Q elimination.
+
 - ``cycle`` - MGR traversal cycle. Numeric values preserve the legacy encoding.
   `1` selects a V-cycle and `2` selects a W-cycle. Symbolic values ``v``, ``w``,
   ``v(1,0)``, ``v(0,1)``, ``v(1,1)``, ``w(1,0)``, ``w(0,1)``, and ``w(1,1)``
@@ -1575,10 +1621,95 @@ preconditioner:
     from `0` to `n_dofs - 1`, where `n_dofs` represent the unique number of degrees of
     freedom identifiers.
 
+  - ``matched_q`` - opt into a CPU-only matched approximate block
+    factorization on this level. Available values are ``off`` (the default),
+    ``polynomial`` (with ``on`` as an alias), and ``afsai``. For
+    ``A = [[A_FF, A_FC], [A_CF, A_CC]]``, both nonzero modes form
+    ``S = diag(A_FF)^(-1/2)`` and materialize one sparse inverse approximation
+    ``Q``. The identical ``Q`` is used for the pre-F correction, untruncated
+    ``W = -Q A_FC``, and the Galerkin Schur approximation
+    ``A_CC - A_CF Q A_FC``. This matching avoids using different F inverses in
+    relaxation and in the Schur complement.
+
+    ``polynomial`` applies ``matched_q_sweeps`` damped Richardson updates to
+    approximate the inverse of ``S A_FF S``. After each update it retains the
+    diagonal plus at most ``pmax - 1`` largest remaining entries per row,
+    without rescaling, then forms ``Q = S Qs S``. Thus ``pmax`` caps Q in this
+    mode.
+
+    ``afsai`` is available only in a real-valued host build advertising matched
+    aFSAI Q. On the F closure produced by the preceding active reductions, it
+    treats the stored local lower triangle as an SPD operator and builds a
+    private, symmetrically scaled adaptive FSAI factor using three one-entry
+    pattern-growth steps, then materializes
+    ``Q = S G^T G S`` and destroys the private factor. Each G row has at most
+    four entries. Accordingly ``pmax`` must be exactly ``4`` as a construction
+    contract for G; it is not a cap on Q. Neither the resulting Q nor W is
+    truncated, so their row fill and memory are not strictly bounded by four.
+    The adaptive pattern is rank-block local and can therefore depend on the MPI
+    row partition. A failed local Cholesky/FSAI construction is rejected; this
+    mode is not a general approximate inverse for nonsymmetric F blocks. Small
+    upper/lower-triangle skew therefore needs an application-specific gate.
+
+    Both modes require ``prolongation_type: jacobi``,
+    ``restriction_type: injection``, ``coarse_level_type: rap``, one built-in
+    Jacobi F sweep, no global smoother, ``cycle: v(1,0)``, ``pmax > 0``,
+    ``coarse_th: 0``, ``interp_sweeps: 0``, and
+    ``injection_upcycle: off``. Invalid/nonpositive A_FF diagonals, incompatible
+    extracted block dimensions/partitions, nonfinite A_FF/Q/W construction
+    values, device execution, P/W truncation, and reserved-C insertion are
+    rejected collectively. This check does not assert that every A_CF, A_CC, or
+    final RAP entry is finite.
+
+  - ``matched_f_backsolve`` - select a CPU-only final-level matched block
+    action. The default, ``off``, preserves ordinary MGR. ``on`` retains
+    ordinary Jacobi P2 for setup, Galerkin RAP, and upward transfer; after
+    prolongation it discards only that level's F entries and applies the
+    existing zero-guess F solver once to ``f_F - A_FC u_C``. The result is
+    ``Q(f_F - A_FC u_C)`` while the coarse operator remains the diagonal-P2
+    approximation ``A_CC - A_CF diag(A_FF)^(-1) A_FC``.
+
+    ``gmres1`` retains the original ``C=A_FC``, ``B=A_CF``, and ``K=A_CC``
+    blocks while keeping the same P2/R0 Galerkin hierarchy. On the down leg it
+    caches ``q0=Q f_F`` and ``g=f_C-B q0``. Given the one-cycle coarse-AMG
+    direction ``z``, its up leg bypasses P and computes
+    ``h=Q(C z)``, ``w=K z-B h``,
+    ``alpha=(w^H g)/(w^H w)``, ``q=q0-alpha h``, and ``p=alpha z``.
+    Thus each application uses the same managed, zero-guess Q child twice and
+    the managed coarse AMG once. Because ``alpha`` depends on the current
+    residual, the outer solver must be ``fgmres``. This mode is an overwrite
+    preconditioner action and clears its top-level output before forming
+    ``q0`` and ``g``. A nonzero ``g`` with a zero
+    direction, a nonfinite child result/coefficient, or a nonfinite final
+    correction is reported collectively without partially committing q or p.
+
+    Exactly one final active level may select either nonzero mode. Both require
+    ``max_iter: 1``, ``tolerance: 0``, ``cycle: v(1,0)``, ``coarse_th: 0``,
+    P2/R0/Galerkin, and one managed AMG F sweep with
+    ``symmetric_diagonal_scaling: on``, AMG ``max_iter: 1``, and AMG
+    ``tolerance: 0``. Global relaxation, nested Krylov, component reuse,
+    projected rigid-body modes, P2 refinement, injection upcycle, and
+    ``matched_q`` are incompatible. ``gmres1`` additionally requires a managed
+    coarsest-level AMG with ``max_iter: 1`` and ``tolerance: 0`` (no nested
+    Krylov or component reuse). If the selected configured level has no F labels
+    in a system and is compacted away, the option is a no-op for that system.
+    The outer-solver requirement is scoped to the configuration rather than to
+    an individual system, so ``gmres1`` requires ``fgmres`` even when the
+    selected level is compacted away; the configuration is therefore accepted or
+    rejected identically for every system in a sequence.
+
   - ``f_relaxation`` - relaxation method targeting F points. For available options, see
     `HYPRE_MGRSetLevelFRelaxType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_MGRSetLevelFRelaxType12HYPRE_SolverP9HYPRE_Int>`_. Default
     value is `0` (Jacobi). Use ``none`` to deactivate F-relaxation.
+
+    A nested managed ``amg`` F-relaxation may opt into
+    ``symmetric_diagonal_scaling: on``. On CPUs this clones the extracted F block,
+    forms the diagonal congruence ``D^{-1/2} A_FF D^{-1/2}``, and maps the AMG
+    right-hand side and correction so the outer matrix and residual norm remain
+    unchanged. The option defaults to ``off`` and currently requires finite positive
+    F-block diagonals and HYPRE 3.1 or newer; it is incompatible with device
+    execution, nested Krylov, component reuse, and projected rigid-body modes.
 
   - ``g_relaxation`` - global relaxation method targeting F and C points. For available
     options, see `HYPRE_MGRSetGlobalSmoothType
@@ -1630,8 +1761,12 @@ preconditioner:
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv424HYPRE_MGRSetRestrictType12HYPRE_Solver9HYPRE_Int>`_. Default
     value is `0` (Injection).
 
-  - ``prolongation_type`` - algorithm for computing the prolongation operator. For available
-    options, see `HYPRE_MGRSetInterpType
+  - ``prolongation_type`` - algorithm for computing the prolongation operator. Accepted
+    values are ``injection``, ``l1-jacobi``, ``jacobi``, ``classical-mod``,
+    ``approx-inv``, ``blk-jacobi``, ``blk-rowlump``, and ``blk-absrowsum``. With
+    HYPRE 2.24 or newer, ``mm-ext``, ``mm-ext+i``, and ``mm-ext+e`` are also
+    accepted. For implementation details, see
+    `HYPRE_MGRSetInterpType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv422HYPRE_MGRSetInterpType12HYPRE_Solver9HYPRE_Int>`_. Default
     value is `0` (Injection).
 
@@ -1655,6 +1790,10 @@ This example shows the default values for ``preconditioner:mgr``:
         max_iter: 1
         print_level: 0
         coarse_th: 0.0
+        interp_sweeps: 0
+        interp_weight: 1.0
+        matched_q_sweeps: 0
+        matched_q_weight: 1.0
         level:
           0:
             f_dofs: [1, 2] # Example usage where DOFs 1 and 2 are treated in MGR's 1st level
@@ -1664,6 +1803,8 @@ This example shows the default values for ``preconditioner:mgr``:
             restriction_type: injection
             prolongation_type: jacobi
             coarse_level_type: rap
+            matched_q: off
+            matched_f_backsolve: off
 
           1:
             f_dofs: [0] # Example usage where DOF 0 is treated in MGR's 2nd level
@@ -1673,6 +1814,8 @@ This example shows the default values for ``preconditioner:mgr``:
             restriction_type: injection
             prolongation_type: jacobi
             coarse_level_type: rap
+            matched_q: off
+            matched_f_backsolve: off
 
         coarsest_level:
           amg: # AMG parameters can be specified with a new indentation level

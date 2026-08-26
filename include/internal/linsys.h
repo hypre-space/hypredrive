@@ -136,6 +136,7 @@ typedef struct LS_args_struct
 {
    char      dirname[MAX_FILENAME_LENGTH];
    char      sequence_filename[MAX_FILENAME_LENGTH];
+   char      precmat_sequence_filename[MAX_FILENAME_LENGTH];
    char      matrix_filename[MAX_FILENAME_LENGTH];
    char      matrix_basename[MAX_FILENAME_LENGTH];
    char      precmat_filename[MAX_FILENAME_LENGTH];
@@ -152,6 +153,7 @@ typedef struct LS_args_struct
    HYPRE_Int digits_suffix;
    HYPRE_Int init_suffix;
    HYPRE_Int last_suffix;
+   HYPRE_Int precmat_sequence_system_id;
    IntArray *set_suffix;
    HYPRE_Int init_guess_mode;
    HYPRE_Int rhs_mode;

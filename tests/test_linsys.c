@@ -19,6 +19,19 @@
 #include "test_helpers.h"
 #include "internal/yaml.h"
 
+static uint64_t
+test_fnv1a64(const void *data, size_t nbytes)
+{
+   const unsigned char *bytes = (const unsigned char *)data;
+   uint64_t             hash  = UINT64_C(1469598103934665603);
+   for (size_t i = 0; i < nbytes; i++)
+   {
+      hash ^= (uint64_t)bytes[i];
+      hash *= UINT64_C(1099511628211);
+   }
+   return hash;
+}
+
 static void
 write_text_file(const char *path, const char *contents)
 {
@@ -220,6 +233,8 @@ test_hypredrv_LinearSystemSetArgsFromYAML_valid_keys(void)
    add_child(parent, "init_guess_mode", "2", 1);
    add_child(parent, "digits_suffix", "6", 1);
    add_child(parent, "timestep_filename", "timesteps.txt", 1);
+   add_child(parent, "precmat_sequence_filename", "precmat.zst.bin", 1);
+   add_child(parent, "precmat_sequence_system_id", "3", 1);
    for (YAMLnode *c = parent->children; c; c = c->next)
    {
       if (c->val)
@@ -236,6 +251,8 @@ test_hypredrv_LinearSystemSetArgsFromYAML_valid_keys(void)
    ASSERT_EQ(args.init_guess_mode, 2);
    ASSERT_EQ(args.digits_suffix, 6);
    ASSERT_STREQ(args.timestep_filename, "timesteps.txt");
+   ASSERT_STREQ(args.precmat_sequence_filename, "precmat.zst.bin");
+   ASSERT_EQ(args.precmat_sequence_system_id, 3);
 
    hypredrv_YAMLnodeDestroy(parent);
 }
@@ -254,6 +271,58 @@ test_hypredrv_LinearSystemSetArgsFromYAML_unknown_key(void)
 
    ASSERT_EQ(unknown_node->valid, YAML_NODE_INVALID_KEY);
 
+   hypredrv_YAMLnodeDestroy(parent);
+}
+
+static void
+test_hypredrv_LinearSystemSetArgsFromYAML_precmat_sequence_validation(void)
+{
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+
+   YAMLnode *parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   add_child(parent, "precmat_sequence_filename", "precmat.zst.bin", 1);
+   add_child(parent, "precmat_filename", "precmat.out", 1);
+   for (YAMLnode *c = parent->children; c; c = c->next)
+   {
+      if (c->val)
+      {
+         c->mapped_val = strdup(c->val);
+      }
+   }
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(parent);
+
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   add_child(parent, "precmat_sequence_system_id", "-2", 1);
+   for (YAMLnode *c = parent->children; c; c = c->next)
+   {
+      if (c->val)
+      {
+         c->mapped_val = strdup(c->val);
+      }
+   }
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(parent);
+
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   parent = hypredrv_YAMLnodeCreate("linear_system", "", 0);
+   add_child(parent, "precmat_sequence_system_id", "0", 1);
+   for (YAMLnode *c = parent->children; c; c = c->next)
+   {
+      if (c->val)
+      {
+         c->mapped_val = strdup(c->val);
+      }
+   }
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetArgsFromYAML(&args, parent);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
    hypredrv_YAMLnodeDestroy(parent);
 }
 
@@ -4510,6 +4579,140 @@ create_test_ijmatrix_1x1(MPI_Comm comm, double diag)
 }
 
 static void
+write_lsseq_precmat_fixture(const char *filename)
+{
+   const char          payload[] = "fixture=precmat\n";
+   LSSeqHeader         header;
+   LSSeqInfoHeader     info;
+   LSSeqPartMeta       part_meta;
+   LSSeqPatternMeta    pattern_meta;
+   LSSeqSystemPartMeta sys_meta;
+   uint64_t            part_blob_table[LSSEQ_PART_BLOB_ENTRIES] = {0};
+   HYPRE_BigInt        row = 0, col = 0;
+   double              value = 7.0, rhs = 1.0;
+   FILE               *fp = fopen(filename, "wb");
+
+   ASSERT_NOT_NULL(fp);
+   memset(&header, 0, sizeof(header));
+   memset(&info, 0, sizeof(info));
+   memset(&part_meta, 0, sizeof(part_meta));
+   memset(&pattern_meta, 0, sizeof(pattern_meta));
+   memset(&sys_meta, 0, sizeof(sys_meta));
+
+   header.magic        = LSSEQ_MAGIC;
+   header.version      = LSSEQ_VERSION;
+   header.flags        = LSSEQ_FLAG_HAS_INFO;
+   header.codec        = (uint32_t)COMP_NONE;
+   header.num_systems  = 1;
+   header.num_parts    = 1;
+   header.num_patterns = 1;
+   header.offset_part_meta =
+      sizeof(header) + sizeof(info) + (uint64_t)(sizeof(payload) - 1u);
+   header.offset_pattern_meta    = header.offset_part_meta + sizeof(part_meta);
+   header.offset_sys_part_meta   = header.offset_pattern_meta + sizeof(pattern_meta);
+   header.offset_part_blob_table = header.offset_sys_part_meta + sizeof(sys_meta);
+   header.offset_timestep_meta = header.offset_part_blob_table + sizeof(part_blob_table);
+   header.offset_blob_data     = header.offset_timestep_meta;
+
+   info.magic                = LSSEQ_INFO_MAGIC;
+   info.version              = LSSEQ_INFO_VERSION;
+   info.flags                = LSSEQ_INFO_FLAG_PAYLOAD_KV;
+   info.endian_tag           = UINT32_C(0x01020304);
+   info.payload_size         = (uint64_t)(sizeof(payload) - 1u);
+   info.payload_hash_fnv1a64 = test_fnv1a64(payload, sizeof(payload) - 1u);
+   info.blob_bytes           = sizeof(row) + sizeof(col) + sizeof(value) + sizeof(rhs);
+
+   part_meta.row_lower      = 0;
+   part_meta.row_upper      = 0;
+   part_meta.nrows          = 1;
+   part_meta.row_index_size = sizeof(HYPRE_BigInt);
+   part_meta.value_size     = sizeof(double);
+
+   pattern_meta.part_id          = 0;
+   pattern_meta.nnz              = 1;
+   pattern_meta.rows_blob_offset = header.offset_blob_data;
+   pattern_meta.rows_blob_size   = sizeof(row);
+   pattern_meta.cols_blob_offset = pattern_meta.rows_blob_offset + sizeof(row);
+   pattern_meta.cols_blob_size   = sizeof(col);
+
+   part_blob_table[0] = sizeof(row) + sizeof(col);
+   part_blob_table[1] = sizeof(value);
+   part_blob_table[2] = part_blob_table[0] + part_blob_table[1];
+   part_blob_table[3] = sizeof(rhs);
+   part_blob_table[4] = part_blob_table[2] + part_blob_table[3];
+   part_blob_table[5] = 0;
+
+   sys_meta.pattern_id         = 0;
+   sys_meta.nnz                = 1;
+   sys_meta.values_blob_offset = 0;
+   sys_meta.values_blob_size   = sizeof(value);
+   sys_meta.rhs_blob_offset    = 0;
+   sys_meta.rhs_blob_size      = sizeof(rhs);
+
+   ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&info, sizeof(info), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&part_meta, sizeof(part_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&pattern_meta, sizeof(pattern_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&row, sizeof(row), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&col, sizeof(col), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&value, sizeof(value), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&rhs, sizeof(rhs), 1, fp), 1);
+   fclose(fp);
+}
+
+static void
+test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
+{
+   TEST_HYPRE_INIT();
+
+   char path[] = "/tmp/hypredrv_lsseq_precmat_XXXXXX";
+   int  fd     = mkstemp(path);
+   ASSERT_TRUE(fd >= 0);
+   close(fd);
+   write_lsseq_precmat_fixture(path);
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   strncpy(args.precmat_sequence_filename, path,
+           sizeof(args.precmat_sequence_filename) - 1);
+   args.precmat_sequence_filename[sizeof(args.precmat_sequence_filename) - 1] = '\0';
+   args.precmat_sequence_system_id                                            = -1;
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0);
+   HYPRE_IJMatrix mat_M = NULL;
+   HYPRE_Int      ncols = 1;
+   HYPRE_BigInt   index = 0;
+   HYPRE_Complex  value = 0.0;
+
+   hypredrv_ErrorCodeResetAll();
+   HYPRE_ClearAllErrors();
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(mat_M);
+   ASSERT_TRUE(mat_M != mat_A);
+   ASSERT_EQ(HYPRE_IJMatrixGetValues(mat_M, 1, &ncols, &index, &index, &value), 0);
+   ASSERT_EQ_DOUBLE((double)value, 7.0, 1.0e-12);
+
+   HYPRE_IJMatrixDestroy(mat_M);
+   mat_M = NULL;
+
+   strncpy(args.sequence_filename, path, sizeof(args.sequence_filename) - 1);
+   args.sequence_filename[sizeof(args.sequence_filename) - 1] = '\0';
+   hypredrv_ErrorCodeResetAll();
+   HYPRE_ClearAllErrors();
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(mat_M == mat_A);
+
+   HYPRE_IJMatrixDestroy(mat_A);
+   unlink(path);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths(void)
 {
    TEST_HYPRE_INIT();
@@ -6035,6 +6238,7 @@ run_linsys_args_and_validation_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemGetValidValues_unknown_key);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_valid_keys);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_unknown_key);
+   RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_precmat_sequence_validation);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_set_suffix);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_set_suffix_and_init_suffix_error);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_set_suffix_and_last_suffix_error);
@@ -6113,6 +6317,7 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_LinearSystem_norm_error_and_residual);
    RUN_TEST(test_hypredrv_LinearSystemReadDofmap_filename_branches);
    RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x);
+   RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_sequence);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths);
    RUN_TEST(test_hypredrv_linsys_branch_logs);
    RUN_TEST(test_hypredrv_block_residual_rejects_unbounded_labels);

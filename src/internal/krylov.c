@@ -435,6 +435,14 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
       return;
    }
 
+   if (args->has_precon && args->precon_method == PRECON_MGR &&
+       !hypredrv_MGRValidateOuterSolver(&args->precon.mgr, (int)args->solver_method,
+                                        "Nested MGR"))
+   {
+      *solver_ptr = NULL;
+      return;
+   }
+
    /* Create preconditioner object if needed */
    if (args->has_precon)
    {

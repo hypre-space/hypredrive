@@ -921,6 +921,9 @@ static const HelpKeyDoc GeneralKeyDocs[] = {
 static const HelpKeyDoc LinearSystemKeyDocs[] = {
    {"dirname", "Directory containing linear-system input files"},
    {"sequence_filename", "Compressed linear-system sequence file"},
+   {"precmat_sequence_filename",
+    "Compressed sequence containing the preconditioner matrix"},
+   {"precmat_sequence_system_id", "System index in the preconditioner-matrix sequence"},
    {"matrix_filename", "Matrix file for a single linear system"},
    {"matrix_basename", "Matrix filename prefix for a sequence"},
    {"precmat_filename", "Matrix file used to build the preconditioner"},
@@ -1117,10 +1120,16 @@ static const HelpKeyDoc ADSKeyDocs[] = {
 
 static const HelpKeyDoc MGRKeyDocs[] = {
    {"non_c_to_f", "Treat non-C-points as F-points"},
-   {"pmax", "Maximum interpolation stencil size"},
+   {"pmax", "Maximum interpolation stencil size; afsai matched_q requires 4 as its G-row "
+            "contract"},
+   {"matched_q_sweeps", "Richardson updates for polynomial matched_q; ignored by afsai"},
+   {"matched_q_weight", "Richardson damping for polynomial matched_q; ignored by afsai"},
    {"relax_type", "Default MGR relaxation type"},
    {"nonglk_max_elmts", "Maximum elements for non-Galerkin dropping"},
    {"coarse_th", "Coarse-grid strength threshold"},
+   {"interp_sweeps", "Number of bounded P2 interpolation refinement sweeps"},
+   {"interp_weight", "Relaxation weight for interpolation refinement"},
+   {"injection_upcycle", "Enable MGR injection upcycling"},
    {"coarsest_level", "Nested coarsest-level solver options"},
    {"cycle", "MGR cycle shape and smoothing position"},
    {"level", "Nested per-level MGR options"},
@@ -1131,6 +1140,8 @@ static const HelpKeyDoc MGRLevelKeyDocs[] = {
    {"prolongation_type", "Interpolation type for this MGR level"},
    {"restriction_type", "Restriction type for this MGR level"},
    {"coarse_level_type", "Coarse-level construction type"},
+   {"matched_q", "Matched Q mode: off, polynomial/on, or real-host afsai (Q=S*G^T*G*S)"},
+   {"matched_f_backsolve", "Selected-level matched F or Schur-GMRES(1) action"},
    {"f_relaxation", "Nested F-relaxation options"},
    {"g_relaxation", "Nested global relaxation options"},
 };
@@ -1145,6 +1156,7 @@ static const HelpKeyDoc MGRComponentKeyDocs[] = {
    {"fgmres", "Nested FGMRES component solver options"},
    {"bicgstab", "Nested BiCGSTAB component solver options"},
    {"schwarz", "Nested Schwarz component solver options"},
+   {"symmetric_diagonal_scaling", "Apply symmetric diagonal scaling to MGR F-relaxation"},
    {"reuse", "Nested component reuse policy"},
 };
 

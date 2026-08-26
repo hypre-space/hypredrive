@@ -83,6 +83,33 @@ configure_nested_solver(NestedKrylov_args *nk, solver_t method)
 }
 
 static void
+configure_nested_matched_schur(NestedKrylov_args *nk, solver_t method)
+{
+   configure_nested_solver(nk, method);
+   nk->has_precon    = 1;
+   nk->precon_method = PRECON_MGR;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &nk->precon);
+
+   MGR_args *mgr = &nk->precon.mgr;
+   mgr->num_levels = 2;
+   mgr->level[0].f_dofs.size = 1;
+   mgr->level[0].f_dofs.data[0] = 0;
+   mgr->level[0].prolongation_type = 2;
+   mgr->level[0].restriction_type = 0;
+   mgr->level[0].coarse_level_type = 0;
+   mgr->level[0].matched_f_backsolve = 2;
+   mgr->level[0].f_relaxation.type = 2;
+   mgr->level[0].f_relaxation.num_sweeps = 1;
+   mgr->level[0].f_relaxation.symmetric_diagonal_scaling = 1;
+   mgr->level[0].f_relaxation.amg.max_iter = 1;
+   mgr->level[0].f_relaxation.amg.tolerance = 0.0;
+   mgr->level[0].g_relaxation.type = -1;
+   mgr->coarsest_level.type = 0;
+   mgr->coarsest_level.amg.max_iter = 1;
+   mgr->coarsest_level.amg.tolerance = 0.0;
+}
+
+static void
 run_nested_lifecycle(solver_t method, int use_precon_amg)
 {
    NestedKrylov_args nk;
@@ -418,6 +445,39 @@ test_nested_krylov_destroy_clears_mgr_runtime_state(void)
    hypredrv_IntArrayDestroy(&dofmap);
 }
 
+static void
+test_nested_krylov_matched_schur_requires_fgmres(void)
+{
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
+   return;
+#else
+   const int map[2] = {0, 1};
+   IntArray *dofmap = NULL;
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   NestedKrylov_args nk;
+   HYPRE_Solver      inner = NULL;
+   configure_nested_matched_schur(&nk, SOLVER_GMRES);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_SOLVER);
+   ASSERT_NULL(inner);
+   ASSERT_NULL(nk.precon_obj);
+
+   hypredrv_ErrorCodeResetAll();
+   HYPRE_ClearAllErrors();
+   configure_nested_matched_schur(&nk, SOLVER_FGMRES);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(inner);
+   ASSERT_NOT_NULL(nk.precon_obj);
+
+   hypredrv_NestedKrylovDestroy(&nk);
+   hypredrv_IntArrayDestroy(&dofmap);
+#endif
+}
+
 int
 main(int argc, char **argv)
 {
@@ -432,6 +492,7 @@ main(int argc, char **argv)
    RUN_TEST(test_nested_krylov_precon_fsai_matrix);
    RUN_TEST(test_nested_krylov_precon_schwarz_matrix);
    RUN_TEST(test_nested_krylov_destroy_clears_mgr_runtime_state);
+   RUN_TEST(test_nested_krylov_matched_schur_requires_fgmres);
 
    TEST_HYPRE_FINALIZE();
 

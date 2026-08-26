@@ -78,9 +78,18 @@ To pin a specific HYPRE revision:
 .. code-block:: bash
 
     $ cmake -DCMAKE_BUILD_TYPE=Release \
-            -DHYPRE_VERSION=v3.0.0 \
+            -DHYPRE_VERSION=v3.2.0 \
             -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
             -B build -S .
+
+.. note::
+
+   Pinning a tagged release disables the MGR options that exist only on the
+   HYPRE development stream — ``matched_q``, ``matched_f_backsolve``,
+   ``interp_sweeps``, and ``injection_upcycle``. Those require the default
+   ``HYPRE_VERSION=master``; configuring them against a tagged release is
+   rejected with an ``ERROR_INVALID_PRECON`` message naming the missing
+   capability.
 
 **Step 3: Build and install**
 
