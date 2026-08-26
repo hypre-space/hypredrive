@@ -24,87 +24,62 @@ function(_hypredrv_set_cache_bool_default var_name value doc)
     endif()
 endfunction()
 
-function(_hypredrv_patch_hypre_ads_pi_col_starts_leak hypre_source_dir)
-    set(_hypredrv_hypre_ads_file "${hypre_source_dir}/src/parcsr_ls/ads.c")
-    if(NOT EXISTS "${_hypredrv_hypre_ads_file}")
+function(_hypredrv_patch_hypre_mgr_col_lumped_bcf_leak hypre_source_dir)
+    set(_hypredrv_hypre_mgr_interp_file
+        "${hypre_source_dir}/src/parcsr_ls/par_mgr_interp.c")
+    if(NOT EXISTS "${_hypredrv_hypre_mgr_interp_file}")
         return()
     endif()
 
-    file(READ "${_hypredrv_hypre_ads_file}" _hypredrv_hypre_ads_content)
-    if(_hypredrv_hypre_ads_content MATCHES
-       "HYPRE_BigInt[ \t]+col_starts\\[2\\]")
-        if(_hypredrv_hypre_ads_content MATCHES
-           "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
-            string(REPLACE
-                "\n         hypre_TFree(col_starts, HYPRE_MEMORY_HOST);\n"
-                "\n"
-                _hypredrv_hypre_ads_content
-                "${_hypredrv_hypre_ads_content}")
-            file(WRITE "${_hypredrv_hypre_ads_file}" "${_hypredrv_hypre_ads_content}")
-            message(STATUS
-                "  HYPRE ads.c uses stack ADS scalar Pi column-start workspace; "
-                "removed obsolete free")
-        else()
-            message(STATUS
-                "  HYPRE ads.c uses stack ADS scalar Pi column-start workspace; "
-                "no patch needed")
-        endif()
+    file(READ "${_hypredrv_hypre_mgr_interp_file}"
+         _hypredrv_hypre_mgr_interp_content)
+    if(_hypredrv_hypre_mgr_interp_content MATCHES
+       "HYPREDRV: destroy temporary MGR block column sum")
+        return()
+    endif()
+    if(NOT _hypredrv_hypre_mgr_interp_content MATCHES
+       "hypre_DenseBlockMatrixNumNonzeros\\(B_CF\\)")
         return()
     endif()
 
-    if(_hypredrv_hypre_ads_content MATCHES
-       "hypre_TFree\\(col_starts,[ \t]*HYPRE_MEMORY_HOST\\);")
-        message(STATUS "  HYPRE ads.c already frees ADS scalar Pi column-start workspace")
-        return()
-    endif()
-
-    set(_hypredrv_hypre_ads_old [=[
-         Pi = hypre_ParCSRMatrixCreate(comm,
-                                       global_num_rows,
-                                       global_num_cols,
-                                       row_starts,
-                                       col_starts,
-                                       num_cols_offd,
-                                       num_nonzeros_diag,
-                                       num_nonzeros_offd);
-
-         hypre_ParCSRMatrixOwnsData(Pi) = 1;
+    set(_hypredrv_hypre_mgr_interp_old [=[
+      hypre_ParVectorStridedCopy(b_CF,
+                                 block_dim, block_dim,
+                                 hypre_DenseBlockMatrixNumNonzeros(B_CF),
+                                 hypre_DenseBlockMatrixData(B_CF));
 ]=])
-    set(_hypredrv_hypre_ads_new [=[
-         Pi = hypre_ParCSRMatrixCreate(comm,
-                                       global_num_rows,
-                                       global_num_cols,
-                                       row_starts,
-                                       col_starts,
-                                       num_cols_offd,
-                                       num_nonzeros_diag,
-                                       num_nonzeros_offd);
-
-         hypre_TFree(col_starts, HYPRE_MEMORY_HOST);
-
-         hypre_ParCSRMatrixOwnsData(Pi) = 1;
+    set(_hypredrv_hypre_mgr_interp_new [=[
+      hypre_ParVectorStridedCopy(b_CF,
+                                 block_dim, block_dim,
+                                 hypre_DenseBlockMatrixNumNonzeros(B_CF),
+                                 hypre_DenseBlockMatrixData(B_CF));
+      /* HYPREDRV: destroy temporary MGR block column sum. */
+      hypre_DenseBlockMatrixDestroy(B_CF);
 ]=])
-    set(_hypredrv_hypre_ads_original "${_hypredrv_hypre_ads_content}")
-    string(REPLACE "${_hypredrv_hypre_ads_old}" "${_hypredrv_hypre_ads_new}"
-        _hypredrv_hypre_ads_content "${_hypredrv_hypre_ads_content}")
+    set(_hypredrv_hypre_mgr_interp_original
+        "${_hypredrv_hypre_mgr_interp_content}")
+    string(REPLACE "${_hypredrv_hypre_mgr_interp_old}"
+                   "${_hypredrv_hypre_mgr_interp_new}"
+                   _hypredrv_hypre_mgr_interp_content
+                   "${_hypredrv_hypre_mgr_interp_content}")
 
-    if("${_hypredrv_hypre_ads_content}" STREQUAL "${_hypredrv_hypre_ads_original}")
-        if(_hypredrv_hypre_ads_content MATCHES
-           "col_starts = hypre_TAlloc\\(HYPRE_BigInt,[^\n]*HYPRE_MEMORY_HOST\\)")
-            message(WARNING
-                "Could not patch HYPRE ADS scalar Pi column-start leak; "
-                "upstream HYPRE may have changed src/parcsr_ls/ads.c")
-        endif()
+    if("${_hypredrv_hypre_mgr_interp_content}" STREQUAL
+       "${_hypredrv_hypre_mgr_interp_original}")
+        message(WARNING
+            "Could not patch HYPRE MGR temporary block-column-sum leak; "
+            "upstream HYPRE may have changed src/parcsr_ls/par_mgr_interp.c")
     else()
-        file(WRITE "${_hypredrv_hypre_ads_file}" "${_hypredrv_hypre_ads_content}")
-        message(STATUS "  HYPRE ads.c patched to free ADS scalar Pi column-start workspace")
+        file(WRITE "${_hypredrv_hypre_mgr_interp_file}"
+             "${_hypredrv_hypre_mgr_interp_content}")
+        message(STATUS
+            "  HYPRE MGR temporary block-column-sum leak patched")
     endif()
 
-    unset(_hypredrv_hypre_ads_file)
-    unset(_hypredrv_hypre_ads_content)
-    unset(_hypredrv_hypre_ads_original)
-    unset(_hypredrv_hypre_ads_old)
-    unset(_hypredrv_hypre_ads_new)
+    unset(_hypredrv_hypre_mgr_interp_file)
+    unset(_hypredrv_hypre_mgr_interp_content)
+    unset(_hypredrv_hypre_mgr_interp_original)
+    unset(_hypredrv_hypre_mgr_interp_old)
+    unset(_hypredrv_hypre_mgr_interp_new)
 endfunction()
 
 function(_hypredrv_patch_hypre_umpire_header_linkage hypre_source_dir)
@@ -1045,7 +1020,7 @@ endif()
 ############################################################
 
 # Option to specify HYPRE version/branch/tag for FetchContent
-set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v2.32.0)")
+set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v3.2.0)")
 
 if(HYPRE_ENABLE_MIXEDINT AND HYPRE_ENABLE_BIGINT)
     message(FATAL_ERROR "HYPRE_ENABLE_MIXEDINT and HYPRE_ENABLE_BIGINT are mutually exclusive")
@@ -1151,7 +1126,7 @@ if(NOT HYPRE_FOUND)
         if(NOT hypre_POPULATED)
             FetchContent_Populate(hypre)
         endif()
-        _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
+        _hypredrv_patch_hypre_mgr_col_lumped_bcf_leak("${hypre_SOURCE_DIR}")
 
         include(ExternalProject)
 
@@ -1340,7 +1315,7 @@ if(NOT HYPRE_FOUND)
 
     message(STATUS "HYPRE source fetched successfully")
     message(STATUS "  Source directory: ${hypre_SOURCE_DIR}")
-    _hypredrv_patch_hypre_ads_pi_col_starts_leak("${hypre_SOURCE_DIR}")
+    _hypredrv_patch_hypre_mgr_col_lumped_bcf_leak("${hypre_SOURCE_DIR}")
     if(HYPRE_BUILD_UMPIRE OR HYPRE_ENABLE_UMPIRE)
         _hypredrv_patch_hypre_umpire_header_linkage("${hypre_SOURCE_DIR}")
     endif()

@@ -4679,7 +4679,7 @@ test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
    strncpy(args.precmat_sequence_filename, path,
            sizeof(args.precmat_sequence_filename) - 1);
    args.precmat_sequence_filename[sizeof(args.precmat_sequence_filename) - 1] = '\0';
-   args.precmat_sequence_system_id                                            = 0;
+   args.precmat_sequence_system_id                                            = -1;
 
    HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0);
    HYPRE_IJMatrix mat_M = NULL;
@@ -4697,6 +4697,16 @@ test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
    ASSERT_EQ_DOUBLE((double)value, 7.0, 1.0e-12);
 
    HYPRE_IJMatrixDestroy(mat_M);
+   mat_M = NULL;
+
+   strncpy(args.sequence_filename, path, sizeof(args.sequence_filename) - 1);
+   args.sequence_filename[sizeof(args.sequence_filename) - 1] = '\0';
+   hypredrv_ErrorCodeResetAll();
+   HYPRE_ClearAllErrors();
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(mat_M == mat_A);
+
    HYPRE_IJMatrixDestroy(mat_A);
    unlink(path);
    TEST_HYPRE_FINALIZE();

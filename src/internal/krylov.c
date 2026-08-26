@@ -436,12 +436,9 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    }
 
    if (args->has_precon && args->precon_method == PRECON_MGR &&
-       hypredrv_MGRHasMatchedSchurGMRES1(&args->precon.mgr) &&
-       args->solver_method != SOLVER_FGMRES)
+       !hypredrv_MGRValidateOuterSolver(&args->precon.mgr, args->solver_method,
+                                        "Nested MGR"))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
-      hypredrv_ErrorMsgAdd(
-         "Nested MGR matched_f_backsolve: gmres1 requires an FGMRES solver");
       return;
    }
 

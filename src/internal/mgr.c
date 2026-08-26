@@ -13,6 +13,9 @@
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
 #include "_hypre_parcsr_mv.h"
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+#include "_hypre_parcsr_ls.h"
+#endif
 #include "_hypre_utilities.h" // for hypre_Solver
 #include "internal/compatibility.h"
 #include "internal/error.h"
@@ -134,6 +137,24 @@ MGRFRelaxEquilCreateVector(hypre_ParCSRMatrix *A)
    return vector;
 }
 
+static MPI_Comm
+MGRFRelaxEquilComm(hypre_ParCSRMatrix *A, hypre_ParVector *b, hypre_ParVector *x)
+{
+   if (A)
+   {
+      return hypre_ParCSRMatrixComm(A);
+   }
+   if (b)
+   {
+      return hypre_ParVectorComm(b);
+   }
+   if (x)
+   {
+      return hypre_ParVectorComm(x);
+   }
+   return MPI_COMM_WORLD;
+}
+
 static HYPRE_Int
 MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
 {
@@ -147,16 +168,9 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    HYPRE_Int              ierr     = 0;
    int                    local_ok = 1, global_ok = 1;
 
-   if (!A)
-   {
-      hypre_error_w_msg(HYPRE_ERROR_GENERIC,
-                        "MGR symmetric F-block scaling requires a valid CPU matrix");
-      return hypre_error_flag;
-   }
-
-   MPI_Comm comm = hypre_ParCSRMatrixComm(A);
+   MPI_Comm comm = MGRFRelaxEquilComm(A, b, x);
    local_ok =
-      wrapper && wrapper->inner && b && x &&
+      A && wrapper && wrapper->inner && b && x &&
       hypre_GetExecPolicy1(hypre_ParCSRMatrixMemoryLocation(A)) == HYPRE_EXEC_HOST;
    MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!global_ok)
@@ -166,28 +180,34 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
       return hypre_error_flag;
    }
 
-   local_ok = !wrapper->scaled_A && !wrapper->is_setup;
-   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
-   if (!global_ok)
-   {
-      hypre_error_w_msg(HYPRE_ERROR_GENERIC,
-                        "MGR symmetric F-block scaling does not support repeated setup");
-      return hypre_error_flag;
-   }
    wrapper->is_setup = 0;
 
    hypre_CSRMatrix *A_diag = hypre_ParCSRMatrixDiag(A);
-   HYPRE_Int        n      = hypre_CSRMatrixNumRows(A_diag);
-   HYPRE_Int       *A_i    = hypre_CSRMatrixI(A_diag);
-   HYPRE_Int       *A_j    = hypre_CSRMatrixJ(A_diag);
-   HYPRE_Complex   *A_data = hypre_CSRMatrixData(A_diag);
+   HYPRE_Int        n      = A_diag ? hypre_CSRMatrixNumRows(A_diag) : 0;
+   HYPRE_Int       *A_i    = A_diag ? hypre_CSRMatrixI(A_diag) : NULL;
+   HYPRE_Int       *A_j    = A_diag ? hypre_CSRMatrixJ(A_diag) : NULL;
+   HYPRE_Complex   *A_data = A_diag ? hypre_CSRMatrixData(A_diag) : NULL;
 
    scale           = MGRFRelaxEquilCreateVector(A);
    inverse_scale   = MGRFRelaxEquilCreateVector(A);
    scaled_rhs      = MGRFRelaxEquilCreateVector(A);
    scaled_solution = MGRFRelaxEquilCreateVector(A);
    scaled_A        = hypre_ParCSRMatrixClone(A, 1);
-   local_ok        = scale && inverse_scale && scaled_rhs && scaled_solution && scaled_A;
+   local_ok        = A_diag && scale && inverse_scale && scaled_rhs && scaled_solution &&
+              scaled_A && (n == 0 || (A_i && A_j && A_data));
+   if (local_ok)
+   {
+      hypre_Vector *scale_local    = hypre_ParVectorLocalVector(scale);
+      hypre_Vector *inverse_local  = hypre_ParVectorLocalVector(inverse_scale);
+      hypre_Vector *rhs_local      = hypre_ParVectorLocalVector(scaled_rhs);
+      hypre_Vector *solution_local = hypre_ParVectorLocalVector(scaled_solution);
+      local_ok =
+         scale_local && inverse_local && rhs_local && solution_local &&
+         hypre_VectorSize(scale_local) == n && hypre_VectorSize(inverse_local) == n &&
+         hypre_VectorSize(rhs_local) == n && hypre_VectorSize(solution_local) == n &&
+         (n == 0 || (hypre_VectorData(scale_local) && hypre_VectorData(inverse_local) &&
+                     hypre_VectorData(rhs_local) && hypre_VectorData(solution_local)));
+   }
    MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!global_ok)
    {
@@ -270,6 +290,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
       /* The child may already reference the new matrix after a partial setup.
        * Retain all new data so child destruction remains safe; solve stays
        * disabled because is_setup remains zero. */
+      MGRFRelaxEquilDestroyScaledData(wrapper);
       wrapper->scaled_A        = scaled_A;
       wrapper->scale           = scale;
       wrapper->inverse_scale   = inverse_scale;
@@ -305,16 +326,9 @@ MGRFRelaxEquilWrapperSolve(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    hypre_ParVector       *x        = (hypre_ParVector *)x_v;
    int                    local_ok = 1, global_ok = 1;
 
-   if (!A)
-   {
-      hypre_error_w_msg(HYPRE_ERROR_GENERIC,
-                        "MGR symmetric F-block solver used before successful setup");
-      return hypre_error_flag;
-   }
-
-   MPI_Comm comm = hypre_ParCSRMatrixComm(A);
-   local_ok = wrapper && wrapper->inner && wrapper->is_setup && wrapper->scaled_A && b &&
-              x && wrapper->scale && wrapper->inverse_scale && wrapper->scaled_rhs &&
+   MPI_Comm comm = MGRFRelaxEquilComm(A, b, x);
+   local_ok = A && wrapper && wrapper->inner && wrapper->is_setup && wrapper->scaled_A &&
+              b && x && wrapper->scale && wrapper->inverse_scale && wrapper->scaled_rhs &&
               wrapper->scaled_solution;
 
    HYPRE_Int n = 0;
@@ -2131,9 +2145,7 @@ MGRHasMatchedSchurGMRES1AtDepth(const MGR_args *args, int depth)
    }
    if (depth >= MAX_MGR_LEVELS)
    {
-      /* A malformed/cyclic nested configuration must not bypass the flexible
-       * outer-solver requirement. */
-      return 1;
+      return 0;
    }
 
    HYPRE_Int fine_levels = args->num_levels > 0 ? args->num_levels - 1 : 0;
@@ -2159,6 +2171,22 @@ int
 hypredrv_MGRHasMatchedSchurGMRES1(const MGR_args *args)
 {
    return MGRHasMatchedSchurGMRES1AtDepth(args, 0);
+}
+
+int
+hypredrv_MGRValidateOuterSolver(const MGR_args *args, int solver_method,
+                                const char *context)
+{
+   if (!hypredrv_MGRHasMatchedSchurGMRES1(args) || solver_method == SOLVER_FGMRES)
+   {
+      return 1;
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
+   hypredrv_ErrorMsgAdd(
+      "%s matched_f_backsolve: gmres1 is residual-dependent and requires FGMRES",
+      context ? context : "MGR");
+   return 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -2879,6 +2907,8 @@ MGRDestroyDetachedFSolver(const MGRfrlx_args *f_relaxation, HYPRE_Solver *solver
       {
 #if HYPRE_CHECK_MIN_VERSION(30100, 0)
          MGRFRelaxEquilWrapperDestroy(*solver_ptr);
+#else
+         HYPRE_BoomerAMGDestroy(*solver_ptr);
 #endif
       }
       else
@@ -3739,10 +3769,20 @@ MGRLegacyPostDestroyNeedsGRelaxReclaim(void)
 }
 
 static int
-MGRPostDestroyNeedsUserSolverReclaim(void)
+MGRPostDestroyNeedsUserFRelaxReclaim(void)
 {
 #if HYPRE_RELEASE_NUMBER_GT(30100) || \
    HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5)
+   return 1;
+#else
+   return 0;
+#endif
+}
+
+static int
+MGRPostDestroyNeedsUserGRelaxReclaim(void)
+{
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
    return 1;
 #else
    return 0;
@@ -3937,8 +3977,13 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
     * After parent teardown, experimental builds reclaim dropped detached
     * handles explicitly. Standard builds keep the legacy first-active-level
     * fallback only where older hypre MGR teardowns still leave ownership to us. */
-   int destroy_managed_detached =
-      !hypre_destroyed || MGRPostDestroyNeedsUserSolverReclaim();
+   /* HYPRE's ownership-aware MGR teardown leaves user-installed solvers to the
+    * caller. Legacy teardowns do not expose release APIs and require the
+    * caller to reclaim detached handles after destroying the parent. */
+   int destroy_frelax_managed_detached =
+      !hypre_destroyed || MGRPostDestroyNeedsUserFRelaxReclaim();
+   int destroy_grelax_managed_detached =
+      !hypre_destroyed || MGRPostDestroyNeedsUserGRelaxReclaim();
    int first_active_level =
       (args->num_active_levels > 0) ? (int)args->active_level_map[0] : -1;
    int legacy_grelax_reclaim = MGRLegacyPostDestroyNeedsGRelaxReclaim();
@@ -3976,7 +4021,7 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       }
       else if (args->frelax[i] && drop_frelax)
       {
-         if (destroy_managed_detached || destroy_handles ||
+         if (destroy_frelax_managed_detached || destroy_handles ||
              (hypre_destroyed && i == first_active_level))
          {
             MGRDestroyDetachedFSolver(&args->level[i].f_relaxation, &args->frelax[i]);
@@ -4000,7 +4045,7 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
       }
       else if (args->grelax[i] && drop_grelax)
       {
-         if (destroy_managed_detached || destroy_handles ||
+         if (destroy_grelax_managed_detached || destroy_handles ||
              (hypre_destroyed && legacy_grelax_reclaim && i == first_active_level))
          {
             MGRDestroyDetachedGSolver(&args->level[i].g_relaxation, &args->grelax[i]);
@@ -4373,7 +4418,8 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
 
 static void
 MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
-                     const Stats *stats, int next_ls_id)
+                     HYPRE_Int any_polynomial_matched_q, const Stats *stats,
+                     int next_ls_id)
 {
    HYPRE_MGRSetCpointsByPointMarkerArray(precon, plan->num_dofs_hypre,
                                          plan->num_levels - 1, plan->num_c_dofs,
@@ -4389,19 +4435,13 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
    HYPRE_MGRSetInjectionUpcycle(precon, args->injection_upcycle);
 #endif
 #ifdef HYPRE_MGR_HAS_MATCHED_Q
+   if (any_polynomial_matched_q)
    {
-      HYPRE_Int any_polynomial_matched_q = 0;
-      for (HYPRE_Int i = 0; i < plan->num_levels - 1; i++)
-      {
-         any_polynomial_matched_q |=
-            args->level[plan->active_level_map[i]].matched_q == 1;
-      }
-      if (any_polynomial_matched_q)
-      {
-         HYPRE_MGRSetMatchedQSweeps(precon, args->matched_q_sweeps);
-         HYPRE_MGRSetMatchedQRelaxWeight(precon, args->matched_q_weight);
-      }
+      HYPRE_MGRSetMatchedQSweeps(precon, args->matched_q_sweeps);
+      HYPRE_MGRSetMatchedQRelaxWeight(precon, args->matched_q_weight);
    }
+#else
+   (void)any_polynomial_matched_q;
 #endif
    HYPRE_MGRSetMaxIter(precon, args->max_iter);
    HYPRE_MGRSetTol(precon, args->tolerance);
@@ -5105,8 +5145,19 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    *precon_ptr = NULL;
    return;
 #else
-   HYPRE_Solver  precon = NULL;
-   MGRCreatePlan plan   = {0};
+   HYPRE_Solver  precon                   = NULL;
+   MGRCreatePlan plan                     = {0};
+   HYPRE_Int     any_matched_q            = 0;
+   HYPRE_Int     any_polynomial_matched_q = 0;
+   HYPRE_Int     any_afsai_matched_q      = 0;
+   HYPRE_Int     selected_count           = 0;
+#ifdef HYPRE_MGR_HAS_P2_INTERP_REFINEMENT
+   HYPRE_Int saw_p2 = 0;
+#endif
+#ifdef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
+   HYPRE_Int selected_active_level = -1;
+   HYPRE_Int selected_mode         = 0;
+#endif
 
    /* GCOVR_EXCL_BR_START */
    /* Sanity checks */
@@ -5122,13 +5173,10 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
       goto cleanup;
    }
 
-   if (args->interp_sweeps < 0 ||
-       !(args->interp_weight >= HYPRE_REAL_MIN && args->interp_weight <= 1.0))
+   if (args->interp_sweeps < 0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd(
-         "MGR interp_sweeps must be nonnegative and interp_weight must be in "
-         "[HYPRE_REAL_MIN,1]");
+      hypredrv_ErrorMsgAdd("MGR interp_sweeps must be nonnegative");
       goto cleanup;
    }
 
@@ -5140,37 +5188,12 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
          "MGR interp_sweeps requires a hypre build with bounded P2 refinement");
       goto cleanup;
 #else
-      HYPRE_Int saw_p2 = 0;
-
-      if (args->pmax <= 0)
+      if (args->pmax <= 0 ||
+          !(args->interp_weight >= HYPRE_REAL_MIN && args->interp_weight <= 1.0))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR interp_sweeps requires pmax > 0");
-         goto cleanup;
-      }
-
-      for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
-      {
-         HYPRE_Int    orig_lvl = plan.active_level_map[i];
-         MGRlvl_args *level    = &args->level[orig_lvl];
-         saw_p2 |= level->prolongation_type == 2;
-         if (level->prolongation_type == 12 ||
-             (level->prolongation_type == 2 &&
-              (level->restriction_type != 0 || level->coarse_level_type != 0)))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR interp_sweeps requires P2/R0/Galerkin at every refined level "
-               "and does not support block-Jacobi interpolation");
-            goto cleanup;
-         }
-      }
-
-      if (!saw_p2)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd(
-            "MGR interp_sweeps requires at least one active P2 reduction level");
+         hypredrv_ErrorMsgAdd("MGR interp_sweeps requires pmax > 0 and interp_weight in "
+                              "[HYPRE_REAL_MIN,1]");
          goto cleanup;
       }
 #endif
@@ -5193,226 +5216,227 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
             "and interp_sweeps: 0");
          goto cleanup;
       }
+#endif
+   }
 
-      for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
+   for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
+   {
+      HYPRE_Int    orig_lvl = plan.active_level_map[i];
+      MGRlvl_args *level    = &args->level[orig_lvl];
+
+#ifdef HYPRE_MGR_HAS_P2_INTERP_REFINEMENT
+      saw_p2 |= level->prolongation_type == 2;
+#endif
+      any_matched_q |= level->matched_q;
+      any_polynomial_matched_q |= level->matched_q == 1;
+      any_afsai_matched_q |= level->matched_q == 2;
+
+      if (level->matched_q < 0 || level->matched_q > 2)
       {
-         HYPRE_Int    orig_lvl = plan.active_level_map[i];
-         MGRlvl_args *level    = &args->level[orig_lvl];
-         if (level->prolongation_type != 2 || level->restriction_type != 0 ||
-             level->coarse_level_type != 0 || level->f_relaxation.type < 0 ||
-             level->f_relaxation.num_sweeps <= 0)
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR level matched_q must be 'off', 'polynomial'/'on', or 'afsai'");
+         goto cleanup;
+      }
+      if (level->matched_f_backsolve < 0 || level->matched_f_backsolve > 2)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR level matched_f_backsolve must be 'off', 'on', or 'gmres1'");
+         goto cleanup;
+      }
+      if (level->matched_f_backsolve)
+      {
+#ifdef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
+         selected_active_level = i;
+         selected_mode         = level->matched_f_backsolve;
+#endif
+         selected_count++;
+      }
+
+#ifdef HYPRE_MGR_HAS_P2_INTERP_REFINEMENT
+      if (args->interp_sweeps > 0)
+      {
+         if ((level->prolongation_type >= 12 && level->prolongation_type <= 14) ||
+             (level->prolongation_type == 2 &&
+              (level->restriction_type != 0 || level->coarse_level_type != 0)))
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
             hypredrv_ErrorMsgAdd(
-               "MGR injection_upcycle requires P2/R0/Galerkin and active F "
-               "relaxation at every reduction level");
+               "MGR interp_sweeps requires P2/R0/Galerkin at every refined level "
+               "and does not support block-Jacobi interpolation");
             goto cleanup;
          }
       }
 #endif
+
+#ifdef HYPRE_MGR_HAS_INJECTION_UPCYCLE
+      if (args->injection_upcycle &&
+          (level->prolongation_type != 2 || level->restriction_type != 0 ||
+           level->coarse_level_type != 0 || level->f_relaxation.type < 0 ||
+           level->f_relaxation.num_sweeps <= 0))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR injection_upcycle requires P2/R0/Galerkin and active F "
+            "relaxation at every reduction level");
+         goto cleanup;
+      }
+#endif
+
+#ifdef HYPRE_MGR_HAS_MATCHED_Q
+      if (level->matched_q &&
+          (level->prolongation_type != 2 || level->restriction_type != 0 ||
+           level->coarse_level_type != 0 || level->f_relaxation.type != 7 ||
+           level->f_relaxation.num_sweeps != 1 || level->f_relaxation.use_krylov ||
+           level->g_relaxation.type >= 0 || level->g_relaxation.use_krylov))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR matched_q levels require jacobi P2, injection R0, Galerkin, "
+            "one built-in Jacobi F sweep, and no global smoother");
+         goto cleanup;
+      }
+#endif
    }
 
+   if (args->interp_sweeps > 0)
    {
-      HYPRE_Int any_matched_q            = 0;
-      HYPRE_Int any_polynomial_matched_q = 0;
-      HYPRE_Int any_afsai_matched_q      = 0;
-      for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
+#ifdef HYPRE_MGR_HAS_P2_INTERP_REFINEMENT
+      if (!saw_p2)
       {
-         HYPRE_Int orig_lvl = plan.active_level_map[i];
-         any_matched_q |= args->level[orig_lvl].matched_q;
-         any_polynomial_matched_q |= args->level[orig_lvl].matched_q == 1;
-         any_afsai_matched_q |= args->level[orig_lvl].matched_q == 2;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR interp_sweeps requires at least one active P2 reduction level");
+         goto cleanup;
       }
+#endif
+   }
 
-      if (any_matched_q)
-      {
+   if (any_matched_q)
+   {
 #ifndef HYPRE_MGR_HAS_MATCHED_Q
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "MGR matched_q requires a hypre build advertising matched sparse Q");
+      goto cleanup;
+#else
+      if (args->interp_sweeps != 0 || args->injection_upcycle || args->cycle != 1 ||
+          args->cycle_smooth_pos != 1 || args->coarse_th != 0.0 || plan.num_levels <= 1)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR matched_q requires interp_sweeps: 0, coarse_th: 0, "
+                              "injection_upcycle: off, and "
+                              "an active pre-only V-cycle hierarchy");
+         goto cleanup;
+      }
+      if (any_polynomial_matched_q &&
+          (args->pmax <= 0 || args->matched_q_sweeps <= 0 ||
+           !(args->matched_q_weight >= HYPRE_REAL_MIN && args->matched_q_weight <= 1.0)))
+      {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd(
-            "MGR matched_q requires a hypre build advertising matched sparse Q");
+            "MGR polynomial matched_q requires pmax > 0, matched_q_sweeps > 0, "
+            "and matched_q_weight in [HYPRE_REAL_MIN,1]");
+         goto cleanup;
+      }
+      if (any_afsai_matched_q)
+      {
+#if !defined(HYPRE_MGR_HAS_MATCHED_FSAI_Q) || defined(HYPRE_COMPLEX)
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR matched_q: afsai requires a real hypre build advertising matched "
+            "aFSAI Q");
          goto cleanup;
 #else
-         if (args->interp_sweeps != 0 || args->injection_upcycle || args->cycle != 1 ||
-             args->cycle_smooth_pos != 1 || args->coarse_th != 0.0 ||
-             plan.num_levels <= 1)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd("MGR matched_q requires interp_sweeps: 0, coarse_th: 0, "
-                                 "injection_upcycle: off, and "
-                                 "an active pre-only V-cycle hierarchy");
-            goto cleanup;
-         }
-         if (any_polynomial_matched_q &&
-             (args->pmax <= 0 || args->matched_q_sweeps <= 0 ||
-              !(args->matched_q_weight >= HYPRE_REAL_MIN &&
-                args->matched_q_weight <= 1.0)))
+         if (args->pmax != 4)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
             hypredrv_ErrorMsgAdd(
-               "MGR polynomial matched_q requires pmax > 0, matched_q_sweeps > 0, "
-               "and matched_q_weight in [HYPRE_REAL_MIN,1]");
+               "MGR matched_q: afsai requires pmax: 4 as the FSAI factor row bound");
             goto cleanup;
-         }
-         if (any_afsai_matched_q)
-         {
-#ifndef HYPRE_MGR_HAS_MATCHED_FSAI_Q
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR matched_q: afsai requires a hypre build advertising matched aFSAI Q");
-            goto cleanup;
-#else
-            if (args->pmax != 4)
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-               hypredrv_ErrorMsgAdd(
-                  "MGR matched_q: afsai requires pmax: 4 as the FSAI factor row bound");
-               goto cleanup;
-            }
-#endif
-         }
-
-         for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
-         {
-            HYPRE_Int    orig_lvl = plan.active_level_map[i];
-            MGRlvl_args *level    = &args->level[orig_lvl];
-            if (level->matched_q < 0 || level->matched_q > 2)
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-               hypredrv_ErrorMsgAdd(
-                  "MGR level matched_q must be 'off', 'polynomial'/'on', or 'afsai'");
-               goto cleanup;
-            }
-            if (!level->matched_q)
-            {
-               continue;
-            }
-            if (level->prolongation_type != 2 || level->restriction_type != 0 ||
-                level->coarse_level_type != 0 || level->f_relaxation.type != 7 ||
-                level->f_relaxation.num_sweeps != 1 || level->f_relaxation.use_krylov ||
-                level->g_relaxation.type >= 0 || level->g_relaxation.use_krylov)
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-               hypredrv_ErrorMsgAdd(
-                  "MGR matched_q levels require jacobi P2, injection R0, Galerkin, "
-                  "one built-in Jacobi F sweep, and no global smoother");
-               goto cleanup;
-            }
          }
 #endif
       }
+#endif
    }
 
+   /* A selected configured level that collapsed because its F labels are
+    * absent is intentionally a no-op for this system. */
+   if (selected_count > 0)
    {
-      HYPRE_Int selected_count = 0;
-#ifdef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
-      HYPRE_Int selected_active_level = -1;
-      HYPRE_Int selected_mode         = 0;
-      HYPRE_Int any_matched_q         = 0;
-#endif
-
-      for (HYPRE_Int i = 0; i < plan.num_levels - 1; i++)
-      {
-         HYPRE_Int    orig_lvl = plan.active_level_map[i];
-         MGRlvl_args *level    = &args->level[orig_lvl];
-
-         if (level->matched_f_backsolve < 0 || level->matched_f_backsolve > 2)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR level matched_f_backsolve must be 'off', 'on', or 'gmres1'");
-            goto cleanup;
-         }
-         if (level->matched_f_backsolve)
-         {
-#ifdef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
-            selected_active_level = i;
-            selected_mode         = level->matched_f_backsolve;
-#endif
-            selected_count++;
-         }
-#ifdef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
-         any_matched_q |= level->matched_q;
-#endif
-      }
-
-      /* A selected configured level that collapsed because its F labels are
-       * absent is intentionally a no-op for this system. */
-      if (selected_count > 0)
-      {
 #ifndef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "MGR matched_f_backsolve requires a hypre build advertising that feature");
+      goto cleanup;
+#else
+      if (selected_mode == 2)
+      {
+#ifndef HYPRE_MGR_HAS_MATCHED_SCHUR_GMRES1
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
          hypredrv_ErrorMsgAdd(
-            "MGR matched_f_backsolve requires a hypre build advertising that feature");
+            "MGR matched_f_backsolve: gmres1 requires a hypre build advertising "
+            "cached matched-Schur GMRES(1)");
          goto cleanup;
 #else
-         if (selected_mode == 2)
-         {
-#ifndef HYPRE_MGR_HAS_MATCHED_SCHUR_GMRES1
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR matched_f_backsolve: gmres1 requires a hypre build advertising "
-               "cached matched-Schur GMRES(1)");
-            goto cleanup;
-#else
-            HYPRE_Int coarse_type =
-               args->coarsest_level.type < 0 ? 0 : args->coarsest_level.type;
-            if (coarse_type != 0 || args->coarsest_level.use_krylov ||
-                args->coarsest_level.reuse.present ||
-                args->coarsest_level.amg.max_iter != 1 ||
-                args->coarsest_level.amg.tolerance != 0.0)
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-               hypredrv_ErrorMsgAdd(
-                  "MGR matched_f_backsolve: gmres1 requires a managed AMG "
-                  "coarsest solver with max_iter: 1, tolerance: 0, and no nested "
-                  "Krylov or component reuse");
-               goto cleanup;
-            }
-#endif
-         }
-
-         if (selected_count != 1 || selected_active_level != plan.num_levels - 2 ||
-             args->max_iter != 1 || args->tolerance != 0.0 || args->cycle != 1 ||
-             args->cycle_smooth_pos != 1 || args->interp_sweeps != 0 ||
-             args->injection_upcycle || any_matched_q || args->coarse_th != 0.0)
+         HYPRE_Int coarse_type =
+            args->coarsest_level.type < 0 ? 0 : args->coarsest_level.type;
+         if (coarse_type != 0 || args->coarsest_level.use_krylov ||
+             args->coarsest_level.reuse.present ||
+             args->coarsest_level.amg.max_iter != 1 ||
+             args->coarsest_level.amg.tolerance != 0.0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
             hypredrv_ErrorMsgAdd(
-               "MGR matched_f_backsolve requires exactly one selected final active "
-               "reduction level, max_iter: 1, tolerance: 0, a V(1,0) cycle, "
-               "interp_sweeps: 0, coarse_th: 0, injection_upcycle: off, and "
-               "matched_q: off");
-            goto cleanup;
-         }
-
-         HYPRE_Int     orig_lvl = plan.active_level_map[selected_active_level];
-         MGRlvl_args  *level    = &args->level[orig_lvl];
-         MGRfrlx_args *frelax   = &level->f_relaxation;
-         MGRgrlx_args *grelax   = &level->g_relaxation;
-
-         if (level->prolongation_type != 2 || level->restriction_type != 0 ||
-             level->coarse_level_type != 0 || frelax->type != 2 ||
-             frelax->num_sweeps != 1 || frelax->symmetric_diagonal_scaling != 1 ||
-             frelax->use_krylov || frelax->reuse.present || args->vec_nn ||
-             frelax->amg.max_iter != 1 || frelax->amg.tolerance != 0.0 ||
-             grelax->type >= 0 || grelax->use_krylov)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR matched_f_backsolve level requires P2/R0/Galerkin, one managed "
-               "symmetric-diagonally-scaled AMG F sweep with max_iter: 1 and "
-               "tolerance: 0, no nested Krylov/component reuse/projected RBMs, and "
-               "no global relaxation");
+               "MGR matched_f_backsolve: gmres1 requires a managed AMG "
+               "coarsest solver with max_iter: 1, tolerance: 0, and no nested "
+               "Krylov or component reuse");
             goto cleanup;
          }
 #endif
       }
+
+      if (selected_count != 1 || selected_active_level != plan.num_levels - 2 ||
+          args->max_iter != 1 || args->tolerance != 0.0 || args->cycle != 1 ||
+          args->cycle_smooth_pos != 1 || args->interp_sweeps != 0 ||
+          args->injection_upcycle || any_matched_q || args->coarse_th != 0.0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR matched_f_backsolve requires exactly one selected final active "
+            "reduction level, max_iter: 1, tolerance: 0, a V(1,0) cycle, "
+            "interp_sweeps: 0, coarse_th: 0, injection_upcycle: off, and "
+            "matched_q: off");
+         goto cleanup;
+      }
+
+      HYPRE_Int     orig_lvl = plan.active_level_map[selected_active_level];
+      MGRlvl_args  *level    = &args->level[orig_lvl];
+      MGRfrlx_args *frelax   = &level->f_relaxation;
+      MGRgrlx_args *grelax   = &level->g_relaxation;
+
+      if (level->prolongation_type != 2 || level->restriction_type != 0 ||
+          level->coarse_level_type != 0 || frelax->type != 2 || frelax->num_sweeps != 1 ||
+          frelax->symmetric_diagonal_scaling != 1 || frelax->use_krylov ||
+          frelax->reuse.present || args->vec_nn || frelax->amg.max_iter != 1 ||
+          frelax->amg.tolerance != 0.0 || grelax->type >= 0 || grelax->use_krylov)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR matched_f_backsolve level requires P2/R0/Galerkin, one managed "
+            "symmetric-diagonally-scaled AMG F sweep with max_iter: 1 and "
+            "tolerance: 0, no nested Krylov/component reuse/projected RBMs, and "
+            "no global relaxation");
+         goto cleanup;
+      }
+#endif
    }
    /* GCOVR_EXCL_BR_STOP */
 
    /* Config preconditioner */
    HYPRE_MGRCreate(&precon);
-   MGRApplyBaseSettings(precon, args, &plan, stats, next_ls_id);
+   MGRApplyBaseSettings(precon, args, &plan, any_polynomial_matched_q, stats, next_ls_id);
    /* GCOVR_EXCL_BR_START */
    MGRApplyLevelSettings(precon, args, &plan, stats, next_ls_id);
 

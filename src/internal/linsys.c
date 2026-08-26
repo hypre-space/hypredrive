@@ -820,7 +820,7 @@ LinearSystemMemoryLocationGet(const LS_args *args)
 static int
 LinearSystemStatsIDGet(const Stats *stats)
 {
-   return stats ? hypredrv_StatsGetLinearSystemID(stats) : 0;
+   return hypredrv_StatsGetLinearSystemID(stats);
 }
 
 static MPI_Comm
@@ -2664,6 +2664,23 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: sequence file '%s', system %d",
                          args->precmat_sequence_filename, precmat_ls_id);
+
+      if (mat && args->sequence_filename[0] != '\0' &&
+          !strcmp(args->precmat_sequence_filename, args->sequence_filename) &&
+          precmat_ls_id == ls_id)
+      {
+         if (*precmat_ptr && *precmat_ptr != mat)
+         {
+            HYPRE_IJMatrixDestroy(*precmat_ptr);
+         }
+         *precmat_ptr = mat;
+         HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                            "preconditioner matrix source: reusing main sequence matrix");
+         HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                            "preconditioner matrix setup end");
+         return;
+      }
+
       if (*precmat_ptr && *precmat_ptr != mat)
       {
          HYPRE_IJMatrixDestroy(*precmat_ptr);

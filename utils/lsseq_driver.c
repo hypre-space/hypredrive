@@ -1779,9 +1779,6 @@ HelpRequested(int argc, char **argv)
 static void
 ComputePartRange(int num_parts, int nprocs, int rank, int *start_part, int *num_local_parts)
 {
-   int base = 0, rem = 0;
-   int count = 0, start = 0;
-
    if (start_part)
    {
       *start_part = 0;
@@ -1795,18 +1792,17 @@ ComputePartRange(int num_parts, int nprocs, int rank, int *start_part, int *num_
       return;
    }
 
-   base  = num_parts / nprocs;
-   rem   = num_parts % nprocs;
-   count = base + ((rank < rem) ? 1 : 0);
-   start = (rank < rem) ? (rank * (base + 1)) : (rem * (base + 1) + (rank - rem) * base);
+   uint64_t first = 0;
+   uint64_t count = 0;
+   hypredrv_MultipartRange((uint64_t)num_parts, nprocs, rank, &first, &count);
 
    if (start_part)
    {
-      *start_part = start;
+      *start_part = (int)first;
    }
    if (num_local_parts)
    {
-      *num_local_parts = count;
+      *num_local_parts = (int)count;
    }
 }
 

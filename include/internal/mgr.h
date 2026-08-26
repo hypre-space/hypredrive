@@ -198,6 +198,7 @@ void hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
 void hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);
 int  hypredrv_MGRHasMatchedSchurGMRES1(const MGR_args *);
+int  hypredrv_MGRValidateOuterSolver(const MGR_args *, int, const char *);
 void hypredrv_MGRSetCoarseSchur(MGR_args *, const HYPRE_IJMatrix *);
 void hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);

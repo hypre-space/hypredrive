@@ -2895,14 +2895,10 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
    hypredrv_ErrorStateReset();
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconCreate begin");
    if (hypredrv->iargs->precon_method == PRECON_MGR &&
-       hypredrv_MGRHasMatchedSchurGMRES1(&hypredrv->iargs->precon.mgr) &&
-       hypredrv->iargs->solver_method != SOLVER_FGMRES)
+       !hypredrv_MGRValidateOuterSolver(&hypredrv->iargs->precon.mgr,
+                                        hypredrv->iargs->solver_method, "MGR"))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
-      hypredrv_ErrorMsgAdd(
-         "MGR matched_f_backsolve: gmres1 is residual-dependent and requires "
-         "the outer FGMRES solver");
-      return hypredrv_ErrorCodeGet();
+      goto cleanup;
    }
    HYPREDRV_SAFE_CALL(ApplyGlobalRuntimeSettings(hypredrv));
 
@@ -2993,6 +2989,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
                            "reusing existing preconditioner without recreation");
    }
 
+cleanup:
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_PreconCreate end");
 
    return hypredrv_ErrorCodeGet();
