@@ -26,5 +26,6 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [job_launcher.py](./job_launcher.py): Portable wrapper automating job submission across diverse HPC platforms.
 - [parse_logs.py](./parse_logs.py): Mode-based HypreDrive log analyzer. Use `--mode block_norms` to extract block Frobenius norms as labeled tables, Python matrices, or CSV.
 - [plot_convergence.py](./plot_convergence.py): Parses solver convergence histories and plots residual-vs-iteration data for one or more runs.
+- [pack_datasets.py](./pack_datasets.py): Creates deterministic per-dataset tarballs, checksums, and a manifest for the next Zenodo data release.
 - [spmat_reorder.py](./spmat_reorder.py): Reorders HYPRE IJ matrices by dofmap index groups and can write reordered matrices and partition info.
 - [spyplot.py](./spyplot.py): Reads HYPRE matrix files and generates sparse matrix spy plots from text or binary matrix parts.

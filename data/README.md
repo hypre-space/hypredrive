@@ -20,6 +20,10 @@ cmake --build <build-dir> --target data
 
 Alternatively, you can download the datasets manually from the Zenodo record and extract them into this directory.
 
+For release preparation, run `scripts/pack_datasets.py` to create one
+deterministic tarball per dataset, plus MD5/SHA256 checksums and a v0.3.0
+manifest under `/tmp/hypredrive-datasets-v0.3.0`.
+
 ## Datasets
 
 - ps3d10pt7: 3D Laplacian (scalar) with the standard 7‑point finite difference stencil

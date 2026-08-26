@@ -1127,6 +1127,9 @@ static const HelpKeyDoc MGRKeyDocs[] = {
    {"relax_type", "Default MGR relaxation type"},
    {"nonglk_max_elmts", "Maximum elements for non-Galerkin dropping"},
    {"coarse_th", "Coarse-grid strength threshold"},
+   {"interp_sweeps", "Number of bounded P2 interpolation refinement sweeps"},
+   {"interp_weight", "Relaxation weight for interpolation refinement"},
+   {"injection_upcycle", "Enable MGR injection upcycling"},
    {"coarsest_level", "Nested coarsest-level solver options"},
    {"cycle", "MGR cycle shape and smoothing position"},
    {"level", "Nested per-level MGR options"},
@@ -1153,6 +1156,7 @@ static const HelpKeyDoc MGRComponentKeyDocs[] = {
    {"fgmres", "Nested FGMRES component solver options"},
    {"bicgstab", "Nested BiCGSTAB component solver options"},
    {"schwarz", "Nested Schwarz component solver options"},
+   {"symmetric_diagonal_scaling", "Apply symmetric diagonal scaling to MGR F-relaxation"},
    {"reuse", "Nested component reuse policy"},
 };
 

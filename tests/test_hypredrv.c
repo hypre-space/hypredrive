@@ -212,6 +212,7 @@ write_test_lsseq_with_timesteps(const char *filename)
    int32_t             dof0[2]  = {0, 1};
    int32_t             dof1[2]  = {1, 1};
    uint64_t            blob_offset;
+   uint64_t            pattern_bytes;
    uint64_t            part_blob_table[LSSEQ_PART_BLOB_ENTRIES] = {0};
    FILE               *fp = fopen(filename, "wb");
 
@@ -280,28 +281,31 @@ write_test_lsseq_with_timesteps(const char *filename)
    pattern_meta[1].cols_blob_size   = sizeof(cols1);
    blob_offset += sizeof(cols1);
 
+   pattern_bytes = blob_offset - header.offset_blob_data;
+   part_blob_table[0] = pattern_bytes;
+   part_blob_table[1] = sizeof(vals0) + sizeof(vals1);
+   part_blob_table[2] = part_blob_table[0] + part_blob_table[1];
+   part_blob_table[3] = sizeof(rhs0) + sizeof(rhs1);
+   part_blob_table[4] = part_blob_table[2] + part_blob_table[3];
+   part_blob_table[5] = sizeof(dof0) + sizeof(dof1);
+
    sys_meta[0].pattern_id         = 0;
    sys_meta[0].nnz                = 2;
-   sys_meta[0].values_blob_offset = blob_offset;
+   sys_meta[0].values_blob_offset = 0;
    sys_meta[0].values_blob_size   = sizeof(vals0);
-   blob_offset += sizeof(vals0);
-   sys_meta[0].rhs_blob_offset    = blob_offset;
+   sys_meta[0].rhs_blob_offset    = 0;
    sys_meta[0].rhs_blob_size      = sizeof(rhs0);
-   blob_offset += sizeof(rhs0);
-   sys_meta[0].dof_blob_offset    = blob_offset;
+   sys_meta[0].dof_blob_offset    = 0;
    sys_meta[0].dof_blob_size      = sizeof(dof0);
    sys_meta[0].dof_num_entries    = 2;
-   blob_offset += sizeof(dof0);
 
    sys_meta[1].pattern_id         = 1;
    sys_meta[1].nnz                = 3;
-   sys_meta[1].values_blob_offset = blob_offset;
+   sys_meta[1].values_blob_offset = sizeof(vals0);
    sys_meta[1].values_blob_size   = sizeof(vals1);
-   blob_offset += sizeof(vals1);
-   sys_meta[1].rhs_blob_offset    = blob_offset;
+   sys_meta[1].rhs_blob_offset    = sizeof(rhs0);
    sys_meta[1].rhs_blob_size      = sizeof(rhs1);
-   blob_offset += sizeof(rhs1);
-   sys_meta[1].dof_blob_offset    = blob_offset;
+   sys_meta[1].dof_blob_offset    = sizeof(dof0);
    sys_meta[1].dof_blob_size      = sizeof(dof1);
    sys_meta[1].dof_num_entries    = 2;
 
@@ -323,10 +327,10 @@ write_test_lsseq_with_timesteps(const char *filename)
    ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
    fclose(fp);
@@ -1675,7 +1679,7 @@ test_HYPREDRV_PreconCreate_reuse_logic(void)
 static void
 test_HYPREDRV_matched_schur_requires_fgmres(void)
 {
-#ifndef HYPRE_MGR_HAS_MATCHED_SCHUR_GMRES1
+#if !HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
    return;
 #else
    reset_state();
@@ -4041,6 +4045,54 @@ test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system(void)
 }
 
 static void
+test_HYPREDRV_fixed_precmat_sequence_reuses_matrix(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   char        seq_path[PATH_MAX];
+   snprintf(seq_path, sizeof(seq_path), "/tmp/hypredrive_fixed_precmat_%d.lsseq",
+            (int)getpid());
+   write_test_lsseq_with_timesteps(seq_path);
+
+   char yaml_config[PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  precmat_sequence_filename: %s\n"
+            "  precmat_sequence_system_id: 0\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 1\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            seq_path);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(1.0);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrix(obj, (HYPRE_Matrix)mat_A), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetPrecMatrix(obj, NULL), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   HYPRE_IJMatrix          cached = state->mat_M;
+   ASSERT_NOT_NULL(cached);
+   ASSERT_TRUE(state->owns_mat_M);
+   ASSERT_TRUE(state->precmat_sequence_cache_args == state->iargs);
+
+   /* A fixed sequence entry remains available even if the archive is no longer
+    * readable; rebuilding must reuse the owned matrix rather than re-reading it. */
+   ASSERT_EQ(remove(seq_path), 0);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetPrecMatrix(obj, NULL), ERROR_NONE);
+   ASSERT_TRUE(state->mat_M == cached);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_print_system_uses_timestep_filename_without_reuse(void)
 {
    reset_state();
@@ -5700,6 +5752,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_library_mode_destroy_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system);
+   RUN_TEST(test_HYPREDRV_fixed_precmat_sequence_reuses_matrix);
    RUN_TEST(test_HYPREDRV_InputArgsParse_timestep_schedule_negative_cases);
    RUN_TEST(test_HYPREDRV_print_system_uses_timestep_filename_without_reuse);
    RUN_TEST(test_HYPREDRV_print_system_timestep_selector_loads_schedule);

@@ -135,11 +135,18 @@ test_HelpPrint_mgr_numeric_level_alias(void)
    char *mgr_out = capture_help("preconditioner:mgr");
    assert_contains(mgr_out, "matched_q_sweeps");
    assert_contains(mgr_out, "ignored by afsai");
+   assert_contains(mgr_out, "interp_sweeps");
+   assert_contains(mgr_out, "interp_weight");
+   assert_contains(mgr_out, "injection_upcycle");
    assert_contains(mgr_out, "pmax");
    assert_contains(mgr_out, "G-row contract");
    free(mgr_out);
 
-   char *out = capture_help("preconditioner:mgr:level:0:f_relaxation:amg");
+   char *out = capture_help("preconditioner:mgr:level:0:f_relaxation");
+   assert_contains(out, "symmetric_diagonal_scaling");
+   free(out);
+
+   out = capture_help("preconditioner:mgr:level:0:f_relaxation:amg");
    assert_contains(out, "Help for preconditioner:mgr:level:0:f_relaxation:amg");
    assert_contains(out, "AMG preconditioner");
    assert_contains(out, "coarsening");

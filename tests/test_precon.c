@@ -3736,7 +3736,8 @@ test_PreconSetup_mgr_scaled_frelax_repeated(void)
 static void
 test_MGRMatchedSchur_depth_cap(void)
 {
-   MGR_args chain[MAX_MGR_LEVELS + 1];
+   MGR_args *chain = calloc(MAX_MGR_LEVELS + 1, sizeof(*chain));
+   ASSERT_NOT_NULL(chain);
    for (int i = 0; i <= MAX_MGR_LEVELS; i++)
    {
       hypredrv_MGRSetDefaultArgs(&chain[i]);
@@ -3750,6 +3751,7 @@ test_MGRMatchedSchur_depth_cap(void)
    ASSERT_FALSE(hypredrv_MGRHasMatchedSchurGMRES1(&chain[0]));
    chain[MAX_MGR_LEVELS - 1].level[0].matched_f_backsolve = 2;
    ASSERT_TRUE(hypredrv_MGRHasMatchedSchurGMRES1(&chain[0]));
+   free(chain);
 }
 
 static void
@@ -3784,7 +3786,18 @@ test_MGRCreate_interp_weight_and_block_interp_validation(void)
    free(mgr.point_marker_data);
    mgr.point_marker_data = NULL;
 
-#ifdef HYPRE_MGR_HAS_P2_INTERP_REFINEMENT
+   /* Validate configured levels that collapse out of the active hierarchy too. */
+   mgr.num_levels               = 3;
+   mgr.level[1].matched_q       = 3;
+   precon                      = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(precon);
+   free(mgr.point_marker_data);
+   mgr.point_marker_data = NULL;
+
+#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
    for (int type = 12; type <= 14; type++)
    {
       mgr.interp_sweeps = 1;
@@ -5596,7 +5609,7 @@ precon_test_intarray_plain_data_only(int n, const int *vals)
 static void
 test_MGRCreate_matched_f_backsolve_validation(void)
 {
-#ifndef HYPRE_MGR_HAS_MATCHED_F_BACKSOLVE
+#if !HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
    return;
 #else
    TEST_HYPRE_INIT();
@@ -5679,7 +5692,7 @@ test_MGRCreate_matched_f_backsolve_validation(void)
       mgr.point_marker_data = NULL;
    }
 
-#ifdef HYPRE_MGR_HAS_MATCHED_SCHUR_GMRES1
+#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71)
    /* Mode 2 additionally fixes the coarse direction to one managed AMG
     * application. Each nonzero variant violates one independent condition. */
    for (int variant = 0; variant < 6; variant++)
@@ -5823,7 +5836,7 @@ test_MGRCreate_matched_afsai_validation(void)
       hypredrv_MGRCreate(&mgr, &precon, NULL, 0);
       if (variant == 0)
       {
-#if defined(HYPRE_MGR_HAS_MATCHED_Q) && defined(HYPRE_MGR_HAS_MATCHED_FSAI_Q)
+#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 71) && !defined(HYPRE_COMPLEX)
          ASSERT_FALSE(hypredrv_ErrorCodeActive());
          ASSERT_NOT_NULL(precon);
 #else
