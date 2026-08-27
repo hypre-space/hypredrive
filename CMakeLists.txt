@@ -44,6 +44,16 @@ option(HYPREDRV_ENABLE_FUZZING      "Enable opt-in fuzzing harnesses and replay 
 option(HYPREDRV_ENABLE_CUDA         "Enable CUDA support in HYPRE and bundled dependencies" OFF)
 option(HYPREDRV_ENABLE_HIP          "Enable HIP support in HYPRE and bundled dependencies" OFF)
 option(HYPREDRV_ENABLE_SYCL         "Enable SYCL support in HYPRE and bundled dependencies" OFF)
+set(HYPREDRV_SYCL_DEVICE_CODE_SPLIT "per_source" CACHE STRING
+    "SYCL device-code split mode for auto-fetched HYPRE (per_source or per_kernel)")
+set_property(CACHE HYPREDRV_SYCL_DEVICE_CODE_SPLIT PROPERTY STRINGS
+    per_source per_kernel)
+if(NOT HYPREDRV_SYCL_DEVICE_CODE_SPLIT MATCHES "^(per_source|per_kernel)$")
+    message(FATAL_ERROR
+        "HYPREDRV_SYCL_DEVICE_CODE_SPLIT must be per_source or per_kernel")
+endif()
+set(HYPREDRV_SYCL_DEVICE_SELECTOR "" CACHE STRING
+    "ONEAPI_DEVICE_SELECTOR value propagated to SYCL CTest and smoke tests")
 option(HYPREDRV_ENABLE_CPP          "Enable the hypredrive C++ interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
@@ -582,6 +592,10 @@ if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
 endif()
 if(HYPREDRV_HYPRE_USES_SYCL)
     list(APPEND _hypredrv_smoke_check_args -DHYPREDRV_SMOKE_TEST_USES_SYCL=ON)
+    if(HYPREDRV_SYCL_DEVICE_SELECTOR)
+        list(APPEND _hypredrv_smoke_check_args
+             "-DHYPREDRV_SYCL_DEVICE_SELECTOR=${HYPREDRV_SYCL_DEVICE_SELECTOR}")
+    endif()
 endif()
 
 add_custom_target(check

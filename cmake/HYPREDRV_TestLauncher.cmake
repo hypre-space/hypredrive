@@ -40,6 +40,20 @@ function(_hypredrv_apply_gpu_resource)
     list(APPEND _gpu_ids "${CMAKE_MATCH_1}")
   endforeach()
 
+  # CTest may allocate multiple slots on the same physical GPU to different
+  # MPI ranks.  Visibility variables describe devices, not rank slots; keep
+  # each physical resource only once so HYPRE sees one logical device rather
+  # than a duplicated list such as CUDA_VISIBLE_DEVICES=0,0,0,0.
+  list(REMOVE_DUPLICATES _gpu_ids)
+  if(DEFINED ENV{HYPREDRV_GPU_TEST_APPLY_VISIBILITY})
+    string(TOUPPER "$ENV{HYPREDRV_GPU_TEST_APPLY_VISIBILITY}"
+      _apply_gpu_visibility_env)
+    if(_apply_gpu_visibility_env MATCHES "^(0|OFF|FALSE|NO)$")
+      message(STATUS
+        "[test] CTest GPU allocation retained; accelerator visibility override disabled")
+      return()
+    endif()
+  endif()
   string(JOIN "," _visible_devices ${_gpu_ids})
   set(_visible_devices_env "ROCR_VISIBLE_DEVICES")
   if(DEFINED ENV{HYPREDRV_GPU_VISIBLE_DEVICES_ENV} AND
@@ -51,8 +65,18 @@ function(_hypredrv_apply_gpu_resource)
       "Invalid GPU visibility environment variable '${_visible_devices_env}'")
   endif()
 
-  set(ENV{${_visible_devices_env}} "${_visible_devices}")
-  message(STATUS "[test] ${_visible_devices_env}=${_visible_devices}")
+  if(_visible_devices_env MATCHES "^(ROCR|HIP)_VISIBLE_DEVICES$")
+    # HIP applications and ROCr do not consistently give precedence to the
+    # same variable.  Keep both masks identical so a scheduler-provided mask
+    # cannot expose a second device to one MPI rank.
+    set(ENV{ROCR_VISIBLE_DEVICES} "${_visible_devices}")
+    set(ENV{HIP_VISIBLE_DEVICES} "${_visible_devices}")
+    message(STATUS "[test] ROCR_VISIBLE_DEVICES=${_visible_devices}")
+    message(STATUS "[test] HIP_VISIBLE_DEVICES=${_visible_devices}")
+  else()
+    set(ENV{${_visible_devices_env}} "${_visible_devices}")
+    message(STATUS "[test] ${_visible_devices_env}=${_visible_devices}")
+  endif()
 endfunction()
 
 function(hypredrv_prepare_test_launcher out_command out_postflags)

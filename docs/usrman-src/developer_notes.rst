@@ -149,23 +149,42 @@ GPU Test Scheduling
 -------------------
 
 GPU tests can be scheduled concurrently through the generated ``test`` target.
-For CUDA and HIP builds, configuration creates a CTest resource specification
-from the scheduler's GPU visibility variable and sets the parallel level to the
-number of listed devices.  The generated target can then be run with:
+For CUDA, HIP, and SYCL builds, configuration creates a CTest resource
+specification from the scheduler's GPU visibility variable and sets the
+parallel level to the number of listed devices.  The generated target can then
+be run with:
 
 .. code-block:: bash
 
    cmake --build build --target test
 
 For HIP, the configuration checks ``ROCR_VISIBLE_DEVICES`` and then
-``HIP_VISIBLE_DEVICES``.  For CUDA it checks ``CUDA_VISIBLE_DEVICES``.  If the
-scheduler does not provide a visibility variable, HIP configuration tries
-``rocminfo`` and otherwise conservatively uses one device.  Device IDs can be
+``HIP_VISIBLE_DEVICES``.  For CUDA it checks ``CUDA_VISIBLE_DEVICES``.  For
+SYCL, ``ZE_AFFINITY_MASK`` is used by default, and can be overridden for a
+different SYCL backend with ``HYPREDRV_GPU_VISIBLE_DEVICES_ENV``.  If no
+scheduler visibility variable is available, configuration conservatively uses
+one device.  HIP ``rocminfo`` enumeration is opt-in because heterogeneous
+nodes can expose integrated and discrete agents together.  Device IDs can be
 set explicitly during configuration with
 ``-DHYPREDRV_GPU_TEST_DEVICE_IDS=0,1,2,3``.
 
+The default resource specification advertises enough slots for the four MPI
+ranks used by each ``np4`` dataset test.  It uses
+``ceil(4 / <visible GPUs>)`` slots per physical GPU: four slots for one GPU,
+two slots for two or three GPUs, and one slot for four or more GPUs.  This
+allows CTest to schedule the four-rank tests on any positive number of visible
+devices while still spreading ranks across separate devices when possible.
+Set ``-DHYPREDRV_GPU_TEST_RESOURCE_SLOTS=<slots>`` to override this behavior.
+Set ``-DHYPREDRV_GPU_TEST_PARALLEL_LEVEL=<workers>`` to override the default
+CTest worker count.  The standalone ``scripts/fetch_build_test.sh`` runner
+reads the effective value from the configured build.
+GPU tests receive a default 60-second CTest timeout; use
+``-DHYPREDRV_GPU_TEST_TIMEOUT=<seconds>`` to change it.  The standalone
+``scripts/fetch_build_test.sh`` runner also detects and passes the generated
+resource specification automatically.
+
 The generated resource file has this form, with one ``gpus`` entry per visible
-device:
+device.  The example below shows a single-GPU shared-rank allocation:
 
 .. code-block:: json
 
@@ -174,10 +193,7 @@ device:
      "local": [
        {
          "gpus": [
-           { "id": "0", "slots": 1 },
-           { "id": "1", "slots": 1 },
-           { "id": "2", "slots": 1 },
-           { "id": "3", "slots": 1 }
+           { "id": "0", "slots": 4 }
          ]
        }
      ]
@@ -191,9 +207,26 @@ Direct CTest invocations can use the generated file explicitly:
        --resource-spec-file build/hypredrive-ctest-gpus.json \
        --output-on-failure
 
-The test launcher maps each allocation to ``ROCR_VISIBLE_DEVICES`` by default.
-To use another visibility variable, configure with, for example,
+The test launcher maps each allocation to the backend's visibility variable by
+default: ``ROCR_VISIBLE_DEVICES`` for HIP, ``CUDA_VISIBLE_DEVICES`` for CUDA,
+and ``ZE_AFFINITY_MASK`` for SYCL.  To use another visibility variable,
+configure with, for example,
 ``-DHYPREDRV_GPU_VISIBLE_DEVICES_ENV=HIP_VISIBLE_DEVICES``.
+
+SYCL builds use ``ZE_AFFINITY_MASK`` for CTest device assignment by default;
+keep ``ONEAPI_DEVICE_SELECTOR`` or ``SYCL_DEVICE_FILTER`` set to the desired
+backend (for example ``level_zero:gpu``).  The auto-fetched HYPRE build uses
+``per_source`` device-code splitting by default, which avoids excessive
+oneAPI post-link memory use for the command-line driver.  Restore the upstream
+mode with ``-DHYPREDRV_SYCL_DEVICE_CODE_SPLIT=per_kernel`` when needed.  The
+MPI launcher selected by CMake must come from the same MPI installation as the
+MPI libraries used to link HYPRE and hypredrive.
+When no ``ZE_AFFINITY_MASK`` is inherited at configure time, the SYCL tests
+retain CTest's resource scheduling but do not synthesize an affinity mask;
+this avoids imposing a driver-specific Level Zero mask on a selector such as
+``level_zero:gpu``.  Set
+``-DHYPREDRV_GPU_TEST_APPLY_VISIBILITY=ON`` only when the selected SYCL
+backend accepts the configured visibility variable.
 
 When the configured MPI launcher is ``srun`` and tests run inside a Flux
 allocation, the ``AUTO`` launcher policy uses packed

@@ -10,7 +10,7 @@ This directory hosts small datasets used by hypredrive examples and tests. All m
 
 ## Obtaining the datasets
 
-The datasets are hosted on Zenodo at https://zenodo.org/records/17471036.
+The datasets are hosted on Zenodo at https://zenodo.org/records/22116856.
 
 The most convenient way to download and extract all datasets is using the CMake `data` target:
 
