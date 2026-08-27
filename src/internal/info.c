@@ -2143,7 +2143,7 @@ DetectCpuModelsFromProcInfo(FILE *fp, char *buffer, size_t buffer_size,
    int numPhysicalCPUs = 0;
    int numCPUs         = 0;
 
-   while (fgets(buffer, sizeof(buffer), fp))
+   while (fgets(buffer, buffer_size, fp))
    {
       if (strncmp(buffer, "physical id", 11) == 0)
       {
@@ -2400,7 +2400,7 @@ PrintNvidiaGpuMemory(double mib_to_gib)
 }
 
 static void
-PrintAmdGpuMemory(double bytes_to_gib, double mib_to_gib)
+PrintAmdGpuMemory(double bytes_to_gib)
 {
    int    gcount = 0;
    size_t total = 0, used = 0;
@@ -2540,7 +2540,7 @@ PrintLegacyMemorySection(int nprocs, double bytes_to_gib, double mib_to_gib,
 
    PrintNvidiaGpuMemory(mib_to_gib);
 
-   PrintAmdGpuMemory(bytes_to_gib, mib_to_gib);
+   PrintAmdGpuMemory(bytes_to_gib);
 
    PrintIntelGpuMemory(bytes_to_gib);
 
