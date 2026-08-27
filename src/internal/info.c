@@ -2132,6 +2132,7 @@ GatherAllHostnames(MPI_Comm comm, int nprocs, char **allHostnames_out)
 }
 
 /* Fills the per-package CPU model strings and the package/thread counts. */
+#ifndef __APPLE__
 /* Parses /proc/cpuinfo for the per-package model strings and the physical /
  * logical processor counts. */
 static void
@@ -2212,6 +2213,7 @@ DetectCpuModelsFromProcInfo(FILE *fp, char *buffer, size_t buffer_size,
    *numPhysicalCPUs_out = numPhysicalCPUs;
    *numCPUs_out         = numCPUs;
 }
+#endif
 
 static void
 DetectCpuModels(int *numPhysicalCPUs_out, int *numCPUs_out, char cpuModels[8][256])
@@ -2813,7 +2815,13 @@ PrintCpuMemoryInformation(double bytes_to_gib)
    if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) ==
        KERN_SUCCESS)
    {
-      mem_used = mem_total - (size_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
+      long   page_size  = sysconf(_SC_PAGESIZE);
+      size_t free_bytes = 0;
+      if (page_size > 0)
+      {
+         free_bytes = (size_t)vmstat.free_count * (size_t)page_size;
+      }
+      mem_used = (free_bytes < mem_total) ? mem_total - free_bytes : 0;
 
       printf("CPU RAM used          : %6.2f / %6.2f  (%5.2f %%) GiB\n",
              (double)mem_used / bytes_to_gib, (double)mem_total / bytes_to_gib,
