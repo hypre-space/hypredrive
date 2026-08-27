@@ -468,9 +468,10 @@ hypredrv_EigSpecComputeSymmetric(int n, double *A_cm, int want_vectors, double *
 
 /* Applies the preconditioner to the dense operator so the reported spectrum is
  * that of the preconditioned system rather than of A alone. */
-static void
-EigSpecApplyPreconditioner(const EigSpec_args *eargs, void *precon_ctx, int n,
-                           double *A_cm, int myid)
+static uint32_t
+EigSpecApplyPreconditioner(HYPRE_IJMatrix mat_A, MPI_Comm comm, void *precon_ctx,
+                           hypredrv_PreconApplyFn precon_apply, Stats *stats, int n,
+                           double **A_cm)
 {
    HYPRE_BigInt   jlower, jupper;
    HYPRE_IJVector t = NULL, col = NULL;
@@ -490,7 +491,8 @@ EigSpecApplyPreconditioner(const EigSpec_args *eargs, void *precon_ctx, int n,
    {
       HYPRE_IJVectorDestroy(t);
       HYPRE_IJVectorDestroy(col);
-      free(A_cm);
+      free(*A_cm);
+      *A_cm = NULL;
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate %zu bytes for preconditioned dense "
                            "matrix",
@@ -508,7 +510,7 @@ EigSpecApplyPreconditioner(const EigSpec_args *eargs, void *precon_ctx, int n,
       par_t                 = (HYPRE_ParVector)obj_t;
       hypre_Vector *v_loc_t = hypre_ParVectorLocalVector(par_t);
       double       *tdata   = hypre_VectorData(v_loc_t);
-      for (int r = 0; r < loc_n; r++) tdata[r] = A_cm[(int)(jlower) + r + i * n];
+      for (int r = 0; r < loc_n; r++) tdata[r] = (*A_cm)[(int)(jlower) + r + i * n];
 
       HYPRE_IJVectorGetObject(col, &obj_c);
       par_c                 = (HYPRE_ParVector)obj_c;
@@ -534,11 +536,13 @@ EigSpecApplyPreconditioner(const EigSpec_args *eargs, void *precon_ctx, int n,
     * silently wrong eigenvalues in parallel. */
    MPI_Allreduce(MPI_IN_PLACE, B_cm, n * n, MPI_DOUBLE, MPI_SUM, comm);
 
-   free(A_cm);
-   A_cm = B_cm;
+   free(*A_cm);
+   *A_cm = B_cm;
 
    HYPRE_IJVectorDestroy(t);
    HYPRE_IJVectorDestroy(col);
+
+   return 0;
 }
 
 uint32_t
@@ -589,7 +593,13 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
    /* Build preconditioned dense matrix B = M^{-1} A if requested */
    if (eargs->preconditioned)
    {
-      EigSpecApplyPreconditioner(eargs, precon_ctx, n, A_cm, myid);
+      uint32_t precon_rc = EigSpecApplyPreconditioner(mat_A, comm, precon_ctx,
+                                                      precon_apply, stats, n, &A_cm);
+
+      if (precon_rc)
+      {
+         return precon_rc;
+      }
    }
 
    if (eargs->hermitian)
