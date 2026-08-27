@@ -791,9 +791,9 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
    char           *resolved_path = NULL;
    char           *current_dir   = NULL;
    char           *current_base  = NULL;
-   int             inner_level = 0, pos = 0;
-   bool            pushed = false;
-   YAMLIndentState indent = {*base_indent_ptr, -1, true};
+   int             pos           = 0;
+   bool            pushed        = false;
+   YAMLIndentState indent        = {*base_indent_ptr, -1, true};
 
    if (!YAMLincludeResolvePath(ctx, dirname, basename, &resolved_path))
    {
@@ -1307,8 +1307,6 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
 
    /* Key/value mapping or malformed line */
    return YAMLtokenParseMapping(content, token_out);
-
-   return 1;
 }
 
 static bool

@@ -2489,7 +2489,7 @@ static void
 BlockFrobeniusReportRows(MPI_Comm comm, const char *log_object_name, int ls_id,
                          int num_blocks, const int *block_labels,
                          const DofLabelMap *dof_labels, const double *global_stats,
-                         const long long *global_counts, double matrix_norm)
+                         const long long *global_counts)
 {
    const size_t     num_block_pairs = (size_t)num_blocks * (size_t)num_blocks;
    const double    *global_norm_sq  = global_stats;
@@ -2559,7 +2559,6 @@ BlockFrobeniusReportRows(MPI_Comm comm, const char *log_object_name, int ls_id,
       }
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "%s", line);
    }
-
    hypre_TFree(line, HYPRE_MEMORY_HOST);
 }
 
@@ -2668,7 +2667,6 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
    double             *global_stats      = NULL;
    long long          *local_counts      = NULL;
    long long          *global_counts     = NULL;
-   char               *line              = NULL;
    HYPRE_Int           num_rows          = 0;
    HYPRE_Int           num_cols_offd     = 0;
    int                 num_blocks        = 0;
@@ -2755,8 +2753,7 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
                       num_blocks, sqrt(matrix_norm_sq), global_ignored);
 
    BlockFrobeniusReportRows(comm, log_object_name, ls_id, num_blocks, block_labels,
-                            dof_labels, global_stats, global_counts,
-                            sqrt(matrix_norm_sq));
+                            dof_labels, global_stats, global_counts);
 
 cleanup:
    if (owns_diag_copy)
@@ -2780,7 +2777,6 @@ cleanup:
    hypre_TFree(global_stats, HYPRE_MEMORY_HOST);
    hypre_TFree(local_counts, HYPRE_MEMORY_HOST);
    hypre_TFree(global_counts, HYPRE_MEMORY_HOST);
-   hypre_TFree(line, HYPRE_MEMORY_HOST);
 }
 
 /*-----------------------------------------------------------------------------

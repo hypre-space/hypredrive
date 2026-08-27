@@ -668,20 +668,20 @@ decompress_blosc(size_t isize, const void *input, size_t header_size, size_t ori
 /* Hands the payload to the decompression backend matching `algo`. */
 static int
 DecompressDispatch(comp_alg_t algo, size_t isize, const void *input, size_t header_size,
-                   size_t orig_size, void **output_ptr)
+                   size_t *orig_size, void **output_ptr)
 {
    /* GCOVR_EXCL_BR_START */
    switch (algo)
    /* GCOVR_EXCL_BR_STOP */
    {
       case COMP_ZLIB:
-         if (!decompress_zlib(isize, input, header_size, &orig_size, output_ptr))
+         if (!decompress_zlib(isize, input, header_size, orig_size, output_ptr))
          {
             return 0;
          }
          break;
       case COMP_ZSTD:
-         if (!decompress_zstd(isize, input, header_size, orig_size, output_ptr))
+         if (!decompress_zstd(isize, input, header_size, *orig_size, output_ptr))
          {
             return 0;
          }
@@ -689,7 +689,7 @@ DecompressDispatch(comp_alg_t algo, size_t isize, const void *input, size_t head
 #ifdef HYPREDRV_USING_LZ4
       case COMP_LZ4:   /* GCOVR_EXCL_LINE */
       case COMP_LZ4HC: /* GCOVR_EXCL_LINE */
-         if (!decompress_lz4(isize, input, header_size, orig_size, output_ptr))
+         if (!decompress_lz4(isize, input, header_size, *orig_size, output_ptr))
          {
             return 0;
          }
@@ -697,7 +697,7 @@ DecompressDispatch(comp_alg_t algo, size_t isize, const void *input, size_t head
 #endif
 #ifdef HYPREDRV_USING_BLOSC
       case COMP_BLOSC: /* GCOVR_EXCL_LINE */
-         if (!decompress_blosc(isize, input, header_size, orig_size, output_ptr))
+         if (!decompress_blosc(isize, input, header_size, *orig_size, output_ptr))
          {
             return 0;
          }
@@ -795,7 +795,7 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
       /* GCOVR_EXCL_BR_STOP */
    }
 
-   if (!DecompressDispatch(algo, isize, input, header_size, orig_size, output_ptr))
+   if (!DecompressDispatch(algo, isize, input, header_size, &orig_size, output_ptr))
    {
       return;
    }

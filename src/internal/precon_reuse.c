@@ -2582,7 +2582,7 @@ PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKe
 }
 /* Presence-driven defaulting and the mutual-exclusion rules between the
  * enabled/always/policy keys. */
-static void
+static int
 PreconReuseValidateEnabledRules(PreconReuse_args *args, YAMLnode *parent,
                                 PreconReuseSeenKeys *seen)
 {
@@ -2597,7 +2597,7 @@ PreconReuseValidateEnabledRules(PreconReuse_args *args, YAMLnode *parent,
       hypredrv_ErrorMsgAdd(
          "preconditioner.reuse always cannot be combined with enabled: off");
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
 
    if (seen->adaptive && !seen->policy)
@@ -2611,7 +2611,7 @@ PreconReuseValidateEnabledRules(PreconReuse_args *args, YAMLnode *parent,
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse adaptive block requires type: adaptive");
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE && /* GCOVR_EXCL_BR_LINE */
@@ -2623,13 +2623,15 @@ PreconReuseValidateEnabledRules(PreconReuse_args *args, YAMLnode *parent,
                            "always, frequency, linear_system_ids, or per_timestep; "
                            "these keys produce a parse-time error when combined");
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
+
+   return 1;
 }
 
 /* Policy-specific rules: what the static and adaptive policies each accept.
  * Split from the defaulting rules above so both stay readable. */
-static void
+static int
 PreconReuseValidatePolicyRules(PreconReuse_args *args, YAMLnode *parent,
                                PreconReuseSeenKeys *seen)
 {
@@ -2640,7 +2642,7 @@ PreconReuseValidatePolicyRules(PreconReuse_args *args, YAMLnode *parent,
       hypredrv_ErrorMsgAdd("preconditioner.reuse always cannot be combined with "
                            "frequency, linear_system_ids, or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
 
    if (args->policy == PRECON_REUSE_POLICY_STATIC &&
@@ -2652,20 +2654,22 @@ PreconReuseValidatePolicyRules(PreconReuse_args *args, YAMLnode *parent,
          "preconditioner.reuse.linear_system_ids cannot be combined with "
          "frequency or per_timestep");
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
+
+   return 1;
 }
 
 /* Second half: applies the shorthand expansions and policy defaults that depend
  * on the fully-parsed block. */
-static void
+static int
 PreconReuseApplyPolicyDefaults(PreconReuse_args *args, YAMLnode *parent,
                                PreconReuseSeenKeys *seen)
 {
    if (seen->always_requested && !PreconReuseSetAlwaysLinearSystemIDs(args))
    {
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE && /* GCOVR_EXCL_BR_LINE */
@@ -2673,7 +2677,7 @@ PreconReuseApplyPolicyDefaults(PreconReuse_args *args, YAMLnode *parent,
        !PreconReuseInstallDefaultAdaptiveComponents(&args->adaptive))
    {
       YAML_NODE_SET_INVALID_VAL(parent);
-      return;
+      return 0;
    }
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE)
@@ -2689,6 +2693,8 @@ PreconReuseApplyPolicyDefaults(PreconReuse_args *args, YAMLnode *parent,
       args->frequency    = 0;
       args->per_timestep = 0;
    }
+
+   return 1;
 }
 
 /* Cross-field rules applied once every child key has been parsed. */
@@ -2696,9 +2702,16 @@ static void
 PreconReuseValidateCombination(PreconReuse_args *args, YAMLnode *parent,
                                PreconReuseSeenKeys *seen)
 {
-   PreconReuseValidateEnabledRules(args, parent, seen);
-   PreconReuseValidatePolicyRules(args, parent, seen);
-   PreconReuseApplyPolicyDefaults(args, parent, seen);
+   /* Short-circuit: the original single function returned at the first
+    * violation, so later rules must not run (and must not mutate args) once
+    * one has rejected the configuration. */
+   if (!PreconReuseValidateEnabledRules(args, parent, seen) ||
+       !PreconReuseValidatePolicyRules(args, parent, seen))
+   {
+      return;
+   }
+
+   (void)PreconReuseApplyPolicyDefaults(args, parent, seen);
 }
 
 void

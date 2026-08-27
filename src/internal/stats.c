@@ -311,9 +311,11 @@ AssignCurrentSolveEntryPath(Stats *stats)
  * Helper: Handle annotation begin
  *--------------------------------------------------------------------------*/
 
-/* Vector-timer annotations (rhs, dofmap, prec) all attach to the current entry. */
+/* Vector-timer annotations (rhs, dofmap, prec) all attach to the current entry.
+ * The array is taken by address because EnsureCapacity() reallocates it: reading
+ * the member before that call would leave a dangling pointer. */
 static void
-AnnotationStartVectorPhase(Stats *stats, double *timer_array)
+AnnotationStartVectorPhase(Stats *stats, double **timer_array)
 {
    if (stats->counter < 0)
    {
@@ -324,7 +326,7 @@ AnnotationStartVectorPhase(Stats *stats, double *timer_array)
    {
       return;
    }
-   StartVectorTimer(stats, timer_array, stats->counter);
+   StartVectorTimer(stats, *timer_array, stats->counter);
 }
 
 /* Start of a new linear system build:
@@ -439,15 +441,15 @@ HandleAnnotationBegin(Stats *stats, const char *name)
    }
    else if (!strcmp(name, "rhs"))
    {
-      AnnotationStartVectorPhase(stats, stats->rhs);
+      AnnotationStartVectorPhase(stats, &stats->rhs);
    }
    else if (!strcmp(name, "dofmap"))
    {
-      AnnotationStartVectorPhase(stats, stats->dofmap);
+      AnnotationStartVectorPhase(stats, &stats->dofmap);
    }
    else if (!strcmp(name, "prec"))
    {
-      AnnotationStartVectorPhase(stats, stats->prec);
+      AnnotationStartVectorPhase(stats, &stats->prec);
    }
    else if (!strcmp(name, "solve"))
    {
@@ -1226,8 +1228,7 @@ hypredrv_StatsRelativeResNormSet(Stats *stats, double rrnorm)
 /* The per-system breakdown printed above the aggregate row, shown only when
  * more than one system ran and the verbosity asks for it. */
 static void
-StatsPrintPerSystemBreakdown(const Stats *stats, int max_entry, int print_level,
-                             int display_idx)
+StatsPrintPerSystemBreakdown(const Stats *stats, int max_entry, int display_idx)
 {
    double min_build = HUGE_VAL, max_build = 0.0, sum_build = 0.0, ssq_build = 0.0;
    double min_setup = HUGE_VAL, max_setup = 0.0, sum_setup = 0.0, ssq_setup = 0.0;
@@ -1368,7 +1369,7 @@ StatsPrintImpl(const Stats *stats, int print_level)
    /* Print aggregate rows inside the same table for print level > 1 */
    if (display_idx > 1 && print_level > 1)
    {
-      StatsPrintPerSystemBreakdown(stats, max_entry, print_level, display_idx);
+      StatsPrintPerSystemBreakdown(stats, max_entry, display_idx);
    }
 
    PrintDivisor();

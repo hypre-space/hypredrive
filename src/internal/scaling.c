@@ -392,6 +392,7 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
                            HYPRE_BigInt *ilower_out, HYPRE_BigInt *iupper_out,
                            HYPRE_Int *num_local_rows_out)
 {
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
    void              *obj_A  = NULL;
    HYPRE_ParCSRMatrix par_A  = NULL;
    HYPRE_BigInt       ilower = 0, iupper = 0;
@@ -477,6 +478,20 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
    *num_local_rows_out = num_local_rows;
 
    return 1;
+#else
+   /* GCOVR_EXCL_BR_START */
+   (void)comm;
+   (void)args;
+   (void)mat_A;
+   (void)dofmap;
+   (void)par_A_out;
+   (void)ilower_out;
+   (void)iupper_out;
+   (void)num_local_rows_out;
+   /* Scaling disabled on older hypre versions */
+   /* GCOVR_EXCL_BR_STOP */
+   return 0;
+#endif
 }
 
 static void

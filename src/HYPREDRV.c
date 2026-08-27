@@ -3390,7 +3390,11 @@ SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
    *e_norm_out          = e_norm;
    *solve_succeeded_out = succeeded;
 
-   return hypredrv_ErrorCodeGet();
+   /* Completed the scaled solve. Return 0 rather than the current error code:
+    * a nonzero return makes the caller bail out immediately, which would skip
+    * the collective error sync that every rank has to reach. Rank-local errors
+    * raised here are settled there instead. */
+   return 0;
 }
 
 /* Solve path for an unscaled system: hypredrv_SolverApply already records the

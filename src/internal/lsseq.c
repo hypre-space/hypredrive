@@ -1977,7 +1977,6 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    int       nparts                      = 0;
    char      prefix[MAX_FILENAME_LENGTH] = {0};
    char      part_filename[MAX_FILENAME_LENGTH];
-   int       myid     = 0;
    int       local_ok = 1;
    int       ok       = 0;
 

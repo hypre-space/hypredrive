@@ -4597,8 +4597,7 @@ MGRPlanCoarsening(MGR_args *args, MGRCreatePlan *plan, const Stats *stats, int n
 /* Sparse dof label spaces are remapped onto a dense [0, num_active_dofs) range
  * before the point markers are handed to hypre, which expects contiguous ids. */
 static int
-MGRPlanRemapSparseLabels(MGR_args *args, MGRCreatePlan *plan, const IntArray *dofmap,
-                         const Stats *stats, int next_ls_id)
+MGRPlanRemapSparseLabels(MGRCreatePlan *plan, const Stats *stats, int next_ls_id)
 {
    HYPRE_Int lvl, i, j;
 
@@ -4660,7 +4659,7 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
    HYPRE_Int lvl, i, j;
 
    if (plan->num_active_dofs > 0 && plan->num_active_dofs < plan->num_dofs &&
-       !MGRPlanRemapSparseLabels(args, plan, dofmap, stats, next_ls_id))
+       !MGRPlanRemapSparseLabels(plan, stats, next_ls_id))
    {
       return 0;
    }
