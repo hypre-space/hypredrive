@@ -311,6 +311,109 @@ AssignCurrentSolveEntryPath(Stats *stats)
  * Helper: Handle annotation begin
  *--------------------------------------------------------------------------*/
 
+/* Vector-timer annotations (rhs, dofmap, prec) all attach to the current entry. */
+static void
+AnnotationStartVectorPhase(Stats *stats, double *timer_array)
+{
+   if (stats->counter < 0)
+   {
+      stats->counter = 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   StartVectorTimer(stats, timer_array, stats->counter);
+}
+
+/* Start of a new linear system build:
+ * - reset repetition counter
+ * - reserve the next stats entry so build timers attach to the upcoming solve entry */
+static void
+AnnotationBeginSystemBuild(Stats *stats)
+{
+   stats->reps = 0;
+   stats->counter++;
+   stats->matrix_counter = stats->counter;
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   SetCurrentEntryPath(stats, NULL);
+   ResetPendingTimestepContext(stats);
+   StartVectorTimer(stats, stats->matrix, stats->counter);
+}
+
+/* Beginning of a solve entry (one repetition / one variant):
+ * - advance entry index for all but the first repetition after a build
+ * - keep indices contiguous: 0,1,2,... across repetitions and variants */
+static void
+AnnotationBeginSolveEntry(Stats *stats)
+{
+   if (stats->counter < 0)
+   {
+      stats->counter = 0;
+   }
+   else if (stats->reps > 0)
+   {
+      stats->counter++;
+   }
+   stats->reps++;
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   SetCurrentEntryPath(stats, NULL);
+   ResetPendingTimestepContext(stats);
+   StartScalarTimer(&stats->reset_x0);
+}
+
+/* Increment the linear system counter only on the first solve for a new system
+ * (reset_x0 has already set reps=1 for the first repetition), which is detected
+ * by the entry index still matching the last "matrix" annotation. */
+static void
+AnnotationBeginSolve(Stats *stats)
+{
+   if (stats->reps == 1 && stats->counter == stats->matrix_counter)
+   {
+      stats->ls_counter++;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      stats->counter = 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   StartVectorTimer(stats, stats->solve, stats->counter);
+
+   /* Tag this entry with its linear system id */
+   /* GCOVR_EXCL_BR_START */
+   if (stats->entry_ls_id && stats->counter < stats->capacity) /* GCOVR_EXCL_BR_STOP */
+   {
+      stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
+   }
+   AssignCurrentSolveEntryPath(stats);
+}
+
+/* Scalar-timer annotations (initialize, finalize) are entry-independent. */
+static void
+AnnotationStartScalarPhase(Stats *stats, double *timer)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   StartScalarTimer(timer);
+}
+
 static void
 HandleAnnotationBegin(Stats *stats, const char *name)
 {
@@ -326,135 +429,37 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       return;
    }
 
-   /* Update counters for special annotations */
    if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
-      /* Start of a new linear system build:
-       * - reset repetition counter
-       * - reserve the next stats entry so build timers attach to the upcoming solve entry
-       */
-      stats->reps = 0;
-      stats->counter++;
-      stats->matrix_counter = stats->counter;
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      SetCurrentEntryPath(stats, NULL);
-      ResetPendingTimestepContext(stats);
-      StartVectorTimer(stats, stats->matrix, stats->counter);
+      AnnotationBeginSystemBuild(stats);
    }
    else if (!strcmp(name, "reset_x0"))
    {
-      /* Beginning of a solve entry (one repetition / one variant):
-       * - advance entry index for all but the first repetition after a build
-       * - keep indices contiguous: 0,1,2,... across repetitions and variants
-       */
-      if (stats->counter < 0)
-      {
-         stats->counter = 0;
-      }
-      else if (stats->reps > 0)
-      {
-         stats->counter++;
-      }
-      stats->reps++;
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      SetCurrentEntryPath(stats, NULL);
-      ResetPendingTimestepContext(stats);
-      StartScalarTimer(&stats->reset_x0);
+      AnnotationBeginSolveEntry(stats);
    }
    else if (!strcmp(name, "rhs"))
    {
-      if (stats->counter < 0)
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->rhs, stats->counter);
+      AnnotationStartVectorPhase(stats, stats->rhs);
    }
    else if (!strcmp(name, "dofmap"))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->dofmap, stats->counter);
+      AnnotationStartVectorPhase(stats, stats->dofmap);
    }
    else if (!strcmp(name, "prec"))
    {
-      if (stats->counter < 0)
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->prec, stats->counter);
+      AnnotationStartVectorPhase(stats, stats->prec);
    }
    else if (!strcmp(name, "solve"))
    {
-      /* Increment linear system counter only on the first solve for a new system.
-       * (reset_x0 has already set reps=1 for the first repetition)
-       * Only increment if this is the first solve after the last "matrix" annotation.
-       * We track this by comparing counter to matrix_counter. */
-      if (stats->reps == 1 && stats->counter == stats->matrix_counter)
-      {
-         stats->ls_counter++;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->solve, stats->counter);
-      /* Tag this entry with its linear system id */
-      /* GCOVR_EXCL_BR_START */
-      if (stats->entry_ls_id && stats->counter < stats->capacity) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
-      }
-      AssignCurrentSolveEntryPath(stats);
+      AnnotationBeginSolve(stats);
    }
    else if (!strcmp(name, "initialize"))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartScalarTimer(&stats->initialize);
+      AnnotationStartScalarPhase(stats, &stats->initialize);
    }
    else if (!strcmp(name, "finalize"))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartScalarTimer(&stats->finalize);
+      AnnotationStartScalarPhase(stats, &stats->finalize);
    }
    else
    {

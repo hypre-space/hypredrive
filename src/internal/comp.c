@@ -387,6 +387,34 @@ compress_blosc(size_t isize, const void *input, size_t header_size, void **outpu
  * hypredrv_compress
  *-----------------------------------------------------------------------------*/
 
+/* Algorithms whose backing library was not compiled in are rejected up front, so
+ * the dispatch switches below only ever see something they can handle. */
+static int
+CompressionAlgorithmAvailable(comp_alg_t algo, const char *direction)
+{
+#if !defined(HYPREDRV_USING_LZ4)
+   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("LZ4 %s not enabled during build time!", direction);
+      return 0;
+   }
+#endif
+#if !defined(HYPREDRV_USING_BLOSC)
+   if (algo == COMP_BLOSC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("BLOSC %s not enabled during build time!", direction);
+      return 0;
+   }
+#endif
+
+   (void)algo;
+   (void)direction;
+
+   return 1;
+}
+
 void
 hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osize_ptr,
                   void **output_ptr, int compression_level)
@@ -430,22 +458,10 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       return;
    }
 
-#if !defined(HYPREDRV_USING_LZ4)
-   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   if (!CompressionAlgorithmAvailable(algo, "compression"))
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
       return;
    }
-#endif
-#if !defined(HYPREDRV_USING_BLOSC)
-   if (algo == COMP_BLOSC)
-   {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("BLOSC compression not enabled during build time!");
-      return;
-   }
-#endif
 
    /* GCOVR_EXCL_BR_START */
    switch (algo)
@@ -700,22 +716,10 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
       return;
    }
 
-#if !defined(HYPREDRV_USING_LZ4)
-   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   if (!CompressionAlgorithmAvailable(algo, "decompression"))
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("LZ4 decompression not enabled during build time!");
       return;
    }
-#endif
-#if !defined(HYPREDRV_USING_BLOSC)
-   if (algo == COMP_BLOSC)
-   {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("BLOSC decompression not enabled during build time!");
-      return;
-   }
-#endif
 
    {
       /* GCOVR_EXCL_BR_START */

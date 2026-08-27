@@ -556,25 +556,196 @@ hypredrv_YAMLtreeDestroy(YAMLtree **tree_ptr)
  * hypredrv_YAMLtextRead
  *-----------------------------------------------------------------------------*/
 
+/* Indentation state carried across the lines of one YAML source file. */
+typedef struct
+{
+   int  base_indent;
+   int  prev_indent;
+   bool first_indented_line;
+} YAMLIndentState;
+
+/* Strips the trailing newline and any end-of-line comment from `line`, keeping
+ * `backup` (the verbatim copy that gets emitted) in sync. */
+static void
+YAMLlineStripComment(char *line, char *backup)
+{
+   char *comment_ptr = strchr(line, '#');
+
+   if (comment_ptr == NULL)
+   {
+      return;
+   }
+
+   *comment_ptr = '\0';
+   /* Also remove from backup to prevent comment from being included in output */
+   comment_ptr = strchr(backup, '#');
+   /* GCOVR_EXCL_BR_START */
+   if (comment_ptr) /* GCOVR_EXCL_BR_STOP */
+   {
+      *comment_ptr       = '\n'; /* Preserve newline in backup */
+      *(comment_ptr + 1) = '\0';
+   }
+}
+
+/* Measures the leading indentation of `line`. Returns -1 when a tab is found,
+ * which YAML input is not allowed to use. */
+static int
+YAMLlineIndentWidth(const char *line)
+{
+   int pos = 0;
+
+   while (line[pos] == ' ' || line[pos] == '\t')
+   {
+      if (line[pos] == '\t')
+      {
+         hypredrv_ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
+         hypredrv_ErrorMsgAdd("Tab characters are not allowed in YAML input!");
+         return -1;
+      }
+      pos++;
+   }
+
+   return pos;
+}
+
+/* A sequence item line starts with "-" and need not contain ':'. */
+static bool
+YAMLlineIsSequenceItem(const char *line, int pos)
+{
+   /* GCOVR_EXCL_BR_START */
+   return (bool)(line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
+   /* GCOVR_EXCL_BR_STOP */
+}
+
+/* Establishes the base indentation from the first indented line, then checks
+ * that every later line is a consistent multiple of it and does not jump by an
+ * implausible amount. Returns zero with the error state set on a violation. */
+static int
+YAMLlineIndentCheck(const char *line, int pos, YAMLIndentState *indent,
+                    int *base_indent_ptr)
+{
+   /* Establish base indentation on first indented line */
+   if (indent->base_indent == -1 && pos > 0)
+   {
+      *base_indent_ptr = indent->base_indent = pos;
+      if (indent->base_indent < 2)
+      {
+         hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
+         hypredrv_ErrorMsgAdd("Base indentation in YAML input must be at least 2 spaces");
+         return 0;
+      }
+   }
+
+   if (pos <= 0)
+   {
+      return 1;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (indent->base_indent > 0 && pos % indent->base_indent != 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
+      hypredrv_ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
+      return 0;
+   }
+
+   /* Enforce reasonable indentation jumps. Allow a single-level jump
+    * (base_indent), or up to 2 * base_indent when introducing a sequence item. */
+   if (!indent->first_indented_line && pos > indent->prev_indent)
+   {
+      int  jump        = pos - indent->prev_indent;
+      bool is_seq_item = YAMLlineIsSequenceItem(line, pos);
+      int  max_allowed = (int)is_seq_item ? indent->base_indent * 2 : indent->base_indent;
+
+      /* Be tolerant to avoid false positives with deeper nesting */
+      if (jump > max_allowed * 2)
+      {
+         hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
+         hypredrv_ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
+         return 0;
+      }
+   }
+
+   indent->first_indented_line = false;
+   indent->prev_indent         = pos;
+
+   return 1;
+}
+
+/* Splits a "key: value" line in place, trimming the leading spaces of both
+ * halves. Returns zero when the line carries no ':' separator. */
+static int
+YAMLlineSplitKeyValue(char *line, char **key_out, char **val_out)
+{
+   char *sep = strchr(line, ':');
+
+   /* GCOVR_EXCL_BR_START */
+   if (sep == NULL) /* GCOVR_EXCL_BR_STOP */
+   {
+      return 0;
+   }
+
+   *sep     = '\0';
+   *key_out = line;
+   *val_out = sep + 1;
+
+   while (**key_out == ' ')
+   {
+      (*key_out)++;
+   }
+   while (**val_out == ' ')
+   {
+      (*val_out)++;
+   }
+
+   return 1;
+}
+
+/* Appends one verbatim source line to the accumulated text, re-indented to the
+ * nesting level of the file it came from. */
+static int
+YAMLtextAppendLine(const char *backup, int base_indent, int level, size_t *length_ptr,
+                   char **text_ptr, size_t *capacity_ptr, YAMLincludeContext *ctx)
+{
+   /* Use actual indentation spacing */
+   size_t num_whitespaces = (size_t)(base_indent > 0 ? base_indent : 1) * (size_t)level;
+   size_t new_length      = *length_ptr + strlen(backup) + num_whitespaces;
+
+   if (!YAMLincludeContextAddBytes(ctx, strlen(backup) + num_whitespaces))
+   {
+      return 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!YAMLtextBufferEnsureCapacity(text_ptr, capacity_ptr, new_length + 1))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      return 0; /* GCOVR_EXCL_LINE */
+   }
+
+   /* Fill with base whitespaces, then copy the backup line */
+   memset((*text_ptr) + (*length_ptr), ' ', num_whitespaces);
+   memcpy((*text_ptr) + (*length_ptr) + num_whitespaces, backup, strlen(backup));
+   (*text_ptr)[new_length] = '\0';
+   *length_ptr             = new_length;
+
+   return 1;
+}
+
 static void
 YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
                         int *base_indent_ptr, size_t *length_ptr, char **text_ptr,
                         size_t *capacity_ptr, YAMLincludeContext *ctx)
 {
-   FILE  *fp  = NULL;
-   char  *key = NULL, *val = NULL, *sep = NULL;
-   char   line[MAX_LINE_LENGTH];
-   char   backup[MAX_LINE_LENGTH];
-   char  *resolved_path = NULL;
-   char  *current_dir   = NULL;
-   char  *current_base  = NULL;
-   int    inner_level = 0, pos = 0;
-   size_t num_whitespaces     = 0;
-   size_t new_length          = 0;
-   int    base_indent         = *base_indent_ptr; // Track base indentation level
-   int    prev_indent         = -1;               // Track previous indentation level
-   bool   first_indented_line = true;
-   bool   pushed              = false;
+   FILE           *fp  = NULL;
+   char           *key = NULL, *val = NULL;
+   char            line[MAX_LINE_LENGTH];
+   char            backup[MAX_LINE_LENGTH];
+   char           *resolved_path = NULL;
+   char           *current_dir   = NULL;
+   char           *current_base  = NULL;
+   int             inner_level = 0, pos = 0;
+   bool            pushed = false;
+   YAMLIndentState indent = {*base_indent_ptr, -1, true};
 
    if (!YAMLincludeResolvePath(ctx, dirname, basename, &resolved_path))
    {
@@ -607,20 +778,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
       /* Remove trailing newline character */
       line[strcspn(line, "\n")] = '\0';
 
-      /* Remove comments at the end of valid line */
-      char *comment_ptr = NULL;
-      if ((comment_ptr = strchr(line, '#')) != NULL)
-      {
-         *comment_ptr = '\0';
-         /* Also remove from backup to prevent comment from being included in output */
-         comment_ptr = strchr(backup, '#');
-         /* GCOVR_EXCL_BR_START */
-         if (comment_ptr) /* GCOVR_EXCL_BR_STOP */
-         {
-            *comment_ptr       = '\n'; /* Preserve newline in backup */
-            *(comment_ptr + 1) = '\0';
-         }
-      }
+      YAMLlineStripComment(line, backup);
 
       /* Ignore empty lines and comments */
       /* GCOVR_EXCL_BR_START */
@@ -629,17 +787,10 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          continue;
       }
 
-      /* Calculate indentation */
-      pos = 0;
-      while (line[pos] == ' ' || line[pos] == '\t')
+      pos = YAMLlineIndentWidth(line);
+      if (pos < 0)
       {
-         if (line[pos] == '\t')
-         {
-            hypredrv_ErrorCodeSet(ERROR_YAML_MIXED_INDENT);
-            hypredrv_ErrorMsgAdd("Tab characters are not allowed in YAML input!");
-            goto fail_with_text_cleanup;
-         }
-         pos++;
+         goto fail_with_text_cleanup;
       }
 
       /* Skip lines with only whitespace */
@@ -649,83 +800,17 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
       }
 
       /* Allow YAML sequence item lines (which may not contain ':') */
-      bool is_seq_item_line =
-         /* GCOVR_EXCL_BR_START */
-         (bool)(line[pos] == '-' && (line[pos + 1] == '\0' || line[pos + 1] == ' '));
-      /* GCOVR_EXCL_BR_STOP */
+      bool is_seq_item_line = YAMLlineIsSequenceItem(line, pos);
 
-      /* Establish base indentation on first indented line */
-      if (base_indent == -1 && pos > 0)
+      if (!YAMLlineIndentCheck(line, pos, &indent, base_indent_ptr))
       {
-         *base_indent_ptr = base_indent = pos;
-         if (base_indent < 2)
-         {
-            hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_BASE_INDENT);
-            hypredrv_ErrorMsgAdd(
-               "Base indentation in YAML input must be at least 2 spaces");
-            goto fail_with_text_cleanup;
-         }
-      }
-
-      /* Check indentation consistency */
-      if (pos > 0)
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (base_indent > 0 && pos % base_indent != 0) /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_YAML_INCONSISTENT_INDENT);
-            hypredrv_ErrorMsgAdd("Inconsistent indentation detected in YAML input!");
-            goto fail_with_text_cleanup;
-         }
-
-         /* Enforce reasonable indentation jumps.
-          * Allow a single-level jump (base_indent), or up to 2 * base_indent when
-          * introducing a sequence item ("-").
-          */
-         if (!first_indented_line && pos > prev_indent)
-         {
-            int  jump        = pos - prev_indent;
-            bool is_seq_item = (bool)(line[pos] == '-' &&
-                                      /* GCOVR_EXCL_BR_START */
-                                      (line[pos + 1] == '\0' || line[pos + 1] == ' '));
-            /* GCOVR_EXCL_BR_STOP */
-            int max_allowed = (int)is_seq_item ? base_indent * 2 : base_indent;
-            /* Be tolerant to avoid false positives with deeper nesting */
-            if (jump > max_allowed * 2)
-            {
-               hypredrv_ErrorCodeSet(ERROR_YAML_INVALID_INDENT_JUMP);
-               hypredrv_ErrorMsgAdd("Invalid indentation jump detected in YAML input!");
-               goto fail_with_text_cleanup;
-            }
-         }
-
-         first_indented_line = false;
-         prev_indent         = pos;
+         goto fail_with_text_cleanup;
       }
 
       /* Parse key/val only for non-sequence lines */
-      if (!is_seq_item_line)
+      if (!is_seq_item_line && !YAMLlineSplitKeyValue(line, &key, &val))
       {
-         /* Check for divisor character */
-         /* GCOVR_EXCL_BR_START */
-         if ((sep = strchr(line, ':')) == NULL) /* GCOVR_EXCL_BR_STOP */
-         {
-            continue;
-         }
-
-         *sep = '\0';
-         key  = line;
-         val  = sep + 1;
-
-         /* Trim leading spaces */
-         while (*key == ' ')
-         {
-            key++;
-         }
-         while (*val == ' ')
-         {
-            val++;
-         }
+         continue;
       }
 
       /* Preprocessor include directive:
@@ -738,7 +823,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
       /* GCOVR_EXCL_BR_STOP */
       {
          /* Calculate node level based on actual indentation */
-         inner_level = pos / (base_indent > 0 ? base_indent : 1);
+         inner_level = pos / (indent.base_indent > 0 ? indent.base_indent : 1);
 
          /* Recursively read the content of the included file */
          /* GCOVR_EXCL_BR_START */
@@ -751,35 +836,10 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
             goto cleanup;
          }
       }
-      else
+      else if (!YAMLtextAppendLine(backup, indent.base_indent, level, length_ptr,
+                                   text_ptr, capacity_ptr, ctx))
       {
-         /* Use actual indentation spacing */
-         num_whitespaces = (size_t)(base_indent > 0 ? base_indent : 1) * (size_t)level;
-
-         /* Regular line, append it to the text */
-         new_length = *length_ptr + strlen(backup) + num_whitespaces;
-         if (!YAMLincludeContextAddBytes(ctx, strlen(backup) + num_whitespaces))
-         {
-            goto fail_with_text_cleanup;
-         }
-         /* GCOVR_EXCL_BR_START */
-         if (!YAMLtextBufferEnsureCapacity(text_ptr, capacity_ptr, new_length + 1))
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            goto fail_with_text_cleanup; /* GCOVR_EXCL_LINE */
-         }
-
-         /* Fill with base whitespaces */
-         memset((*text_ptr) + (*length_ptr), ' ', num_whitespaces);
-
-         /* Copy backup line */
-         memcpy((*text_ptr) + (*length_ptr) + num_whitespaces, backup, strlen(backup));
-
-         /* Set new null terminator */
-         (*text_ptr)[new_length] = '\0';
-
-         /* Update length pointer */
-         *length_ptr = new_length;
+         goto fail_with_text_cleanup;
       }
    }
 
@@ -1010,6 +1070,159 @@ YAMLtokenSetString(char **dst, const char *src)
    return true;
 }
 
+/* Fills `token_out` from a "- ..." sequence-item line. */
+static int
+YAMLtokenParseSequenceItem(char *content, YAMLtoken *token_out)
+{
+   const char *inline_content  = NULL;
+   token_out->is_sequence_item = true;
+   token_out->divisor_is_ok    = true;
+
+   /* GCOVR_EXCL_BR_START */
+   if (!YAMLtokenSetString(&token_out->key, "-") ||
+       /* GCOVR_EXCL_BR_STOP */
+       /* GCOVR_EXCL_BR_START */
+       !YAMLtokenSetString(&token_out->val, ""))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1; /* GCOVR_EXCL_LINE */
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (content[1] != ' ' || strlen(content) <= 2) /* GCOVR_EXCL_BR_STOP */
+   {
+      return 1;
+   }
+
+   inline_content = content + 2;
+   /* GCOVR_EXCL_BR_START */
+   while (*inline_content == ' ') /* GCOVR_EXCL_BR_STOP */
+   {
+      inline_content++; /* GCOVR_EXCL_LINE */
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (*inline_content == '\0') /* GCOVR_EXCL_BR_STOP */
+   {
+      return 1; /* GCOVR_EXCL_LINE */
+   }
+
+   /* Preserve flow mappings for the tree builder.  Treating this as the
+    * existing "- key: value" shorthand would incorrectly make "{ key" the
+    * key and leave the closing brace in the value. */
+   if (*inline_content == '{')
+   {
+      free(token_out->val);
+      token_out->val = NULL;
+      if (!YAMLtokenSetString(&token_out->val, inline_content))
+      {
+         return -1; /* GCOVR_EXCL_LINE */
+      }
+      return 1;
+   }
+
+   if (!strchr(inline_content, ':'))
+   {
+      free(token_out->val);
+      token_out->val = NULL;
+      /* GCOVR_EXCL_BR_START */
+      if (!YAMLtokenSetString(&token_out->val, inline_content)) /* GCOVR_EXCL_BR_STOP */
+      {
+         return -1; /* GCOVR_EXCL_LINE */
+      }
+      return 1;
+   }
+
+   {
+      char *inline_copy = strdup(inline_content);
+      char *inline_sep  = NULL;
+      char *inline_key  = NULL;
+      char *inline_val  = NULL;
+      /* GCOVR_EXCL_BR_START */
+      if (!inline_copy) /* GCOVR_EXCL_BR_STOP */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Failed to allocate YAML inline mapping copy"); /* GCOVR_EXCL_LINE */
+         return -1;                                         /* GCOVR_EXCL_LINE */
+      }
+
+      inline_sep = strchr(inline_copy, ':');
+      /* GCOVR_EXCL_BR_START */
+      if (inline_sep) /* GCOVR_EXCL_BR_STOP */
+      {
+         *inline_sep = '\0';
+         inline_key  = inline_copy;
+         inline_val  = inline_sep + 1;
+         /* GCOVR_EXCL_BR_START */
+         while (*inline_key == ' ') /* GCOVR_EXCL_BR_STOP */
+         {
+            inline_key++; /* GCOVR_EXCL_LINE */
+         }
+         while (*inline_val == ' ')
+         {
+            inline_val++;
+         }
+
+         /* GCOVR_EXCL_BR_START */
+         if (!YAMLtokenSetString(&token_out->inline_key, inline_key) ||
+             /* GCOVR_EXCL_BR_STOP */
+             /* GCOVR_EXCL_BR_START */
+             !YAMLtokenSetString(&token_out->inline_val, inline_val))
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            free(inline_copy); /* GCOVR_EXCL_LINE */
+            return -1;         /* GCOVR_EXCL_LINE */
+         }
+      }
+      free(inline_copy);
+   }
+
+   return 1;
+}
+
+/* Fills `token_out` from a "key: value" line, or from a malformed one. */
+static int
+YAMLtokenParseMapping(char *content, YAMLtoken *token_out)
+{
+   char *sep = strchr(content, ':');
+   char *key = content;
+   char *val = NULL;
+
+   if (sep)
+   {
+      *sep                     = '\0';
+      val                      = sep + 1;
+      token_out->divisor_is_ok = true;
+   }
+   else
+   {
+      val                      = content + strlen(content);
+      token_out->divisor_is_ok = false;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   while (*key == ' ') /* GCOVR_EXCL_BR_STOP */
+   {
+      key++; /* GCOVR_EXCL_LINE */
+   }
+   while (*val == ' ')
+   {
+      val++;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!YAMLtokenSetString(&token_out->key, key) ||
+       /* GCOVR_EXCL_BR_STOP */
+       /* GCOVR_EXCL_BR_START */
+       !YAMLtokenSetString(&token_out->val, val))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1; /* GCOVR_EXCL_LINE */
+   }
+
+   return 1;
+}
+
 static int
 YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
 {
@@ -1055,151 +1268,11 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
    if (content[0] == '-' && (content[1] == ' ' || content[1] == '\0'))
    /* GCOVR_EXCL_BR_STOP */
    {
-      const char *inline_content  = NULL;
-      token_out->is_sequence_item = true;
-      token_out->divisor_is_ok    = true;
-
-      /* GCOVR_EXCL_BR_START */
-      if (!YAMLtokenSetString(&token_out->key, "-") ||
-          /* GCOVR_EXCL_BR_STOP */
-          /* GCOVR_EXCL_BR_START */
-          !YAMLtokenSetString(&token_out->val, ""))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         return -1; /* GCOVR_EXCL_LINE */
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (content[1] != ' ' || strlen(content) <= 2) /* GCOVR_EXCL_BR_STOP */
-      {
-         return 1;
-      }
-
-      inline_content = content + 2;
-      /* GCOVR_EXCL_BR_START */
-      while (*inline_content == ' ') /* GCOVR_EXCL_BR_STOP */
-      {
-         inline_content++; /* GCOVR_EXCL_LINE */
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (*inline_content == '\0') /* GCOVR_EXCL_BR_STOP */
-      {
-         return 1; /* GCOVR_EXCL_LINE */
-      }
-
-      /* Preserve flow mappings for the tree builder.  Treating this as the
-       * existing "- key: value" shorthand would incorrectly make "{ key" the
-       * key and leave the closing brace in the value. */
-      if (*inline_content == '{')
-      {
-         free(token_out->val);
-         token_out->val = NULL;
-         if (!YAMLtokenSetString(&token_out->val, inline_content))
-         {
-            return -1; /* GCOVR_EXCL_LINE */
-         }
-         return 1;
-      }
-
-      if (!strchr(inline_content, ':'))
-      {
-         free(token_out->val);
-         token_out->val = NULL;
-         /* GCOVR_EXCL_BR_START */
-         if (!YAMLtokenSetString(&token_out->val, inline_content))
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return -1; /* GCOVR_EXCL_LINE */
-         }
-         return 1;
-      }
-
-      {
-         char *inline_copy = strdup(inline_content);
-         char *inline_sep  = NULL;
-         char *inline_key  = NULL;
-         char *inline_val  = NULL;
-         /* GCOVR_EXCL_BR_START */
-         if (!inline_copy) /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Failed to allocate YAML inline mapping copy"); /* GCOVR_EXCL_LINE */
-            return -1;                                         /* GCOVR_EXCL_LINE */
-         }
-
-         inline_sep = strchr(inline_copy, ':');
-         /* GCOVR_EXCL_BR_START */
-         if (inline_sep) /* GCOVR_EXCL_BR_STOP */
-         {
-            *inline_sep = '\0';
-            inline_key  = inline_copy;
-            inline_val  = inline_sep + 1;
-            /* GCOVR_EXCL_BR_START */
-            while (*inline_key == ' ') /* GCOVR_EXCL_BR_STOP */
-            {
-               inline_key++; /* GCOVR_EXCL_LINE */
-            }
-            while (*inline_val == ' ')
-            {
-               inline_val++;
-            }
-
-            /* GCOVR_EXCL_BR_START */
-            if (!YAMLtokenSetString(&token_out->inline_key, inline_key) ||
-                /* GCOVR_EXCL_BR_STOP */
-                /* GCOVR_EXCL_BR_START */
-                !YAMLtokenSetString(&token_out->inline_val, inline_val))
-            /* GCOVR_EXCL_BR_STOP */
-            {
-               free(inline_copy); /* GCOVR_EXCL_LINE */
-               return -1;         /* GCOVR_EXCL_LINE */
-            }
-         }
-         free(inline_copy);
-      }
-
-      return 1;
+      return YAMLtokenParseSequenceItem(content, token_out);
    }
 
    /* Key/value mapping or malformed line */
-   {
-      char *sep = strchr(content, ':');
-      char *key = content;
-      char *val = NULL;
-
-      if (sep)
-      {
-         *sep                     = '\0';
-         val                      = sep + 1;
-         token_out->divisor_is_ok = true;
-      }
-      else
-      {
-         val                      = content + strlen(content);
-         token_out->divisor_is_ok = false;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      while (*key == ' ') /* GCOVR_EXCL_BR_STOP */
-      {
-         key++; /* GCOVR_EXCL_LINE */
-      }
-      while (*val == ' ')
-      {
-         val++;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (!YAMLtokenSetString(&token_out->key, key) ||
-          /* GCOVR_EXCL_BR_STOP */
-          /* GCOVR_EXCL_BR_START */
-          !YAMLtokenSetString(&token_out->val, val))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         return -1; /* GCOVR_EXCL_LINE */
-      }
-   }
+   return YAMLtokenParseMapping(content, token_out);
 
    return 1;
 }
@@ -1446,12 +1519,115 @@ YAMLflowMappingAddEntry(YAMLnode *parent, const char *key_begin, const char *key
    return true;
 }
 
+/* Scans a flow-mapping key up to its ':' separator. Returns the separator
+ * position, or NULL after reporting why the key is malformed. */
+static const char *
+YAMLflowScanKey(YAMLnode *parent, const char *pos, const char *limit)
+{
+   char quote = '\0';
+
+   while (pos < limit)
+   {
+      if (YAMLflowAdvanceQuoted(&pos, limit, &quote))
+      {
+         continue;
+      }
+      if (*pos == ':')
+      {
+         break;
+      }
+      if (*pos == ',' || *pos == '}' || *pos == '{' || *pos == '[' || *pos == ']')
+      {
+         YAMLflowMappingError(parent, "expected ':' after a simple mapping key");
+         return NULL;
+      }
+      pos++;
+   }
+
+   if (quote)
+   {
+      YAMLflowMappingError(parent, "unterminated quoted mapping key");
+      return NULL;
+   }
+   if (pos == limit)
+   {
+      YAMLflowMappingError(parent, "expected ':' after mapping key");
+      return NULL;
+   }
+
+   return pos;
+}
+
+/* Scans a flow-mapping value up to the ',' that ends it at nesting depth zero.
+ * Returns that position, or NULL after reporting the imbalance. */
+static const char *
+YAMLflowScanValue(YAMLnode *parent, const char *pos, const char *limit)
+{
+   char quote    = '\0';
+   int  braces   = 0;
+   int  brackets = 0;
+
+   while (pos < limit)
+   {
+      if (YAMLflowAdvanceQuoted(&pos, limit, &quote))
+      {
+         continue;
+      }
+
+      if (*pos == '{')
+      {
+         braces++;
+      }
+      else if (*pos == '}')
+      {
+         if (braces == 0)
+         {
+            YAMLflowMappingError(parent, "unexpected '}' in mapping value");
+            return NULL;
+         }
+         braces--;
+      }
+      else if (*pos == '[')
+      {
+         brackets++;
+      }
+      else if (*pos == ']')
+      {
+         if (brackets == 0)
+         {
+            YAMLflowMappingError(parent, "unexpected ']' in mapping value");
+            return NULL;
+         }
+         brackets--;
+      }
+      else if (*pos == ',' && braces == 0 && brackets == 0)
+      {
+         break;
+      }
+      pos++;
+   }
+
+   if (quote)
+   {
+      YAMLflowMappingError(parent, "unterminated quoted mapping value");
+      return NULL;
+   }
+   if (braces != 0 || brackets != 0)
+   {
+      YAMLflowMappingError(parent, "unbalanced nested collection");
+      return NULL;
+   }
+
+   return pos;
+}
+
+/* Trims the surrounding whitespace of a flow mapping and checks its braces. */
 static bool
-YAMLflowMappingAddChildren(YAMLnode *parent, const char *text)
+YAMLflowMappingBounds(YAMLnode *parent, const char *text, const char **begin_out,
+                      const char **end_out)
 {
    const char *begin = text ? text : "";
    const char *end   = begin + strlen(begin);
-   const char *pos   = NULL;
 
    begin = YAMLflowSkipSpace(begin, end);
    while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
@@ -1465,120 +1641,66 @@ YAMLflowMappingAddChildren(YAMLnode *parent, const char *text)
       return false;
    }
 
-   pos = begin + 1;
+   *begin_out = begin;
+   *end_out   = end;
+
+   return true;
+}
+
+static bool
+YAMLflowMappingAddChildren(YAMLnode *parent, const char *text)
+{
+   const char *begin = NULL;
+   const char *end   = NULL;
+   const char *pos   = NULL;
+   const char *limit = NULL;
+
+   if (!YAMLflowMappingBounds(parent, text, &begin, &end))
+   {
+      return false;
+   }
+
+   limit = end - 1; /* the closing '}' */
+   pos   = begin + 1;
    while (true)
    {
       const char *key_begin = NULL;
       const char *key_end   = NULL;
       const char *val_begin = NULL;
       const char *val_end   = NULL;
-      char        quote     = '\0';
-      int         braces    = 0;
-      int         brackets  = 0;
 
-      pos = YAMLflowSkipSpace(pos, end - 1);
-      if (pos == end - 1)
+      pos = YAMLflowSkipSpace(pos, limit);
+      if (pos == limit)
       {
          return true;
       }
 
       key_begin = pos;
-      while (pos < end - 1)
+      key_end   = YAMLflowScanKey(parent, pos, limit);
+      if (!key_end)
       {
-         if (YAMLflowAdvanceQuoted(&pos, end - 1, &quote))
-         {
-            continue;
-         }
-         if (*pos == ':')
-         {
-            break;
-         }
-         if (*pos == ',' || *pos == '}' || *pos == '{' || *pos == '[' || *pos == ']')
-         {
-            YAMLflowMappingError(parent, "expected ':' after a simple mapping key");
-            return false;
-         }
-         pos++;
-      }
-      if (quote)
-      {
-         YAMLflowMappingError(parent, "unterminated quoted mapping key");
-         return false;
-      }
-      if (pos == end - 1)
-      {
-         YAMLflowMappingError(parent, "expected ':' after mapping key");
          return false;
       }
 
-      key_end   = pos;
-      val_begin = ++pos;
-      quote     = '\0';
-
-      while (pos < end - 1)
+      val_begin = key_end + 1;
+      val_end   = YAMLflowScanValue(parent, val_begin, limit);
+      if (!val_end)
       {
-         if (YAMLflowAdvanceQuoted(&pos, end - 1, &quote))
-         {
-            continue;
-         }
-
-         if (*pos == '{')
-         {
-            braces++;
-         }
-         else if (*pos == '}')
-         {
-            if (braces == 0)
-            {
-               YAMLflowMappingError(parent, "unexpected '}' in mapping value");
-               return false;
-            }
-            braces--;
-         }
-         else if (*pos == '[')
-         {
-            brackets++;
-         }
-         else if (*pos == ']')
-         {
-            if (brackets == 0)
-            {
-               YAMLflowMappingError(parent, "unexpected ']' in mapping value");
-               return false;
-            }
-            brackets--;
-         }
-         else if (*pos == ',' && braces == 0 && brackets == 0)
-         {
-            break;
-         }
-         pos++;
-      }
-
-      if (quote)
-      {
-         YAMLflowMappingError(parent, "unterminated quoted mapping value");
-         return false;
-      }
-      if (braces != 0 || brackets != 0)
-      {
-         YAMLflowMappingError(parent, "unbalanced nested collection");
          return false;
       }
 
-      val_end = pos;
       if (!YAMLflowMappingAddEntry(parent, key_begin, key_end, val_begin, val_end))
       {
          return false;
       }
 
-      if (pos == end - 1)
+      if (val_end == limit)
       {
          return true;
       }
 
       /* Skip the comma. A trailing comma is valid YAML flow syntax. */
-      pos++;
+      pos = val_end + 1;
    }
 }
 
@@ -2174,47 +2296,27 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
    }
 }
 
-void
-hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
+/* Resolves the two calling conventions into a [start, end) slice of argv that
+ * holds the "key value" override pairs. */
+static int
+YAMLargsResolveOverrideRange(int argc, char **argv, int args_flag_idx,
+                             bool full_argv_mode, int *override_start, int *override_end)
 {
-   /* GCOVR_EXCL_BR_START */
-   if (!tree || !tree->root) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_NULL);
-      hypredrv_ErrorMsgAdd("Cannot update a void YAML tree!");
-      return;
-   }
-
-   /* Support two calling conventions:
-    *
-    * 1) Legacy "pair list" mode (library / internal calls):
-    *      argv = ["--path:to:key", "val", ...]
-    *
-    * 2) Driver "full argv" mode:
-    *      argv contains many tokens including -i, config file, etc.
-    *      Overrides are only parsed after -a/--args and stop at the YAML filename
-    *      if it appears after -a (some test harnesses append it at the end).
-    */
-   int  args_flag_idx  = YAMLargsFindFlagIndex(argc, argv, "-a", "--args");
-   int  override_start = 0;
-   int  override_end   = argc;
-   bool full_argv_mode = (args_flag_idx >= 0);
-
    if (full_argv_mode)
    {
-      override_start = args_flag_idx + 1;
-      for (int i = override_start; i < argc; i += 2)
+      *override_start = args_flag_idx + 1;
+      for (int i = *override_start; i < argc; i += 2)
       {
          if (YAMLargsTokenEndsOverrideList(argv[i]))
          {
-            override_end = i;
+            *override_end = i;
             break;
          }
       }
       /* GCOVR_EXCL_BR_START */
-      if (override_start >= override_end) /* GCOVR_EXCL_BR_STOP */
+      if (*override_start >= *override_end) /* GCOVR_EXCL_BR_STOP */
       {
-         return; /* nothing to do */
+         return 0; /* nothing to do */
       }
    }
    else
@@ -2243,8 +2345,147 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 
       if (!pair_list_mode)
       {
-         return;
+         return 0;
       }
+   }
+
+   return 1;
+}
+
+/* Applies one "key value" override to the tree. */
+static int
+YAMLtreeApplyOverride(YAMLtree *tree, int argc, char **argv, int i, bool full_argv_mode)
+{
+   const char *k = argv[i];
+   /* GCOVR_EXCL_BR_START */
+   if (!k) /* GCOVR_EXCL_BR_STOP */
+   {
+      return 1; /* not an override token: skip the pair */
+   }
+
+   bool has_dashes = (strncmp(k, "--", 2) == 0);
+   if (!has_dashes)
+   {
+      /* In full-argv mode, also accept key paths without the leading "--",
+       * e.g. "--args preconditioner:mgr:print_level 1". */
+      bool looks_like_path = (strchr(k, ':') != NULL);
+      /* GCOVR_EXCL_BR_START */
+      if (full_argv_mode && looks_like_path) /* GCOVR_EXCL_BR_STOP */
+      {
+         /* Accept path-style overrides without the leading "--" in full argv mode. */
+      }
+      else
+      {
+         /* In full argv mode, ignore non-override tokens; keep strictness in
+          * pair-list mode. */
+         /* GCOVR_EXCL_BR_START */
+         if (!full_argv_mode) /* GCOVR_EXCL_BR_STOP */
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY); /* GCOVR_EXCL_LINE */
+            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_LINE */
+                                 "Invalid override key '%s' (expected path:to:key or "
+                                 "--path:to:key)",
+                                 k);
+            return 0; /* GCOVR_EXCL_LINE */
+         }
+         return 1; /* not an override token: skip the pair */
+      }
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (i + 1 >= argc) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                   /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("Missing value for override '%s'", k); /* GCOVR_EXCL_LINE */
+      return 0;                                                   /* GCOVR_EXCL_LINE */
+   }
+
+   const char *v = argv[i + 1];
+   /* GCOVR_EXCL_BR_START */
+   if (!v || (strncmp(v, "--", 2) == 0)) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Missing value for override '%s'", k);
+      return 0;
+   }
+
+   /* Apply override */
+   {
+      char *path = strdup(k);
+      char *p    = path;
+
+      if (!strncmp(p, "--", 2))
+      {
+         p += 2;
+      }
+
+      /* Collect all path segments into an array */
+      char *segments[64]; /* Max 64 segments should be enough */
+      int   num_segments = 0;
+      char *save_seg     = NULL;
+      char *seg_temp     = strtok_r(p, ":", &save_seg);
+      /* GCOVR_EXCL_BR_START */
+      while (seg_temp && num_segments < 64) /* GCOVR_EXCL_BR_STOP */
+      {
+         segments[num_segments++] = seg_temp;
+         seg_temp                 = strtok_r(NULL, ":", &save_seg);
+      }
+
+      if (num_segments == 0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("Invalid override path: '%s'", k);
+         free(path);
+         return 0;
+      }
+
+      YAMLOverridePathCtx ctx;
+      memset(&ctx, 0, sizeof(ctx));
+      ctx.num_segments = num_segments;
+      ctx.tree         = tree;
+      for (int si = 0; si < num_segments; si++)
+      {
+         ctx.segments[si] = segments[si];
+      }
+
+      YAMLtreeUpdateApplyPathToNode(&ctx, tree->root, 0, v);
+
+      free(path);
+   }
+
+   return 1;
+}
+
+void
+hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (!tree || !tree->root) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_NULL);
+      hypredrv_ErrorMsgAdd("Cannot update a void YAML tree!");
+      return;
+   }
+
+   /* Support two calling conventions:
+    *
+    * 1) Legacy "pair list" mode (library / internal calls):
+    *      argv = ["--path:to:key", "val", ...]
+    *
+    * 2) Driver "full argv" mode:
+    *      argv contains many tokens including -i, config file, etc.
+    *      Overrides are only parsed after -a/--args and stop at the YAML filename
+    *      if it appears after -a (some test harnesses append it at the end).
+    */
+   int  args_flag_idx  = YAMLargsFindFlagIndex(argc, argv, "-a", "--args");
+   int  override_start = 0;
+   int  override_end   = argc;
+   bool full_argv_mode = (args_flag_idx >= 0);
+
+   if (!YAMLargsResolveOverrideRange(argc, argv, args_flag_idx, full_argv_mode,
+                                     &override_start, &override_end))
+   {
+      return;
    }
 
    int n_override_tokens = override_end - override_start;
@@ -2260,101 +2501,9 @@ hypredrv_YAMLtreeUpdate(int argc, char **argv, YAMLtree *tree)
 
    for (int i = override_start; i < override_end; i += 2)
    {
-      const char *k = argv[i];
-      /* GCOVR_EXCL_BR_START */
-      if (!k) /* GCOVR_EXCL_BR_STOP */
+      if (!YAMLtreeApplyOverride(tree, argc, argv, i, full_argv_mode))
       {
-         continue;
-      }
-
-      bool has_dashes = (strncmp(k, "--", 2) == 0);
-      if (!has_dashes)
-      {
-         /* In full-argv mode, also accept key paths without the leading "--",
-          * e.g. "--args preconditioner:mgr:print_level 1". */
-         bool looks_like_path = (strchr(k, ':') != NULL);
-         /* GCOVR_EXCL_BR_START */
-         if (full_argv_mode && looks_like_path) /* GCOVR_EXCL_BR_STOP */
-         {
-            /* Accept path-style overrides without the leading "--" in full argv mode. */
-         }
-         else
-         {
-            /* In full argv mode, ignore non-override tokens; keep strictness in
-             * pair-list mode. */
-            /* GCOVR_EXCL_BR_START */
-            if (!full_argv_mode) /* GCOVR_EXCL_BR_STOP */
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_KEY); /* GCOVR_EXCL_LINE */
-               hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_LINE */
-                                    "Invalid override key '%s' (expected path:to:key or "
-                                    "--path:to:key)",
-                                    k);
-               return; /* GCOVR_EXCL_LINE */
-            }
-            continue;
-         }
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (i + 1 >= argc) /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);                   /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd("Missing value for override '%s'", k); /* GCOVR_EXCL_LINE */
-         return;                                                     /* GCOVR_EXCL_LINE */
-      }
-
-      const char *v = argv[i + 1];
-      /* GCOVR_EXCL_BR_START */
-      if (!v || (strncmp(v, "--", 2) == 0)) /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Missing value for override '%s'", k);
          return;
-      }
-
-      /* Apply override */
-      {
-         char *path = strdup(k);
-         char *p    = path;
-
-         if (!strncmp(p, "--", 2))
-         {
-            p += 2;
-         }
-
-         /* Collect all path segments into an array */
-         char *segments[64]; /* Max 64 segments should be enough */
-         int   num_segments = 0;
-         char *save_seg     = NULL;
-         char *seg_temp     = strtok_r(p, ":", &save_seg);
-         /* GCOVR_EXCL_BR_START */
-         while (seg_temp && num_segments < 64) /* GCOVR_EXCL_BR_STOP */
-         {
-            segments[num_segments++] = seg_temp;
-            seg_temp                 = strtok_r(NULL, ":", &save_seg);
-         }
-
-         if (num_segments == 0)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-            hypredrv_ErrorMsgAdd("Invalid override path: '%s'", k);
-            free(path);
-            return;
-         }
-
-         YAMLOverridePathCtx ctx;
-         memset(&ctx, 0, sizeof(ctx));
-         ctx.num_segments = num_segments;
-         ctx.tree         = tree;
-         for (int si = 0; si < num_segments; si++)
-         {
-            ctx.segments[si] = segments[si];
-         }
-
-         YAMLtreeUpdateApplyPathToNode(&ctx, tree->root, 0, v);
-
-         free(path);
       }
    }
 }

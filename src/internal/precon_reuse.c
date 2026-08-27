@@ -8,6 +8,7 @@
 #include "internal/precon_reuse.h"
 #include <limits.h>
 #include <math.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 #include "internal/precon.h"
@@ -1236,26 +1237,21 @@ PreconReuseNormalizedDistance(PreconReuseDirection direction, double aggregate,
    return normalized > 0.0 ? normalized : 0.0;
 }
 
+/* First half of the guard cascade: event-driven rules that force a rebuild
+ * regardless of the recorded history. Returns 1 when a decision was reached
+ * (stored in *rebuild), or 0 to continue evaluating. */
 static int
-PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
-                                 const IntArray *timestep_starts, const Stats *stats,
-                                 PreconReuseState *state, int next_ls_id,
-                                 PreconReuseDecision *decision)
+PreconReuseAdaptiveEventGuards(const PreconReuse_args *args,
+                               const IntArray *timestep_starts, const Stats *stats,
+                               PreconReuseState *state, int next_ls_id,
+                               PreconReuseDecision *decision, int *rebuild)
 {
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 1;
-   }
-
-   decision->used_adaptive  = 1;
-   decision->age            = PreconReuseReuseAgeGet(state);
-   decision->history_points = (int)state->count;
-
    if (next_ls_id <= 0 || (state->count == 0 && !state->baseline_valid))
    {
       decision->should_rebuild = 1;
       snprintf(decision->summary, sizeof(decision->summary), "%s",
                "adaptive initial build");
+      *rebuild = 1;
       return 1;
    }
 
@@ -1266,6 +1262,7 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
       snprintf(decision->summary, sizeof(decision->summary),
                "guard=max_reuse_solves age=%d limit=%d", decision->age,
                args->guards.max_reuse_solves);
+      *rebuild = 1;
       return 1;
    }
    /* GCOVR_EXCL_BR_LINE */
@@ -1276,6 +1273,7 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
       decision->should_rebuild = 1;
       snprintf(decision->summary, sizeof(decision->summary),
                "guard=solver_failure last_solve_succeeded=0");
+      *rebuild = 1;
       return 1;
    }
    /* GCOVR_EXCL_BR_LINE */
@@ -1297,6 +1295,7 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                   "guard=new_timestep previous=%d current=%d start=%d",
                   state->last_observation.timestep_index, current_timestep_idx,
                   current_timestep_start);
+         *rebuild = 1;
          return 1;
       }
    }
@@ -1318,10 +1317,22 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
             snprintf(decision->summary, sizeof(decision->summary),
                      "guard=new_level level=%d previous=%d current=%d", level,
                      state->last_rebuild_level_ids[level], current_level_id);
+            *rebuild = 1;
             return 1;
          }
       }
    }
+
+   return 0;
+}
+
+/* Second half of the guard cascade: rules that depend on the recorded baseline
+ * and on how long the current preconditioner has already been reused. */
+static int
+PreconReuseAdaptiveBaselineGuards(const PreconReuse_args *args, PreconReuseState *state,
+                                  int next_ls_id, PreconReuseDecision *decision,
+                                  int *rebuild)
+{
    /* GCOVR_EXCL_BR_LINE */
    if (state->baseline_valid && state->count > 0 &&
        state->last_solve_succeeded) /* GCOVR_EXCL_BR_LINE */
@@ -1339,6 +1350,7 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                      "iters=%d",
                      ratio, args->guards.max_iteration_ratio, state->baseline_iters,
                      state->last_observation.iters);
+            *rebuild = 1;
             return 1;
          }
       }
@@ -1356,6 +1368,7 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                      "solve_time=%.6g",
                      ratio, args->guards.max_solve_time_ratio, state->baseline_solve_time,
                      state->last_observation.solve_time);
+            *rebuild = 1;
             return 1;
          }
       }
@@ -1369,7 +1382,8 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                "mode=bootstrap bootstrap=%d/%d baseline=pending streak=%d",
                state->bootstrap_count, PRECON_REUSE_BOOTSTRAP_SOLVES,
                state->bad_decision_streak);
-      return 0;
+      *rebuild = 0;
+      return 1;
    }
 
    if (args->guards.min_reuse_solves > 0 && decision->age < args->guards.min_reuse_solves)
@@ -1382,9 +1396,32 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
                decision->age, args->guards.min_reuse_solves, state->baseline_iters,
                state->baseline_setup_time, state->baseline_solve_time,
                state->bad_decision_streak);
-      return 0;
+      *rebuild = 0;
+      return 1;
    }
 
+   return 0;
+}
+
+/* Hard guards evaluated before any component scoring. Returns 1 when the
+ * cascade already settled the decision, or 0 to fall through to scoring. */
+static int
+PreconReuseAdaptiveGuardsDecide(const PreconReuse_args *args,
+                                const IntArray *timestep_starts, const Stats *stats,
+                                PreconReuseState *state, int next_ls_id,
+                                PreconReuseDecision *decision, int *rebuild)
+{
+   return (PreconReuseAdaptiveEventGuards(args, timestep_starts, stats, state, next_ls_id,
+                                          decision, rebuild) ||
+           PreconReuseAdaptiveBaselineGuards(args, state, next_ls_id, decision, rebuild));
+}
+
+/* Weighted component scoring: the adaptive policy's actual decision rule. */
+static int
+PreconReuseAdaptiveScore(const PreconReuse_args *args, const IntArray *timestep_starts,
+                         const Stats *stats, PreconReuseState *state, int next_ls_id,
+                         PreconReuseDecision *decision)
+{
    int components_used  = 0;
    int max_history      = 0;
    decision->score      = 0.0;
@@ -1520,6 +1557,33 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
    PreconReuseAppendSummary(decision->summary, sizeof(decision->summary), status);
 
    return decision->should_rebuild;
+}
+
+static int
+PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
+                                 const IntArray *timestep_starts, const Stats *stats,
+                                 PreconReuseState *state, int next_ls_id,
+                                 PreconReuseDecision *decision)
+{
+   int rebuild = 0;
+
+   if (!state) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 1;
+   }
+
+   decision->used_adaptive  = 1;
+   decision->age            = PreconReuseReuseAgeGet(state);
+   decision->history_points = (int)state->count;
+
+   if (PreconReuseAdaptiveGuardsDecide(args, timestep_starts, stats, state, next_ls_id,
+                                       decision, &rebuild))
+   {
+      return rebuild;
+   }
+
+   return PreconReuseAdaptiveScore(args, timestep_starts, stats, state, next_ls_id,
+                                   decision);
 }
 
 int
@@ -1800,6 +1864,138 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
    return 1;
 }
 
+typedef enum
+{
+   PRECON_REUSE_FIELD_NAME,
+   PRECON_REUSE_FIELD_ONOFF,
+   PRECON_REUSE_FIELD_METRIC,
+   PRECON_REUSE_FIELD_DIRECTION,
+   PRECON_REUSE_FIELD_DOUBLE
+} PreconReuseComponentFieldKind;
+
+/* Scalar score-component keys share one shape: parse into the named field,
+ * range-check, mark the node. */
+typedef struct
+{
+   const char                   *key;
+   PreconReuseComponentFieldKind kind;
+   size_t                        offset;
+   int                           require_nonneg;
+   int                           require_positive;
+} PreconReuseComponentSpec;
+
+static const PreconReuseComponentSpec kPreconReuseComponentFields[] = {
+   {"name", PRECON_REUSE_FIELD_NAME, offsetof(PreconReuseScoreComponent_args, name), 0,
+    0},
+   {"enabled", PRECON_REUSE_FIELD_ONOFF,
+    offsetof(PreconReuseScoreComponent_args, enabled), 0, 0},
+   {"metric", PRECON_REUSE_FIELD_METRIC, offsetof(PreconReuseScoreComponent_args, metric),
+    0, 0},
+   {"weight", PRECON_REUSE_FIELD_DOUBLE, offsetof(PreconReuseScoreComponent_args, weight),
+    1, 0},
+   {"direction", PRECON_REUSE_FIELD_DIRECTION,
+    offsetof(PreconReuseScoreComponent_args, direction), 0, 0},
+   {"target", PRECON_REUSE_FIELD_DOUBLE, offsetof(PreconReuseScoreComponent_args, target),
+    0, 0},
+   {"scale", PRECON_REUSE_FIELD_DOUBLE, offsetof(PreconReuseScoreComponent_args, scale),
+    0, 1},
+};
+
+static int
+PreconReuseParseComponentScalar(const PreconReuseComponentSpec *spec, const char *value,
+                                PreconReuseScoreComponent_args *component)
+{
+   char *base = (char *)component;
+
+   switch (spec->kind)
+   {
+      case PRECON_REUSE_FIELD_NAME:
+         /* GCOVR_EXCL_BR_START */
+         snprintf((char *)(base + spec->offset), sizeof(component->name), "%s",
+                  value ? value : ""); /* GCOVR_EXCL_BR_STOP */
+         return 1;
+
+      case PRECON_REUSE_FIELD_ONOFF:
+         /* GCOVR_EXCL_BR_START */
+         return PreconReuseParseOnOff(value, (int *)(void *)(base + spec->offset));
+         /* GCOVR_EXCL_BR_STOP */
+
+      case PRECON_REUSE_FIELD_METRIC:
+         return PreconReuseParseMetric(
+            value, (PreconReuseMetric *)(void *)(base + spec->offset));
+
+      case PRECON_REUSE_FIELD_DIRECTION:
+         /* GCOVR_EXCL_BR_START */
+         return PreconReuseParseDirection(
+            value, (PreconReuseDirection *)(void *)(base + spec->offset));
+         /* GCOVR_EXCL_BR_STOP */
+
+      default:
+      {
+         double *slot = (double *)(void *)(base + spec->offset);
+
+         /* GCOVR_EXCL_BR_START */
+         if (!PreconReuseParseDouble(value, slot)) /* GCOVR_EXCL_BR_STOP */
+         {
+            return 0;
+         }
+         return ((!spec->require_nonneg || *slot >= 0.0) &&
+                 (!spec->require_positive || *slot > 0.0));
+      }
+   }
+}
+
+/* Applies one key of an adaptive score-component mapping. */
+static int
+PreconReuseApplyComponentKey(PreconReuseScoreComponent_args *component, YAMLnode *child)
+{
+   /* GCOVR_EXCL_BR_LINE */
+   const char *value = child->mapped_val ? child->mapped_val : child->val;
+
+   for (size_t i = 0;
+        i < sizeof(kPreconReuseComponentFields) / sizeof(kPreconReuseComponentFields[0]);
+        i++)
+   {
+      const PreconReuseComponentSpec *spec = &kPreconReuseComponentFields[i];
+
+      if (strcmp(child->key, spec->key) != 0)
+      {
+         continue;
+      }
+      if (!PreconReuseParseComponentScalar(spec, value, component))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse component %s: '%s'",
+                              spec->key, value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      YAML_NODE_SET_VALID(child);
+      return 1;
+   }
+
+   if (!strcmp(child->key, "mean"))
+   {
+      return PreconReuseParseMeanNode(child, &component->mean);
+   }
+   if (!strcmp(child->key, "transform"))
+   {
+      return PreconReuseParseTransformNode(child, &component->transform);
+   }
+   if (!strcmp(child->key, "history"))
+   {
+      return PreconReuseParseHistoryNode(child, &component->history);
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorMsgAdd(
+      "Unknown key under preconditioner.reuse.adaptive.score.components: '%s'",
+      child->key);
+   YAML_NODE_SET_INVALID_KEY(child);
+
+   return 0;
+}
+
 static int
 PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *component,
                               int component_idx)
@@ -1809,130 +2005,8 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
 
    YAML_NODE_ITERATE(node, child)
    { /* GCOVR_EXCL_BR_LINE */
-      const char *value =
-         child->mapped_val ? child->mapped_val : child->val; /* GCOVR_EXCL_BR_LINE */
-      if (!strcmp(child->key, "name"))
-      { /* GCOVR_EXCL_BR_LINE */
-         snprintf(component->name, sizeof(component->name), "%s",
-                  value ? value : ""); /* GCOVR_EXCL_BR_LINE */
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "enabled"))
-      {                                                          /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseOnOff(value, &component->enabled)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse component enabled: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                        */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "metric"))
+      if (!PreconReuseApplyComponentKey(component, child))
       {
-         if (!PreconReuseParseMetric(value, &component->metric))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse component metric: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                       */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "weight"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value,
-                                     &component->weight) || /* GCOVR_EXCL_BR_LINE */
-             component->weight < 0.0)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse component weight: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                       */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      } /* GCOVR_EXCL_BR_LINE */
-      else if (!strcmp(child->key, "direction")) /* GCOVR_EXCL_BR_LINE */
-      {                                          /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDirection(value,
-                                        &component->direction)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse component direction: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                          */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "target"))
-      {                                                          /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value, &component->target)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse component target: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                       */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "scale"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value, &component->scale) ||
-             component->scale <= 0.0) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse component scale: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                      */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "mean"))
-      {
-         if (!PreconReuseParseMeanNode(child, &component->mean))
-         {
-            return 0;
-         }
-      }
-      else if (!strcmp(child->key, "transform"))
-      {
-         if (!PreconReuseParseTransformNode(child, &component->transform))
-         {
-            return 0;
-         }
-      }
-      else if (!strcmp(child->key, "history"))
-      {
-         if (!PreconReuseParseHistoryNode(child, &component->history))
-         {
-            return 0;
-         }
-      }
-      else
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-         hypredrv_ErrorMsgAdd(
-            "Unknown key under preconditioner.reuse.adaptive.score.components: '%s'",
-            child->key);
-         YAML_NODE_SET_INVALID_KEY(child);
          return 0;
       }
    }
@@ -1951,230 +2025,207 @@ PreconReuseParseComponentNode(YAMLnode *node, PreconReuseScoreComponent_args *co
    return 1;
 }
 
+/* rebuild_on_new_level accepts either an inline list or a sequence of mappings
+ * carrying a `level:` key. */
 static int
-PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
+PreconReuseParseRebuildOnNewLevel(YAMLnode *child, const char *value,
+                                  PreconReuseGuards_args *guards)
 {
-   YAML_NODE_ITERATE(node, child)
-   { /* GCOVR_EXCL_BR_LINE */
-      const char *value =
-         child->mapped_val ? child->mapped_val : child->val; /* GCOVR_EXCL_BR_LINE */
-      if (!strcmp(child->key, "min_reuse_solves"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value,
-                                  &guards->min_reuse_solves) || /* GCOVR_EXCL_BR_LINE */
-             guards->min_reuse_solves < 0)
+   IntArray *levels = NULL;
+   if (child->children)
+   {
+      size_t count = 0;
+      for (YAMLnode *item = child->children; item != NULL; item = item->next)
+      {                               /* GCOVR_EXCL_BR_LINE */
+         if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid preconditioner.reuse.guards.min_reuse_solves: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            count++;
          }
-         YAML_NODE_SET_VALID(child);
       }
-      else if (!strcmp(child->key, "max_reuse_solves"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value,
-                                  &guards->max_reuse_solves)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid preconditioner.reuse.guards.max_reuse_solves: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "min_history_points"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value, &guards->min_history_points) ||
-             /* GCOVR_EXCL_BR_LINE */            /* GCOVR_EXCL_BR_LINE */
-                guards->min_history_points <= 0) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid "
-                                 "preconditioner.reuse.guards.min_history_points: '%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "bad_decisions_to_rebuild"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(
-                value, &guards->bad_decisions_to_rebuild) || /* GCOVR_EXCL_BR_LINE */
-             guards->bad_decisions_to_rebuild <= 0)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid "
-                                 "preconditioner.reuse.guards.bad_decisions_to_rebuild: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "max_iteration_ratio"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value, &guards->max_iteration_ratio) ||
-             /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-             (guards->max_iteration_ratio != -1.0 &&
-              guards->max_iteration_ratio <= 0.0)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid "
-                                 "preconditioner.reuse.guards.max_iteration_ratio: '%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "max_solve_time_ratio"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value, &guards->max_solve_time_ratio) ||
-             /* GCOVR_EXCL_BR_LINE */ /* GCOVR_EXCL_BR_LINE */
-             (guards->max_solve_time_ratio != -1.0 &&
-              guards->max_solve_time_ratio <= 0.0)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid "
-                                 "preconditioner.reuse.guards.max_solve_time_ratio: '%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "rebuild_on_new_timestep"))
+      levels = hypredrv_IntArrayCreate(count); /* GCOVR_EXCL_BR_LINE */
+      if (!levels)                             /* GCOVR_EXCL_BR_LINE */
       {
-         if (!PreconReuseParseOnOff(value, &guards->rebuild_on_new_timestep))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid "
-                                 "preconditioner.reuse.guards.rebuild_on_new_timestep: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate guard levels");
+         return 0;
       }
-      else if (!strcmp(child->key, "rebuild_on_solver_failure"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseOnOff(
-                value, &guards->rebuild_on_solver_failure)) /* GCOVR_EXCL_BR_LINE */
+      size_t idx = 0;
+      for (YAMLnode *item = child->children; item != NULL; item = item->next)
+      {                               /* GCOVR_EXCL_BR_LINE */
+         if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid "
-                                 "preconditioner.reuse.guards.rebuild_on_solver_failure: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "rebuild_on_new_level"))
-      {
-         IntArray *levels = NULL;
-         if (child->children)
-         {
-            size_t count = 0;
-            for (YAMLnode *item = child->children; item != NULL; item = item->next)
-            {                               /* GCOVR_EXCL_BR_LINE */
-               if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_LINE */
-               {
-                  count++;
-               }
-            }
-            levels = hypredrv_IntArrayCreate(count); /* GCOVR_EXCL_BR_LINE */
-            if (!levels)                             /* GCOVR_EXCL_BR_LINE */
+            const char *item_value =                            /* GCOVR_EXCL_BR_LINE */
+               item->mapped_val ? item->mapped_val : item->val; /* GCOVR_EXCL_BR_LINE */
+            YAMLnode *level_node = item->children;              /* GCOVR_EXCL_BR_LINE */
+            while (level_node &&
+                   strcmp(level_node->key, "level") != 0) /* GCOVR_EXCL_BR_LINE */
             {
-               hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-               hypredrv_ErrorMsgAdd("Failed to allocate guard levels");
-               return 0;
+               level_node = level_node->next;
             }
-            size_t idx = 0;
-            for (YAMLnode *item = child->children; item != NULL; item = item->next)
-            {                               /* GCOVR_EXCL_BR_LINE */
-               if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_LINE */
-               {
-                  const char *item_value = /* GCOVR_EXCL_BR_LINE */
-                     item->mapped_val ? item->mapped_val
-                                      : item->val;       /* GCOVR_EXCL_BR_LINE */
-                  YAMLnode *level_node = item->children; /* GCOVR_EXCL_BR_LINE */
-                  while (level_node &&
-                         strcmp(level_node->key, "level") != 0) /* GCOVR_EXCL_BR_LINE */
-                  {
-                     level_node = level_node->next;
-                  }
-                  if (level_node)
-                  {
-                     item_value = /* GCOVR_EXCL_BR_LINE */
-                        level_node->mapped_val ? level_node->mapped_val
-                                               : level_node->val; /* GCOVR_EXCL_BR_LINE */
-                  }
-                  if (!PreconReuseParseInt(item_value, &levels->data[idx]))
-                  {
-                     hypredrv_IntArrayDestroy(&levels);
-                     hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-                     hypredrv_ErrorMsgAdd(
-                        "Invalid preconditioner.reuse.guards.rebuild_on_new_level");
-                     return 0;
-                  }
-                  idx++;
-                  YAML_NODE_SET_VALID(item);
-               }
+            if (level_node)
+            {
+               item_value = /* GCOVR_EXCL_BR_LINE */
+                  level_node->mapped_val ? level_node->mapped_val
+                                         : level_node->val; /* GCOVR_EXCL_BR_LINE */
             }
-         }
-         else
-         {
-            hypredrv_StrToIntArray(value, &levels);
-         } /* GCOVR_EXCL_BR_LINE */
-         if (!levels) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse.guards.rebuild_on_new_level");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
-         }
-         for (size_t i = 0; i < levels->size; i++)
-         { /* GCOVR_EXCL_BR_LINE */
-            if (levels->data[i] < 0 ||
-                levels->data[i] >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_LINE */
+            if (!PreconReuseParseInt(item_value, &levels->data[idx]))
             {
                hypredrv_IntArrayDestroy(&levels);
                hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
                hypredrv_ErrorMsgAdd(
                   "Invalid preconditioner.reuse.guards.rebuild_on_new_level");
-               YAML_NODE_SET_INVALID_VAL(child);
                return 0;
             }
+            idx++;
+            YAML_NODE_SET_VALID(item);
          }
-         hypredrv_IntArrayDestroy(&guards->rebuild_on_new_level);
-         guards->rebuild_on_new_level = levels;
-         YAML_NODE_SET_VALID(child);
       }
-      else
+   }
+   else
+   {
+      hypredrv_StrToIntArray(value, &levels);
+   } /* GCOVR_EXCL_BR_LINE */
+   if (!levels) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse.guards.rebuild_on_new_level");
+      YAML_NODE_SET_INVALID_VAL(child);
+      return 0;
+   }
+   for (size_t i = 0; i < levels->size; i++)
+   { /* GCOVR_EXCL_BR_LINE */
+      if (levels->data[i] < 0 ||
+          levels->data[i] >= STATS_MAX_LEVELS) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-         hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse.guards: '%s'",
-                              child->key);
-         YAML_NODE_SET_INVALID_KEY(child);
+         hypredrv_IntArrayDestroy(&levels);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse.guards.rebuild_on_new_level");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+   }
+   hypredrv_IntArrayDestroy(&guards->rebuild_on_new_level);
+   guards->rebuild_on_new_level = levels;
+   YAML_NODE_SET_VALID(child);
+
+   return 1;
+}
+
+typedef enum
+{
+   PRECON_REUSE_GUARD_INT,
+   PRECON_REUSE_GUARD_DOUBLE,
+   PRECON_REUSE_GUARD_ONOFF
+} PreconReuseGuardKind;
+
+/* Scalar guard keys share one shape: parse, range-check, mark the node. `min`
+ * applies to integers only; doubles accept -1.0 (disabled) or any value > 0. */
+typedef struct
+{
+   const char          *key;
+   PreconReuseGuardKind kind;
+   size_t               offset;
+   int                  has_min;
+   int                  min;
+} PreconReuseGuardSpec;
+
+static const PreconReuseGuardSpec kPreconReuseGuards[] = {
+   {"min_reuse_solves", PRECON_REUSE_GUARD_INT,
+    offsetof(PreconReuseGuards_args, min_reuse_solves), 1, 0},
+   {"max_reuse_solves", PRECON_REUSE_GUARD_INT,
+    offsetof(PreconReuseGuards_args, max_reuse_solves), 0, 0},
+   {"min_history_points", PRECON_REUSE_GUARD_INT,
+    offsetof(PreconReuseGuards_args, min_history_points), 1, 1},
+   {"bad_decisions_to_rebuild", PRECON_REUSE_GUARD_INT,
+    offsetof(PreconReuseGuards_args, bad_decisions_to_rebuild), 1, 1},
+   {"max_iteration_ratio", PRECON_REUSE_GUARD_DOUBLE,
+    offsetof(PreconReuseGuards_args, max_iteration_ratio), 0, 0},
+   {"max_solve_time_ratio", PRECON_REUSE_GUARD_DOUBLE,
+    offsetof(PreconReuseGuards_args, max_solve_time_ratio), 0, 0},
+   {"rebuild_on_new_timestep", PRECON_REUSE_GUARD_ONOFF,
+    offsetof(PreconReuseGuards_args, rebuild_on_new_timestep), 0, 0},
+   {"rebuild_on_solver_failure", PRECON_REUSE_GUARD_ONOFF,
+    offsetof(PreconReuseGuards_args, rebuild_on_solver_failure), 0, 0},
+};
+
+/* Parses and range-checks one scalar guard into the field named by `spec`. */
+static int
+PreconReuseParseScalarGuard(const PreconReuseGuardSpec *spec, const char *value,
+                            PreconReuseGuards_args *guards)
+{
+   char *base = (char *)guards;
+
+   if (spec->kind == PRECON_REUSE_GUARD_DOUBLE)
+   {
+      double *slot = (double *)(void *)(base + spec->offset);
+
+      /* GCOVR_EXCL_BR_START */
+      return (PreconReuseParseDouble(value, slot) &&
+              /* GCOVR_EXCL_BR_STOP */
+              (*slot == -1.0 || *slot > 0.0));
+   }
+
+   {
+      int *slot = (int *)(void *)(base + spec->offset);
+
+      if (spec->kind == PRECON_REUSE_GUARD_ONOFF)
+      {
+         /* GCOVR_EXCL_BR_START */
+         return PreconReuseParseOnOff(value, slot); /* GCOVR_EXCL_BR_STOP */
+      }
+      /* GCOVR_EXCL_BR_START */
+      return (PreconReuseParseInt(value, slot) && /* GCOVR_EXCL_BR_STOP */
+              (!spec->has_min || *slot >= spec->min));
+   }
+}
+
+/* Applies one child key of the guards mapping. */
+static int
+PreconReuseParseGuardChild(YAMLnode *child, PreconReuseGuards_args *guards)
+{
+   /* GCOVR_EXCL_BR_LINE */
+   const char *value = child->mapped_val ? child->mapped_val : child->val;
+
+   for (size_t i = 0; i < sizeof(kPreconReuseGuards) / sizeof(kPreconReuseGuards[0]); i++)
+   {
+      const PreconReuseGuardSpec *spec = &kPreconReuseGuards[i];
+
+      if (strcmp(child->key, spec->key) != 0)
+      {
+         continue;
+      }
+      if (!PreconReuseParseScalarGuard(spec, value, guards))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid preconditioner.reuse.guards.%s: '%s'", spec->key,
+                              value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      YAML_NODE_SET_VALID(child);
+      return 1;
+   }
+
+   if (!strcmp(child->key, "rebuild_on_new_level"))
+   {
+      return PreconReuseParseRebuildOnNewLevel(child, value, guards);
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse.guards: '%s'",
+                        child->key);
+   YAML_NODE_SET_INVALID_KEY(child);
+
+   return 0;
+}
+
+static int
+PreconReuseParseGuardsNode(YAMLnode *node, PreconReuseGuards_args *guards)
+{
+   YAML_NODE_ITERATE(node, child)
+   {
+      if (!PreconReuseParseGuardChild(child, guards))
+      {
          return 0;
       }
    }
@@ -2280,13 +2331,27 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
    return 1;
 }
 
-void
-hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
-{                        /* GCOVR_EXCL_BR_LINE */
-   if (!args || !parent) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
+/* Which keys the reuse block carried; several cross-field rules below depend on
+ * presence rather than on the parsed value. */
+typedef struct
+{
+   int enabled;
+   int frequency;
+   int linear_system_ids;
+   int per_timestep;
+   int policy;
+   int adaptive;
+   int min_history_points;
+   int bad_decisions_to_rebuild;
+   int max_iteration_ratio;
+   int always_requested;
+} PreconReuseSeenKeys;
+
+/* A scalar preconditioner.reuse node is shorthand for a frequency, the literal
+ * "always", or a policy name. */
+static void
+PreconReuseSetArgsFromScalar(PreconReuse_args *args, YAMLnode *parent)
+{
    /* GCOVR_EXCL_BR_LINE */
    if (!parent->children && parent->val &&
        strcmp(parent->val, "") != 0) /* GCOVR_EXCL_BR_LINE */
@@ -2334,153 +2399,159 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       YAML_NODE_SET_VALID(parent);
       return;
    }
+}
 
-   int seen_enabled                  = 0;
-   int seen_frequency                = 0;
-   int seen_linear_system_ids        = 0;
-   int seen_per_timestep             = 0;
-   int seen_policy                   = 0;
-   int seen_adaptive                 = 0;
-   int seen_min_history_points       = 0;
-   int seen_bad_decisions_to_rebuild = 0;
-   int seen_max_iteration_ratio      = 0;
-   int always_requested              = 0;
-
-   YAML_NODE_ITERATE(parent, child)
-   { /* GCOVR_EXCL_BR_LINE */
-      const char *value =
-         child->mapped_val ? child->mapped_val : child->val; /* GCOVR_EXCL_BR_LINE */
-      if (!strcmp(child->key, "enabled"))
-      {                                                     /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseOnOff(value, &args->enabled)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid value for preconditioner.reuse.enabled: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                        */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return;
-         }
-         seen_enabled = 1;
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "frequency"))
-      { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value, &args->frequency) ||
-             args->frequency < 0) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid value for preconditioner.reuse.frequency: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                          */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return;
-         }
-         seen_frequency = 1;
-         YAML_NODE_SET_VALID(child);
-      }
-      else if (!strcmp(child->key, "linear_system_ids") ||
-               !strcmp(child->key, "linear_solver_ids"))
+/* A few guard keys also gate cross-field rules on the enclosing reuse block, so
+ * their presence is recorded before the guards node is parsed. */
+static void
+PreconReuseNoteGuardKeysSeen(YAMLnode *guards_node, PreconReuseSeenKeys *seen)
+{
+   YAML_NODE_ITERATE(guards_node, guard_child)
+   {
+      if (!strcmp(guard_child->key, "min_history_points"))
       {
-         IntArray *ids = NULL;
-         hypredrv_StrToIntArray(value, &ids); /* GCOVR_EXCL_BR_LINE */
-         if (!ids)                            /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd(
-               "Failed to parse preconditioner.reuse.linear_system_ids");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return;
-         }
-         hypredrv_IntArrayDestroy(&args->linear_system_ids);
-         args->linear_system_ids = ids;
-         seen_linear_system_ids  = 1;
-         YAML_NODE_SET_VALID(child);
+         seen->min_history_points = 1;
       }
-      else if (!strcmp(child->key, "per_timestep"))
-      {                                                          /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseOnOff(value, &args->per_timestep)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid value for preconditioner.reuse.per_timestep: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return;
-         }
-         seen_per_timestep = args->per_timestep ? 1 : 0;
-         YAML_NODE_SET_VALID(child);
-      } /* GCOVR_EXCL_BR_LINE */
-      else if (!strcmp(child->key, "type") ||
-               !strcmp(child->key, "policy")) /* GCOVR_EXCL_BR_LINE */
+      else if (!strcmp(guard_child->key, "bad_decisions_to_rebuild"))
       {
-         if (PreconReuseValueIsAlways(value))
-         {
-            args->policy     = PRECON_REUSE_POLICY_STATIC;
-            always_requested = 1;
-         } /* GCOVR_EXCL_BR_LINE */
-         else if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_LINE */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid value for preconditioner.reuse.type: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                     */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return;
-         }
-         seen_policy = 1;
-         YAML_NODE_SET_VALID(child);
+         seen->bad_decisions_to_rebuild = 1;
       }
-      else if (!strcmp(child->key, "guards"))
+      else if (!strcmp(guard_child->key, "max_iteration_ratio"))
       {
-         YAML_NODE_ITERATE(child, guard_child)
-         {
-            if (!strcmp(guard_child->key, "min_history_points"))
-            {
-               seen_min_history_points = 1;
-            }
-            else if (!strcmp(guard_child->key, "bad_decisions_to_rebuild"))
-            {
-               seen_bad_decisions_to_rebuild = 1;
-            }
-            else if (!strcmp(guard_child->key, "max_iteration_ratio"))
-            {
-               seen_max_iteration_ratio = 1;
-            }
-         }
-
-         if (!PreconReuseParseGuardsNode(child, &args->guards))
-         {
-            return;
-         }
-      }
-      else if (!strcmp(child->key, "adaptive"))
-      {
-         if (!PreconReuseParseAdaptiveNode(child, &args->adaptive))
-         {
-            return;
-         }
-         seen_adaptive = 1;
-      }
-      else
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-         hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
-         YAML_NODE_SET_INVALID_KEY(child);
-         return;
+         seen->max_iteration_ratio = 1;
       }
    }
+}
 
-   if (!seen_enabled)
+/* Applies one child key of the reuse mapping. Returns zero when parsing failed;
+ * the node has already been marked and the error state populated. */
+static int
+PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKeys *seen)
+{
+   const char *value =
+      child->mapped_val ? child->mapped_val : child->val; /* GCOVR_EXCL_BR_LINE */
+   if (!strcmp(child->key, "enabled"))
+   {                                                     /* GCOVR_EXCL_BR_LINE */
+      if (!PreconReuseParseOnOff(value, &args->enabled)) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Invalid value for preconditioner.reuse.enabled: '%s'", /* GCOVR_EXCL_BR_LINE
+                                                                     */
+            value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      seen->enabled = 1;
+      YAML_NODE_SET_VALID(child);
+   }
+   else if (!strcmp(child->key, "frequency"))
+   { /* GCOVR_EXCL_BR_LINE */
+      if (!PreconReuseParseInt(value, &args->frequency) ||
+          args->frequency < 0) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Invalid value for preconditioner.reuse.frequency: '%s'", /* GCOVR_EXCL_BR_LINE
+                                                                       */
+            value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      seen->frequency = 1;
+      YAML_NODE_SET_VALID(child);
+   }
+   else if (!strcmp(child->key, "linear_system_ids") ||
+            !strcmp(child->key, "linear_solver_ids"))
+   {
+      IntArray *ids = NULL;
+      hypredrv_StrToIntArray(value, &ids); /* GCOVR_EXCL_BR_LINE */
+      if (!ids)                            /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Failed to parse preconditioner.reuse.linear_system_ids");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      hypredrv_IntArrayDestroy(&args->linear_system_ids);
+      args->linear_system_ids = ids;
+      seen->linear_system_ids = 1;
+      YAML_NODE_SET_VALID(child);
+   }
+   else if (!strcmp(child->key, "per_timestep"))
+   {                                                          /* GCOVR_EXCL_BR_LINE */
+      if (!PreconReuseParseOnOff(value, &args->per_timestep)) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
+         hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
+                              "Invalid value for preconditioner.reuse.per_timestep: "
+                              "'%s'",
+                              value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      seen->per_timestep = args->per_timestep ? 1 : 0;
+      YAML_NODE_SET_VALID(child);
+   } /* GCOVR_EXCL_BR_LINE */
+   else if (!strcmp(child->key, "type") ||
+            !strcmp(child->key, "policy")) /* GCOVR_EXCL_BR_LINE */
+   {
+      if (PreconReuseValueIsAlways(value))
+      {
+         args->policy           = PRECON_REUSE_POLICY_STATIC;
+         seen->always_requested = 1;
+      } /* GCOVR_EXCL_BR_LINE */
+      else if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Invalid value for preconditioner.reuse.type: '%s'", /* GCOVR_EXCL_BR_LINE
+                                                                  */
+            value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      seen->policy = 1;
+      YAML_NODE_SET_VALID(child);
+   }
+   else if (!strcmp(child->key, "guards"))
+   {
+      PreconReuseNoteGuardKeysSeen(child, seen);
+      if (!PreconReuseParseGuardsNode(child, &args->guards))
+      {
+         return 0;
+      }
+   }
+   else if (!strcmp(child->key, "adaptive"))
+   {
+      if (!PreconReuseParseAdaptiveNode(child, &args->adaptive))
+      {
+         return 0;
+      }
+      seen->adaptive = 1;
+   }
+   else
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
+      YAML_NODE_SET_INVALID_KEY(child);
+      return 0;
+   }
+
+   return 1;
+}
+
+/* First half: rejects key combinations the reuse policies cannot honour. */
+static void
+PreconReuseValidateKeyCombination(PreconReuse_args *args, YAMLnode *parent,
+                                  PreconReuseSeenKeys *seen)
+{
+   if (!seen->enabled)
    {
       args->enabled = 1;
    }
 
-   if (always_requested && !args->enabled)
+   if (seen->always_requested && !args->enabled)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -2489,13 +2560,13 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       return;
    }
 
-   if (seen_adaptive && !seen_policy)
+   if (seen->adaptive && !seen->policy)
    {
       args->policy = PRECON_REUSE_POLICY_ADAPTIVE;
    }
 
-   if (args->policy == PRECON_REUSE_POLICY_STATIC &&         /* GCOVR_EXCL_BR_LINE */
-       (seen_adaptive || args->adaptive.num_components > 0)) /* GCOVR_EXCL_BR_LINE */
+   if (args->policy == PRECON_REUSE_POLICY_STATIC &&          /* GCOVR_EXCL_BR_LINE */
+       (seen->adaptive || args->adaptive.num_components > 0)) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse adaptive block requires type: adaptive");
@@ -2504,8 +2575,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE && /* GCOVR_EXCL_BR_LINE */
-       (always_requested || seen_frequency || seen_linear_system_ids ||
-        seen_per_timestep)) /* GCOVR_EXCL_BR_LINE */
+       (seen->always_requested || seen->frequency || seen->linear_system_ids ||
+        seen->per_timestep)) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse type: adaptive cannot be used with "
@@ -2515,8 +2586,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       return;
    }
 
-   if (args->policy == PRECON_REUSE_POLICY_STATIC && always_requested &&
-       (seen_frequency || seen_linear_system_ids || seen_per_timestep))
+   if (args->policy == PRECON_REUSE_POLICY_STATIC && seen->always_requested &&
+       (seen->frequency || seen->linear_system_ids || seen->per_timestep))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("preconditioner.reuse always cannot be combined with "
@@ -2526,8 +2597,8 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
    }
 
    if (args->policy == PRECON_REUSE_POLICY_STATIC &&
-       seen_linear_system_ids &&              /* GCOVR_EXCL_BR_LINE */
-       (seen_frequency || seen_per_timestep)) /* GCOVR_EXCL_BR_LINE */
+       seen->linear_system_ids &&               /* GCOVR_EXCL_BR_LINE */
+       (seen->frequency || seen->per_timestep)) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -2536,8 +2607,15 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
    }
+}
 
-   if (always_requested && !PreconReuseSetAlwaysLinearSystemIDs(args))
+/* Second half: applies the shorthand expansions and policy defaults that depend
+ * on the fully-parsed block. */
+static void
+PreconReuseApplyPolicyDefaults(PreconReuse_args *args, YAMLnode *parent,
+                               PreconReuseSeenKeys *seen)
+{
+   if (seen->always_requested && !PreconReuseSetAlwaysLinearSystemIDs(args))
    {
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
@@ -2553,9 +2631,9 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
 
    if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE)
    {
-      PreconReuseApplyAdaptiveImplicitDefaults(args, seen_min_history_points,
-                                               seen_bad_decisions_to_rebuild,
-                                               seen_max_iteration_ratio);
+      PreconReuseApplyAdaptiveImplicitDefaults(args, seen->min_history_points,
+                                               seen->bad_decisions_to_rebuild,
+                                               seen->max_iteration_ratio);
    }
 
    if (!args->enabled)
@@ -2564,4 +2642,40 @@ hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
       args->frequency    = 0;
       args->per_timestep = 0;
    }
+}
+
+/* Cross-field rules applied once every child key has been parsed. */
+static void
+PreconReuseValidateCombination(PreconReuse_args *args, YAMLnode *parent,
+                               PreconReuseSeenKeys *seen)
+{
+   PreconReuseValidateKeyCombination(args, parent, seen);
+   PreconReuseApplyPolicyDefaults(args, parent, seen);
+}
+
+void
+hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *args, YAMLnode *parent)
+{                        /* GCOVR_EXCL_BR_LINE */
+   if (!args || !parent) /* GCOVR_EXCL_BR_LINE */
+   {
+      return;
+   }
+   /* GCOVR_EXCL_BR_LINE */
+   if (!parent->children && parent->val && strcmp(parent->val, "") != 0)
+   {
+      PreconReuseSetArgsFromScalar(args, parent);
+      return;
+   }
+
+   PreconReuseSeenKeys seen = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+   YAML_NODE_ITERATE(parent, child)
+   {
+      if (!PreconReuseApplyChild(args, child, &seen))
+      {
+         return;
+      }
+   }
+
+   PreconReuseValidateCombination(args, parent, &seen);
 }
