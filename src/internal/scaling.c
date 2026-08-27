@@ -987,6 +987,7 @@ ScalingUpdateAppliedState(Scaling_context *ctx)
    ctx->is_applied = ctx->matrices_are_scaled || ctx->rhs_is_scaled || ctx->x_is_scaled;
 }
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
 /* Checks that the context holds everything the selected scaling type needs. */
 static int
 ScalingSystemReady(Scaling_context *ctx, int apply, int log_rank)
@@ -1045,8 +1046,10 @@ ScalingSystemReady(Scaling_context *ctx, int apply, int log_rank)
 
    return 1;
 }
+#endif
 
 /* Applies the configured scaling to the operators and then to the vectors. */
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
 static int
 ScalingApplyToSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
                      HYPRE_ParCSRMatrix par_M, HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
@@ -1095,8 +1098,10 @@ ScalingApplyToSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
 
    return 1;
 }
+#endif
 
 /* Reverses the scaling, unwinding the vectors before the operators. */
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
 static int
 ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
                     HYPRE_ParCSRMatrix par_M, HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
@@ -1154,6 +1159,7 @@ ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
 
    return 1;
 }
+#endif
 
 static void
 ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,

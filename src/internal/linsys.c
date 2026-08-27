@@ -1745,7 +1745,7 @@ static int
 LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
                                 const char *rhs_filename, HYPRE_IJVector *rhs_ptr)
 {
-   int                  myid      = 0;
+   int                  myid            = 0;
    int                  num_procs       = 0;
    HYPRE_BigInt         M               = 0;
    HYPRE_Complex       *all_values      = NULL;
@@ -2442,10 +2442,10 @@ BlockFrobeniusPrepare(MPI_Comm comm, HYPRE_IJMatrix matrix, const IntArray *dofm
    HYPRE_Int num_cols_diag = hypre_CSRMatrixNumCols(diag);
    HYPRE_Int num_cols_offd = hypre_CSRMatrixNumCols(offd);
    local_valid             = dofmap->size == (size_t)num_rows &&
-                             dofmap->size == (size_t)num_cols_diag &&
-                             (num_rows == 0 || dofmap->data != NULL) &&
-                             dofmap->g_unique_data != NULL && dofmap->g_unique_size > 0 &&
-                             dofmap->g_unique_size <= HYPREDRV_BLOCK_NORM_MAX_LABELS;
+                 dofmap->size == (size_t)num_cols_diag &&
+                 (num_rows == 0 || dofmap->data != NULL) &&
+                 dofmap->g_unique_data != NULL && dofmap->g_unique_size > 0 &&
+                 dofmap->g_unique_size <= HYPREDRV_BLOCK_NORM_MAX_LABELS;
    if (!BlockDiagnosticsAgree(
           comm, local_valid, log_object_name, ls_id,
           "block Frobenius diagnostics skipped: incompatible matrix/dofmap layout"))
@@ -2688,7 +2688,7 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
    local_counts  = hypre_CTAlloc(long long, (4 * num_block_pairs) + 1, HYPRE_MEMORY_HOST);
    global_counts = hypre_CTAlloc(long long, (4 * num_block_pairs) + 1, HYPRE_MEMORY_HOST);
    local_valid   = block_labels && label_to_pos && local_stats && global_stats &&
-                   local_counts && global_counts;
+                 local_counts && global_counts;
    if (!BlockDiagnosticsAgree(comm, local_valid, log_object_name, ls_id,
                               "block Frobenius diagnostics skipped: allocation failed"))
    {

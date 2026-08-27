@@ -748,6 +748,7 @@ AMGProjectedRBMsShouldRebuild(AMG_args *args, HYPRE_IJVector vec_nn,
    return 1;
 }
 
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
 /* True when any selected entry carries a nonzero rigid-body mode; an all-zero
  * projection would leave hypre nothing to interpolate with. */
 static int
@@ -807,6 +808,7 @@ AMGMarkSelectedEntries(const IntArray *dofmap, HYPRE_Int num_entries,
 
    return projected_local;
 }
+#endif
 
 void
 hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
@@ -1063,11 +1065,11 @@ AMGApplyGridPointSchedule(HYPRE_Solver precon, const AMG_args *args)
       enough sweeps to do so. hypre takes ownership of the array. */
    if (args->relaxation.points == 1)
    {
-      HYPRE_Int ns_down = (args->relaxation.down_sweeps > -1)
-                             ? args->relaxation.down_sweeps
-                             : args->relaxation.num_sweeps;
-      HYPRE_Int ns_up   = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
-                                                            : args->relaxation.num_sweeps;
+      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
+                               ? args->relaxation.down_sweeps
+                               : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                              : args->relaxation.num_sweeps;
       HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
                                ? args->relaxation.coarse_sweeps
                                : args->relaxation.num_sweeps;
