@@ -201,15 +201,12 @@ ErrorBacktraceGetBaseAddress(void)
  *-----------------------------------------------------------------------------*/
 
 /* GCOVR_EXCL_START */
+/* Resolves this process's executable path; leaves the buffer empty when the
+ * link cannot be read, which disables addr2line resolution downstream. */
 static void
-ErrorBacktraceSymbolsPrint(void)
+ErrorBacktraceExePath(char *exe_path, size_t exe_path_size)
 {
-   void *trace[100];
-   int   nptrs = backtrace(trace, sizeof(trace) / sizeof(trace[0]));
-
-   /* Get executable path */
-   char    exe_path[4096];
-   ssize_t len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+   ssize_t len = readlink("/proc/self/exe", exe_path, exe_path_size - 1);
    if (len > 0)
    {
       exe_path[len] = '\0';
@@ -218,6 +215,18 @@ ErrorBacktraceSymbolsPrint(void)
    {
       exe_path[0] = '\0';
    }
+}
+
+static void
+ErrorBacktraceSymbolsPrint(void)
+{
+   void *trace[100];
+   int   nptrs = backtrace(trace, sizeof(trace) / sizeof(trace[0]));
+
+   /* Get executable path */
+   char exe_path[4096];
+
+   ErrorBacktraceExePath(exe_path, sizeof(exe_path));
 
    /* Get symbol strings from backtrace_symbols */
    char **symbols = backtrace_symbols(trace, nptrs);

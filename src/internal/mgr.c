@@ -2454,6 +2454,112 @@ hypredrv_MGRGetValidValues(const char *key)
  *-----------------------------------------------------------------------------*/
 
 /* GCOVR_EXCL_BR_START */
+/* The `level:` block is a sequence of per-level mappings; each one is parsed
+ * into the matching MGRlvl_args slot. */
+/* Marks the per-level component blocks that own nested solver configuration, so
+ * the generic field setter does not try to consume them. */
+static void
+MGRMarkLevelComponentNodes(MGR_args *args, YAMLnode *grandchild, int lvl)
+{
+   YAML_NODE_ITERATE(grandchild, great_grandchild)
+   {
+      if ((!strcmp(great_grandchild->key, "f_relaxation") ||
+           !strcmp(great_grandchild->key, "g_relaxation")) &&
+          great_grandchild->children &&
+          (MGRIsNestedKrylovKey(great_grandchild->children->key) ||
+           (!strcmp(great_grandchild->key, "f_relaxation") &&
+            !strcmp(great_grandchild->children->key, "mgr"))))
+      {
+         YAML_NODE_SET_VALID(great_grandchild);
+         YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
+                             hypredrv_MGRlvlSetFieldByName);
+         continue;
+      }
+
+      YAML_NODE_VALIDATE(great_grandchild, hypredrv_MGRlvlGetValidKeys,
+                         hypredrv_MGRlvlGetValidValues);
+
+      YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
+                          hypredrv_MGRlvlSetFieldByName);
+   }
+}
+
+static void
+MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
+{
+   uint32_t seen_levels = 0;
+   int      max_lvl     = -1;
+   YAML_NODE_SET_VALID(child);
+   YAML_NODE_ITERATE(child, grandchild)
+   {
+      char *lvl_end = NULL;
+      long  lvl_l   = strtol(grandchild->key, &lvl_end, 10);
+      int   lvl     = (int)lvl_l;
+
+      /* Reject non-numeric level keys (e.g. "lvl0"): strtol would otherwise
+       * silently map them to 0 and overwrite a real level's configuration. */
+      if (grandchild->key[0] == '\0' || !lvl_end || *lvl_end != '\0')
+      {
+         YAML_NODE_SET_INVALID_KEY(grandchild);
+         continue;
+      }
+      /* A level must be a mapping.  In particular, never accept an
+       * unsupported or malformed inline mapping as a scalar and then
+       * silently retain the level defaults. */
+      if (grandchild->val && grandchild->val[0] != '\0')
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
+         hypredrv_ErrorMsgAdd("MGR level %d must be a mapping (for example, "
+                              "\"%d: { f_dofs: [2] }\")",
+                              lvl, lvl);
+         grandchild->valid = YAML_NODE_UNEXPECTED_VAL;
+         continue;
+      }
+      /* Reject duplicate level indices, which would double-count num_levels. */
+      if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 && (seen_levels & (1u << (unsigned)lvl)))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("Duplicate MGR level index %d", lvl);
+         YAML_NODE_SET_INVALID_KEY(grandchild);
+         continue;
+      }
+
+      if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
+      {
+         seen_levels |= (1u << (unsigned)lvl);
+         if (lvl > max_lvl)
+         {
+            max_lvl = lvl;
+         }
+         MGRMarkLevelComponentNodes(args, grandchild, lvl);
+
+         args->num_levels++;
+         YAML_NODE_SET_VALID(grandchild);
+      }
+      else
+      {
+         YAML_NODE_SET_INVALID_KEY(grandchild);
+      }
+   }
+
+   /* Consumption iterates fine levels densely over [0, num_levels-1), so the
+    * configured level indices must be contiguous starting at 0. Reject gaps
+    * (e.g. "0:" and "5:") which would otherwise silently process
+    * default-initialized levels in place of the intended configuration. */
+   if (max_lvl >= 0)
+   {
+      uint32_t expected =
+         (max_lvl >= 31) ? 0xFFFFFFFFu : ((1u << (unsigned)(max_lvl + 1)) - 1u);
+      if (seen_levels != expected)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("MGR level indices must be contiguous starting at 0 (found "
+                              "non-contiguous set up to level %d)",
+                              max_lvl);
+      }
+   }
+}
+
 void
 hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
@@ -2462,99 +2568,7 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
    {
       if (!strcmp(child->key, "level"))
       {
-         uint32_t seen_levels = 0;
-         int      max_lvl     = -1;
-         YAML_NODE_SET_VALID(child);
-         YAML_NODE_ITERATE(child, grandchild)
-         {
-            char *lvl_end = NULL;
-            long  lvl_l   = strtol(grandchild->key, &lvl_end, 10);
-            int   lvl     = (int)lvl_l;
-
-            /* Reject non-numeric level keys (e.g. "lvl0"): strtol would otherwise
-             * silently map them to 0 and overwrite a real level's configuration. */
-            if (grandchild->key[0] == '\0' || !lvl_end || *lvl_end != '\0')
-            {
-               YAML_NODE_SET_INVALID_KEY(grandchild);
-               continue;
-            }
-            /* A level must be a mapping.  In particular, never accept an
-             * unsupported or malformed inline mapping as a scalar and then
-             * silently retain the level defaults. */
-            if (grandchild->val && grandchild->val[0] != '\0')
-            {
-               hypredrv_ErrorCodeSet(ERROR_UNEXPECTED_VAL);
-               hypredrv_ErrorMsgAdd("MGR level %d must be a mapping (for example, "
-                                    "\"%d: { f_dofs: [2] }\")",
-                                    lvl, lvl);
-               grandchild->valid = YAML_NODE_UNEXPECTED_VAL;
-               continue;
-            }
-            /* Reject duplicate level indices, which would double-count num_levels. */
-            if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 &&
-                (seen_levels & (1u << (unsigned)lvl)))
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-               hypredrv_ErrorMsgAdd("Duplicate MGR level index %d", lvl);
-               YAML_NODE_SET_INVALID_KEY(grandchild);
-               continue;
-            }
-
-            if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
-            {
-               seen_levels |= (1u << (unsigned)lvl);
-               if (lvl > max_lvl)
-               {
-                  max_lvl = lvl;
-               }
-               YAML_NODE_ITERATE(grandchild, great_grandchild)
-               {
-                  if ((!strcmp(great_grandchild->key, "f_relaxation") ||
-                       !strcmp(great_grandchild->key, "g_relaxation")) &&
-                      great_grandchild->children &&
-                      (MGRIsNestedKrylovKey(great_grandchild->children->key) ||
-                       (!strcmp(great_grandchild->key, "f_relaxation") &&
-                        !strcmp(great_grandchild->children->key, "mgr"))))
-                  {
-                     YAML_NODE_SET_VALID(great_grandchild);
-                     YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
-                                         hypredrv_MGRlvlSetFieldByName);
-                     continue;
-                  }
-
-                  YAML_NODE_VALIDATE(great_grandchild, hypredrv_MGRlvlGetValidKeys,
-                                     hypredrv_MGRlvlGetValidValues);
-
-                  YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
-                                      hypredrv_MGRlvlSetFieldByName);
-               }
-
-               args->num_levels++;
-               YAML_NODE_SET_VALID(grandchild);
-            }
-            else
-            {
-               YAML_NODE_SET_INVALID_KEY(grandchild);
-            }
-         }
-
-         /* Consumption iterates fine levels densely over [0, num_levels-1), so the
-          * configured level indices must be contiguous starting at 0. Reject gaps
-          * (e.g. "0:" and "5:") which would otherwise silently process
-          * default-initialized levels in place of the intended configuration. */
-         if (max_lvl >= 0)
-         {
-            uint32_t expected =
-               (max_lvl >= 31) ? 0xFFFFFFFFu : ((1u << (unsigned)(max_lvl + 1)) - 1u);
-            if (seen_levels != expected)
-            {
-               hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-               hypredrv_ErrorMsgAdd(
-                  "MGR level indices must be contiguous starting at 0 (found "
-                  "non-contiguous set up to level %d)",
-                  max_lvl);
-            }
-         }
+         MGRSetLevelArgsFromYAML(args, child);
       }
       else if (!strcmp(child->key, "coarsest_level"))
       {
@@ -4580,6 +4594,64 @@ MGRPlanCoarsening(MGR_args *args, MGRCreatePlan *plan, const Stats *stats, int n
  * array handed to hypre.
  *-----------------------------------------------------------------------------*/
 
+/* Sparse dof label spaces are remapped onto a dense [0, num_active_dofs) range
+ * before the point markers are handed to hypre, which expects contiguous ids. */
+static int
+MGRPlanRemapSparseLabels(MGR_args *args, MGRCreatePlan *plan, const IntArray *dofmap,
+                         const Stats *stats, int next_ls_id)
+{
+   HYPRE_Int lvl, i, j;
+
+   plan->label_to_dense = (HYPRE_Int *)malloc((size_t)plan->num_dofs * sizeof(HYPRE_Int));
+   /* GCOVR_EXCL_START */
+   if (!plan->label_to_dense)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate MGR dense label remap");
+      return 0;
+   }
+   /* GCOVR_EXCL_STOP */
+
+   for (i = 0; i < plan->num_dofs; i++)
+   {
+      plan->label_to_dense[i] = -1;
+   }
+   for (i = 0, j = 0; i < plan->num_dofs; i++)
+   {
+      if (plan->label_present[i])
+      {
+         plan->label_to_dense[i] = j++;
+      }
+   }
+   plan->num_dofs_hypre = plan->num_active_dofs;
+
+   for (lvl = 0; lvl < plan->num_levels - 1; lvl++)
+   {
+      for (i = 0; i < plan->num_c_dofs[lvl]; i++)
+      {
+         HYPRE_Int raw = plan->c_dofs[lvl][i];
+         /* GCOVR_EXCL_START */
+         if (raw < 0 || raw >= plan->num_dofs || plan->label_to_dense[raw] < 0)
+         {
+            HYPREDRV_LOG_COMMF(
+               2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+               "MGR invalid C-point label during dense remap: raw=%d "
+               "num_dofs=%d mapped=%d",
+               (int)raw, (int)plan->num_dofs,
+               (raw >= 0 && raw < plan->num_dofs) ? (int)plan->label_to_dense[raw] : -1);
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Invalid MGR C-point label %d during dense remap",
+                                 (int)raw);
+            return 0;
+         }
+         /* GCOVR_EXCL_STOP */
+         plan->c_dofs[lvl][i] = plan->label_to_dense[raw];
+      }
+   }
+
+   return 1;
+}
+
 static int
 MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
                     int next_ls_id)
@@ -4587,56 +4659,10 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
    IntArray *dofmap = args->dofmap;
    HYPRE_Int lvl, i, j;
 
-   if (plan->num_active_dofs > 0 && plan->num_active_dofs < plan->num_dofs)
+   if (plan->num_active_dofs > 0 && plan->num_active_dofs < plan->num_dofs &&
+       !MGRPlanRemapSparseLabels(args, plan, dofmap, stats, next_ls_id))
    {
-      plan->label_to_dense =
-         (HYPRE_Int *)malloc((size_t)plan->num_dofs * sizeof(HYPRE_Int));
-      /* GCOVR_EXCL_START */
-      if (!plan->label_to_dense)
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate MGR dense label remap");
-         return 0;
-      }
-      /* GCOVR_EXCL_STOP */
-
-      for (i = 0; i < plan->num_dofs; i++)
-      {
-         plan->label_to_dense[i] = -1;
-      }
-      for (i = 0, j = 0; i < plan->num_dofs; i++)
-      {
-         if (plan->label_present[i])
-         {
-            plan->label_to_dense[i] = j++;
-         }
-      }
-      plan->num_dofs_hypre = plan->num_active_dofs;
-
-      for (lvl = 0; lvl < plan->num_levels - 1; lvl++)
-      {
-         for (i = 0; i < plan->num_c_dofs[lvl]; i++)
-         {
-            HYPRE_Int raw = plan->c_dofs[lvl][i];
-            /* GCOVR_EXCL_START */
-            if (raw < 0 || raw >= plan->num_dofs || plan->label_to_dense[raw] < 0)
-            {
-               HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
-                                  "MGR invalid C-point label during dense remap: raw=%d "
-                                  "num_dofs=%d mapped=%d",
-                                  (int)raw, (int)plan->num_dofs,
-                                  (raw >= 0 && raw < plan->num_dofs)
-                                     ? (int)plan->label_to_dense[raw]
-                                     : -1);
-               hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-               hypredrv_ErrorMsgAdd("Invalid MGR C-point label %d during dense remap",
-                                    (int)raw);
-               return 0;
-            }
-            /* GCOVR_EXCL_STOP */
-            plan->c_dofs[lvl][i] = plan->label_to_dense[raw];
-         }
-      }
+      return 0;
    }
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after c-point assembly: code=0x%x num_dofs_hypre=%d",
@@ -5081,98 +5107,127 @@ MGRConfigNestedMGRFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *level
    return 1;
 }
 
+/* Attaches the configured F-relaxation solver for one active level. */
+/* Types 29 (spdirect), 32, 33 (fsai) and Schwarz all resolve to the same
+ * managed F-relaxation call; only the hypre-version/feature gate differs. */
+static int
+MGRConfigGatedManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int i,
+                            HYPRE_Int orig_lvl, const MGRlvl_args *level_args,
+                            const Stats *stats, int next_ls_id)
+{
+   if (level_args->f_relaxation.type == 29)
+   {
+#if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)
+      /* GCOVR_EXCL_START */
+      if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
+      {
+         return 0;
+      }
+      /* GCOVR_EXCL_STOP */
+#elif defined(HYPRE_USING_DSUPERLU)
+      /* GCOVR_EXCL_START */
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR F-relaxation 'spdirect' requires hypre >= 2.31.0");
+      return 0;
+      /* GCOVR_EXCL_STOP */
+#else
+      /* GCOVR_EXCL_START */
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "MGR F-relaxation 'spdirect' requires hypre built with DSUPERLU");
+      return 0;
+      /* GCOVR_EXCL_STOP */
+#endif
+   }
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+   else if (level_args->f_relaxation.type == 32)
+   {
+      if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
+      {
+         return 0;
+      }
+   }
+#endif
+   else if (level_args->f_relaxation.type == 33)
+   {
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+      if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
+      {
+         return 0;
+      }
+#else
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.31.0");
+      return 0;
+#endif
+   }
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   else if (level_args->f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
+      {
+         return 0;
+      }
+   }
+#endif
+
+   return 1;
+}
+
+static int
+MGRConfigFRelaxAtLevel(MGR_args *args, HYPRE_Solver precon, HYPRE_Int i,
+                       HYPRE_Int orig_lvl, const Stats *stats, int next_ls_id)
+{
+   MGRlvl_args *level_args = &args->level[orig_lvl];
+
+   if (!MGRValidateFRelaxDiagScaling(args, level_args))
+   {
+      return 0;
+   }
+
+   if (level_args->f_relaxation.use_krylov && level_args->f_relaxation.krylov)
+   {
+      if (!MGRConfigNestedKrylovFRelax(args, precon, level_args, i, orig_lvl, stats,
+                                       next_ls_id))
+      {
+         return 0;
+      }
+   }
+   else if (level_args->f_relaxation.type == 2)
+   {
+      if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
+      {
+         return 0;
+      }
+   }
+   else if (level_args->f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
+   {
+      if (!MGRConfigNestedMGRFRelax(args, precon, level_args, i, orig_lvl, stats,
+                                    next_ls_id))
+      {
+         return 0;
+      }
+   }
+   else if (!MGRConfigGatedManagedFRelax(args, precon, i, orig_lvl, level_args, stats,
+                                         next_ls_id))
+   {
+      return 0;
+   }
+
+   return 1;
+}
+
 static int
 MGRConfigFRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan *plan,
                        const Stats *stats, int next_ls_id)
 {
    for (HYPRE_Int i = 0; i < plan->num_levels - 1; i++)
    {
-      HYPRE_Int    orig_lvl   = plan->active_level_map[i];
-      MGRlvl_args *level_args = &args->level[orig_lvl];
-
-      if (!MGRValidateFRelaxDiagScaling(args, level_args))
+      if (!MGRConfigFRelaxAtLevel(args, precon, i, plan->active_level_map[i], stats,
+                                  next_ls_id))
       {
          return 0;
       }
-
-      if (level_args->f_relaxation.use_krylov && level_args->f_relaxation.krylov)
-      {
-         if (!MGRConfigNestedKrylovFRelax(args, precon, level_args, i, orig_lvl, stats,
-                                          next_ls_id))
-         {
-            return 0;
-         }
-      }
-      else if (level_args->f_relaxation.type == 2)
-      {
-         if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
-         {
-            return 0;
-         }
-      }
-      else if (level_args->f_relaxation.type == MGR_FRLX_TYPE_NESTED_MGR)
-      {
-         if (!MGRConfigNestedMGRFRelax(args, precon, level_args, i, orig_lvl, stats,
-                                       next_ls_id))
-         {
-            return 0;
-         }
-      }
-      else if (level_args->f_relaxation.type == 29)
-      {
-#if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)
-         /* GCOVR_EXCL_START */
-         if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
-         {
-            return 0;
-         }
-         /* GCOVR_EXCL_STOP */
-#elif defined(HYPRE_USING_DSUPERLU)
-         /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR F-relaxation 'spdirect' requires hypre >= 2.31.0");
-         return 0;
-         /* GCOVR_EXCL_STOP */
-#else
-         /* GCOVR_EXCL_START */
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd(
-            "MGR F-relaxation 'spdirect' requires hypre built with DSUPERLU");
-         return 0;
-         /* GCOVR_EXCL_STOP */
-#endif
-      }
-#if HYPRE_CHECK_MIN_VERSION(23200, 14)
-      else if (level_args->f_relaxation.type == 32)
-      {
-         if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
-         {
-            return 0;
-         }
-      }
-#endif
-      else if (level_args->f_relaxation.type == 33)
-      {
-#if HYPRE_CHECK_MIN_VERSION(23100, 9)
-         if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
-         {
-            return 0;
-         }
-#else
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.31.0");
-         return 0;
-#endif
-      }
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      else if (level_args->f_relaxation.type == MGR_SOLVER_TYPE_SCHWARZ)
-      {
-         if (!MGRConfigManagedFRelax(args, precon, i, orig_lvl, stats, next_ls_id))
-         {
-            return 0;
-         }
-      }
-#endif
    }
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after F-relax setup: code=0x%x",
@@ -5322,6 +5377,88 @@ MGRConfigGRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
  * Configure the coarsest-level solver (nested Krylov or a managed handle).
  *-----------------------------------------------------------------------------*/
 
+/* The built-in coarsest solvers (AMG, ILU, direct, ...) as opposed to a
+ * user-supplied nested Krylov solver. */
+static int
+MGRConfigManagedCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
+                               int next_ls_id)
+{
+   /* Infer coarsest level solver type if not explicitly set (type == -1).
+    * This allows both patterns:
+    *   coarsest_level: spdirect        -> type = 29 (explicitly set)
+    *   coarsest_level: { ilu: {...} }  -> type inferred from ilu.max_iter > 0
+    */
+   if (args->coarsest_level.type == -1)
+   {
+      /* Default to AMG unless the user explicitly selected ILU. */
+      args->coarsest_level.type = 0;
+   }
+
+   HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                      "MGR coarsest solver selected: %s",
+                      MGRCoarseSolverTypeName(&args->coarsest_level));
+
+   /* Ensure the selected solver has valid max_iter */
+   /* GCOVR_EXCL_START */
+   if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
+   {
+      args->coarsest_level.amg.max_iter = 1;
+   }
+   else if (args->coarsest_level.type == 32 && args->coarsest_level.ilu.max_iter < 1)
+   {
+      args->coarsest_level.ilu.max_iter = 1;
+   }
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   else if (args->coarsest_level.type == MGR_SOLVER_TYPE_SCHWARZ &&
+            args->coarsest_level.schwarz.max_iter < 1)
+   {
+      args->coarsest_level.schwarz.max_iter = 1;
+   }
+#endif
+   /* GCOVR_EXCL_STOP */
+
+   HYPRE_Int type = args->coarsest_level.type;
+
+#if !defined(HYPRE_USING_DSUPERLU)
+   /* GCOVR_EXCL_START */
+   if (type == 29)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
+      return 0;
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
+   if (type == 33)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR coarsest_level 'fsai' requires hypre >= 2.25.0");
+      return 0;
+   }
+#endif
+
+   int csolver_was_cached = (args->csolver && args->csolver_type == type);
+   if (!csolver_was_cached)
+   {
+      args->csolver = MGRCoarseSolverCreateByType(&args->coarsest_level, type);
+      if (hypredrv_ErrorCodeActive() || !args->csolver)
+      {
+         return 0;
+      }
+   }
+   else
+   {
+      HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
+                         "reusing cached MGR coarsest solver handle");
+   }
+   args->csolver_type = type;
+   MGRCoarseSolverInstall(precon, type, args->csolver);
+
+   return 1;
+}
+
 static int
 MGRConfigCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
                         int next_ls_id)
@@ -5360,80 +5497,9 @@ MGRConfigCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
       return 0;
 #endif
    }
-   else
+   else if (!MGRConfigManagedCoarsestSolver(args, precon, stats, next_ls_id))
    {
-      /* Infer coarsest level solver type if not explicitly set (type == -1).
-       * This allows both patterns:
-       *   coarsest_level: spdirect        -> type = 29 (explicitly set)
-       *   coarsest_level: { ilu: {...} }  -> type inferred from ilu.max_iter > 0
-       */
-      if (args->coarsest_level.type == -1)
-      {
-         /* Default to AMG unless the user explicitly selected ILU. */
-         args->coarsest_level.type = 0;
-      }
-
-      HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
-                         "MGR coarsest solver selected: %s",
-                         MGRCoarseSolverTypeName(&args->coarsest_level));
-
-      /* Ensure the selected solver has valid max_iter */
-      /* GCOVR_EXCL_START */
-      if (args->coarsest_level.type == 0 && args->coarsest_level.amg.max_iter < 1)
-      {
-         args->coarsest_level.amg.max_iter = 1;
-      }
-      else if (args->coarsest_level.type == 32 && args->coarsest_level.ilu.max_iter < 1)
-      {
-         args->coarsest_level.ilu.max_iter = 1;
-      }
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      else if (args->coarsest_level.type == MGR_SOLVER_TYPE_SCHWARZ &&
-               args->coarsest_level.schwarz.max_iter < 1)
-      {
-         args->coarsest_level.schwarz.max_iter = 1;
-      }
-#endif
-      /* GCOVR_EXCL_STOP */
-
-      HYPRE_Int type = args->coarsest_level.type;
-
-#if !defined(HYPRE_USING_DSUPERLU)
-      /* GCOVR_EXCL_START */
-      if (type == 29)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd(
-            "MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
-         return 0;
-      }
-      /* GCOVR_EXCL_STOP */
-#endif
-#if !HYPRE_CHECK_MIN_VERSION(22500, 0)
-      if (type == 33)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR coarsest_level 'fsai' requires hypre >= 2.25.0");
-         return 0;
-      }
-#endif
-
-      int csolver_was_cached = (args->csolver && args->csolver_type == type);
-      if (!csolver_was_cached)
-      {
-         args->csolver = MGRCoarseSolverCreateByType(&args->coarsest_level, type);
-         if (hypredrv_ErrorCodeActive() || !args->csolver)
-         {
-            return 0;
-         }
-      }
-      else
-      {
-         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
-                            "reusing cached MGR coarsest solver handle");
-      }
-      args->csolver_type = type;
-      MGRCoarseSolverInstall(precon, type, args->csolver);
+      return 0;
    }
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after coarsest solver setup: code=0x%x",

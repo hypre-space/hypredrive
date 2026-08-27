@@ -998,41 +998,19 @@ PreconReuseArithmeticMean(const double *values, int count)
    return count > 0 ? sum / (double)count : 0.0; /* GCOVR_EXCL_BR_LINE */
 }
 
-static double
-PreconReuseGeneralizedMean(const double *values, int count,
-                           const PreconReuseMean_args *mean, double positive_floor)
-{
-   if (count <= 0) /* GCOVR_EXCL_BR_LINE */
-   {
-      return -1.0;
-   }
+static double PreconReuseGeneralizedMean(const double *values, int count,
+                                         const PreconReuseMean_args *mean,
+                                         double                      positive_floor);
 
+/* The Pythagorean means other than arithmetic, plus the general power mean.
+ * Each is evaluated in a transformed domain, so samples at or below
+ * `positive_floor` are clamped where the transform would be undefined. */
+static double
+PreconReuseNonArithmeticMean(const double *values, int count,
+                             const PreconReuseMean_args *mean, double positive_floor)
+{
    switch (mean->kind)
    {
-      case PRECON_REUSE_MEAN_MIN:
-      {
-         double min_value = values[0];
-         for (int i = 1; i < count; i++)
-         {                             /* GCOVR_EXCL_BR_LINE */
-            if (values[i] < min_value) /* GCOVR_EXCL_BR_LINE */
-            {
-               min_value = values[i];
-            }
-         }
-         return min_value;
-      }
-      case PRECON_REUSE_MEAN_MAX:
-      {
-         double max_value = values[0];
-         for (int i = 1; i < count; i++)
-         {                             /* GCOVR_EXCL_BR_LINE */
-            if (values[i] > max_value) /* GCOVR_EXCL_BR_LINE */
-            {
-               max_value = values[i];
-            }
-         }
-         return max_value;
-      }
       case PRECON_REUSE_MEAN_GEOMETRIC:
       {
          double sum_logs = 0.0;
@@ -1087,6 +1065,54 @@ PreconReuseGeneralizedMean(const double *values, int count,
          }
          return pow(acc / (double)count, 1.0 / p);
       }
+      default:
+         break;
+   }
+
+   /* Unreachable: only the four kinds above route here. */
+   return PreconReuseArithmeticMean(values, count);
+}
+
+static double
+PreconReuseGeneralizedMean(const double *values, int count,
+                           const PreconReuseMean_args *mean, double positive_floor)
+{
+   if (count <= 0) /* GCOVR_EXCL_BR_LINE */
+   {
+      return -1.0;
+   }
+
+   switch (mean->kind)
+   {
+      case PRECON_REUSE_MEAN_MIN:
+      {
+         double min_value = values[0];
+         for (int i = 1; i < count; i++)
+         {                             /* GCOVR_EXCL_BR_LINE */
+            if (values[i] < min_value) /* GCOVR_EXCL_BR_LINE */
+            {
+               min_value = values[i];
+            }
+         }
+         return min_value;
+      }
+      case PRECON_REUSE_MEAN_MAX:
+      {
+         double max_value = values[0];
+         for (int i = 1; i < count; i++)
+         {                             /* GCOVR_EXCL_BR_LINE */
+            if (values[i] > max_value) /* GCOVR_EXCL_BR_LINE */
+            {
+               max_value = values[i];
+            }
+         }
+         return max_value;
+      }
+      case PRECON_REUSE_MEAN_GEOMETRIC:
+      case PRECON_REUSE_MEAN_HARMONIC:
+      case PRECON_REUSE_MEAN_RMS:
+      case PRECON_REUSE_MEAN_POWER:
+         return PreconReuseNonArithmeticMean(values, count, mean, positive_floor);
       case PRECON_REUSE_MEAN_ARITHMETIC:
       default:
          return PreconReuseArithmeticMean(values, count);
@@ -2425,6 +2451,60 @@ PreconReuseNoteGuardKeysSeen(YAMLnode *guards_node, PreconReuseSeenKeys *seen)
 
 /* Applies one child key of the reuse mapping. Returns zero when parsing failed;
  * the node has already been marked and the error state populated. */
+/* The structural reuse keys: the policy selector and the nested `guards:` and
+ * `adaptive:` blocks. Returns 1 handled, 0 on a parse or unknown-key error. */
+static int
+PreconReuseApplyStructuralChild(PreconReuse_args *args, YAMLnode *child,
+                                const char *value, PreconReuseSeenKeys *seen)
+{
+   if (!strcmp(child->key, "type") ||
+       !strcmp(child->key, "policy")) /* GCOVR_EXCL_BR_LINE */
+   {
+      if (PreconReuseValueIsAlways(value))
+      {
+         args->policy           = PRECON_REUSE_POLICY_STATIC;
+         seen->always_requested = 1;
+      } /* GCOVR_EXCL_BR_LINE */
+      else if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Invalid value for preconditioner.reuse.type: '%s'", /* GCOVR_EXCL_BR_LINE
+                                                                  */
+            value ? value : "");
+         YAML_NODE_SET_INVALID_VAL(child);
+         return 0;
+      }
+      seen->policy = 1;
+      YAML_NODE_SET_VALID(child);
+   }
+   else if (!strcmp(child->key, "guards"))
+   {
+      PreconReuseNoteGuardKeysSeen(child, seen);
+      if (!PreconReuseParseGuardsNode(child, &args->guards))
+      {
+         return 0;
+      }
+   }
+   else if (!strcmp(child->key, "adaptive"))
+   {
+      if (!PreconReuseParseAdaptiveNode(child, &args->adaptive))
+      {
+         return 0;
+      }
+      seen->adaptive = 1;
+   }
+   else
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
+      YAML_NODE_SET_INVALID_KEY(child);
+      return 0;
+   }
+
+   return 1;
+}
+
 static int
 PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKeys *seen)
 {
@@ -2493,58 +2573,18 @@ PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKe
       seen->per_timestep = args->per_timestep ? 1 : 0;
       YAML_NODE_SET_VALID(child);
    } /* GCOVR_EXCL_BR_LINE */
-   else if (!strcmp(child->key, "type") ||
-            !strcmp(child->key, "policy")) /* GCOVR_EXCL_BR_LINE */
-   {
-      if (PreconReuseValueIsAlways(value))
-      {
-         args->policy           = PRECON_REUSE_POLICY_STATIC;
-         seen->always_requested = 1;
-      } /* GCOVR_EXCL_BR_LINE */
-      else if (!PreconReuseParsePolicy(value, &args->policy)) /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Invalid value for preconditioner.reuse.type: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                  */
-            value ? value : "");
-         YAML_NODE_SET_INVALID_VAL(child);
-         return 0;
-      }
-      seen->policy = 1;
-      YAML_NODE_SET_VALID(child);
-   }
-   else if (!strcmp(child->key, "guards"))
-   {
-      PreconReuseNoteGuardKeysSeen(child, seen);
-      if (!PreconReuseParseGuardsNode(child, &args->guards))
-      {
-         return 0;
-      }
-   }
-   else if (!strcmp(child->key, "adaptive"))
-   {
-      if (!PreconReuseParseAdaptiveNode(child, &args->adaptive))
-      {
-         return 0;
-      }
-      seen->adaptive = 1;
-   }
    else
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-      hypredrv_ErrorMsgAdd("Unknown key under preconditioner.reuse: '%s'", child->key);
-      YAML_NODE_SET_INVALID_KEY(child);
-      return 0;
+      return PreconReuseApplyStructuralChild(args, child, value, seen);
    }
 
    return 1;
 }
-
-/* First half: rejects key combinations the reuse policies cannot honour. */
+/* Presence-driven defaulting and the mutual-exclusion rules between the
+ * enabled/always/policy keys. */
 static void
-PreconReuseValidateKeyCombination(PreconReuse_args *args, YAMLnode *parent,
-                                  PreconReuseSeenKeys *seen)
+PreconReuseValidateEnabledRules(PreconReuse_args *args, YAMLnode *parent,
+                                PreconReuseSeenKeys *seen)
 {
    if (!seen->enabled)
    {
@@ -2585,7 +2625,14 @@ PreconReuseValidateKeyCombination(PreconReuse_args *args, YAMLnode *parent,
       YAML_NODE_SET_INVALID_VAL(parent);
       return;
    }
+}
 
+/* Policy-specific rules: what the static and adaptive policies each accept.
+ * Split from the defaulting rules above so both stay readable. */
+static void
+PreconReuseValidatePolicyRules(PreconReuse_args *args, YAMLnode *parent,
+                               PreconReuseSeenKeys *seen)
+{
    if (args->policy == PRECON_REUSE_POLICY_STATIC && seen->always_requested &&
        (seen->frequency || seen->linear_system_ids || seen->per_timestep))
    {
@@ -2649,7 +2696,8 @@ static void
 PreconReuseValidateCombination(PreconReuse_args *args, YAMLnode *parent,
                                PreconReuseSeenKeys *seen)
 {
-   PreconReuseValidateKeyCombination(args, parent, seen);
+   PreconReuseValidateEnabledRules(args, parent, seen);
+   PreconReuseValidatePolicyRules(args, parent, seen);
    PreconReuseApplyPolicyDefaults(args, parent, seen);
 }
 

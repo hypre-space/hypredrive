@@ -361,6 +361,51 @@ IJVectorAllRanksOk(MPI_Comm comm)
    return local_ok;
 }
 
+/* Allocates the host staging buffers, and their device counterparts when the
+ * vector is device-resident. Returns 0 with the error state set. */
+static int
+IJVectorAllocEntryBuffers(uint64_t nrows_max, HYPRE_MemoryLocation memory_location,
+                          IJVectorEntryBuffers *buf)
+{
+   /* Allocate variables */
+   buf->h_indices =
+      (nrows_max > 0) ? (HYPRE_BigInt *)malloc(nrows_max * sizeof(HYPRE_BigInt)) : NULL;
+   buf->h_vals =
+      (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
+   /* LCOV_EXCL_START */
+   if (nrows_max > 0 && (!buf->h_indices || !buf->h_vals))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate vector read buffers (%llu rows)",
+                           (unsigned long long)nrows_max);
+      return 0;
+   }
+/* LCOV_EXCL_STOP */
+#ifdef HYPRE_USING_GPU
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      buf->indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
+      buf->vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+      /* LCOV_EXCL_START */
+      if (nrows_max > 0 && (!buf->indices || !buf->vals))
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate device vector read buffers (%llu rows)",
+                              (unsigned long long)nrows_max);
+         return 0;
+      }
+      /* LCOV_EXCL_STOP */
+   }
+   else
+#endif
+   {
+      buf->indices = buf->h_indices;
+      buf->vals    = buf->h_vals;
+   }
+
+   return 1;
+}
+
 void
 hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -424,39 +469,9 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Allocate variables */
-   buf.h_indices =
-      (nrows_max > 0) ? (HYPRE_BigInt *)malloc(nrows_max * sizeof(HYPRE_BigInt)) : NULL;
-   buf.h_vals =
-      (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
-   /* LCOV_EXCL_START */
-   if (nrows_max > 0 && (!buf.h_indices || !buf.h_vals))
+   if (!IJVectorAllocEntryBuffers(nrows_max, memory_location, &buf))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate vector read buffers (%llu rows)",
-                           (unsigned long long)nrows_max);
       goto cleanup;
-   }
-   /* LCOV_EXCL_STOP */
-#ifdef HYPRE_USING_GPU
-   if (memory_location == HYPRE_MEMORY_DEVICE)
-   {
-      buf.indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
-      buf.vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
-      /* LCOV_EXCL_START */
-      if (nrows_max > 0 && (!buf.indices || !buf.vals))
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate device vector read buffers (%llu rows)",
-                              (unsigned long long)nrows_max);
-         goto cleanup;
-      }
-      /* LCOV_EXCL_STOP */
-   }
-   else
-#endif
-   {
-      buf.indices = buf.h_indices;
-      buf.vals    = buf.h_vals;
    }
 
    /* 4) Fill entries */

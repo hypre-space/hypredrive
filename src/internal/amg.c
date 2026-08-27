@@ -779,6 +779,35 @@ AMGProjectionHasNonzeroModes(HYPRE_Int num_entries, const unsigned char *selecte
    return local_nonzero;
 }
 
+/* Marks the local entries whose dof label is in the selected set, which is the
+ * support of the projected rigid-body modes. Returns how many were selected. */
+static uint64_t
+AMGMarkSelectedEntries(const IntArray *dofmap, HYPRE_Int num_entries,
+                       const int *selected_dofs, size_t num_selected_dofs,
+                       int *selected_labels, unsigned char *selected)
+{
+   uint64_t projected_local = 0;
+
+   if (num_selected_dofs > 0)
+   {
+      memcpy(selected_labels, selected_dofs,
+             num_selected_dofs * sizeof(*selected_labels));
+      qsort(selected_labels, num_selected_dofs, sizeof(*selected_labels), AMGIntCompare);
+   }
+   for (HYPRE_Int i = 0; i < num_entries; i++)
+   {
+      if (num_selected_dofs > 0 &&
+          bsearch(&dofmap->data[i], selected_labels, num_selected_dofs,
+                  sizeof(*selected_labels), AMGIntCompare))
+      {
+         selected[i] = 1;
+         projected_local++;
+      }
+   }
+
+   return projected_local;
+}
+
 void
 hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
                              const IntArray *dofmap, uint64_t input_generation,
@@ -846,22 +875,8 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
       return;
    }
 
-   if (num_selected_dofs > 0)
-   {
-      memcpy(selected_labels, selected_dofs,
-             num_selected_dofs * sizeof(*selected_labels));
-      qsort(selected_labels, num_selected_dofs, sizeof(*selected_labels), AMGIntCompare);
-   }
-   for (HYPRE_Int i = 0; i < num_entries; i++)
-   {
-      if (num_selected_dofs > 0 &&
-          bsearch(&dofmap->data[i], selected_labels, num_selected_dofs,
-                  sizeof(*selected_labels), AMGIntCompare))
-      {
-         selected[i] = 1;
-         projected_local++;
-      }
-   }
+   projected_local = AMGMarkSelectedEntries(dofmap, num_entries, selected_dofs,
+                                            num_selected_dofs, selected_labels, selected);
 
    MPI_Allreduce(&projected_local, &projected_global, 1, MPI_UINT64_T, MPI_SUM, comm);
    MPI_Scan(&projected_local, &projected_scan, 1, MPI_UINT64_T, MPI_SUM, comm);

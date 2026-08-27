@@ -731,6 +731,54 @@ YAMLtextAppendLine(const char *backup, int base_indent, int level, size_t *lengt
    return 1;
 }
 
+static void YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
+                                    int *base_indent_ptr, size_t *length_ptr,
+                                    char **text_ptr, size_t *capacity_ptr,
+                                    YAMLincludeContext *ctx);
+
+/* Emits one source line: an `include: <file>` scalar directive is expanded in
+ * place by recursing into the named file, and anything else is appended
+ * verbatim. Returns 1 to continue, 0 when the include failed, and -1 when the
+ * accumulated text buffer must be released. */
+static int
+YAMLEmitLine(const char *dirname, const char *current_dir, const char *backup,
+             const char *key, const char *val, bool is_seq_item_line, int pos, int level,
+             const YAMLIndentState *indent, int *base_indent_ptr, size_t *length_ptr,
+             char **text_ptr, size_t *capacity_ptr, YAMLincludeContext *ctx)
+{
+   int inner_level = 0;
+
+   /* Preprocessor include directive:
+    * only treat "include: <file>" (scalar) as a directive.
+    * For "include:" with a YAML sequence underneath, keep it in the text and
+    * handle it later at the YAML tree level.
+    */
+   /* GCOVR_EXCL_BR_START */
+   if (!is_seq_item_line && key && !strcmp(key, "include") && val && strlen(val) > 0)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      /* Calculate node level based on actual indentation */
+      inner_level = pos / (indent->base_indent > 0 ? indent->base_indent : 1);
+
+      /* Recursively read the content of the included file */
+      /* GCOVR_EXCL_BR_START */
+      YAMLtextReadWithContext(current_dir ? current_dir : dirname, val, inner_level,
+                              /* GCOVR_EXCL_BR_STOP */
+                              base_indent_ptr, length_ptr, text_ptr, capacity_ptr, ctx);
+      if (hypredrv_ErrorCodeActive())
+      {
+         return 0;
+      }
+   }
+   else if (!YAMLtextAppendLine(backup, indent->base_indent, level, length_ptr, text_ptr,
+                                capacity_ptr, ctx))
+   {
+      return -1;
+   }
+
+   return 1;
+}
+
 static void
 YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
                         int *base_indent_ptr, size_t *length_ptr, char **text_ptr,
@@ -813,33 +861,19 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
          continue;
       }
 
-      /* Preprocessor include directive:
-       * only treat "include: <file>" (scalar) as a directive.
-       * For "include:" with a YAML sequence underneath, keep it in the text and
-       * handle it later at the YAML tree level.
-       */
-      /* GCOVR_EXCL_BR_START */
-      if (!is_seq_item_line && key && !strcmp(key, "include") && val && strlen(val) > 0)
-      /* GCOVR_EXCL_BR_STOP */
       {
-         /* Calculate node level based on actual indentation */
-         inner_level = pos / (indent.base_indent > 0 ? indent.base_indent : 1);
+         int emitted = YAMLEmitLine(
+            dirname, current_dir, backup, key, val, is_seq_item_line, pos, level, &indent,
+            base_indent_ptr, length_ptr, text_ptr, capacity_ptr, ctx);
 
-         /* Recursively read the content of the included file */
-         /* GCOVR_EXCL_BR_START */
-         YAMLtextReadWithContext(current_dir ? current_dir : dirname, val, inner_level,
-                                 /* GCOVR_EXCL_BR_STOP */
-                                 base_indent_ptr, length_ptr, text_ptr, capacity_ptr,
-                                 ctx);
-         if (hypredrv_ErrorCodeActive())
+         if (emitted == 0)
          {
             goto cleanup;
          }
-      }
-      else if (!YAMLtextAppendLine(backup, indent.base_indent, level, length_ptr,
-                                   text_ptr, capacity_ptr, ctx))
-      {
-         goto fail_with_text_cleanup;
+         if (emitted < 0)
+         {
+            goto fail_with_text_cleanup;
+         }
       }
    }
 
@@ -1967,6 +2001,65 @@ YAMLnodeCloneDeep(const YAMLnode *src, int level_offset)
    return clone;
 }
 
+/* Gathers the include paths named by an include node: either its scalar value
+ * or the "-" entries of a sequence beneath it. Returns 0 with the error state
+ * set when a path could not be stored. */
+static int
+YAMLnodeCollectIncludePaths(const YAMLnode *child, char ***paths_out, int *n_paths_out)
+{
+   char **paths   = NULL;
+   int    n_paths = 0;
+
+   /* GCOVR_EXCL_BR_START */
+   if (child->val && strlen(child->val) > 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      paths = (char **)malloc(sizeof(char *));
+      /* GCOVR_EXCL_BR_START */
+      if (!paths || !(paths[0] = strdup(child->val))) /* GCOVR_EXCL_BR_STOP */
+      {
+         free(paths);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate memory for include paths");
+         return 0;
+      }
+      n_paths = 1;
+   }
+
+   YAML_NODE_ITERATE(child, inc_item)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!strcmp(inc_item->key, "-") && inc_item->val && strlen(inc_item->val) > 0)
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         char **new_paths =
+            (char **)realloc(paths, (size_t)(n_paths + 1) * sizeof(char *));
+         /* GCOVR_EXCL_BR_START */
+         if (!new_paths) /* GCOVR_EXCL_BR_STOP */
+         {
+            /* Free existing paths array and all its elements */
+            /* GCOVR_EXCL_BR_START */
+            for (int j = 0; j < n_paths; j++)
+            /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
+            {
+               free(paths[j]); /* GCOVR_EXCL_LINE */
+            }
+            free(paths);                             /* GCOVR_EXCL_LINE */
+            hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+            hypredrv_ErrorMsgAdd(
+               "Failed to allocate memory for include paths"); /* GCOVR_EXCL_LINE */
+            return 0;                                          /* GCOVR_EXCL_LINE */
+         }
+         paths            = new_paths;
+         paths[n_paths++] = strdup(inc_item->val);
+      }
+   }
+
+   *paths_out   = paths;
+   *n_paths_out = n_paths;
+
+   return 1;
+}
+
 static void
 YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_indent,
                                 YAMLincludeContext *ctx)
@@ -1988,48 +2081,10 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
          /* Collect include paths */
          char **paths   = NULL;
          int    n_paths = 0;
-         /* GCOVR_EXCL_BR_START */
-         if (child->val && strlen(child->val) > 0) /* GCOVR_EXCL_BR_STOP */
-         {
-            paths = (char **)malloc(sizeof(char *));
-            /* GCOVR_EXCL_BR_START */
-            if (!paths || !(paths[0] = strdup(child->val))) /* GCOVR_EXCL_BR_STOP */
-            {
-               free(paths);
-               hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-               hypredrv_ErrorMsgAdd("Failed to allocate memory for include paths");
-               return;
-            }
-            n_paths = 1;
-         }
 
-         YAML_NODE_ITERATE(child, inc_item)
+         if (!YAMLnodeCollectIncludePaths(child, &paths, &n_paths))
          {
-            /* GCOVR_EXCL_BR_START */
-            if (!strcmp(inc_item->key, "-") && inc_item->val && strlen(inc_item->val) > 0)
-            /* GCOVR_EXCL_BR_STOP */
-            {
-               char **new_paths =
-                  (char **)realloc(paths, (size_t)(n_paths + 1) * sizeof(char *));
-               /* GCOVR_EXCL_BR_START */
-               if (!new_paths) /* GCOVR_EXCL_BR_STOP */
-               {
-                  /* Free existing paths array and all its elements */
-                  /* GCOVR_EXCL_BR_START */
-                  for (int j = 0; j < n_paths; j++)
-                  /* GCOVR_EXCL_BR_STOP */ /* GCOVR_EXCL_LINE */
-                  {
-                     free(paths[j]); /* GCOVR_EXCL_LINE */
-                  }
-                  free(paths);                             /* GCOVR_EXCL_LINE */
-                  hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-                  hypredrv_ErrorMsgAdd(
-                     "Failed to allocate memory for include paths"); /* GCOVR_EXCL_LINE */
-                  return;                                            /* GCOVR_EXCL_LINE */
-               }
-               paths            = new_paths;
-               paths[n_paths++] = strdup(inc_item->val);
-            }
+            return;
          }
 
          /* Remove the include node before inserting new nodes */
@@ -2943,6 +2998,44 @@ YAMLnodePrintAnyModeValidBranch(const YAMLnode *node, bool is_seq_item)
  * hypredrv_YAMLnodePrint
  *-----------------------------------------------------------------------------*/
 
+/* Emits the children of a node: an inline sequence item folds its grandchildren
+ * onto the same line, otherwise each child is printed in turn. */
+static void
+YAMLnodePrintChildren(YAMLnode *node, YAMLprintMode print_mode, bool is_seq_item,
+                      YAMLnode *inline_child)
+{
+   // Print children
+   if (is_seq_item && inline_child)
+   {
+      /* For "- key:" style sequence items, we printed "key:" inline above.
+       * Now print that key's children (so nested mappings show up), then print any
+       * additional siblings.
+       */
+      YAMLnode *gc = inline_child->children;
+      while (gc)
+      {
+         hypredrv_YAMLnodePrint(gc, print_mode);
+         gc = gc->next;
+      }
+
+      YAMLnode *sib = inline_child->next;
+      while (sib)
+      {
+         hypredrv_YAMLnodePrint(sib, print_mode);
+         sib = sib->next;
+      }
+   }
+   else
+   {
+      YAMLnode *child_iter = node->children;
+      while (child_iter != NULL)
+      {
+         hypredrv_YAMLnodePrint(child_iter, print_mode);
+         child_iter = child_iter->next;
+      }
+   }
+}
+
 void
 hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
 {
@@ -3004,36 +3097,7 @@ hypredrv_YAMLnodePrint(YAMLnode *node, YAMLprintMode print_mode)
          break;
    }
 
-   // Print children
-   if (is_seq_item && inline_child)
-   {
-      /* For "- key:" style sequence items, we printed "key:" inline above.
-       * Now print that key's children (so nested mappings show up), then print any
-       * additional siblings.
-       */
-      YAMLnode *gc = inline_child->children;
-      while (gc)
-      {
-         hypredrv_YAMLnodePrint(gc, print_mode);
-         gc = gc->next;
-      }
-
-      YAMLnode *sib = inline_child->next;
-      while (sib)
-      {
-         hypredrv_YAMLnodePrint(sib, print_mode);
-         sib = sib->next;
-      }
-   }
-   else
-   {
-      YAMLnode *child_iter = node->children;
-      while (child_iter != NULL)
-      {
-         hypredrv_YAMLnodePrint(child_iter, print_mode);
-         child_iter = child_iter->next;
-      }
-   }
+   YAMLnodePrintChildren(node, print_mode, is_seq_item, inline_child);
 }
 
 /*-----------------------------------------------------------------------------

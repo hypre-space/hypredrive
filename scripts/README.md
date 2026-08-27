@@ -4,6 +4,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 
 ## Bash Scripts
 
+- [check_complexity.sh](./check_complexity.sh): Tracks per-function cyclomatic complexity with `lizard` and fails when any function exceeds the allowed threshold.
 - [check_private_prefix.sh](./check_private_prefix.sh): Checks that private `libHYPREDRV` callables use the `hypredrv_` prefix.
 - [check_symbol_prefix.sh](./check_symbol_prefix.sh): Verifies that all global symbols in the built `libHYPREDRV` library use approved prefixes.
 - [compare_output.sh](./compare_output.sh): Normalizes timestamps, versions, and paths before diffing an output file against a reference output.

@@ -953,31 +953,14 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
    return *total > 0;
 }
 
-static int HYPREDRV_MAYBE_UNUSED
-QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+/* Walks the amd-smi JSON listing for the GPU object whose BDF matches
+ * `pci_busid`, reporting its index and memory usage. Returns 1 on a match. */
+static int
+AmdSmiScanGpuObjects(const char *json, const char *amd_path, const char *pci_busid,
+                     int *gpu_index, size_t *total, size_t *used)
 {
-   char amd_path[PATH_MAX];
-   char output[32768];
+   const char *ptr = json;
 
-   if (!pci_busid || !total || !used)
-   {
-      return 0;
-   }
-
-   if (!FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
-   {
-      return 0;
-   }
-
-   {
-      char *argv[] = {amd_path, "list", "--json", NULL};
-      if (!RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
-      {
-         return 0;
-      }
-   }
-
-   const char *ptr = output;
    while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
    {
       const char *obj_end = strchr(ptr, '}');
@@ -1032,6 +1015,39 @@ QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size
       }
 
       ptr = obj_end + 1;
+   }
+
+   return 0;
+}
+
+static int HYPREDRV_MAYBE_UNUSED
+QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+{
+   char amd_path[PATH_MAX];
+   char output[32768];
+
+   if (!pci_busid || !total || !used)
+   {
+      return 0;
+   }
+
+   if (!FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
+   {
+      return 0;
+   }
+
+   {
+      char *argv[] = {amd_path, "list", "--json", NULL};
+      if (!RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
+      {
+         return 0;
+      }
+   }
+
+   const char *ptr = output;
+   if (AmdSmiScanGpuObjects(ptr, amd_path, pci_busid, gpu_index, total, used))
+   {
+      return 1;
    }
 
    return 0;
@@ -1830,6 +1846,51 @@ DependencyLineIsLast(const int *child_ids, const struct PrintedNodeSet *printed,
    return 1;
 }
 
+static void PrintDependencySubtree(struct DependencyGraph      *graph,
+                                   const struct DynamicLibList *loaded, int node_index,
+                                   const char *prefix, int *stack, int depth,
+                                   struct PrintedNodeSet *printed);
+
+/* Prints one collected dependency line and, when it resolves to a node not yet
+ * printed, recurses into that subtree. */
+static void
+PrintDependencyLine(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
+                    const char *prefix, int *stack, int depth,
+                    struct PrintedNodeSet *printed, const char **line_names,
+                    const int *child_ids, int i, int line_count)
+{
+   char next_prefix[4096];
+   int  is_last = 0;
+   int  written = 0;
+
+   if (child_ids[i] >= 0 && printed->flags[child_ids[i]])
+   {
+      return;
+   }
+
+   is_last = DependencyLineIsLast(child_ids, printed, i, line_count);
+   printf("%s%s %s%s\n", prefix, is_last ? "`--" : "|--", line_names[i],
+          child_ids[i] >= 0 ? "" : " [unresolved]");
+
+   if (child_ids[i] < 0)
+   {
+      return;
+   }
+
+   printed->flags[child_ids[i]] = 1;
+
+   written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
+                      is_last ? "    " : "|   ");
+   if (written < 0 || (size_t)written >= sizeof(next_prefix))
+   {
+      return;
+   }
+
+   stack[depth] = child_ids[i];
+   PrintDependencySubtree(graph, loaded, child_ids[i], next_prefix, stack, depth + 1,
+                          printed);
+}
+
 static void
 PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
                        int node_index, const char *prefix, int *stack, int depth,
@@ -1879,36 +1940,8 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
 
    for (int i = 0; i < line_count; i++)
    {
-      char next_prefix[4096];
-      int  is_last = 0;
-      int  written = 0;
-
-      if (child_ids[i] >= 0 && printed->flags[child_ids[i]])
-      {
-         continue;
-      }
-
-      is_last = DependencyLineIsLast(child_ids, printed, i, line_count);
-      printf("%s%s %s%s\n", prefix, is_last ? "`--" : "|--", line_names[i],
-             child_ids[i] >= 0 ? "" : " [unresolved]");
-
-      if (child_ids[i] < 0)
-      {
-         continue;
-      }
-
-      printed->flags[child_ids[i]] = 1;
-
-      written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
-                         is_last ? "    " : "|   ");
-      if (written < 0 || (size_t)written >= sizeof(next_prefix))
-      {
-         continue;
-      }
-
-      stack[depth] = child_ids[i];
-      PrintDependencySubtree(graph, loaded, child_ids[i], next_prefix, stack, depth + 1,
-                             printed);
+      PrintDependencyLine(graph, loaded, prefix, stack, depth, printed, line_names,
+                          child_ids, i, line_count);
    }
 
    free(line_names);
@@ -2099,6 +2132,81 @@ GatherAllHostnames(MPI_Comm comm, int nprocs, char **allHostnames_out)
 }
 
 /* Fills the per-package CPU model strings and the package/thread counts. */
+/* Parses /proc/cpuinfo for the per-package model strings and the physical /
+ * logical processor counts. */
+static void
+DetectCpuModelsFromProcInfo(FILE *fp, char *buffer, size_t buffer_size,
+                            int *numPhysicalCPUs_out, int *numCPUs_out,
+                            char cpuModels[8][256])
+{
+   int physicalCPUSeen = 0;
+   int numPhysicalCPUs = 0;
+   int numCPUs         = 0;
+
+   while (fgets(buffer, sizeof(buffer), fp))
+   {
+      if (strncmp(buffer, "physical id", 11) == 0)
+      {
+         const char *colon = strchr(buffer, ':');
+         if (!colon)
+         {
+            continue;
+         }
+         int physicalID = atoi(colon + 1);
+         if (physicalID >= 0 && physicalID < 8)
+         {
+            unsigned long long mask = 1ULL << (unsigned)physicalID;
+            if (!((unsigned long long)physicalCPUSeen & mask))
+            {
+               physicalCPUSeen = (int)((unsigned long long)physicalCPUSeen | mask);
+               numPhysicalCPUs++;
+            }
+         }
+      }
+
+      if (strncmp(buffer, "model name", 10) == 0)
+      {
+         int physicalID = numPhysicalCPUs - 1;
+         if (physicalID >= 0 && physicalID < 8)
+         {
+            const char *colon = strchr(buffer, ':');
+            if (!colon)
+            {
+               continue;
+            }
+            const char *model = colon + 1;
+            while (*model == ' ')
+            {
+               model++;
+            }
+            strncpy(cpuModels[physicalID], model, sizeof(cpuModels[physicalID]) - 1);
+            cpuModels[physicalID][sizeof(cpuModels[physicalID]) - 1] = '\0';
+         }
+      }
+   }
+   fclose(fp);
+
+   if (numPhysicalCPUs == 0)
+   {
+      char lscpu_path[PATH_MAX];
+      char lscpu_model[sizeof(cpuModels[0])] = {0};
+      if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
+          ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
+                             sizeof(lscpu_model)) &&
+          lscpu_model[0] != '\0')
+      {
+         int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
+         for (int i = 0; i < fill_count; i++)
+         {
+            snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
+         }
+      }
+   }
+
+   *numPhysicalCPUs_out = numPhysicalCPUs;
+   *numCPUs_out         = numCPUs;
+}
+
 static void
 DetectCpuModels(int *numPhysicalCPUs_out, int *numCPUs_out, char cpuModels[8][256])
 {
@@ -2132,65 +2240,8 @@ DetectCpuModels(int *numPhysicalCPUs_out, int *numCPUs_out, char cpuModels[8][25
    fp                  = fopen("/proc/cpuinfo", "r");
    if (fp != NULL)
    {
-      while (fgets(buffer, sizeof(buffer), fp))
-      {
-         if (strncmp(buffer, "physical id", 11) == 0)
-         {
-            const char *colon = strchr(buffer, ':');
-            if (!colon)
-            {
-               continue;
-            }
-            int physicalID = atoi(colon + 1);
-            if (physicalID >= 0 && physicalID < 8)
-            {
-               unsigned long long mask = 1ULL << (unsigned)physicalID;
-               if (!((unsigned long long)physicalCPUSeen & mask))
-               {
-                  physicalCPUSeen = (int)((unsigned long long)physicalCPUSeen | mask);
-                  numPhysicalCPUs++;
-               }
-            }
-         }
-
-         if (strncmp(buffer, "model name", 10) == 0)
-         {
-            int physicalID = numPhysicalCPUs - 1;
-            if (physicalID >= 0 && physicalID < 8)
-            {
-               const char *colon = strchr(buffer, ':');
-               if (!colon)
-               {
-                  continue;
-               }
-               const char *model = colon + 1;
-               while (*model == ' ')
-               {
-                  model++;
-               }
-               strncpy(cpuModels[physicalID], model, sizeof(cpuModels[physicalID]) - 1);
-               cpuModels[physicalID][sizeof(cpuModels[physicalID]) - 1] = '\0';
-            }
-         }
-      }
-      fclose(fp);
-
-      if (numPhysicalCPUs == 0)
-      {
-         char lscpu_path[PATH_MAX];
-         char lscpu_model[sizeof(cpuModels[0])] = {0};
-         if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
-             ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
-                                sizeof(lscpu_model)) &&
-             lscpu_model[0] != '\0')
-         {
-            int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
-            for (int i = 0; i < fill_count; i++)
-            {
-               snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
-            }
-         }
-      }
+      DetectCpuModelsFromProcInfo(fp, buffer, sizeof(buffer), &numPhysicalCPUs, &numCPUs,
+                                  cpuModels);
    }
 
    numCPUs = (int)sysconf(_SC_NPROCESSORS_ONLN);

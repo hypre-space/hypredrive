@@ -224,3 +224,58 @@ jobs:
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+
+  complexity:
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
+    name: cyclomatic complexity
+    runs-on: ubuntu-latest
+    env:
+      # Pinned so a lizard release cannot silently change the metric or the gate.
+      LIZARD_VERSION: 1.24.0
+      REPORT_DIR: build-complexity
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install lizard
+        timeout-minutes: 3
+        run: python -m pip install "lizard==${LIZARD_VERSION}"
+
+      # Source-only analysis: no HYPRE build or compile database needed.
+      - name: Check cyclomatic complexity
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORT_DIR"
+          bash scripts/check_complexity.sh --report "$REPORT_DIR" 2>&1 | \
+            tee "$REPORT_DIR/complexity.txt"
+
+      - name: Complexity summary
+        if: always()
+        run: |
+          {
+            echo "### Cyclomatic Complexity"
+            echo
+            echo '```'
+            cat "$REPORT_DIR/complexity.txt" 2>/dev/null || echo "no report produced"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complexity report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: complexity-report
+          path: |
+            ${{ env.REPORT_DIR }}/complexity.csv
+            ${{ env.REPORT_DIR }}/complexity.xml
+            ${{ env.REPORT_DIR }}/complexity.txt
+          retention-days: 7

@@ -440,6 +440,49 @@ hypredrv_IntArrayUnique(MPI_Comm comm, IntArray *int_array)
  * hypredrv_IntArrayParRead
  *-----------------------------------------------------------------------------*/
 
+/* Sums the header entry counts across this rank's parts, which sizes the
+ * concatenated array. Returns 0 with the error state set on a bad part file. */
+static int
+IntArrayScanPartHeaders(const char *prefix, const int *partids, int nparts,
+                        const char *suffix, const char *code, bool is_binary,
+                        size_t *num_entries_all_out)
+{
+   char   filename[MAX_FILENAME_LENGTH];
+   size_t num_entries_all = 0;
+   size_t num_entries     = 0;
+   size_t count           = 0;
+   FILE  *fp              = NULL;
+
+   /* Compute total number of entries considering all parts */
+   num_entries_all = 0;
+   for (int part = 0; part < nparts; part++)
+   {
+      snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
+      if ((fp = fopen(filename, code)) == NULL)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
+         return 0;
+      }
+
+      count = ((int)is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
+                               : (size_t)fscanf(fp, "%zu", &num_entries);
+      if (count != 1)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid number of header entries!");
+         fclose(fp);
+         return 0;
+      }
+      fclose(fp);
+      num_entries_all += num_entries;
+   }
+
+   *num_entries_all_out = num_entries_all;
+
+   return 1;
+}
+
 void
 hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
@@ -500,31 +543,13 @@ hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array
    }
 
    /* Compute total number of entries considering all parts */
-   num_entries_all = 0;
-   for (int part = 0; part < nparts; part++)
+   if (!IntArrayScanPartHeaders(prefix, partids, nparts, suffix, code, is_binary,
+                                &num_entries_all))
    {
-      snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
-      if ((fp = fopen(filename, code)) == NULL)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(filename);
-         free(partids);
-         return;
-      }
-
-      count = ((int)is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                               : (size_t)fscanf(fp, "%zu", &num_entries);
-      if (count != 1)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid number of header entries!");
-         fclose(fp);
-         free(partids);
-         return;
-      }
-      fclose(fp);
-      num_entries_all += num_entries;
+      free(partids);
+      return;
    }
+
    int_array = hypredrv_IntArrayCreate(num_entries_all);
    if (!int_array || (num_entries_all > 0 && !int_array->data))
    {

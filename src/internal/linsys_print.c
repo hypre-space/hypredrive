@@ -1180,11 +1180,11 @@ PrintSystemTypeIsThresholdBased(int type)
            type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER);
 }
 
-/* The selected type dictates which companion keys are required and which are
- * forbidden. `every` has a documented default, so it is filled in rather than
- * demanded. */
+/* Each selection type demands its companion key. `every` has a documented
+ * default, so it is filled in rather than demanded. */
 static int
-PrintSystemValidateTypeKeys(PrintSystem_args *args, const PrintSystemSeenKeys *seen)
+PrintSystemValidateTypeRequirements(PrintSystem_args          *args,
+                                    const PrintSystemSeenKeys *seen)
 {
    if (args->type == PRINT_SYSTEM_TYPE_ALL &&
        /* GCOVR_EXCL_BR_START */
@@ -1228,6 +1228,16 @@ PrintSystemValidateTypeKeys(PrintSystem_args *args, const PrintSystemSeenKeys *s
          "linear_system.print_system.type=selectors requires selectors");
       return 0;
    }
+
+   return 1;
+}
+
+/* The mirror rules: a companion key that was supplied is only meaningful for
+ * the types that consume it. */
+static int
+PrintSystemValidateKeyApplicability(const PrintSystem_args    *args,
+                                    const PrintSystemSeenKeys *seen)
+{
    /* GCOVR_EXCL_BR_START */
    if (args->type != PRINT_SYSTEM_TYPE_SELECTORS && seen->selectors)
    /* GCOVR_EXCL_BR_STOP */
@@ -1285,7 +1295,9 @@ PrintSystemValidateStageMask(const PrintSystem_args *args)
 static int
 PrintSystemValidateCombination(PrintSystem_args *args, const PrintSystemSeenKeys *seen)
 {
-   return (PrintSystemValidateTypeKeys(args, seen) && PrintSystemValidateStageMask(args));
+   return (PrintSystemValidateTypeRequirements(args, seen) &&
+           PrintSystemValidateKeyApplicability(args, seen) &&
+           PrintSystemValidateStageMask(args));
 }
 
 /* A scalar print_system node is shorthand for the enabled flag alone. */
@@ -1338,6 +1350,48 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
    (void)PrintSystemValidateCombination(args, &seen);
 }
 
+/* Allocates the next hypre-data/ls_NNNNN directory by scanning for the highest
+ * index already present, and reports its path. */
+static void
+PrintDataNextSeriesDir(char *run_dir, size_t run_dir_size)
+{
+   const char *root = "hypre-data";
+   struct stat st;
+   if (stat(root, &st) != 0)
+   {
+      (void)mkdir(root, 0775);
+   }
+
+   int  max_idx = -1;
+   DIR *dir     = opendir(root);
+   /* GCOVR_EXCL_BR_START */
+   if (dir) /* GCOVR_EXCL_BR_STOP */
+   {
+      const struct dirent *ent = NULL;
+      while ((ent = readdir(dir)) != NULL)
+      {
+         /* GCOVR_EXCL_BR_START */
+         if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            int idx = (int)strtol(ent->d_name + 3, NULL, 10);
+            if (idx > max_idx)
+            {
+               max_idx = idx;
+            }
+         }
+      }
+      closedir(dir);
+   }
+   int next_idx = max_idx + 1;
+   snprintf(run_dir, run_dir_size, "%s/ls_%05d", root, next_idx);
+   /* GCOVR_EXCL_BR_START */
+   if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      (void)mkdir(run_dir, 0775);
+   }
+}
+
 void
 hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
                                HYPRE_IJVector vec_b, const IntArray *dofmap)
@@ -1386,43 +1440,9 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
 
    if (use_series_dir)
    {
-      const char *root = "hypre-data";
-      struct stat st;
-      if (stat(root, &st) != 0)
-      {
-         (void)mkdir(root, 0775);
-      }
-
-      int  max_idx = -1;
-      DIR *dir     = opendir(root);
-      /* GCOVR_EXCL_BR_START */
-      if (dir) /* GCOVR_EXCL_BR_STOP */
-      {
-         const struct dirent *ent = NULL;
-         while ((ent = readdir(dir)) != NULL)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
-            /* GCOVR_EXCL_BR_STOP */
-            {
-               int idx = (int)strtol(ent->d_name + 3, NULL, 10);
-               if (idx > max_idx)
-               {
-                  max_idx = idx;
-               }
-            }
-         }
-         closedir(dir);
-      }
-      int  next_idx = max_idx + 1;
       char run_dir[256];
-      snprintf(run_dir, sizeof(run_dir), "%s/ls_%05d", root, next_idx);
-      /* GCOVR_EXCL_BR_START */
-      if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         (void)mkdir(run_dir, 0775);
-      }
 
+      PrintDataNextSeriesDir(run_dir, sizeof(run_dir));
       snprintf(A_path, sizeof(A_path), "%s/%s", run_dir, A_name);
       snprintf(b_path, sizeof(b_path), "%s/%s", run_dir, b_name);
       snprintf(d_path, sizeof(d_path), "%s/%s", run_dir, d_name);
@@ -1792,6 +1812,57 @@ PrintSystemAnySelectorMatches(const PrintSystem_args *cfg, const PrintSystemCont
    return 0;
 }
 
+/* Threshold-based selection: the recorded metric for this stage is compared
+ * against the configured threshold. Only the three threshold types reach here;
+ * PrintSystemTypeIsThresholdBased() gates the matching validation rules. */
+static int
+PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
+                            char *reason, size_t reason_size)
+{
+   switch (cfg->type)
+   {
+      case PRINT_SYSTEM_TYPE_ITERATIONS_OVER:
+      {
+         /* GCOVR_EXCL_BR_START */
+         int matched =
+            (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
+         /* GCOVR_EXCL_BR_STOP */
+
+         PrintSystemSetReason(reason, reason_size, "last_iter=%d threshold=%.3e",
+                              ctx->last_iter, cfg->threshold);
+         return matched;
+      }
+
+      case PRINT_SYSTEM_TYPE_SETUP_TIME_OVER:
+      {
+         /* GCOVR_EXCL_BR_START */
+         int matched =
+            (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
+         /* GCOVR_EXCL_BR_STOP */
+
+         PrintSystemSetReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
+                              ctx->last_setup_time, cfg->threshold);
+         return matched;
+      }
+
+      case PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER:
+      {
+         /* GCOVR_EXCL_BR_START */
+         int matched =
+            (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
+         /* GCOVR_EXCL_BR_STOP */
+
+         PrintSystemSetReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
+                              ctx->last_solve_time, cfg->threshold);
+         return matched;
+      }
+      default:
+         break;
+   }
+
+   return 0;
+}
+
 static int
 PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
                               char *reason, size_t reason_size)
@@ -1859,40 +1930,9 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       }
 
       case PRINT_SYSTEM_TYPE_ITERATIONS_OVER:
-      {
-         /* GCOVR_EXCL_BR_START */
-         int matched =
-            (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
-         /* GCOVR_EXCL_BR_STOP */
-
-         PrintSystemSetReason(reason, reason_size, "last_iter=%d threshold=%.3e",
-                              ctx->last_iter, cfg->threshold);
-         return matched;
-      }
-
       case PRINT_SYSTEM_TYPE_SETUP_TIME_OVER:
-      {
-         /* GCOVR_EXCL_BR_START */
-         int matched =
-            (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
-         /* GCOVR_EXCL_BR_STOP */
-
-         PrintSystemSetReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
-                              ctx->last_setup_time, cfg->threshold);
-         return matched;
-      }
-
       case PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER:
-      {
-         /* GCOVR_EXCL_BR_START */
-         int matched =
-            (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
-         /* GCOVR_EXCL_BR_STOP */
-
-         PrintSystemSetReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
-                              ctx->last_solve_time, cfg->threshold);
-         return matched;
-      }
+         return PrintSystemThresholdMatches(cfg, ctx, reason, reason_size);
 
       case PRINT_SYSTEM_TYPE_SELECTORS:
          return PrintSystemAnySelectorMatches(cfg, ctx, reason, reason_size);
@@ -2216,6 +2256,66 @@ PrintSystemRemoveTree(const char *path)
    /* GCOVR_EXCL_BR_STOP */
 }
 
+/* Chooses the ls_NNNNN leaf beneath `base_dir`. In overwrite mode the index
+ * advances monotonically and any directory already there is cleared; otherwise
+ * the first unused index is taken. Returns zero on failure. */
+static int
+PrintSystemChooseDumpLeaf(const PrintSystem_args *cfg, PrintSystem_args *cfg_state,
+                          const char *base_dir, char *candidate, size_t candidate_size)
+{
+   char leaf[32];
+
+   if (cfg->overwrite)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (cfg_state->next_dump_index < 0) /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+
+      snprintf(leaf, sizeof(leaf), "ls_%05d", cfg_state->next_dump_index);
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemPathJoin(candidate, candidate_size, base_dir, leaf))
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+      cfg_state->next_dump_index++;
+
+      /* GCOVR_EXCL_BR_START */
+      if (PrintSystemPathExists(candidate) && !PrintSystemRemoveTree(candidate))
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+   }
+   else
+   {
+      int next_idx = PrintSystemFindMaxDumpIndex(base_dir) + 1;
+      /* GCOVR_EXCL_BR_START */
+      if (next_idx < 0) /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+
+      do
+      {
+         snprintf(leaf, sizeof(leaf), "ls_%05d", next_idx);
+         /* GCOVR_EXCL_BR_START */
+         if (!PrintSystemPathJoin(candidate, candidate_size, base_dir, leaf))
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            return 0; /* GCOVR_EXCL_LINE */
+         }
+         next_idx++;
+         /* GCOVR_EXCL_BR_START */
+      } while (PrintSystemPathExists(candidate));
+      /* GCOVR_EXCL_BR_STOP */
+   }
+
+   return 1;
+}
+
 static int
 PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
                               const char *object_name, char *dump_dir,
@@ -2261,53 +2361,9 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
    }
 
    char candidate[2 * MAX_FILENAME_LENGTH];
-   char leaf[32];
-   if (cfg->overwrite)
+   if (!PrintSystemChooseDumpLeaf(cfg, cfg_state, base_dir, candidate, sizeof(candidate)))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (cfg_state->next_dump_index < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-
-      snprintf(leaf, sizeof(leaf), "ls_%05d", cfg_state->next_dump_index);
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemPathJoin(candidate, sizeof(candidate), base_dir, leaf))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-      cfg_state->next_dump_index++;
-
-      /* GCOVR_EXCL_BR_START */
-      if (PrintSystemPathExists(candidate) && !PrintSystemRemoveTree(candidate))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-   }
-   else
-   {
-      int next_idx = PrintSystemFindMaxDumpIndex(base_dir) + 1;
-      /* GCOVR_EXCL_BR_START */
-      if (next_idx < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-
-      do
-      {
-         snprintf(leaf, sizeof(leaf), "ls_%05d", next_idx);
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemPathJoin(candidate, sizeof(candidate), base_dir, leaf))
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-         next_idx++;
-         /* GCOVR_EXCL_BR_START */
-      } while (PrintSystemPathExists(candidate));
-      /* GCOVR_EXCL_BR_STOP */
+      return 0;
    }
 
    /* GCOVR_EXCL_BR_START */

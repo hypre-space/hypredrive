@@ -1924,6 +1924,48 @@ LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_par
    return 1;
 }
 
+/* Prepares the per-rank staging state for a dofmap read: this rank's part ids,
+ * the stored-to-runtime part order, the open sequence file and the shared
+ * temporary prefix. Returns 0 on any local failure. */
+static int
+LSSeqPrepareDofmapStaging(MPI_Comm comm, const LSSeqData *seq, int ls_id,
+                          const char *filename, int **partids, int *nparts,
+                          uint32_t **part_order, FILE **fp, char *prefix,
+                          size_t prefix_size)
+{
+   int myid = 0;
+
+   if (!LSSeqLocalPartIDs(comm, seq->header.num_parts, partids, nparts))
+   /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+   if (!LSSeqBuildPartOrder(seq, part_order)) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+
+   *fp = fopen(filename, "rb");
+   if (!*fp) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
+
+      return 0;
+   }
+
+   prefix[0] = '\0';
+   MPI_Comm_rank(comm, &myid);
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, prefix_size))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      return 0;
+   }
+
+   return 1;
+}
+
 int
 hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                          IntArray **dofmap_ptr)
@@ -1976,32 +2018,8 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
       goto stage_sync;
    }
 
-   if (!LSSeqLocalPartIDs(comm, seq.header.num_parts, &partids, &nparts))
-   /* GCOVR_EXCL_BR_LINE */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-   if (!LSSeqBuildPartOrder(&seq, &part_order)) /* GCOVR_EXCL_BR_LINE */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   fp = fopen(filename, "rb");
-   if (!fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   prefix[0] = '\0';
-   MPI_Comm_rank(comm, &myid);
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, sizeof(prefix)))
-   /* GCOVR_EXCL_BR_STOP */
+   if (!LSSeqPrepareDofmapStaging(comm, &seq, ls_id, filename, &partids, &nparts,
+                                  &part_order, &fp, prefix, sizeof(prefix)))
    {
       local_ok = 0;
       goto stage_sync;
