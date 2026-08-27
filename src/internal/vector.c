@@ -367,6 +367,10 @@ static int
 IJVectorAllocEntryBuffers(uint64_t nrows_max, HYPRE_MemoryLocation memory_location,
                           IJVectorEntryBuffers *buf)
 {
+#ifndef HYPRE_USING_GPU
+   (void)memory_location;
+#endif
+
    /* Allocate variables */
    buf->h_indices =
       (nrows_max > 0) ? (HYPRE_BigInt *)malloc(nrows_max * sizeof(HYPRE_BigInt)) : NULL;

@@ -1020,7 +1020,7 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
 /* set_suffix and init_suffix/last_suffix are mutually exclusive, and the
  * precmat sequence options are only meaningful together. */
 static void
-LinearSystemValidateSuffixAndSequence(LS_args *args, YAMLnode *parent)
+LinearSystemValidateSuffixAndSequence(LS_args *args)
 {
    /* set_suffix and init_suffix/last_suffix are mutually exclusive */
    /* GCOVR_EXCL_BR_START */
@@ -1154,7 +1154,7 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
       YAML_NODE_SET_FIELD(child, args, hypredrv_LinearSystemSetFieldByName);
    }
 
-   LinearSystemValidateSuffixAndSequence(args, parent);
+   LinearSystemValidateSuffixAndSequence(args);
 }
 
 /*-----------------------------------------------------------------------------
@@ -3045,6 +3045,12 @@ LinearSystemComputeHostNorm(HYPRE_IJVector vec, HYPRE_ParVector par_vec,
 {
    double local_norm  = 0.0;
    double global_norm = 0.0;
+
+#if !defined(HYPRE_USING_GPU)
+   (void)vec;
+   (void)par_vec;
+   (void)seq_vec;
+#endif
 
 #if defined(HYPRE_USING_GPU)
    /* Manual loops require host-accessible data; save memory location to restore later

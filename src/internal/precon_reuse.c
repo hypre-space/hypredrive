@@ -1444,8 +1444,8 @@ PreconReuseAdaptiveGuardsDecide(const PreconReuse_args *args,
 
 /* Weighted component scoring: the adaptive policy's actual decision rule. */
 static int
-PreconReuseAdaptiveScore(const PreconReuse_args *args, const IntArray *timestep_starts,
-                         const Stats *stats, PreconReuseState *state, int next_ls_id,
+PreconReuseAdaptiveScore(const PreconReuse_args *args, const Stats *stats,
+                         PreconReuseState *state, int next_ls_id,
                          PreconReuseDecision *decision)
 {
    int components_used  = 0;
@@ -1608,8 +1608,7 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
       return rebuild;
    }
 
-   return PreconReuseAdaptiveScore(args, timestep_starts, stats, state, next_ls_id,
-                                   decision);
+   return PreconReuseAdaptiveScore(args, stats, state, next_ls_id, decision);
 }
 
 int

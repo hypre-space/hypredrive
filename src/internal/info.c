@@ -2143,7 +2143,13 @@ DetectCpuModelsFromProcInfo(FILE *fp, char *buffer, size_t buffer_size,
    int numPhysicalCPUs = 0;
    int numCPUs         = 0;
 
-   while (fgets(buffer, buffer_size, fp))
+   if (buffer_size == 0 || buffer_size > (size_t)INT_MAX)
+   {
+      fclose(fp);
+      return;
+   }
+
+   while (fgets(buffer, (int)buffer_size, fp))
    {
       if (strncmp(buffer, "physical id", 11) == 0)
       {

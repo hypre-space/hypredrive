@@ -2522,7 +2522,7 @@ PrintSystemAppendStageIndex(const char *dump_dir, const PrintSystemContext *ctx,
  * handle means the artifact was requested but the object does not exist. */
 typedef struct
 {
-   unsigned        bit;
+   int             bit;
    const char     *filename;
    const char     *label;
    const char     *null_note;
@@ -2536,8 +2536,8 @@ typedef struct
  * built, which is a hard failure for the whole dump. */
 static int
 PrintSystemWriteArtifact(MPI_Comm comm, const PrintSystemArtifact *artifact,
-                         unsigned artifacts, const char *dump_dir,
-                         const char *object_name, int ls_id_for_log)
+                         int artifacts, const char *dump_dir, const char *object_name,
+                         int ls_id_for_log)
 {
    char path[2 * MAX_FILENAME_LENGTH];
 

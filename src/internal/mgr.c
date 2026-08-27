@@ -5560,6 +5560,10 @@ MGRValidateInterpSweeps(const MGR_args *args)
 static int
 MGRValidateInjectionUpcycle(const MGR_args *args, const MGRCreatePlan *plan)
 {
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
+   (void)plan;
+#endif
+
    if (args->injection_upcycle)
    {
 #if !HYPREDRV_HAS_MGR_DEV_FEATURES
@@ -5725,6 +5729,11 @@ static int
 MGRValidateMatchedQ(const MGR_args *args, const MGRCreatePlan *plan,
                     const MGRFeatureScan *scan)
 {
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
+   (void)args;
+   (void)plan;
+#endif
+
    if (scan->any_matched_q)
    {
 #if !HYPREDRV_HAS_MGR_DEV_FEATURES
@@ -5825,6 +5834,11 @@ static int
 MGRValidateMatchedFBacksolve(const MGR_args *args, const MGRCreatePlan *plan,
                              const MGRFeatureScan *scan)
 {
+#if !HYPREDRV_HAS_MGR_DEV_FEATURES
+   (void)args;
+   (void)plan;
+#endif
+
    /* A selected configured level that collapsed because its F labels are
     * absent is intentionally a no-op for this system. */
    if (scan->selected_count > 0)
