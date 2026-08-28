@@ -4729,6 +4729,8 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
                      HYPRE_Int any_polynomial_matched_q, const Stats *stats,
                      int next_ls_id)
 {
+   HYPRE_Int relax_type = args->relax_type;
+
    HYPRE_MGRSetCpointsByPointMarkerArray(precon, plan->num_dofs_hypre,
                                          plan->num_levels - 1, plan->num_c_dofs,
                                          plan->c_dofs, plan->dofmap_data);
@@ -4771,7 +4773,7 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
 #if HYPRE_CHECK_MIN_VERSION(22000, 0)
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
 #endif
-   HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
+   HYPRE_MGRSetRelaxType(precon, relax_type); /* TODO: we shouldn't need this */
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after base hypre setup: code=0x%x",
                       hypredrv_ErrorCodeGet());

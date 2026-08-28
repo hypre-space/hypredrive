@@ -4696,7 +4696,7 @@ test_MGRCreate_coarsest_level_fsai_destroyed(void)
    TEST_HYPRE_FINALIZE();
 }
 
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
 static void
 test_PreconDestroy_mgr_frelax_ilu_reclaims_after_hypre_destroy(void)
 {
@@ -7585,7 +7585,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_amg_log_dispatch_no_rbms);
    RUN_TEST(test_MGRCreate_coarsest_level_branches);
    RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
    RUN_TEST(test_PreconDestroy_mgr_frelax_ilu_reclaims_after_hypre_destroy);
 #endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)

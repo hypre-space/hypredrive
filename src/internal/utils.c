@@ -36,6 +36,13 @@ hypredrv_HypreConsumeErrors(void)
    HYPRE_Int hypre_error = HYPRE_GetError();
    HYPRE_Int hard_error  = hypre_error & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
 
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+   int local_hard_error  = hard_error != 0;
+   int global_hard_error = 0;
+   MPI_Allreduce(&local_hard_error, &global_hard_error, 1, MPI_INT, MPI_LOR,
+                 MPI_COMM_WORLD);
+#endif
+
    if (!hypre_error)
    {
 #if HYPRE_CHECK_MIN_VERSION(23300, 0)
@@ -43,6 +50,13 @@ hypredrv_HypreConsumeErrors(void)
        * any diagnostics retained by print mode 1 even when no sticky flag is
        * left for us to consume. */
       HYPRE_ClearErrorMessages();
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      if (global_hard_error)
+      {
+         HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+         fflush(stderr);
+      }
 #endif
       return;
    }
@@ -53,18 +67,20 @@ hypredrv_HypreConsumeErrors(void)
       fprintf(stderr, "[HYPREDRV] HYPRE hard error flags=0x%x, argument=%d\n",
               (unsigned)hypre_error, (int)HYPRE_GetErrorArg());
       fflush(stderr);
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-      /* HYPRE's detailed diagnostics include the source file, line, and the
-       * message passed by the failing routine. Emit them before clearing the
-       * sticky error state so applications do not see only "Generic error". */
-      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
-      fflush(stderr);
-#endif
       HYPRE_DescribeError(hypre_error, hypre_err_msg);
       hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
       hypredrv_ErrorMsgAddUnique("HYPRE reported error 0x%x: %s", (unsigned)hypre_error,
                                  hypre_err_msg);
    }
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+   /* HYPRE_PrintErrorMessages is collective; print local diagnostics only
+    * after all ranks have agreed that at least one hard error occurred. */
+   if (global_hard_error)
+   {
+      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+      fflush(stderr);
+   }
+#endif
 #if HYPRE_CHECK_MIN_VERSION(23300, 0)
    /* HYPRE_ClearErrorMessages was added in 2.33.0. Clear both soft-warning
     * diagnostics and the hard-error messages printed above. */
