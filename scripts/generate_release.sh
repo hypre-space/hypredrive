@@ -6,14 +6,14 @@
 #* SPDX-License-Identifier: MIT
 #******************************************************************************/
 #
-# generate_release.sh — Bump version strings and optionally tag a release.
+# generate_release.sh — Bump release versions and optionally tag a release.
 #
 # Usage:
 #   scripts/generate_release.sh <NEW_VERSION> [--tag] [--dry-run]
 #
 # Arguments:
 #   NEW_VERSION   SemVer string, e.g. 0.2.0
-#   --tag         Create and push an annotated git tag after updating files
+#   --tag         Create an annotated git tag after updating files
 #   --dry-run     Print what would change without modifying any file
 
 set -euo pipefail
@@ -63,9 +63,15 @@ fi
 CMAKE_FILE="${REPO_ROOT}/CMakeLists.txt"
 CONFIGURE_AC="${REPO_ROOT}/configure.ac"
 CONF_PY="${REPO_ROOT}/docs/usrman-src/conf.py"
+JULIA_PROJECT_FILE="${REPO_ROOT}/interfaces/julia/Project.toml"
+JULIA_BINARY_FILE="${REPO_ROOT}/interfaces/julia/binary/build_tarballs.jl"
+PYTHON_PROJECT_FILE="${REPO_ROOT}/interfaces/python/pyproject.toml"
+PYTHON_INIT_FILE="${REPO_ROOT}/interfaces/python/src/__init__.py"
 CHANGELOG="${REPO_ROOT}/CHANGELOG"
 
-for f in "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" "$CHANGELOG"; do
+for f in "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" \
+         "$JULIA_PROJECT_FILE" "$JULIA_BINARY_FILE" \
+         "$PYTHON_PROJECT_FILE" "$PYTHON_INIT_FILE" "$CHANGELOG"; do
   [[ -f "$f" ]] || die "Expected file not found: $f"
 done
 
@@ -113,6 +119,9 @@ fi
 
 apply_sed() {
   local file="$1" pattern="$2" replacement="$3"
+  if [[ -z "$(sed -n -e "\\|${pattern}|p" "$file")" ]]; then
+    die "Could not find expected version line in ${file}"
+  fi
   if [[ -n "$DRY_RUN" ]]; then
     info "$(basename "$file"): s|${pattern}|${replacement}|"
   else
@@ -139,16 +148,34 @@ apply_sed "$CONF_PY" \
   "os.environ.get('HYPREDRV_DOCS_RELEASE', '[^']*')" \
   "os.environ.get('HYPREDRV_DOCS_RELEASE', '${NEW_VERSION}')"
 
+# 4. Julia package and BinaryBuilder versions
+apply_sed "$JULIA_PROJECT_FILE" \
+  '^version = "[^"]*"$' \
+  "version = \"${NEW_VERSION}\""
+apply_sed "$JULIA_BINARY_FILE" \
+  '^version = VersionNumber(get(ENV, "HYPREDRV_BINARY_VERSION", "[^"]*"))$' \
+  "version = VersionNumber(get(ENV, \"HYPREDRV_BINARY_VERSION\", \"${NEW_VERSION}\"))"
+
+# 5. Python package and runtime versions
+apply_sed "$PYTHON_PROJECT_FILE" \
+  '^version = "[^"]*"$' \
+  "version = \"${NEW_VERSION}\""
+apply_sed "$PYTHON_INIT_FILE" \
+  '^__version__ = "[^"]*"$' \
+  "__version__ = \"${NEW_VERSION}\""
+
 echo
 
 # -- git tag -----------------------------------------------------------------
 
 if [[ -n "$DO_TAG" ]]; then
   if [[ -n "$DRY_RUN" ]]; then
-    info "git: would create annotated tag v${NEW_VERSION} and push"
+    info "git: would create annotated git tag v${NEW_VERSION}"
   else
     cd "$REPO_ROOT"
-    git add "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY"
+    git add "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" \
+           "$JULIA_PROJECT_FILE" "$JULIA_BINARY_FILE" \
+           "$PYTHON_PROJECT_FILE" "$PYTHON_INIT_FILE"
     git commit -m "Bump version to ${NEW_VERSION}"
     git tag -a "v${NEW_VERSION}" -m "hypredrive ${NEW_VERSION}"
     echo "  Tagged v${NEW_VERSION}. Push with: git push origin v${NEW_VERSION}"
@@ -157,7 +184,7 @@ else
   if [[ -z "$DRY_RUN" ]]; then
     echo "Files updated. Next steps:"
     echo "  1. Update CHANGELOG with release notes for ${NEW_VERSION}"
-    echo "  2. Commit: git add CMakeLists.txt configure.ac docs/usrman-src/conf.py CHANGELOG"
+    echo "  2. Commit the updated core and binding version files"
     echo "  3. Tag:    git tag -a v${NEW_VERSION} -m 'hypredrive ${NEW_VERSION}'"
     echo "  4. Push:   git push && git push origin v${NEW_VERSION}"
   fi

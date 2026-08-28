@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  mpi-trampoline-artifact:
+  julia-artifact:
     if: >-
       ${{
         (
@@ -52,7 +52,7 @@ jobs:
           )
         )
       }}
-    name: x86_64-linux-gnu | MPItrampoline
+    name: x86_64/aarch64 Linux/macOS, x86_64 Windows | platform MPI runtime
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -73,7 +73,7 @@ jobs:
       - name: Install BinaryBuilder
         run: julia -e 'using Pkg; Pkg.add("BinaryBuilder")'
 
-      - name: Build MPItrampoline artifact tarball
+      - name: Build Julia artifact tarballs
         run: >-
           julia interfaces/julia/binary/build_tarballs.jl
           --verbose
@@ -84,22 +84,28 @@ jobs:
           set -euxo pipefail
           mkdir -p julia-artifacts
           find products -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -print -exec cp {} julia-artifacts/ \;
-          test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -print -quit)"
+          tarball_count=$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | wc -l)
+          test "$tarball_count" -eq 5
+          for target in x86_64-linux-gnu x86_64-apple-darwin x86_64-w64-mingw32 aarch64-linux-gnu aarch64-apple-darwin; do
+            test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -name "*${target}*" -print -quit)"
+          done
 
       - name: Validate artifact lookup and dlopen
         run: |
           set -euxo pipefail
           cp -a interfaces/julia julia-artifact-test
-          tarball="$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | head -n 1)"
-          url="file://$(realpath "$tarball")"
-          julia julia-artifact-test/binary/bind_artifact.jl "$tarball" "$url" julia-artifact-test/Artifacts.toml
+          while IFS= read -r tarball; do
+            url="file://$(realpath "$tarball")"
+            HYPREDRV_ARTIFACT_REPLACE=1 julia julia-artifact-test/binary/bind_artifact.jl \
+              "$tarball" "$url" julia-artifact-test/Artifacts.toml
+          done < <(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | sort)
           tmpenv="$(mktemp -d)"
           julia --project="$tmpenv" -e 'using Pkg; Pkg.develop(path="julia-artifact-test"); Pkg.instantiate(); using HypreDrive, SparseArrays, LinearAlgebra; A = spdiagm(0 => [2.0, 3.0]); b = [4.0, 9.0]; x, info = hypredrive_solve(A, b); @assert norm(x - [2.0, 3.0]) < 1e-10; println(hypredrive_library_path())'
 
       - name: Upload CI artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: hypredrive-julia-mpi-trampoline-x86_64-linux-gnu
+          name: hypredrive-julia-artifacts
           path: |
             julia-artifacts/*.tar.gz
             julia-artifacts/*.tgz
@@ -107,10 +113,11 @@ jobs:
 
   release-assets:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: mpi-trampoline-artifact
+    needs: julia-artifact
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     env:
       RELEASE_TAG: ${{ github.ref_name }}
       RELEASE_REPOSITORY: ${{ github.repository }}
@@ -126,8 +133,17 @@ jobs:
       - name: Download artifact tarballs
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: hypredrive-julia-mpi-trampoline-x86_64-linux-gnu
+          name: hypredrive-julia-artifacts
           path: julia-artifacts
+
+      - name: Verify complete artifact set
+        run: |
+          set -euxo pipefail
+          tarball_count=$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | wc -l)
+          test "$tarball_count" -eq 5
+          for target in x86_64-linux-gnu x86_64-apple-darwin x86_64-w64-mingw32 aarch64-linux-gnu aarch64-apple-darwin; do
+            test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -name "*${target}*" -print -quit)"
+          done
 
       - name: Verify tag already carries artifact bindings
         run: |
@@ -147,8 +163,10 @@ jobs:
               end
           end
           needle = "/releases/download/$tag/"
-          any(url -> occursin(needle, url), urls) ||
-              error("Artifacts.toml does not contain a release URL for exact tag $tag")
+          for target in ("x86_64-linux-gnu", "x86_64-apple-darwin", "x86_64-w64-mingw32", "aarch64-linux-gnu", "aarch64-apple-darwin")
+              any(url -> occursin(needle, url) && occursin(target, url), urls) ||
+                  error("Artifacts.toml does not contain a release URL for exact tag $tag and target $target")
+          end
           '
 
       - name: Upload release assets
@@ -161,6 +179,7 @@ jobs:
       - name: Print Artifacts.toml binding commands
         run: |
           set -euxo pipefail
+          rm -f /tmp/Artifacts.toml
           for tarball in julia-artifacts/*.tar.gz julia-artifacts/*.tgz; do
             test -e "$tarball" || continue
             name=$(basename "$tarball")
@@ -176,10 +195,11 @@ jobs:
         inputs.update_artifacts_toml &&
         inputs.release_tag != ''
       }}
-    needs: mpi-trampoline-artifact
+    needs: julia-artifact
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     env:
       RELEASE_TAG: ${{ inputs.release_tag }}
       RELEASE_REPOSITORY: ${{ github.repository }}
@@ -195,7 +215,7 @@ jobs:
       - name: Download artifact tarballs
         uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
-          name: hypredrive-julia-mpi-trampoline-x86_64-linux-gnu
+          name: hypredrive-julia-artifacts
           path: julia-artifacts
 
       - name: Update Artifacts.toml

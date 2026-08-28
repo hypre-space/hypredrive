@@ -70,10 +70,11 @@ directory containing `HYPREDRVConfig.cmake`. The package searches `lib/julia`,
 
 If neither environment variable is set, the package next checks the Julia
 artifact named `hypredrive_mpi_trampoline` in `Artifacts.toml`. The artifact
-contains the HYPREDRV Julia bridge built against MPItrampoline; MPItrampoline
-itself comes from `MPItrampoline_jll`. The committed `Artifacts.toml` is empty
-until release tarballs are bound, so source checkouts fall through to the
-build-tree and `Libdl.find_library` fallbacks.
+contains the HYPREDRV Julia bridge and its platform MPI linkage. Linux and
+macOS builds use `MPItrampoline_jll`; Windows builds use `MicrosoftMPI_jll`.
+The committed `Artifacts.toml` is empty until release tarballs are bound, so
+source checkouts fall through to the build-tree and `Libdl.find_library`
+fallbacks.
 
 ## Example
 
@@ -180,19 +181,19 @@ such as `0.2.0`, not development-version strings.
 The current fallback distribution model is source/install-prefix based: users
 either build HYPREDRV from this checkout or install HYPREDRV separately and set
 `HYPREDRV_PREFIX` or `HYPREDRV_LIBRARY`. `HYPREDRV_DIR` is accepted only as a
-compatibility alias. Binary releases can be distributed from this
-monorepo through Julia artifacts without moving the package out of this repository.
-The first artifact policy is MPItrampoline, with Linux x86_64 glibc tarballs
-hosted on GitHub Releases and bound into `Artifacts.toml`. macOS, Linux aarch64,
-musl, Windows, OpenMPI, and custom-MPI artifacts are not shipped until explicit
-additional artifact flavors are added.
-`MPItrampoline_jll` is a normal package dependency. The module loads it lazily:
-source-tree and install-prefix workflows do not need to instantiate the artifact
-dependency, while artifact-backed installs preload MPItrampoline before opening
-`libHYPREDRV_Julia`.
+compatibility alias. Binary releases can be distributed from this monorepo
+through Julia artifacts without moving the package out of this repository.
+Release artifacts cover x86_64 and aarch64 Linux with glibc, x86_64 and aarch64
+macOS, and x86_64 Windows. Linux and macOS artifacts link to MPItrampoline;
+the Windows artifact links to Microsoft MPI. Windows ARM64, Linux musl,
+OpenMPI, and custom MPI artifacts are not shipped.
+`MPItrampoline_jll` and `MicrosoftMPI_jll` are normal package dependencies.
+The module selects and loads the applicable runtime lazily: source-tree and
+install-prefix workflows do not need to instantiate the artifact runtime,
+while artifact-backed installs preload it before opening `libHYPREDRV_Julia`.
 
-Release maintainers must build and bind the Linux x86_64 artifact through the
-`Julia Artifacts` workflow before creating the release tag:
+Release maintainers must build and bind all five platform artifacts through
+the `Julia Artifacts` workflow before creating the release tag:
 
 1. Run the workflow manually on the release branch with the workflow input
    `update_artifacts_toml=true` and `release_tag` set to the future tag name.

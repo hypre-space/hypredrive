@@ -9,6 +9,9 @@ on:
       - 'cmake/**'
       - 'interfaces/python/**'
       - '.github/workflows/python-wheels.yml'
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -20,6 +23,7 @@ jobs:
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'push' ||
         (
           github.event.action == 'labeled' &&
           github.event.label.name == 'Run Python Wheels'
@@ -29,22 +33,49 @@ jobs:
           contains(github.event.pull_request.labels.*.name, 'Run Python Wheels')
         )
       }}
-    name: ${{ matrix.os }} | ${{ matrix.mpi_flavor }}
+    name: ${{ matrix.os }} | ${{ matrix.arch }} | ${{ matrix.mpi_flavor }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        mpi_flavor: [mpich, openmpi]
+        include:
+          - os: ubuntu-latest
+            arch: x86_64
+            mpi_flavor: mpich
+          - os: ubuntu-latest
+            arch: x86_64
+            mpi_flavor: openmpi
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            mpi_flavor: mpich
+          - os: ubuntu-24.04-arm
+            arch: aarch64
+            mpi_flavor: openmpi
+          - os: macos-15-intel
+            arch: x86_64
+            mpi_flavor: mpich
+          - os: macos-15-intel
+            arch: x86_64
+            mpi_flavor: openmpi
+          - os: macos-14
+            arch: arm64
+            mpi_flavor: mpich
+          - os: macos-14
+            arch: arm64
+            mpi_flavor: openmpi
+          - os: windows-latest
+            arch: AMD64
+            mpi_flavor: msmpi
 
     env:
       CIBW_BUILD: cp310-* cp311-* cp312-* cp313-* cp314-*
+      CIBW_ARCHS: ${{ matrix.arch }}
       CIBW_SKIP: "*-musllinux_*"
       CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+      CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
       CIBW_BUILD_VERBOSITY: "2"
       CIBW_TEST_REQUIRES: pytest scipy
-      CIBW_BEFORE_TEST: MPICC=mpicc python -m pip install --no-binary=mpi4py mpi4py
       CIBW_TEST_COMMAND: >-
         python -c "import hypredrive as hd; print(hd.configure(solver='pcg'))" &&
         python -m pytest -q --tb=short
@@ -86,10 +117,12 @@ jobs:
           set -euxo pipefail
           if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
             echo "CIBW_BEFORE_ALL_LINUX=dnf install -y git gcc-c++ mpich-devel" >> "$GITHUB_ENV"
+            echo "CIBW_BEFORE_TEST_LINUX=MPICC=mpicc python -m pip install --no-binary=mpi4py mpi4py" >> "$GITHUB_ENV"
             echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/mpich/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/mpich/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx MPICH_CC=/usr/bin/gcc MPICH_CXX=/usr/bin/g++ ANNOBIN_DISABLE=1 CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=mpich OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
             echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.12 --exclude libmpich.so.12 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
           else
             echo "CIBW_BEFORE_ALL_LINUX=dnf install -y git gcc-c++ openmpi-devel" >> "$GITHUB_ENV"
+            echo "CIBW_BEFORE_TEST_LINUX=MPICC=mpicc python -m pip install --no-binary=mpi4py mpi4py" >> "$GITHUB_ENV"
             echo "CIBW_ENVIRONMENT_LINUX=PATH=/usr/lib64/openmpi/bin:\$PATH LD_LIBRARY_PATH=/usr/lib64/openmpi/lib:\${LD_LIBRARY_PATH:-} CC=mpicc CXX=mpicxx OMPI_CC=/usr/bin/gcc OMPI_CXX=/usr/bin/g++ ANNOBIN_DISABLE=1 CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
             echo "CIBW_REPAIR_WHEEL_COMMAND_LINUX=auditwheel repair --exclude libmpi.so.40 --exclude libopen-rte.so.40 --exclude libopen-pal.so.40 -w {dest_dir} {wheel}" >> "$GITHUB_ENV"
           fi
@@ -106,6 +139,54 @@ jobs:
             echo "CIBW_BEFORE_ALL_MACOS=brew install open-mpi" >> "$GITHUB_ENV"
             echo "CIBW_ENVIRONMENT_MACOS=CC=mpicc CXX=mpicxx CMAKE_BUILD_PARALLEL_LEVEL=2 HYPREDRV_WHEEL_MPI_FLAVOR=openmpi OMPI_ALLOW_RUN_AS_ROOT=1 OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 OMPI_MCA_rmaps_base_oversubscribe=1" >> "$GITHUB_ENV"
           fi
+          echo "CIBW_BEFORE_TEST_MACOS=MPICC=mpicc python -m pip install --no-binary=mpi4py mpi4py" >> "$GITHUB_ENV"
+
+      - name: Configure Windows MPI environment
+        if: startsWith(runner.os, 'Windows')
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msmpiRoot = Join-Path $env:RUNNER_TEMP 'msmpi'
+          New-Item -ItemType Directory -Force -Path $msmpiRoot | Out-Null
+
+          $sdkPath = Join-Path $msmpiRoot 'msmpisdk.msi'
+          $runtimePath = Join-Path $msmpiRoot 'msmpisetup.exe'
+          $baseUrl = 'https://download.microsoft.com/download/7/2/7/72731ebb-b63c-4170-ade7-836966263a8f'
+          Invoke-WebRequest -Uri "$baseUrl/msmpisdk.msi" -OutFile $sdkPath
+          Invoke-WebRequest -Uri "$baseUrl/msmpisetup.exe" -OutFile $runtimePath
+
+          $expectedSdkSha256 = '8ccbc77a0cfe1e30f7495a759886b4d99b2c494b9b9ad414dcda1da84c00d3fa'
+          $expectedRuntimeSha256 = '47443829114d8d8670f77af98939fe876d33eceb35d0ce4e0e85efeec4d87213'
+          if ((Get-FileHash -Algorithm SHA256 $sdkPath).Hash.ToLowerInvariant() -ne $expectedSdkSha256) {
+            throw 'MS-MPI SDK checksum mismatch'
+          }
+          if ((Get-FileHash -Algorithm SHA256 $runtimePath).Hash.ToLowerInvariant() -ne $expectedRuntimeSha256) {
+            throw 'MS-MPI runtime checksum mismatch'
+          }
+
+          $sdkInstall = Start-Process msiexec.exe -ArgumentList @('/quiet', '/passive', '/qn', '/i', $sdkPath) -Wait -PassThru
+          if ($sdkInstall.ExitCode -ne 0) {
+            throw "MS-MPI SDK installation failed with exit code $($sdkInstall.ExitCode)"
+          }
+          $runtimeInstall = Start-Process $runtimePath -ArgumentList @('-unattend') -Wait -PassThru
+          if ($runtimeInstall.ExitCode -ne 0) {
+            throw "MS-MPI runtime installation failed with exit code $($runtimeInstall.ExitCode)"
+          }
+
+          foreach ($name in @('MSMPI_BIN', 'MSMPI_INC', 'MSMPI_LIB64')) {
+            $value = [Environment]::GetEnvironmentVariable($name, 'Machine')
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "MS-MPI did not define $name"
+            }
+            Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
+          }
+          $msmpiBin = [Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine')
+          Add-Content -Path $env:GITHUB_PATH -Value $msmpiBin
+          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_ENVIRONMENT_WINDOWS=HYPREDRV_WHEEL_MPI_FLAVOR=msmpi'
+          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_TEST_REQUIRES_WINDOWS=pytest scipy mpi4py'
+          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_BEFORE_TEST_WINDOWS=python -m pip install --only-binary=mpi4py mpi4py'
+          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_BEFORE_BUILD_WINDOWS=python -m pip install delvewheel'
+          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=delvewheel repair --exclude msmpi.dll -w {dest_dir} {wheel}'
 
       - name: Build wheels
         run: >-
@@ -122,3 +203,59 @@ jobs:
           name: hypredrive-wheels-${{ matrix.os }}-${{ matrix.mpi_flavor }}
           path: wheelhouse/*.whl
           if-no-files-found: error
+
+  release-assets:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: wheels
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: hypredrive-wheels-*
+          path: python-wheels
+          merge-multiple: true
+
+      - name: Verify complete wheel set
+        shell: bash
+        run: |
+          set -euxo pipefail
+          wheel_count=$(find python-wheels -type f -name '*.whl' | wc -l)
+          test "$wheel_count" -eq 45
+          for python_tag in cp310 cp311 cp312 cp313 cp314; do
+            test "$(find python-wheels -type f -name "*-${python_tag}-*.whl" | wc -l)" -eq 9
+          done
+          test "$(find python-wheels -type f -name '*hypredrive_mpich*.whl' | wc -l)" -eq 20
+          test "$(find python-wheels -type f -name '*hypredrive_openmpi*.whl' | wc -l)" -eq 20
+          test "$(find python-wheels -type f -name '*hypredrive_msmpi*.whl' | wc -l)" -eq 5
+          test -n "$(find python-wheels -type f -name '*manylinux*x86_64.whl' -print -quit)"
+          test -n "$(find python-wheels -type f -name '*manylinux*aarch64.whl' -print -quit)"
+          test -n "$(find python-wheels -type f -name '*macosx*x86_64.whl' -print -quit)"
+          test -n "$(find python-wheels -type f -name '*macosx*arm64.whl' -print -quit)"
+          test -n "$(find python-wheels -type f -name '*win_amd64.whl' -print -quit)"
+
+      - name: Upload wheels to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euxo pipefail
+          release_found=false
+          for attempt in $(seq 1 360); do
+            if gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
+              release_found=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "$release_found" != true ]]; then
+            echo "GitHub Release $GITHUB_REF_NAME was not created by the release workflow" >&2
+            exit 1
+          fi
+          mapfile -t wheels < <(find python-wheels -type f -name '*.whl' -print | sort)
+          gh release upload "$GITHUB_REF_NAME" "${wheels[@]}" --repo "$GH_REPO" --clobber

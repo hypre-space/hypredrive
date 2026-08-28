@@ -7,10 +7,12 @@ LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"
 Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 MPItrampoline_jll = "f1f71cc9-e9ae-5b93-9b94-4fe0e1ad3748"
+MicrosoftMPI_jll = "9237b28f-5490-5468-be7b-bb81f5f5e6cf"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
 MPItrampoline_jll = "5.5"
+MicrosoftMPI_jll = "10.1"
 julia = "1.9"
 
 [extras]

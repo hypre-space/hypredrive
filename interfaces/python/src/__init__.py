@@ -16,6 +16,21 @@ before being passed to the native layer.
 from __future__ import annotations
 
 import importlib
+import sys
+
+if sys.platform == "win32":
+    # Bundled HYPREDRV/HYPRE DLLs are installed below ``.libs``. Keep the
+    # directory handle alive so Windows continues searching it while the
+    # extension and its dependent DLLs are loaded.
+    import os
+    from pathlib import Path
+
+    _bundled_dll_directory = Path(__file__).with_name(".libs")
+    _bundled_dll_directory_handle = None
+    if _bundled_dll_directory.is_dir():
+        _bundled_dll_directory_handle = os.add_dll_directory(
+            str(_bundled_dll_directory)
+        )
 
 try:
     from ._build_info import BUILD_INFO, BUNDLED_CORE, DISTRIBUTION_NAME, MPI_FLAVOR

@@ -123,10 +123,10 @@ function _discover_library()
 
     for path in _candidate_paths_from_artifact()
         if isfile(path)
-            # MPItrampoline preload is artifact-only by design. Source-tree and
+            # Runtime preload is artifact-only by design. Source-tree and
             # install-prefix builds should use their platform MPI runtime
-            # directly instead of forcing MPItrampoline into the process.
-            _preload_mpi_trampoline_before_dlopen()
+            # directly instead of forcing a JLL runtime into the process.
+            _preload_mpi_runtime_before_dlopen()
             return path
         end
     end

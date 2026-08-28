@@ -13,7 +13,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [fetch_suitesparse_matrix.sh](./fetch_suitesparse_matrix.sh): Downloads and unpacks SuiteSparse Collection matrices by `ID`, `Group/Name`, or `URL`.
 - [fetch_build_test.sh](./fetch_build_test.sh): Fetch, build, and test hypredrive on different machines.
 - [generate_example_output.sh](./generate_example_output.sh): Runs the example YAML inputs and regenerates normalized reference outputs for the examples.
-- [generate_release.sh](./generate_release.sh): Bumps version strings in `CMakeLists.txt` and `conf.py` for a new release.
+- [generate_release.sh](./generate_release.sh): Bumps CMake, Autotools, documentation, Julia, Julia artifact, and Python version strings for a new release, and can optionally create an annotated tag.
 - [list_public_apis.sh](./list_public_apis.sh): Generates a sorted list of all public `HYPREDRV_` API function names by parsing `include/HYPREDRV.h`.
 - [node_scaling.sh](./node_scaling.sh): Runs single-node problem-size scaling studies on supported LLNL, ALCF, and OLCF machines.
 - [perf_laplacian.sh](./perf_laplacian.sh): Builds and runs a Laplacian driver across hypre versions with optional profiling and scaling summaries.

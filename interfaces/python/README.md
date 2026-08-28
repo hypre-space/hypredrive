@@ -43,9 +43,9 @@ python -m pip install . \
 
 ## Wheel artifacts
 
-GitHub Actions can build experimental MPI wheel artifacts for Linux and macOS.
-These wheels bundle host-only `libHYPREDRV` and `libHYPRE`, but they do not
-bundle an MPI runtime.
+GitHub Actions builds MPI wheel artifacts for Linux, macOS, and Windows. Each
+wheel bundles host-only `libHYPREDRV` and `libHYPRE`, but it does not bundle an
+MPI runtime.
 
 On pull requests, the wheel workflow runs only when the PR has the
 `Run Python Wheels` label. It can also be started manually with
@@ -56,6 +56,21 @@ Each artifact is tied to an MPI flavor:
 
 * `mpich` wheels require an MPICH-compatible runtime.
 * `openmpi` wheels require an OpenMPI-compatible runtime.
+* `msmpi` wheels are for Windows and require the Microsoft MPI runtime.
+
+The release workflow builds CPython 3.10 through 3.14 wheels for MPICH and
+OpenMPI on Linux x86_64/aarch64, MPICH and OpenMPI on macOS x86_64/arm64, and
+the Windows x86_64 `msmpi` flavor. The
+Windows distribution is named `hypredrive-msmpi`, while its import name is
+still `hypredrive`. The Microsoft MPI runtime is intentionally external to the
+wheel; install it before using distributed solves. The Windows CI uses the
+binary `mpi4py` distribution rather than compiling `mpi4py` against a
+different MPI implementation. Windows ARM64 is not included because the
+Microsoft MPI build used by this wheel has no ARM64 runtime.
+
+On a version tag, the workflow uploads all wheels directly to that tag's
+GitHub Release. Pull-request and manually dispatched runs expose the wheels as
+GitHub Actions artifacts instead.
 
 Download the wheel artifact from the GitHub Actions `Python Wheels` workflow
 run first. GitHub stores artifacts as zip files, so unzip the artifact before

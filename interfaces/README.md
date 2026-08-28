@@ -39,7 +39,7 @@ details.
 
 The Python interface is in [`python/`](python/). It provides NumPy/SciPy input
 support, optional MPI usage through `mpi4py`, developer benchmarks, and
-experimental Linux/macOS MPI wheel artifacts.
+MPI wheel artifacts for Linux, macOS, and Windows.
 
 For source builds against an installed hypredrive:
 

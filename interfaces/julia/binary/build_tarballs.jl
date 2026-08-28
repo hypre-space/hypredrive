@@ -32,6 +32,22 @@ sources = [
 
 script = replace(raw"""
 cd ${WORKSPACE}/srcdir/hypredrive
+
+if [[ ${target} == *-w64-mingw32* ]]; then
+    mpi_library_name=msmpi
+    mpi_library=${prefix}/lib/msmpi.lib
+else
+    # MPItrampoline_jll exposes libmpi, but the installed filename is
+    # platform-specific (libmpitrampoline.so on Linux and a versioned
+    # libmpitrampoline.*.dylib on macOS). Discover the packaged file rather
+    # than assuming the JLL product's logical name is its filename.
+    mpi_library_name=mpitrampoline
+    mpi_library="$(find ${prefix}/lib -maxdepth 1 \
+        \( -name 'libmpitrampoline.so*' -o -name 'libmpitrampoline.*.dylib' \) \
+        -print -quit)"
+    test -n "${mpi_library}"
+fi
+
 cmake -S . -B build -G Ninja \
     -DCMAKE_INSTALL_PREFIX=${prefix} \
     -DCMAKE_PREFIX_PATH=${prefix} \
@@ -51,14 +67,20 @@ cmake -S . -B build -G Ninja \
     -DMPI_C_COMPILER=${CC} \
     -DMPI_C_HEADER_DIR=${prefix}/include \
     -DMPI_C_INCLUDE_DIRS=${prefix}/include \
-    -DMPI_C_LIB_NAMES=mpi \
-    -DMPI_mpi_LIBRARY=${prefix}/lib/libmpi.${dlext} \
-    -DMPI_C_LIBRARIES=${prefix}/lib/libmpi.${dlext} \
+    -DMPI_C_LIB_NAMES=${mpi_library_name} \
+    -DMPI_${mpi_library_name}_LIBRARY=${mpi_library} \
+    -DMPI_C_LIBRARIES=${mpi_library} \
     -DMPI_C_WORKS=TRUE
 cmake --build build --target install --parallel ${nproc}
 """, "@HYPRE_REF@" => hypre_ref)
 
-platforms = [Platform("x86_64", "linux"; libc="glibc")]
+platforms = [
+    Platform("x86_64", "linux"; libc="glibc"),
+    Platform("x86_64", "macos"),
+    Platform("x86_64", "windows"),
+    Platform("aarch64", "linux"; libc="glibc"),
+    Platform("aarch64", "macos"),
+]
 
 products = [
     LibraryProduct("libHYPREDRV", :libHYPREDRV; dont_dlopen=true),
@@ -68,7 +90,10 @@ products = [
 dependencies = [
     BuildDependency("CMake_jll"),
     BuildDependency("Ninja_jll"),
-    Dependency("MPItrampoline_jll"; compat="5.5"),
+    Dependency("MPItrampoline_jll"; compat="5.5",
+               platforms=filter(!Sys.iswindows, platforms)),
+    Dependency("MicrosoftMPI_jll"; compat="10.1",
+               platforms=filter(Sys.iswindows, platforms)),
 ]
 
 build_tarballs(ARGS, name, version, sources, script, platforms, products, dependencies;
