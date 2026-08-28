@@ -62,7 +62,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      HYPREDRV_BINARY_GIT_SHA: ${{ github.sha }}
+      # Pull-request merge commits live only under refs/pull/*/merge, which
+      # BinaryBuilder's source clone does not fetch. Use the branch commit for
+      # PRs so the requested SHA is available in the clone.
+      HYPREDRV_BINARY_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       # Pin HYPRE for reproducible BinaryBuilder artifacts; bump this only when
       # intentionally changing the bundled HYPRE ABI used by Julia artifacts.
       HYPREDRV_BINARY_HYPRE_GIT_SHA: 341f9089807934407a52ea8324759f3af1e49a57
