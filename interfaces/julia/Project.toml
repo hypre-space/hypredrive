@@ -1,6 +1,6 @@
 name = "HypreDrive"
 uuid = "d275b7f7-7e7b-4b69-9e7f-7c4f4f9fdcc4"
-version = "0.2.0"
+version = "0.3.0"
 
 [deps]
 LazyArtifacts = "4af54fe1-eca0-43a8-85a7-787d91b784e3"

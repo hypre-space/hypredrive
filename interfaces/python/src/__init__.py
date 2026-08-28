@@ -70,7 +70,7 @@ __all__ = [
     "solve",
 ]
 
-__version__ = "0.3.0.dev0"
+__version__ = "0.3.0"
 
 
 def initialize(*args, **kwargs):

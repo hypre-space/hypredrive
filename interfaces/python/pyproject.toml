@@ -8,7 +8,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "hypredrive"
-version = "0.3.0.dev0"
+version = "0.3.0"
 description = "Python interface to the hypredrive sparse-linear-system driver"
 readme = "README.md"
 requires-python = ">=3.9"
