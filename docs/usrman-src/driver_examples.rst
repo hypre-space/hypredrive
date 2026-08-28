@@ -16,7 +16,7 @@ output is in ``examples/refOutput``.
    These examples use `hypredrive` as a standalone driver with YAML input files.
    :ref:`LibraryExamples` shows how an application uses the ``libHYPREDRV`` API.
 
-Some examples require data from https://zenodo.org/records/17471036. The repository
+Some examples require data from https://zenodo.org/records/22116856. The repository
 does not contain these data files. Download and extract the data with the CMake
 ``data`` target:
 
@@ -402,7 +402,7 @@ of this page explain how to retrieve it.
 
 .. code-block:: bash
 
-   $ scripts/spyplot.py -d data/poromech2k/np1 -r 0:24 -l -t 1e-20
+   $ scripts/spyplot.py -d data/poromech2k/np1 -r 0:4 -l -t 1e-20
 
 .. _Example8:
 

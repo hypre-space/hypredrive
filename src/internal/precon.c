@@ -12,6 +12,7 @@
 #include "internal/krylov.h"
 #include "logging.h"
 
+#include <stdarg.h>
 #include <stdio.h>
 
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
@@ -594,6 +595,23 @@ PreconNestedKrylovMGRSupportsDevice(const NestedKrylov_args *args, char *reason,
                                          depth + 1);
 }
 
+/* Records why a configuration cannot run on the device. Safe to call with no
+ * sink, so callers do not have to guard every diagnostic. */
+static void
+PreconSetDeviceReason(char *reason, size_t reason_size, const char *fmt, ...)
+{
+   va_list ap;
+
+   if (!reason || reason_size == 0)
+   {
+      return;
+   }
+
+   va_start(ap, fmt);
+   vsnprintf(reason, reason_size, fmt, ap);
+   va_end(ap);
+}
+
 static int
 PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason_size,
                                int depth)
@@ -605,11 +623,8 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
 
    if (args->interp_sweeps > 0)
    {
-      if (reason && reason_size)
-      {
-         snprintf(reason, reason_size,
-                  "MGR P2 interpolation refinement is currently CPU-only");
-      }
+      PreconSetDeviceReason(reason, reason_size,
+                            "MGR P2 interpolation refinement is currently CPU-only");
       return 0;
    }
 
@@ -621,53 +636,39 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
 
       if (args->level[level].matched_f_backsolve)
       {
-         if (reason && reason_size)
-         {
-            snprintf(reason, reason_size, "MGR level %d matched %s is currently CPU-only",
-                     level,
-                     args->level[level].matched_f_backsolve == 2 ? "Schur GMRES(1)"
-                                                                 : "F backsolve");
-         }
+         PreconSetDeviceReason(
+            reason, reason_size, "MGR level %d matched %s is currently CPU-only", level,
+            args->level[level].matched_f_backsolve == 2 ? "Schur GMRES(1)"
+                                                        : "F backsolve");
          return 0;
       }
       if (args->level[level].matched_q)
       {
-         if (reason && reason_size)
-         {
-            snprintf(reason, reason_size,
-                     "MGR level %d matched %s Q is currently CPU-only", level,
-                     args->level[level].matched_q == 2 ? "adaptive FSAI" : "sparse");
-         }
+         PreconSetDeviceReason(
+            reason, reason_size, "MGR level %d matched %s Q is currently CPU-only", level,
+            args->level[level].matched_q == 2 ? "adaptive FSAI" : "sparse");
          return 0;
       }
       if (frelax->symmetric_diagonal_scaling)
       {
-         if (reason && reason_size)
-         {
-            snprintf(reason, reason_size,
-                     "MGR level %d symmetric diagonal F-solver scaling is CPU-only",
-                     level);
-         }
+         PreconSetDeviceReason(
+            reason, reason_size,
+            "MGR level %d symmetric diagonal F-solver scaling is CPU-only", level);
          return 0;
       }
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       if (frelax->type == MGR_SOLVER_TYPE_SCHWARZ)
       {
-         if (reason && reason_size)
-         {
-            snprintf(reason, reason_size,
-                     "MGR level %d Schwarz F-relaxation is not ported to GPUs", level);
-         }
+         PreconSetDeviceReason(reason, reason_size,
+                               "MGR level %d Schwarz F-relaxation is not ported to GPUs",
+                               level);
          return 0;
       }
       if (grelax->type == MGR_SOLVER_TYPE_SCHWARZ)
       {
-         if (reason && reason_size)
-         {
-            snprintf(reason, reason_size,
-                     "MGR level %d Schwarz global relaxation is not ported to GPUs",
-                     level);
-         }
+         PreconSetDeviceReason(
+            reason, reason_size,
+            "MGR level %d Schwarz global relaxation is not ported to GPUs", level);
          return 0;
       }
 #endif
@@ -700,12 +701,9 @@ hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
       int interp_type = args->amg.interpolation.prolongation_type;
       if (interp_type == 8 || interp_type == 9)
       {
-         if (reason && reason_size)
-         {
-            snprintf(reason, reason_size,
-                     "BoomerAMG interpolation type %d is not ported to GPUs",
-                     interp_type);
-         }
+         PreconSetDeviceReason(reason, reason_size,
+                               "BoomerAMG interpolation type %d is not ported to GPUs",
+                               interp_type);
          return 0;
       }
    }

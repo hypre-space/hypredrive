@@ -311,6 +311,111 @@ AssignCurrentSolveEntryPath(Stats *stats)
  * Helper: Handle annotation begin
  *--------------------------------------------------------------------------*/
 
+/* Vector-timer annotations (rhs, dofmap, prec) all attach to the current entry.
+ * The array is taken by address because EnsureCapacity() reallocates it: reading
+ * the member before that call would leave a dangling pointer. */
+static void
+AnnotationStartVectorPhase(Stats *stats, double **timer_array)
+{
+   if (stats->counter < 0)
+   {
+      stats->counter = 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   StartVectorTimer(stats, *timer_array, stats->counter);
+}
+
+/* Start of a new linear system build:
+ * - reset repetition counter
+ * - reserve the next stats entry so build timers attach to the upcoming solve entry */
+static void
+AnnotationBeginSystemBuild(Stats *stats)
+{
+   stats->reps = 0;
+   stats->counter++;
+   stats->matrix_counter = stats->counter;
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   SetCurrentEntryPath(stats, NULL);
+   ResetPendingTimestepContext(stats);
+   StartVectorTimer(stats, stats->matrix, stats->counter);
+}
+
+/* Beginning of a solve entry (one repetition / one variant):
+ * - advance entry index for all but the first repetition after a build
+ * - keep indices contiguous: 0,1,2,... across repetitions and variants */
+static void
+AnnotationBeginSolveEntry(Stats *stats)
+{
+   if (stats->counter < 0)
+   {
+      stats->counter = 0;
+   }
+   else if (stats->reps > 0)
+   {
+      stats->counter++;
+   }
+   stats->reps++;
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   SetCurrentEntryPath(stats, NULL);
+   ResetPendingTimestepContext(stats);
+   StartScalarTimer(&stats->reset_x0);
+}
+
+/* Increment the linear system counter only on the first solve for a new system
+ * (reset_x0 has already set reps=1 for the first repetition), which is detected
+ * by the entry index still matching the last "matrix" annotation. */
+static void
+AnnotationBeginSolve(Stats *stats)
+{
+   if (stats->reps == 1 && stats->counter == stats->matrix_counter)
+   {
+      stats->ls_counter++;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      stats->counter = 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   StartVectorTimer(stats, stats->solve, stats->counter);
+
+   /* Tag this entry with its linear system id */
+   /* GCOVR_EXCL_BR_START */
+   if (stats->entry_ls_id && stats->counter < stats->capacity) /* GCOVR_EXCL_BR_STOP */
+   {
+      stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
+   }
+   AssignCurrentSolveEntryPath(stats);
+}
+
+/* Scalar-timer annotations (initialize, finalize) are entry-independent. */
+static void
+AnnotationStartScalarPhase(Stats *stats, double *timer)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+   StartScalarTimer(timer);
+}
+
 static void
 HandleAnnotationBegin(Stats *stats, const char *name)
 {
@@ -326,135 +431,37 @@ HandleAnnotationBegin(Stats *stats, const char *name)
       return;
    }
 
-   /* Update counters for special annotations */
    if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
-      /* Start of a new linear system build:
-       * - reset repetition counter
-       * - reserve the next stats entry so build timers attach to the upcoming solve entry
-       */
-      stats->reps = 0;
-      stats->counter++;
-      stats->matrix_counter = stats->counter;
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      SetCurrentEntryPath(stats, NULL);
-      ResetPendingTimestepContext(stats);
-      StartVectorTimer(stats, stats->matrix, stats->counter);
+      AnnotationBeginSystemBuild(stats);
    }
    else if (!strcmp(name, "reset_x0"))
    {
-      /* Beginning of a solve entry (one repetition / one variant):
-       * - advance entry index for all but the first repetition after a build
-       * - keep indices contiguous: 0,1,2,... across repetitions and variants
-       */
-      if (stats->counter < 0)
-      {
-         stats->counter = 0;
-      }
-      else if (stats->reps > 0)
-      {
-         stats->counter++;
-      }
-      stats->reps++;
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      SetCurrentEntryPath(stats, NULL);
-      ResetPendingTimestepContext(stats);
-      StartScalarTimer(&stats->reset_x0);
+      AnnotationBeginSolveEntry(stats);
    }
    else if (!strcmp(name, "rhs"))
    {
-      if (stats->counter < 0)
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->rhs, stats->counter);
+      AnnotationStartVectorPhase(stats, &stats->rhs);
    }
    else if (!strcmp(name, "dofmap"))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->dofmap, stats->counter);
+      AnnotationStartVectorPhase(stats, &stats->dofmap);
    }
    else if (!strcmp(name, "prec"))
    {
-      if (stats->counter < 0)
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->prec, stats->counter);
+      AnnotationStartVectorPhase(stats, &stats->prec);
    }
    else if (!strcmp(name, "solve"))
    {
-      /* Increment linear system counter only on the first solve for a new system.
-       * (reset_x0 has already set reps=1 for the first repetition)
-       * Only increment if this is the first solve after the last "matrix" annotation.
-       * We track this by comparing counter to matrix_counter. */
-      if (stats->reps == 1 && stats->counter == stats->matrix_counter)
-      {
-         stats->ls_counter++;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->counter = 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartVectorTimer(stats, stats->solve, stats->counter);
-      /* Tag this entry with its linear system id */
-      /* GCOVR_EXCL_BR_START */
-      if (stats->entry_ls_id && stats->counter < stats->capacity) /* GCOVR_EXCL_BR_STOP */
-      {
-         stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
-      }
-      AssignCurrentSolveEntryPath(stats);
+      AnnotationBeginSolve(stats);
    }
    else if (!strcmp(name, "initialize"))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartScalarTimer(&stats->initialize);
+      AnnotationStartScalarPhase(stats, &stats->initialize);
    }
    else if (!strcmp(name, "finalize"))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
-      {
-         return;
-      }
-      StartScalarTimer(&stats->finalize);
+      AnnotationStartScalarPhase(stats, &stats->finalize);
    }
    else
    {
@@ -1218,6 +1225,106 @@ hypredrv_StatsRelativeResNormSet(Stats *stats, double rrnorm)
  * hypredrv_StatsPrint
  *--------------------------------------------------------------------------*/
 
+/* The per-system breakdown printed above the aggregate row, shown only when
+ * more than one system ran and the verbosity asks for it. */
+static void
+StatsPrintPerSystemBreakdown(const Stats *stats, int max_entry, int display_idx)
+{
+   double min_build = HUGE_VAL, max_build = 0.0, sum_build = 0.0, ssq_build = 0.0;
+   double min_setup = HUGE_VAL, max_setup = 0.0, sum_setup = 0.0, ssq_setup = 0.0;
+   double min_solve = HUGE_VAL, max_solve = 0.0, sum_solve = 0.0, ssq_solve = 0.0;
+   double min_r0 = HUGE_VAL, max_r0 = 0.0, sum_r0 = 0.0, ssq_r0 = 0.0;
+   double min_rr = HUGE_VAL, max_rr = 0.0, sum_rr = 0.0, ssq_rr = 0.0;
+   int    min_iters = INT_MAX, max_iters = 0, sum_iters = 0;
+   double ssq_iters = 0.0;
+
+   for (int i = 0; i <= max_entry; i++)
+   {
+      if (!EntryHasSolve(stats, i))
+      {
+         continue;
+      }
+
+      double b =
+         stats->time_factor * (stats->dofmap[i] + stats->matrix[i] + stats->rhs[i]);
+      double s  = stats->time_factor * stats->prec[i];
+      double v  = stats->time_factor * stats->solve[i];
+      double r0 = stats->r0norms[i];
+      double rr = stats->rrnorms[i];
+      int    it = stats->iters[i];
+
+      if (b < min_build) min_build = b;
+      if (b > max_build) max_build = b;
+      sum_build += b;
+      ssq_build += b * b;
+
+      if (s < min_setup) min_setup = s;
+      if (s > max_setup) max_setup = s;
+      sum_setup += s;
+      ssq_setup += s * s;
+
+      if (v < min_solve) min_solve = v;
+      if (v > max_solve) max_solve = v;
+      sum_solve += v;
+      ssq_solve += v * v;
+
+      if (r0 < min_r0) min_r0 = r0;
+      if (r0 > max_r0) max_r0 = r0;
+      sum_r0 += r0;
+      ssq_r0 += r0 * r0;
+
+      if (rr < min_rr) min_rr = rr;
+      if (rr > max_rr) max_rr = rr;
+      sum_rr += rr;
+      ssq_rr += rr * rr;
+
+      if (it < min_iters) min_iters = it;
+      if (it > max_iters) max_iters = it;
+      sum_iters += it;
+      ssq_iters += (double)it * it;
+   }
+
+   int    n         = display_idx;
+   double avg_build = sum_build / n;
+   double avg_setup = sum_setup / n;
+   double avg_solve = sum_solve / n;
+   double avg_r0    = sum_r0 / n;
+   double avg_rr    = sum_rr / n;
+   double avg_iters = (double)sum_iters / n;
+
+   /* One-pass variance can go slightly negative from floating-point
+    * cancellation when samples are near-identical (common for repeated-solve
+    * timings); clamp at zero so the reported std-dev is never NaN. */
+   double std_build = sqrt(StatsVarianceClamp(ssq_build, n, avg_build));
+   double std_setup = sqrt(StatsVarianceClamp(ssq_setup, n, avg_setup));
+   double std_solve = sqrt(StatsVarianceClamp(ssq_solve, n, avg_solve));
+   double std_r0    = sqrt(StatsVarianceClamp(ssq_r0, n, avg_r0));
+   double std_rr    = sqrt(StatsVarianceClamp(ssq_rr, n, avg_rr));
+   double std_iters = sqrt(StatsVarianceClamp(ssq_iters, n, avg_iters));
+
+   PrintDivisor();
+   printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+          "Min.", STATS_TIME_WIDTH, 3, min_build, STATS_TIME_WIDTH, 3, min_setup,
+          STATS_TIME_WIDTH, 3, min_solve, STATS_RES_WIDTH, 2, min_r0, STATS_RES_WIDTH, 2,
+          min_rr, STATS_ITERS_WIDTH, min_iters);
+   printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
+          "Max.", STATS_TIME_WIDTH, 3, max_build, STATS_TIME_WIDTH, 3, max_setup,
+          STATS_TIME_WIDTH, 3, max_solve, STATS_RES_WIDTH, 2, max_r0, STATS_RES_WIDTH, 2,
+          max_rr, STATS_ITERS_WIDTH, max_iters);
+   printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*.1f |\n", STATS_ENTRY_WIDTH,
+          "Avg.", STATS_TIME_WIDTH, 3, avg_build, STATS_TIME_WIDTH, 3, avg_setup,
+          STATS_TIME_WIDTH, 3, avg_solve, STATS_RES_WIDTH, 2, avg_r0, STATS_RES_WIDTH, 2,
+          avg_rr, STATS_ITERS_WIDTH, avg_iters);
+   printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*.1f |\n", STATS_ENTRY_WIDTH,
+          "Std.", STATS_TIME_WIDTH, 3, std_build, STATS_TIME_WIDTH, 3, std_setup,
+          STATS_TIME_WIDTH, 3, std_solve, STATS_RES_WIDTH, 2, std_r0, STATS_RES_WIDTH, 2,
+          std_rr, STATS_ITERS_WIDTH, std_iters);
+   printf("| %*s | %*.*f | %*.*f | %*.*f | %*s | %*s | %*d |\n", STATS_ENTRY_WIDTH,
+          "Total", STATS_TIME_WIDTH, 3, sum_build, STATS_TIME_WIDTH, 3, sum_setup,
+          STATS_TIME_WIDTH, 3, sum_solve, STATS_RES_WIDTH, "", STATS_RES_WIDTH, "",
+          STATS_ITERS_WIDTH, sum_iters);
+}
+
 static void
 StatsPrintImpl(const Stats *stats, int print_level)
 {
@@ -1262,99 +1369,7 @@ StatsPrintImpl(const Stats *stats, int print_level)
    /* Print aggregate rows inside the same table for print level > 1 */
    if (display_idx > 1 && print_level > 1)
    {
-      double min_build = HUGE_VAL, max_build = 0.0, sum_build = 0.0, ssq_build = 0.0;
-      double min_setup = HUGE_VAL, max_setup = 0.0, sum_setup = 0.0, ssq_setup = 0.0;
-      double min_solve = HUGE_VAL, max_solve = 0.0, sum_solve = 0.0, ssq_solve = 0.0;
-      double min_r0 = HUGE_VAL, max_r0 = 0.0, sum_r0 = 0.0, ssq_r0 = 0.0;
-      double min_rr = HUGE_VAL, max_rr = 0.0, sum_rr = 0.0, ssq_rr = 0.0;
-      int    min_iters = INT_MAX, max_iters = 0, sum_iters = 0;
-      double ssq_iters = 0.0;
-
-      for (int i = 0; i <= max_entry; i++)
-      {
-         if (!EntryHasSolve(stats, i))
-         {
-            continue;
-         }
-
-         double b =
-            stats->time_factor * (stats->dofmap[i] + stats->matrix[i] + stats->rhs[i]);
-         double s  = stats->time_factor * stats->prec[i];
-         double v  = stats->time_factor * stats->solve[i];
-         double r0 = stats->r0norms[i];
-         double rr = stats->rrnorms[i];
-         int    it = stats->iters[i];
-
-         if (b < min_build) min_build = b;
-         if (b > max_build) max_build = b;
-         sum_build += b;
-         ssq_build += b * b;
-
-         if (s < min_setup) min_setup = s;
-         if (s > max_setup) max_setup = s;
-         sum_setup += s;
-         ssq_setup += s * s;
-
-         if (v < min_solve) min_solve = v;
-         if (v > max_solve) max_solve = v;
-         sum_solve += v;
-         ssq_solve += v * v;
-
-         if (r0 < min_r0) min_r0 = r0;
-         if (r0 > max_r0) max_r0 = r0;
-         sum_r0 += r0;
-         ssq_r0 += r0 * r0;
-
-         if (rr < min_rr) min_rr = rr;
-         if (rr > max_rr) max_rr = rr;
-         sum_rr += rr;
-         ssq_rr += rr * rr;
-
-         if (it < min_iters) min_iters = it;
-         if (it > max_iters) max_iters = it;
-         sum_iters += it;
-         ssq_iters += (double)it * it;
-      }
-
-      int    n         = display_idx;
-      double avg_build = sum_build / n;
-      double avg_setup = sum_setup / n;
-      double avg_solve = sum_solve / n;
-      double avg_r0    = sum_r0 / n;
-      double avg_rr    = sum_rr / n;
-      double avg_iters = (double)sum_iters / n;
-
-      /* One-pass variance can go slightly negative from floating-point
-       * cancellation when samples are near-identical (common for repeated-solve
-       * timings); clamp at zero so the reported std-dev is never NaN. */
-      double std_build = sqrt(StatsVarianceClamp(ssq_build, n, avg_build));
-      double std_setup = sqrt(StatsVarianceClamp(ssq_setup, n, avg_setup));
-      double std_solve = sqrt(StatsVarianceClamp(ssq_solve, n, avg_solve));
-      double std_r0    = sqrt(StatsVarianceClamp(ssq_r0, n, avg_r0));
-      double std_rr    = sqrt(StatsVarianceClamp(ssq_rr, n, avg_rr));
-      double std_iters = sqrt(StatsVarianceClamp(ssq_iters, n, avg_iters));
-
-      PrintDivisor();
-      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
-             "Min.", STATS_TIME_WIDTH, 3, min_build, STATS_TIME_WIDTH, 3, min_setup,
-             STATS_TIME_WIDTH, 3, min_solve, STATS_RES_WIDTH, 2, min_r0, STATS_RES_WIDTH,
-             2, min_rr, STATS_ITERS_WIDTH, min_iters);
-      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*d |\n", STATS_ENTRY_WIDTH,
-             "Max.", STATS_TIME_WIDTH, 3, max_build, STATS_TIME_WIDTH, 3, max_setup,
-             STATS_TIME_WIDTH, 3, max_solve, STATS_RES_WIDTH, 2, max_r0, STATS_RES_WIDTH,
-             2, max_rr, STATS_ITERS_WIDTH, max_iters);
-      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*.1f |\n",
-             STATS_ENTRY_WIDTH, "Avg.", STATS_TIME_WIDTH, 3, avg_build, STATS_TIME_WIDTH,
-             3, avg_setup, STATS_TIME_WIDTH, 3, avg_solve, STATS_RES_WIDTH, 2, avg_r0,
-             STATS_RES_WIDTH, 2, avg_rr, STATS_ITERS_WIDTH, avg_iters);
-      printf("| %*s | %*.*f | %*.*f | %*.*f | %*.*e | %*.*e | %*.1f |\n",
-             STATS_ENTRY_WIDTH, "Std.", STATS_TIME_WIDTH, 3, std_build, STATS_TIME_WIDTH,
-             3, std_setup, STATS_TIME_WIDTH, 3, std_solve, STATS_RES_WIDTH, 2, std_r0,
-             STATS_RES_WIDTH, 2, std_rr, STATS_ITERS_WIDTH, std_iters);
-      printf("| %*s | %*.*f | %*.*f | %*.*f | %*s | %*s | %*d |\n", STATS_ENTRY_WIDTH,
-             "Total", STATS_TIME_WIDTH, 3, sum_build, STATS_TIME_WIDTH, 3, sum_setup,
-             STATS_TIME_WIDTH, 3, sum_solve, STATS_RES_WIDTH, "", STATS_RES_WIDTH, "",
-             STATS_ITERS_WIDTH, sum_iters);
+      StatsPrintPerSystemBreakdown(stats, max_entry, display_idx);
    }
 
    PrintDivisor();

@@ -169,6 +169,18 @@ if(_capture_output)
       endif()
     endif()
   endforeach()
+
+  # CTest's FAIL_REGULAR_EXPRESSION evaluates the output emitted by this
+  # wrapper, not data that execute_process() keeps in a variable.  Re-emit
+  # captured output so accelerator failures such as CUDA/HIP errors, Umpire
+  # allocation failures, and sanitizer reports cannot be hidden when an MPI
+  # launcher returns a misleading success status.
+  if(NOT _out STREQUAL "")
+    message(STATUS "[test] captured stdout:\n${_out}")
+  endif()
+  if(NOT _err STREQUAL "")
+    message(STATUS "[test] captured stderr:\n${_err}")
+  endif()
 else()
   if(_launcher_command)
     execute_process(

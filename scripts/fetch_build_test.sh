@@ -111,6 +111,22 @@ Environment:
   HYPREDRV_REPO_URL    Hypredrive git URL. Default: official GitHub repo.
   HYPREDRV_BRANCH      Hypredrive branch/tag to clone. Default: master.
   HYPREDRV_CMAKE_ARGS  Extra CMake arguments appended after cluster defaults.
+  HYPREDRV_GPU_TEST_DEVICE_IDS
+                       Comma-separated GPU IDs for CTest resource allocation.
+  HYPREDRV_GPU_TEST_RESOURCE_SLOTS
+                       GPU slots per physical device. Defaults to enough total
+                       slots for four MPI ranks to run on visible devices.
+  HYPREDRV_GPU_TEST_TIMEOUT
+                       Per-GPU-test timeout in seconds. Default: 60.
+  HYPREDRV_GPU_TEST_AUTODETECT_HIP_DEVICES
+                       Set ON to opt into rocminfo device enumeration.
+  HYPREDRV_GPU_TEST_APPLY_VISIBILITY
+                       Set OFF to keep CTest scheduling without changing GPU
+                       visibility variables (useful for SYCL selectors).
+  HYPREDRV_SYCL_DEVICE_CODE_SPLIT
+                       Auto-fetched HYPRE SYCL split mode (default: per_source).
+  HYPREDRV_SYCL_DEVICE_SELECTOR
+                       ONEAPI_DEVICE_SELECTOR value for SYCL tests.
   HOST                 Machine selector used for module/CMake mappings.
 EOF
 }
@@ -311,6 +327,22 @@ run_fetch() {
     args+=(${cluster_cmake_args})
   fi
 
+  for gpu_cache_name in \
+    HYPREDRV_GPU_TEST_DEVICE_IDS \
+    HYPREDRV_GPU_TEST_PARALLEL_LEVEL \
+    HYPREDRV_GPU_TEST_RESOURCE_SLOTS \
+    HYPREDRV_GPU_TEST_TIMEOUT \
+    HYPREDRV_GPU_TEST_APPLY_VISIBILITY \
+    HYPREDRV_GPU_VISIBLE_DEVICES_ENV \
+    HYPREDRV_GPU_TEST_LAUNCHER \
+    HYPREDRV_GPU_TEST_AUTODETECT_HIP_DEVICES \
+    HYPREDRV_SYCL_DEVICE_CODE_SPLIT \
+    HYPREDRV_SYCL_DEVICE_SELECTOR; do
+    if [[ -n "${!gpu_cache_name:-}" ]]; then
+      args+=("-D${gpu_cache_name}=${!gpu_cache_name}")
+    fi
+  done
+
   if [[ -n "${extra_cmake_args}" ]]; then
     log "Applying extra CMake args: ${extra_cmake_args}"
     # shellcheck disable=SC2206
@@ -335,6 +367,45 @@ run_build() {
   log "Finished build ($(format_seconds "${build_elapsed}"))"
 }
 
+get_gpu_resource_spec() {
+  local cache_file="${build_dir}/CMakeCache.txt"
+  local configured_spec=""
+
+  if [[ -f "${cache_file}" ]]; then
+    configured_spec="$(sed -n \
+      's/^HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE:FILEPATH=//p' \
+      "${cache_file}")"
+  fi
+
+  if [[ -n "${configured_spec}" ]]; then
+    if [[ ! -f "${configured_spec}" ]]; then
+      echo "Configured GPU resource specification is missing: ${configured_spec}" >&2
+      return 1
+    fi
+    printf '%s\n' "${configured_spec}"
+  elif [[ -f "${build_dir}/hypredrive-ctest-gpus.json" ]]; then
+    printf '%s\n' "${build_dir}/hypredrive-ctest-gpus.json"
+  fi
+}
+
+get_gpu_test_timeout() {
+  local cache_file="${build_dir}/CMakeCache.txt"
+  if [[ -f "${cache_file}" ]]; then
+    sed -n \
+      's/^HYPREDRV_GPU_TEST_TIMEOUT:STRING=//p' \
+      "${cache_file}"
+  fi
+}
+
+get_gpu_test_parallel_level() {
+  local cache_file="${build_dir}/CMakeCache.txt"
+  if [[ -f "${cache_file}" ]]; then
+    sed -n \
+      's/^HYPREDRV_GPU_TEST_PARALLEL_LEVEL_EFFECTIVE:INTERNAL=//p' \
+      "${cache_file}"
+  fi
+}
+
 run_test() {
   local start="${SECONDS}"
   current_phase="test"
@@ -342,7 +413,33 @@ run_test() {
   requires_configured_tree
 
   log "Starting test"
-  ctest --test-dir "${build_dir}" --output-on-failure --timeout "${ctest_timeout}"
+  local resource_spec effective_timeout configured_gpu_timeout configured_gpu_parallel
+  resource_spec="$(get_gpu_resource_spec)"
+  effective_timeout="${ctest_timeout}"
+  if [[ -z "${CTEST_TIMEOUT:-}" && -n "${resource_spec}" ]]; then
+    configured_gpu_timeout="$(get_gpu_test_timeout)"
+    if [[ "${configured_gpu_timeout}" =~ ^[1-9][0-9]*$ ]]; then
+      effective_timeout="${configured_gpu_timeout}"
+    fi
+  fi
+  local -a ctest_args=(
+    --test-dir "${build_dir}"
+    --output-on-failure
+    --timeout "${effective_timeout}"
+  )
+  if [[ -n "${resource_spec}" ]]; then
+    ctest_args+=(--resource-spec-file "${resource_spec}")
+    log "Using GPU resource specification: ${resource_spec}"
+    log "Using GPU test timeout: ${effective_timeout}s"
+    if [[ -z "${CTEST_PARALLEL_LEVEL:-}" ]]; then
+      configured_gpu_parallel="$(get_gpu_test_parallel_level)"
+      if [[ "${configured_gpu_parallel}" =~ ^[1-9][0-9]*$ ]]; then
+        ctest_args+=("-j${configured_gpu_parallel}")
+        log "Using GPU CTest parallel level: ${configured_gpu_parallel}"
+      fi
+    fi
+  fi
+  ctest "${ctest_args[@]}"
   test_elapsed=$((SECONDS - start))
   log "Finished test ($(format_seconds "${test_elapsed}"))"
 }

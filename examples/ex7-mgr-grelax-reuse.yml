@@ -6,7 +6,7 @@ general:
 linear_system:
   dirname: data/poromech2k/np1/ls
   init_suffix: 0
-  last_suffix: 24
+  last_suffix: 4
   rhs_filename: IJ.out.b
   matrix_filename: IJ.out.A
   dofmap_filename: dofmap.out

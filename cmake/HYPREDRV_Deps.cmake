@@ -206,6 +206,44 @@ extern "C++" {
     endif()
 endfunction()
 
+function(_hypredrv_patch_hypre_sycl_device_code_split hypre_source_dir)
+    if(NOT HYPRE_ENABLE_SYCL OR
+       NOT HYPREDRV_SYCL_DEVICE_CODE_SPLIT STREQUAL "per_source")
+        return()
+    endif()
+
+    set(_hypredrv_sycl_toolkit_file
+        "${hypre_source_dir}/src/config/cmake/HYPRE_SetupSYCLToolkit.cmake")
+    if(NOT EXISTS "${_hypredrv_sycl_toolkit_file}")
+        return()
+    endif()
+
+    file(READ "${_hypredrv_sycl_toolkit_file}"
+         _hypredrv_sycl_toolkit_content)
+    if(_hypredrv_sycl_toolkit_content MATCHES
+       "-fsycl-device-code-split=per_kernel")
+        set(_hypredrv_sycl_toolkit_original
+            "${_hypredrv_sycl_toolkit_content}")
+        string(REPLACE
+            "-fsycl-device-code-split=per_kernel"
+            "-fsycl-device-code-split=${HYPREDRV_SYCL_DEVICE_CODE_SPLIT}"
+            _hypredrv_sycl_toolkit_content
+            "${_hypredrv_sycl_toolkit_content}")
+        if("${_hypredrv_sycl_toolkit_content}" STREQUAL
+           "${_hypredrv_sycl_toolkit_original}")
+            message(WARNING
+                "Could not patch HYPRE SYCL device-code split mode; upstream "
+                "HYPRE may have changed HYPRE_SetupSYCLToolkit.cmake")
+        else()
+            file(WRITE "${_hypredrv_sycl_toolkit_file}"
+                 "${_hypredrv_sycl_toolkit_content}")
+            message(STATUS
+                "  HYPRE SYCL device-code split set to "
+                "${HYPREDRV_SYCL_DEVICE_CODE_SPLIT}")
+        endif()
+    endif()
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
@@ -1368,6 +1406,7 @@ if(NOT HYPRE_FOUND)
     if(HYPRE_BUILD_UMPIRE OR HYPRE_ENABLE_UMPIRE)
         _hypredrv_patch_hypre_umpire_header_linkage("${hypre_SOURCE_DIR}")
     endif()
+    _hypredrv_patch_hypre_sycl_device_code_split("${hypre_SOURCE_DIR}")
 
     # Patch HYPRE's CMakeLists.txt to skip export when TPLs are auto-built
     # This must be done before add_subdirectory is called

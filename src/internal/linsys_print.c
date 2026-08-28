@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +21,17 @@
 #include "internal/error.h"
 #include "internal/linsys.h"
 #include "logging.h"
+
+/* Which optional keys the YAML block actually carried; the cross-field rules at
+ * the end of parsing depend on presence, not just on the parsed value. */
+typedef struct
+{
+   int every;
+   int ids;
+   int ranges;
+   int threshold;
+   int selectors;
+} PrintSystemSeenKeys;
 
 static const char *PrintSystemStageName(int stage);
 
@@ -229,90 +241,72 @@ PrintSystemRangeArrayAppend(IntRangeArray *ranges, int begin, int end)
    return 1;
 }
 
+/* Advances past any run of whitespace. */
+static void
+PrintSystemSkipSpaces(const char **p)
+{
+   /* GCOVR_EXCL_BR_START */
+   while (**p && isspace((unsigned char)**p)) /* GCOVR_EXCL_BR_STOP */
+   {
+      (*p)++; /* GCOVR_EXCL_LINE */
+   }
+}
+
+/* Accepts "[a,b]" plus the unbracketed and '-'/':'-separated spellings. The
+ * input is only scanned, never modified, so no working copy is needed. */
 static int
 PrintSystemParseRangePair(const char *value, int *begin, int *end)
 {
+   const char *p      = value;
+   char       *endptr = NULL;
+   long        first  = 0;
+   long        second = 0;
+
    /* GCOVR_EXCL_BR_START */
    if (!value || !begin || !end) /* GCOVR_EXCL_BR_STOP */
    {
       return 0; /* GCOVR_EXCL_LINE */
    }
 
-   char *buffer = strdup(value);
-   /* GCOVR_EXCL_BR_START */
-   if (!buffer) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd(
-         "Failed to allocate range parser buffer"); /* GCOVR_EXCL_LINE */
-      return 0;                                     /* GCOVR_EXCL_LINE */
-   }
-
-   char *p = buffer;
-   /* GCOVR_EXCL_BR_START */
-   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-   {
-      p++; /* GCOVR_EXCL_LINE */
-   }
+   PrintSystemSkipSpaces(&p);
    /* GCOVR_EXCL_BR_START */
    if (*p == '[') /* GCOVR_EXCL_BR_STOP */
    {
       p++;
    }
 
-   char *first_end = NULL;
-   long  first     = strtol(p, &first_end, 10);
-   if (first_end == p)
+   first = strtol(p, &endptr, 10);
+   if (endptr == p)
    {
-      free(buffer);
       return 0;
    }
-   p = first_end;
-   /* GCOVR_EXCL_BR_START */
-   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-   {
-      p++; /* GCOVR_EXCL_LINE */
-   }
+   p = endptr;
+   PrintSystemSkipSpaces(&p);
 
    /* GCOVR_EXCL_BR_START */
    if (*p != ',' && *p != '-' && *p != ':') /* GCOVR_EXCL_BR_STOP */
    {
-      free(buffer); /* GCOVR_EXCL_LINE */
-      return 0;     /* GCOVR_EXCL_LINE */
+      return 0; /* GCOVR_EXCL_LINE */
    }
    p++;
-   /* GCOVR_EXCL_BR_START */
-   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-   {
-      p++;
-   }
+   PrintSystemSkipSpaces(&p);
 
-   char *second_end = NULL;
-   long  second     = strtol(p, &second_end, 10);
+   second = strtol(p, &endptr, 10);
    /* GCOVR_EXCL_BR_START */
-   if (second_end == p) /* GCOVR_EXCL_BR_STOP */
+   if (endptr == p) /* GCOVR_EXCL_BR_STOP */
    {
-      free(buffer); /* GCOVR_EXCL_LINE */
-      return 0;     /* GCOVR_EXCL_LINE */
+      return 0; /* GCOVR_EXCL_LINE */
    }
-   p = second_end;
-   /* GCOVR_EXCL_BR_START */
-   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-   {
-      p++; /* GCOVR_EXCL_LINE */
-   }
+   p = endptr;
+   PrintSystemSkipSpaces(&p);
+
    if (*p == ']')
    {
       p++;
    }
-   /* GCOVR_EXCL_BR_START */
-   while (*p && isspace((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-   {
-      p++; /* GCOVR_EXCL_LINE */
-   }
+   PrintSystemSkipSpaces(&p);
    if (*p != '\0')
    {
-      free(buffer);
       return 0;
    }
 
@@ -320,13 +314,12 @@ PrintSystemParseRangePair(const char *value, int *begin, int *end)
    if (first < INT_MIN || first > INT_MAX || second < INT_MIN || second > INT_MAX)
    /* GCOVR_EXCL_BR_STOP */
    {
-      free(buffer); /* GCOVR_EXCL_LINE */
-      return 0;     /* GCOVR_EXCL_LINE */
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    *begin = (int)first;
    *end   = (int)second;
-   free(buffer);
+
    return 1;
 }
 
@@ -640,9 +633,109 @@ PrintSystemBasisUsesThreshold(int basis)
           basis == PRINT_SYSTEM_BASIS_SOLVE_TIME;
 }
 
+/* Applies one key of a selector mapping. Returns zero on an invalid key or
+ * value; `seen` records which optional keys were present. */
+static int
+PrintSystemApplySelectorKey(DumpSelector_args *selector_out, const YAMLnode *child,
+                            PrintSystemSeenKeys *seen)
+{
+   /* GCOVR_EXCL_BR_START */
+   const char *value = child->mapped_val ? child->mapped_val : child->val;
+   /* GCOVR_EXCL_BR_STOP */
+
+   if (!strcmp(child->key, "basis"))
+   {
+      /* GCOVR_EXCL_BR_START */
+      return PrintSystemParseBasis(value, &selector_out->basis); /* GCOVR_EXCL_BR_STOP */
+   }
+   if (!strcmp(child->key, "level"))
+   {
+      /* GCOVR_EXCL_BR_START */
+      return (PrintSystemParseInteger(value, &selector_out->level) &&
+              /* GCOVR_EXCL_BR_STOP */
+              selector_out->level >= 0 && selector_out->level < STATS_MAX_LEVELS);
+   }
+   if (!strcmp(child->key, "every"))
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemParseInteger(value, &selector_out->every) ||
+          /* GCOVR_EXCL_BR_STOP */
+          selector_out->every <= 0)
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+      seen->every = 1;
+      return 1;
+   }
+   if (!strcmp(child->key, "ids"))
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemParseIntArrayNode(child, &selector_out->ids) ||
+          /* GCOVR_EXCL_BR_STOP */
+          !selector_out->ids || selector_out->ids->size == 0)
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+      seen->ids = 1;
+      return 1;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!strcmp(child->key, "ranges")) /* GCOVR_EXCL_BR_STOP */
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemParseRangesNode(child,
+                                      &selector_out->ranges) || /* GCOVR_EXCL_LINE */
+          selector_out->ranges.size == 0)                       /* GCOVR_EXCL_LINE */
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+      seen->ranges = 1; /* GCOVR_EXCL_LINE */
+      return 1;         /* GCOVR_EXCL_LINE */
+   }
+   if (!strcmp(child->key, "threshold"))
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemParseDouble(value, &selector_out->threshold) ||
+          /* GCOVR_EXCL_BR_STOP */
+          selector_out->threshold < 0.0)
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+      seen->threshold = 1;
+      return 1;
+   }
+
+   return 0;
+}
+
+/* A threshold basis is driven purely by its threshold; every other basis needs
+ * at least one index-based key and must not carry a threshold. */
+static int
+PrintSystemSelectorKeysConsistent(const DumpSelector_args   *selector_out,
+                                  const PrintSystemSeenKeys *seen)
+{
+   if (PrintSystemBasisUsesThreshold(selector_out->basis))
+   {
+      /* GCOVR_EXCL_BR_START */
+      return seen->threshold && !seen->every && !seen->ids && !seen->ranges;
+      /* GCOVR_EXCL_BR_STOP */
+   }
+
+   if (seen->threshold)
+   {
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   return (seen->every || seen->ids || seen->ranges); /* GCOVR_EXCL_BR_STOP */
+}
+
 static int
 PrintSystemParseSelectorNode(const YAMLnode *node, DumpSelector_args *selector_out)
 {
+   PrintSystemSeenKeys seen = {0, 0, 0, 0, 0};
+
    /* GCOVR_EXCL_BR_START */
    if (!node || !selector_out || !node->children) /* GCOVR_EXCL_BR_STOP */
    {
@@ -657,117 +750,581 @@ PrintSystemParseSelectorNode(const YAMLnode *node, DumpSelector_args *selector_o
    selector_out->ranges.data = NULL;
    selector_out->ranges.size = 0;
 
-   int seen_every     = 0;
-   int seen_ids       = 0;
-   int seen_ranges    = 0;
-   int seen_threshold = 0;
    for (const YAMLnode *child = node->children; child != NULL; child = child->next)
    {
-      /* GCOVR_EXCL_BR_START */
-      const char *value = child->mapped_val ? child->mapped_val : child->val;
-      /* GCOVR_EXCL_BR_STOP */
-      if (!strcmp(child->key, "basis"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseBasis(value, &selector_out->basis)) /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-      }
-      else if (!strcmp(child->key, "level"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseInteger(value, &selector_out->level) ||
-             /* GCOVR_EXCL_BR_STOP */
-             /* GCOVR_EXCL_BR_START */
-             selector_out->level < 0 || selector_out->level >= STATS_MAX_LEVELS)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0;
-         }
-      }
-      else if (!strcmp(child->key, "every"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseInteger(value, &selector_out->every) ||
-             /* GCOVR_EXCL_BR_STOP */
-             /* GCOVR_EXCL_BR_START */
-             selector_out->every <= 0)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-         seen_every = 1;
-      }
-      else if (!strcmp(child->key, "ids"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseIntArrayNode(child, &selector_out->ids) ||
-             /* GCOVR_EXCL_BR_STOP */
-             /* GCOVR_EXCL_BR_START */
-             !selector_out->ids || selector_out->ids->size == 0)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-         seen_ids = 1;
-      }
-      /* GCOVR_EXCL_BR_START */
-      else if (!strcmp(child->key, "ranges")) /* GCOVR_EXCL_BR_STOP */
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseRangesNode(child,
-                                         &selector_out->ranges) || /* GCOVR_EXCL_LINE */
-             selector_out->ranges.size == 0)                       /* GCOVR_EXCL_LINE */
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-         seen_ranges = 1; /* GCOVR_EXCL_LINE */
-      }
-      else if (!strcmp(child->key, "threshold"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseDouble(value, &selector_out->threshold) ||
-             /* GCOVR_EXCL_BR_STOP */
-             /* GCOVR_EXCL_BR_START */
-             selector_out->threshold < 0.0)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-         seen_threshold = 1;
-      }
-      else
+      if (!PrintSystemApplySelectorKey(selector_out, child, &seen))
       {
          return 0;
       }
    }
 
-   if (PrintSystemBasisUsesThreshold(selector_out->basis))
+   return PrintSystemSelectorKeysConsistent(selector_out, &seen);
+}
+
+typedef struct
+{
+   const char *name;
+   int         value;
+} PrintSystemNameMap;
+
+static const PrintSystemNameMap kPrintSystemTypes[] = {
+   {"all", PRINT_SYSTEM_TYPE_ALL},
+   {"every_n_systems", PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS},
+   {"every_n_timesteps", PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS},
+   {"ids", PRINT_SYSTEM_TYPE_IDS},
+   {"ranges", PRINT_SYSTEM_TYPE_RANGES},
+   {"iterations_over", PRINT_SYSTEM_TYPE_ITERATIONS_OVER},
+   {"setup_time_over", PRINT_SYSTEM_TYPE_SETUP_TIME_OVER},
+   {"solve_time_over", PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER},
+   {"selectors", PRINT_SYSTEM_TYPE_SELECTORS},
+};
+
+static const PrintSystemNameMap kPrintSystemStages[] = {
+   {"build", PRINT_SYSTEM_STAGE_BUILD_BIT},
+   {"setup", PRINT_SYSTEM_STAGE_SETUP_BIT},
+   {"apply", PRINT_SYSTEM_STAGE_APPLY_BIT},
+   {"all", PRINT_SYSTEM_STAGE_BUILD_BIT | PRINT_SYSTEM_STAGE_SETUP_BIT |
+              PRINT_SYSTEM_STAGE_APPLY_BIT},
+};
+
+/* Case-insensitive table lookup; returns nonzero and stores the mapped value. */
+static int
+PrintSystemLookupName(const PrintSystemNameMap *table, size_t count, const char *name,
+                      int *value_out)
+{
+   for (size_t i = 0; i < count; i++)
    {
-      /* GCOVR_EXCL_BR_START */
-      return seen_threshold && !seen_every && !seen_ids && !seen_ranges;
-      /* GCOVR_EXCL_BR_STOP */
+      if (!strcasecmp(name, table[i].name))
+      {
+         *value_out = table[i].value;
+         return 1;
+      }
    }
 
-   if (seen_threshold)
+   return 0;
+}
+
+/* Marks every "-" item of a sequence node as consumed. */
+static void
+PrintSystemMarkSequenceItemsValid(const YAMLnode *child)
+{
+   for (const YAMLnode *item = child->children; item != NULL; item = item->next)
    {
-      return 0;
+      /* GCOVR_EXCL_BR_START */
+      if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
+      {
+         ((YAMLnode *)item)->valid = YAML_NODE_VALID;
+      }
    }
-   /* GCOVR_EXCL_BR_START */
-   if (!seen_every && !seen_ids && !seen_ranges) /* GCOVR_EXCL_BR_STOP */
+}
+
+/* Each key handler below returns nonzero on success, or zero with the error
+ * state already populated. */
+
+static int
+PrintSystemApplyEnabled(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                        PrintSystemSeenKeys *seen)
+{
+   (void)child;
+   (void)seen;
+   if (!PrintSystemParseOnOff(value, &args->enabled))
    {
-      return 0; /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      /* GCOVR_EXCL_BR_START */
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.enabled: '%s'",
+                           /* GCOVR_EXCL_BR_STOP */
+                           value ? value : "");
+      return 0;
    }
 
    return 1;
 }
 
+static int
+PrintSystemApplyType(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                     PrintSystemSeenKeys *seen)
+{
+   int type = 0;
+
+   (void)child;
+   (void)seen;
+   if (!value)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Missing linear_system.print_system.type value");
+      return 0;
+   }
+   if (!PrintSystemLookupName(kPrintSystemTypes,
+                              sizeof(kPrintSystemTypes) / sizeof(kPrintSystemTypes[0]),
+                              value, &type))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.type: '%s'", value);
+      return 0;
+   }
+   args->type = type;
+
+   return 1;
+}
+
+static int
+PrintSystemApplyStage(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                      PrintSystemSeenKeys *seen)
+{
+   int mask = 0;
+
+   (void)child;
+   (void)seen;
+   if (!value)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Missing linear_system.print_system.stage value");
+      return 0;
+   }
+   if (!PrintSystemLookupName(kPrintSystemStages,
+                              sizeof(kPrintSystemStages) / sizeof(kPrintSystemStages[0]),
+                              value, &mask))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.stage: '%s'", value);
+      return 0;
+   }
+   args->stage_mask = mask;
+
+   return 1;
+}
+
+static int
+PrintSystemApplyArtifacts(PrintSystem_args *args, const YAMLnode *child,
+                          const char *value, PrintSystemSeenKeys *seen)
+{
+   (void)value;
+   (void)seen;
+   if (!PrintSystemParseArtifactsNode(child, &args->artifacts))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.artifacts");
+      return 0;
+   }
+   PrintSystemMarkSequenceItemsValid(child);
+
+   return 1;
+}
+
+static int
+PrintSystemApplyOutputDir(PrintSystem_args *args, const YAMLnode *child,
+                          const char *value, PrintSystemSeenKeys *seen)
+{
+   (void)child;
+   (void)seen;
+   if (!value)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Missing linear_system.print_system.output_dir value");
+      return 0;
+   }
+   snprintf(args->output_dir, sizeof(args->output_dir), "%s", value);
+
+   return 1;
+}
+
+static int
+PrintSystemApplyOverwrite(PrintSystem_args *args, const YAMLnode *child,
+                          const char *value, PrintSystemSeenKeys *seen)
+{
+   (void)child;
+   (void)seen;
+   if (!PrintSystemParseOnOff(value, &args->overwrite))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      /* GCOVR_EXCL_BR_START */
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.overwrite: '%s'",
+                           /* GCOVR_EXCL_BR_STOP */
+                           value ? value : "");
+      return 0;
+   }
+
+   return 1;
+}
+
+static int
+PrintSystemApplyEvery(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                      PrintSystemSeenKeys *seen)
+{
+   (void)child;
+   if (!PrintSystemParseInteger(value, &args->every) || args->every <= 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      /* GCOVR_EXCL_BR_START */
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.every: '%s'",
+                           /* GCOVR_EXCL_BR_STOP */
+                           value ? value : "");
+      return 0;
+   }
+   seen->every = 1;
+
+   return 1;
+}
+
+static int
+PrintSystemApplyIds(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                    PrintSystemSeenKeys *seen)
+{
+   (void)value;
+   /* GCOVR_EXCL_BR_START */
+   if (!PrintSystemParseIntArrayNode(child, &args->ids) || !args->ids ||
+       /* GCOVR_EXCL_BR_STOP */
+       /* GCOVR_EXCL_BR_START */
+       args->ids->size == 0)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.ids");
+      return 0;
+   }
+   seen->ids = 1;
+   PrintSystemMarkSequenceItemsValid(child);
+
+   return 1;
+}
+
+static int
+PrintSystemApplyRanges(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                       PrintSystemSeenKeys *seen)
+{
+   (void)value;
+   /* GCOVR_EXCL_BR_START */
+   if (!PrintSystemParseRangesNode(child, &args->ranges) || args->ranges.size == 0)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.ranges");
+      return 0;
+   }
+   seen->ranges = 1;
+   PrintSystemMarkSequenceItemsValid(child);
+
+   return 1;
+}
+
+static int
+PrintSystemApplyThreshold(PrintSystem_args *args, const YAMLnode *child,
+                          const char *value, PrintSystemSeenKeys *seen)
+{
+   (void)child;
+   /* GCOVR_EXCL_BR_START */
+   if (!PrintSystemParseDouble(value, &args->threshold) || args->threshold < 0.0)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      /* GCOVR_EXCL_BR_START */
+      hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.threshold: '%s'",
+                           /* GCOVR_EXCL_BR_STOP */
+                           value ? value : "");
+      return 0;
+   }
+   seen->threshold = 1;
+
+   return 1;
+}
+
+/* Counts the "-" entries of a selector sequence. */
+static size_t
+PrintSystemCountSequenceItems(const YAMLnode *child)
+{
+   size_t count = 0;
+
+   for (const YAMLnode *item = child->children; item != NULL; item = item->next)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
+      {
+         count++;
+      }
+   }
+
+   return count;
+}
+
+/* Parses each selector into `selectors`; on failure every entry built so far is
+ * destroyed and the array freed. */
+static int
+PrintSystemParseSelectorList(const YAMLnode *child, DumpSelector_args *selectors)
+{
+   size_t selector_idx = 0;
+
+   for (const YAMLnode *item = child->children; item != NULL; item = item->next)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
+      {
+         continue; /* GCOVR_EXCL_LINE */
+      }
+
+      if (!PrintSystemParseSelectorNode(item, &selectors[selector_idx]))
+      {
+         for (size_t cleanup_idx = 0; cleanup_idx <= selector_idx; cleanup_idx++)
+         {
+            PrintSystemSelectorDestroy(&selectors[cleanup_idx]);
+         }
+         free(selectors);
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "Invalid linear_system.print_system.selectors entry at index %d",
+            (int)selector_idx);
+         return 0;
+      }
+      ((YAMLnode *)item)->valid = YAML_NODE_VALID;
+      selector_idx++;
+   }
+
+   return 1;
+}
+
+static int
+PrintSystemApplySelectors(PrintSystem_args *args, const YAMLnode *child,
+                          const char *value, PrintSystemSeenKeys *seen)
+{
+   DumpSelector_args *selectors      = NULL;
+   size_t             selector_count = 0;
+
+   (void)value;
+   if (!child->children)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("linear_system.print_system.selectors must be a sequence");
+      return 0;
+   }
+
+   selector_count = PrintSystemCountSequenceItems(child);
+   /* GCOVR_EXCL_BR_START */
+   if (selector_count == 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("linear_system.print_system.selectors cannot be empty");
+      return 0;
+   }
+
+   selectors = (DumpSelector_args *)calloc(selector_count, sizeof(DumpSelector_args));
+   /* GCOVR_EXCL_BR_START */
+   if (!selectors) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                  /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("Failed to allocate selector list"); /* GCOVR_EXCL_LINE */
+      return 0;                                                 /* GCOVR_EXCL_LINE */
+   }
+
+   if (!PrintSystemParseSelectorList(child, selectors))
+   {
+      return 0;
+   }
+
+   args->selectors     = selectors;
+   args->num_selectors = selector_count;
+   seen->selectors     = 1;
+
+   return 1;
+}
+
+typedef struct
+{
+   const char *key;
+   int (*apply)(PrintSystem_args *args, const YAMLnode *child, const char *value,
+                PrintSystemSeenKeys *seen);
+} PrintSystemKeyHandler;
+
+static const PrintSystemKeyHandler kPrintSystemKeys[] = {
+   {"enabled", PrintSystemApplyEnabled},      {"type", PrintSystemApplyType},
+   {"stage", PrintSystemApplyStage},          {"artifacts", PrintSystemApplyArtifacts},
+   {"output_dir", PrintSystemApplyOutputDir}, {"overwrite", PrintSystemApplyOverwrite},
+   {"every", PrintSystemApplyEvery},          {"ids", PrintSystemApplyIds},
+   {"ranges", PrintSystemApplyRanges},        {"threshold", PrintSystemApplyThreshold},
+   {"selectors", PrintSystemApplySelectors},
+};
+
+/* Applies one child node of the print_system mapping. */
+static int
+PrintSystemApplyChild(PrintSystem_args *args, const YAMLnode *child,
+                      PrintSystemSeenKeys *seen)
+{
+   /* GCOVR_EXCL_BR_START */
+   const char *value = child->mapped_val ? child->mapped_val : child->val;
+   /* GCOVR_EXCL_BR_STOP */
+
+   for (size_t i = 0; i < sizeof(kPrintSystemKeys) / sizeof(kPrintSystemKeys[0]); i++)
+   {
+      if (strcmp(child->key, kPrintSystemKeys[i].key) != 0)
+      {
+         continue;
+      }
+      if (!kPrintSystemKeys[i].apply(args, child, value, seen))
+      {
+         return 0;
+      }
+      ((YAMLnode *)child)->valid = YAML_NODE_VALID;
+      return 1;
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorMsgAdd("Unknown key under linear_system.print_system: '%s'", child->key);
+
+   return 0;
+}
+
+/* Threshold-based selection only makes sense once the relevant stage has run. */
+static int
+PrintSystemTypeIsThresholdBased(int type)
+{
+   return (type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER ||
+           type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER ||
+           type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER);
+}
+
+/* Each selection type demands its companion key. `every` has a documented
+ * default, so it is filled in rather than demanded. */
+static int
+PrintSystemValidateTypeRequirements(PrintSystem_args          *args,
+                                    const PrintSystemSeenKeys *seen)
+{
+   if (args->type == PRINT_SYSTEM_TYPE_ALL &&
+       /* GCOVR_EXCL_BR_START */
+       (seen->every || seen->ids || seen->ranges || seen->selectors))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.type=all cannot be combined with selectors");
+      return 0;
+   }
+   if ((args->type == PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS ||
+        args->type == PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS) &&
+       !seen->every)
+   {
+      args->every = 1;
+   }
+   if (args->type == PRINT_SYSTEM_TYPE_IDS && !seen->ids)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("linear_system.print_system.type=ids requires ids");
+      return 0;
+   }
+   if (args->type == PRINT_SYSTEM_TYPE_RANGES && !seen->ranges)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("linear_system.print_system.type=ranges requires ranges");
+      return 0;
+   }
+   if (PrintSystemTypeIsThresholdBased(args->type) && !seen->threshold)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system threshold type requires threshold");
+      return 0;
+   }
+   if (args->type == PRINT_SYSTEM_TYPE_SELECTORS && !seen->selectors)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.type=selectors requires selectors");
+      return 0;
+   }
+
+   return 1;
+}
+
+/* The mirror rules: a companion key that was supplied is only meaningful for
+ * the types that consume it. */
+static int
+PrintSystemValidateKeyApplicability(const PrintSystem_args    *args,
+                                    const PrintSystemSeenKeys *seen)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (args->type != PRINT_SYSTEM_TYPE_SELECTORS && seen->selectors)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.selectors requires type=selectors");
+      return 0;
+   }
+   if (!PrintSystemTypeIsThresholdBased(args->type) && seen->threshold)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.threshold requires a threshold-based type");
+      return 0;
+   }
+   return 1;
+}
+
+/* Threshold types can only fire once the stage that produces their metric has
+ * actually run. */
+static int
+PrintSystemValidateStageMask(const PrintSystem_args *args)
+{
+   if (args->type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER &&
+       (args->stage_mask & PRINT_SYSTEM_STAGE_APPLY_BIT) == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.type=iterations_over requires stage apply");
+      return 0;
+   }
+   if (args->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER &&
+       (args->stage_mask & PRINT_SYSTEM_STAGE_APPLY_BIT) == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.type=solve_time_over requires stage apply");
+      return 0;
+   }
+   if (args->type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER &&
+       (args->stage_mask &
+        (PRINT_SYSTEM_STAGE_SETUP_BIT | PRINT_SYSTEM_STAGE_APPLY_BIT)) == 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "linear_system.print_system.type=setup_time_over requires stage setup or apply");
+      return 0;
+   }
+
+   return 1;
+}
+
+/* Cross-field rules applied once every child key has been parsed. */
+static int
+PrintSystemValidateCombination(PrintSystem_args *args, const PrintSystemSeenKeys *seen)
+{
+   return (PrintSystemValidateTypeRequirements(args, seen) &&
+           PrintSystemValidateKeyApplicability(args, seen) &&
+           PrintSystemValidateStageMask(args));
+}
+
+/* A scalar print_system node is shorthand for the enabled flag alone. */
+static void
+PrintSystemSetArgsFromScalar(PrintSystem_args *args, const YAMLnode *node)
+{
+   /* GCOVR_EXCL_BR_START */
+   const char *value = node->mapped_val ? node->mapped_val : node->val;
+   /* GCOVR_EXCL_BR_STOP */
+
+   /* GCOVR_EXCL_BR_START */
+   if (value && value[0] != '\0') /* GCOVR_EXCL_BR_STOP */
+   {
+      if (!PrintSystemParseOnOff(value, &args->enabled))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid linear_system.print_system value: '%s'", value);
+      }
+   }
+}
+
 void
 hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
 {
-   PrintSystem_args *args = (PrintSystem_args *)field;
+   PrintSystem_args   *args = (PrintSystem_args *)field;
+   PrintSystemSeenKeys seen = {0, 0, 0, 0, 0};
+
    if (!args || !node)
    {
       return;
@@ -778,415 +1335,60 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
 
    if (!node->children)
    {
-      /* GCOVR_EXCL_BR_START */
-      const char *value = node->mapped_val ? node->mapped_val : node->val;
-      /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */
-      if (value && value[0] != '\0') /* GCOVR_EXCL_BR_STOP */
-      {
-         if (!PrintSystemParseOnOff(value, &args->enabled))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system value: '%s'", value);
-         }
-      }
+      PrintSystemSetArgsFromScalar(args, node);
       return;
    }
 
-   int seen_every     = 0;
-   int seen_ids       = 0;
-   int seen_ranges    = 0;
-   int seen_threshold = 0;
-   int seen_selectors = 0;
    for (const YAMLnode *child = node->children; child != NULL; child = child->next)
    {
-      /* GCOVR_EXCL_BR_START */
-      const char *value = child->mapped_val ? child->mapped_val : child->val;
-      /* GCOVR_EXCL_BR_STOP */
-
-      if (!strcmp(child->key, "enabled"))
+      if (!PrintSystemApplyChild(args, child, &seen))
       {
-         if (!PrintSystemParseOnOff(value, &args->enabled))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            /* GCOVR_EXCL_BR_START */
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.enabled: '%s'",
-                                 /* GCOVR_EXCL_BR_STOP */
-                                 value ? value : "");
-            return;
-         }
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "type"))
-      {
-         if (!value)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Missing linear_system.print_system.type value");
-            return;
-         }
-         if (!strcasecmp(value, "all"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_ALL;
-         }
-         else if (!strcasecmp(value, "every_n_systems"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS;
-         }
-         else if (!strcasecmp(value, "every_n_timesteps"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS;
-         }
-         else if (!strcasecmp(value, "ids"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_IDS;
-         }
-         else if (!strcasecmp(value, "ranges"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_RANGES;
-         }
-         else if (!strcasecmp(value, "iterations_over"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_ITERATIONS_OVER;
-         }
-         else if (!strcasecmp(value, "setup_time_over"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_SETUP_TIME_OVER;
-         }
-         else if (!strcasecmp(value, "solve_time_over"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER;
-         }
-         else if (!strcasecmp(value, "selectors"))
-         {
-            args->type = PRINT_SYSTEM_TYPE_SELECTORS;
-         }
-         else
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.type: '%s'", value);
-            return;
-         }
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "stage"))
-      {
-         if (!value)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Missing linear_system.print_system.stage value");
-            return;
-         }
-         if (!strcasecmp(value, "build"))
-         {
-            args->stage_mask = PRINT_SYSTEM_STAGE_BUILD_BIT;
-         }
-         else if (!strcasecmp(value, "setup"))
-         {
-            args->stage_mask = PRINT_SYSTEM_STAGE_SETUP_BIT;
-         }
-         else if (!strcasecmp(value, "apply"))
-         {
-            args->stage_mask = PRINT_SYSTEM_STAGE_APPLY_BIT;
-         }
-         else if (!strcasecmp(value, "all"))
-         {
-            args->stage_mask = PRINT_SYSTEM_STAGE_BUILD_BIT |
-                               PRINT_SYSTEM_STAGE_SETUP_BIT |
-                               PRINT_SYSTEM_STAGE_APPLY_BIT;
-         }
-         else
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.stage: '%s'", value);
-            return;
-         }
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "artifacts"))
-      {
-         if (!PrintSystemParseArtifactsNode(child, &args->artifacts))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.artifacts");
-            return;
-         }
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-         for (const YAMLnode *item = child->children; item != NULL; item = item->next)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
-            {
-               ((YAMLnode *)item)->valid = YAML_NODE_VALID;
-            }
-         }
-      }
-      else if (!strcmp(child->key, "output_dir"))
-      {
-         if (!value)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Missing linear_system.print_system.output_dir value");
-            return;
-         }
-         snprintf(args->output_dir, sizeof(args->output_dir), "%s", value);
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "overwrite"))
-      {
-         if (!PrintSystemParseOnOff(value, &args->overwrite))
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            /* GCOVR_EXCL_BR_START */
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.overwrite: '%s'",
-                                 /* GCOVR_EXCL_BR_STOP */
-                                 value ? value : "");
-            return;
-         }
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "every"))
-      {
-         if (!PrintSystemParseInteger(value, &args->every) || args->every <= 0)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            /* GCOVR_EXCL_BR_START */
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.every: '%s'",
-                                 /* GCOVR_EXCL_BR_STOP */
-                                 value ? value : "");
-            return;
-         }
-         seen_every                 = 1;
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "ids"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseIntArrayNode(child, &args->ids) || !args->ids ||
-             /* GCOVR_EXCL_BR_STOP */
-             /* GCOVR_EXCL_BR_START */
-             args->ids->size == 0)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.ids");
-            return;
-         }
-         seen_ids                   = 1;
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-         for (const YAMLnode *item = child->children; item != NULL; item = item->next)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
-            {
-               ((YAMLnode *)item)->valid = YAML_NODE_VALID;
-            }
-         }
-      }
-      else if (!strcmp(child->key, "ranges"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseRangesNode(child, &args->ranges) || args->ranges.size == 0)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.ranges");
-            return;
-         }
-         seen_ranges                = 1;
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-         for (const YAMLnode *item = child->children; item != NULL; item = item->next)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
-            {
-               ((YAMLnode *)item)->valid = YAML_NODE_VALID;
-            }
-         }
-      }
-      else if (!strcmp(child->key, "threshold"))
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemParseDouble(value, &args->threshold) || args->threshold < 0.0)
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            /* GCOVR_EXCL_BR_START */
-            hypredrv_ErrorMsgAdd("Invalid linear_system.print_system.threshold: '%s'",
-                                 /* GCOVR_EXCL_BR_STOP */
-                                 value ? value : "");
-            return;
-         }
-         seen_threshold             = 1;
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else if (!strcmp(child->key, "selectors"))
-      {
-         if (!child->children)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd(
-               "linear_system.print_system.selectors must be a sequence");
-            return;
-         }
-
-         size_t selector_count = 0;
-         for (const YAMLnode *item = child->children; item != NULL; item = item->next)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
-            {
-               selector_count++;
-            }
-         }
-         /* GCOVR_EXCL_BR_START */
-         if (selector_count == 0) /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("linear_system.print_system.selectors cannot be empty");
-            return;
-         }
-
-         DumpSelector_args *selectors =
-            (DumpSelector_args *)calloc(selector_count, sizeof(DumpSelector_args));
-         /* GCOVR_EXCL_BR_START */
-         if (!selectors) /* GCOVR_EXCL_BR_STOP */
-         {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Failed to allocate selector list"); /* GCOVR_EXCL_LINE */
-            return;                                 /* GCOVR_EXCL_LINE */
-         }
-
-         size_t selector_idx = 0;
-         for (const YAMLnode *item = child->children; item != NULL; item = item->next)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
-            {
-               continue; /* GCOVR_EXCL_LINE */
-            }
-
-            if (!PrintSystemParseSelectorNode(item, &selectors[selector_idx]))
-            {
-               for (size_t cleanup_idx = 0; cleanup_idx <= selector_idx; cleanup_idx++)
-               {
-                  PrintSystemSelectorDestroy(&selectors[cleanup_idx]);
-               }
-               free(selectors);
-               hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-               hypredrv_ErrorMsgAdd(
-                  "Invalid linear_system.print_system.selectors entry at index %d",
-                  (int)selector_idx);
-               return;
-            }
-            ((YAMLnode *)item)->valid = YAML_NODE_VALID;
-            selector_idx++;
-         }
-
-         args->selectors            = selectors;
-         args->num_selectors        = selector_count;
-         seen_selectors             = 1;
-         ((YAMLnode *)child)->valid = YAML_NODE_VALID;
-      }
-      else
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-         hypredrv_ErrorMsgAdd("Unknown key under linear_system.print_system: '%s'",
-                              child->key);
          return;
       }
    }
 
-   if (args->type == PRINT_SYSTEM_TYPE_ALL &&
-       /* GCOVR_EXCL_BR_START */
-       (seen_every || seen_ids || seen_ranges || seen_selectors))
-   /* GCOVR_EXCL_BR_STOP */
+   (void)PrintSystemValidateCombination(args, &seen);
+}
+
+/* Allocates the next hypre-data/ls_NNNNN directory by scanning for the highest
+ * index already present, and reports its path. */
+static void
+PrintDataNextSeriesDir(char *run_dir, size_t run_dir_size)
+{
+   const char *root = "hypre-data";
+   struct stat st;
+   if (stat(root, &st) != 0)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.type=all cannot be combined with selectors");
-      return;
+      (void)mkdir(root, 0775);
    }
-   if ((args->type == PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS ||
-        args->type == PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS) &&
-       !seen_every)
-   {
-      args->every = 1;
-   }
-   if (args->type == PRINT_SYSTEM_TYPE_IDS && !seen_ids)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("linear_system.print_system.type=ids requires ids");
-      return;
-   }
-   if (args->type == PRINT_SYSTEM_TYPE_RANGES && !seen_ranges)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("linear_system.print_system.type=ranges requires ranges");
-      return;
-   }
-   if ((args->type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER ||
-        args->type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER ||
-        /* GCOVR_EXCL_BR_START */
-        args->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER) &&
-       /* GCOVR_EXCL_BR_STOP */
-       !seen_threshold)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system threshold type requires threshold");
-      return;
-   }
-   if (args->type == PRINT_SYSTEM_TYPE_SELECTORS && !seen_selectors)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.type=selectors requires selectors");
-      return;
-   }
+
+   int  max_idx = -1;
+   DIR *dir     = opendir(root);
    /* GCOVR_EXCL_BR_START */
-   if (args->type != PRINT_SYSTEM_TYPE_SELECTORS && seen_selectors)
-   /* GCOVR_EXCL_BR_STOP */
+   if (dir) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.selectors requires type=selectors");
-      return;
+      const struct dirent *ent = NULL;
+      while ((ent = readdir(dir)) != NULL)
+      {
+         /* GCOVR_EXCL_BR_START */
+         if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            int idx = (int)strtol(ent->d_name + 3, NULL, 10);
+            if (idx > max_idx)
+            {
+               max_idx = idx;
+            }
+         }
+      }
+      closedir(dir);
    }
-   if (args->type != PRINT_SYSTEM_TYPE_ITERATIONS_OVER &&
-       args->type != PRINT_SYSTEM_TYPE_SETUP_TIME_OVER &&
-       args->type != PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER && seen_threshold)
+   int next_idx = max_idx + 1;
+   snprintf(run_dir, run_dir_size, "%s/ls_%05d", root, next_idx);
+   /* GCOVR_EXCL_BR_START */
+   if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.threshold requires a threshold-based type");
-      return;
-   }
-   if (args->type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER &&
-       (args->stage_mask & PRINT_SYSTEM_STAGE_APPLY_BIT) == 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.type=iterations_over requires stage apply");
-      return;
-   }
-   if (args->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER &&
-       (args->stage_mask & PRINT_SYSTEM_STAGE_APPLY_BIT) == 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.type=solve_time_over requires stage apply");
-      return;
-   }
-   if (args->type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER &&
-       (args->stage_mask &
-        (PRINT_SYSTEM_STAGE_SETUP_BIT | PRINT_SYSTEM_STAGE_APPLY_BIT)) == 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "linear_system.print_system.type=setup_time_over requires stage setup or apply");
-      return;
+      (void)mkdir(run_dir, 0775);
    }
 }
 
@@ -1238,43 +1440,9 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
 
    if (use_series_dir)
    {
-      const char *root = "hypre-data";
-      struct stat st;
-      if (stat(root, &st) != 0)
-      {
-         (void)mkdir(root, 0775);
-      }
-
-      int  max_idx = -1;
-      DIR *dir     = opendir(root);
-      /* GCOVR_EXCL_BR_START */
-      if (dir) /* GCOVR_EXCL_BR_STOP */
-      {
-         const struct dirent *ent = NULL;
-         while ((ent = readdir(dir)) != NULL)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
-            /* GCOVR_EXCL_BR_STOP */
-            {
-               int idx = (int)strtol(ent->d_name + 3, NULL, 10);
-               if (idx > max_idx)
-               {
-                  max_idx = idx;
-               }
-            }
-         }
-         closedir(dir);
-      }
-      int  next_idx = max_idx + 1;
       char run_dir[256];
-      snprintf(run_dir, sizeof(run_dir), "%s/ls_%05d", root, next_idx);
-      /* GCOVR_EXCL_BR_START */
-      if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         (void)mkdir(run_dir, 0775);
-      }
 
+      PrintDataNextSeriesDir(run_dir, sizeof(run_dir));
       snprintf(A_path, sizeof(A_path), "%s/%s", run_dir, A_name);
       snprintf(b_path, sizeof(b_path), "%s/%s", run_dir, b_name);
       snprintf(d_path, sizeof(d_path), "%s/%s", run_dir, d_name);
@@ -1538,6 +1706,163 @@ PrintSystemStageEnabled(const PrintSystem_args *cfg, int stage)
    /* GCOVR_EXCL_BR_STOP */
 }
 
+/* Records why a dump was (or was not) scheduled. Safe to call with no sink, so
+ * callers do not have to guard every diagnostic. */
+static void
+PrintSystemSetReason(char *reason, size_t reason_size, const char *fmt, ...)
+{
+   va_list ap;
+
+   /* GCOVR_EXCL_BR_START */
+   if (!reason || reason_size == 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
+   va_start(ap, fmt);
+   vsnprintf(reason, reason_size, fmt, ap);
+   va_end(ap);
+}
+
+/* Preconditions common to every selection type: a usable config and context,
+ * with the current stage enabled. */
+static int
+PrintSystemDumpGateOpen(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
+                        char *reason, size_t reason_size)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (!cfg) /* GCOVR_EXCL_BR_STOP */
+   {
+      PrintSystemSetReason(reason, reason_size, "%s",
+                           "missing configuration"); /* GCOVR_EXCL_LINE */
+      return 0;                                      /* GCOVR_EXCL_LINE */
+   }
+   if (!cfg->enabled)
+   {
+      PrintSystemSetReason(reason, reason_size, "%s", "print_system disabled");
+      return 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!ctx) /* GCOVR_EXCL_BR_STOP */
+   {
+      PrintSystemSetReason(reason, reason_size, "%s",
+                           "missing context"); /* GCOVR_EXCL_LINE */
+      return 0;                                /* GCOVR_EXCL_LINE */
+   }
+   if (!PrintSystemStageEnabled(cfg, ctx->stage))
+   {
+      PrintSystemSetReason(reason, reason_size, "stage '%s' not selected",
+                           PrintSystemStageName(ctx->stage));
+      return 0;
+   }
+
+   return 1;
+}
+
+/* Describes the selector that matched, using the wording appropriate to its
+ * basis (a metric threshold or a per-level value). */
+static void
+PrintSystemDescribeMatchedSelector(const DumpSelector_args *selector, size_t index,
+                                   int basis_value, double metric_value, char *reason,
+                                   size_t reason_size)
+{
+   if (PrintSystemBasisUsesThreshold(selector->basis))
+   {
+      PrintSystemSetReason(
+         reason, reason_size, "selector[%zu] basis=%s metric_value=%.2e threshold=%.2e",
+         index, PrintSystemBasisName(selector->basis), metric_value, selector->threshold);
+   }
+   else
+   {
+      PrintSystemSetReason(
+         reason, reason_size, "selector[%zu] basis=%s level=%d basis_value=%d", index,
+         PrintSystemBasisName(selector->basis), selector->level, basis_value);
+   }
+}
+
+/* Selector lists match on the first entry that accepts the context. */
+static int
+PrintSystemAnySelectorMatches(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
+                              char *reason, size_t reason_size)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (!cfg->selectors || cfg->num_selectors == 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      PrintSystemSetReason(reason, reason_size, "%s", "selectors list is empty");
+      return 0;
+   }
+
+   for (size_t i = 0; i < cfg->num_selectors; i++)
+   {
+      const DumpSelector_args *selector = &cfg->selectors[i];
+      int    basis_value                = PrintSystemSelectorBasisValueGet(selector, ctx);
+      double metric_value               = PrintSystemMetricValueGet(selector->basis, ctx);
+
+      if (PrintSystemSelectorMatches(selector, ctx))
+      {
+         PrintSystemDescribeMatchedSelector(selector, i, basis_value, metric_value,
+                                            reason, reason_size);
+         return 1;
+      }
+   }
+
+   PrintSystemSetReason(reason, reason_size, "no selector matched (count=%zu)",
+                        cfg->num_selectors);
+
+   return 0;
+}
+
+/* Threshold-based selection: the recorded metric for this stage is compared
+ * against the configured threshold. Only the three threshold types reach here;
+ * PrintSystemTypeIsThresholdBased() gates the matching validation rules. */
+static int
+PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
+                            char *reason, size_t reason_size)
+{
+   switch (cfg->type)
+   {
+      case PRINT_SYSTEM_TYPE_ITERATIONS_OVER:
+      {
+         /* GCOVR_EXCL_BR_START */
+         int matched =
+            (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
+         /* GCOVR_EXCL_BR_STOP */
+
+         PrintSystemSetReason(reason, reason_size, "last_iter=%d threshold=%.3e",
+                              ctx->last_iter, cfg->threshold);
+         return matched;
+      }
+
+      case PRINT_SYSTEM_TYPE_SETUP_TIME_OVER:
+      {
+         /* GCOVR_EXCL_BR_START */
+         int matched =
+            (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
+         /* GCOVR_EXCL_BR_STOP */
+
+         PrintSystemSetReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
+                              ctx->last_setup_time, cfg->threshold);
+         return matched;
+      }
+
+      case PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER:
+      {
+         /* GCOVR_EXCL_BR_START */
+         int matched =
+            (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
+         /* GCOVR_EXCL_BR_STOP */
+
+         PrintSystemSetReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
+                              ctx->last_solve_time, cfg->threshold);
+         return matched;
+      }
+      default:
+         break;
+   }
+
+   return 0;
+}
+
 static int
 PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
                               char *reason, size_t reason_size)
@@ -1548,204 +1873,76 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       reason[0] = '\0';
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (!cfg) /* GCOVR_EXCL_BR_STOP */
+   if (!PrintSystemDumpGateOpen(cfg, ctx, reason, reason_size))
    {
-      if (reason && reason_size > 0) /* GCOVR_EXCL_LINE */
-      {
-         snprintf(reason, reason_size, "%s",
-                  "missing configuration"); /* GCOVR_EXCL_LINE */
-      }
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-   if (!cfg->enabled)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "%s", "print_system disabled");
-      }
-      return 0;
-   }
-   /* GCOVR_EXCL_BR_START */
-   if (!ctx) /* GCOVR_EXCL_BR_STOP */
-   {
-      if (reason && reason_size > 0) /* GCOVR_EXCL_LINE */
-      {
-         snprintf(reason, reason_size, "%s", "missing context"); /* GCOVR_EXCL_LINE */
-      }
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-   if (!PrintSystemStageEnabled(cfg, ctx->stage))
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "stage '%s' not selected",
-                  PrintSystemStageName(ctx->stage));
-      }
       return 0;
    }
 
-   if (cfg->type == PRINT_SYSTEM_TYPE_ALL)
+   switch (cfg->type)
    {
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
+      case PRINT_SYSTEM_TYPE_ALL:
+         PrintSystemSetReason(reason, reason_size, "%s", "type=all");
+         return 1;
+
+      case PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS:
       {
-         snprintf(reason, reason_size, "%s", "type=all");
+         /* GCOVR_EXCL_BR_START */
+         int matched = (ctx->system_index >= 0) && (cfg->every > 0) &&
+                       /* GCOVR_EXCL_BR_STOP */
+                       ((ctx->system_index % cfg->every) == 0);
+
+         PrintSystemSetReason(reason, reason_size, "system_index=%d every=%d",
+                              ctx->system_index, cfg->every);
+         return matched;
       }
-      return 1;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS)
-   {
-      /* GCOVR_EXCL_BR_START */
-      int matched = (ctx->system_index >= 0) && (cfg->every > 0) &&
-                    /* GCOVR_EXCL_BR_STOP */
-                    ((ctx->system_index % cfg->every) == 0);
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
+
+      case PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS:
       {
-         snprintf(reason, reason_size, "system_index=%d every=%d", ctx->system_index,
-                  cfg->every);
+         /* GCOVR_EXCL_BR_START */
+         int matched = (ctx->timestep_index >= 0) && (cfg->every > 0) &&
+                       /* GCOVR_EXCL_BR_STOP */
+                       ((ctx->timestep_index % cfg->every) == 0);
+
+         PrintSystemSetReason(reason, reason_size, "timestep_index=%d every=%d",
+                              ctx->timestep_index, cfg->every);
+         return matched;
       }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_EVERY_N_TIMESTEPS)
-   {
-      /* GCOVR_EXCL_BR_START */
-      int matched = (ctx->timestep_index >= 0) && (cfg->every > 0) &&
-                    /* GCOVR_EXCL_BR_STOP */
-                    ((ctx->timestep_index % cfg->every) == 0);
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
+
+      case PRINT_SYSTEM_TYPE_IDS:
       {
-         snprintf(reason, reason_size, "timestep_index=%d every=%d", ctx->timestep_index,
-                  cfg->every);
-      }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_IDS)
-   {
-      int matched = PrintSystemContainsID(cfg->ids, ctx->system_index);
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "system_index=%d ids_size=%zu", ctx->system_index,
-                  /* GCOVR_EXCL_BR_START */
-                  cfg->ids ? cfg->ids->size : 0);
+         int matched = PrintSystemContainsID(cfg->ids, ctx->system_index);
+
+         PrintSystemSetReason(reason, reason_size, "system_index=%d ids_size=%zu",
+                              ctx->system_index,
+                              /* GCOVR_EXCL_BR_START */
+                              cfg->ids ? cfg->ids->size : 0);
          /* GCOVR_EXCL_BR_STOP */
-      }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_RANGES)
-   {
-      int matched = PrintSystemContainsRange(&cfg->ranges, ctx->system_index);
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "system_index=%d ranges_size=%zu",
-                  ctx->system_index, cfg->ranges.size);
-      }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_ITERATIONS_OVER)
-   {
-      /* GCOVR_EXCL_BR_START */
-      int matched = (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
-      /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "last_iter=%d threshold=%.3e", ctx->last_iter,
-                  cfg->threshold);
-      }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_SETUP_TIME_OVER)
-   {
-      int matched =
-         /* GCOVR_EXCL_BR_START */
-         (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
-      /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
-                  ctx->last_setup_time, cfg->threshold);
-      }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER)
-   {
-      int matched =
-         /* GCOVR_EXCL_BR_START */
-         (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
-      /* GCOVR_EXCL_BR_STOP */
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
-                  ctx->last_solve_time, cfg->threshold);
-      }
-      return matched;
-   }
-   if (cfg->type == PRINT_SYSTEM_TYPE_SELECTORS)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!cfg->selectors || cfg->num_selectors == 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-         {
-            snprintf(reason, reason_size, "%s", "selectors list is empty");
-         }
-         return 0;
+         return matched;
       }
 
-      for (size_t i = 0; i < cfg->num_selectors; i++)
+      case PRINT_SYSTEM_TYPE_RANGES:
       {
-         const DumpSelector_args *selector = &cfg->selectors[i];
-         int    basis_value  = PrintSystemSelectorBasisValueGet(selector, ctx);
-         double metric_value = PrintSystemMetricValueGet(selector->basis, ctx);
-         int    matched      = PrintSystemSelectorMatches(selector, ctx);
-         if (matched)
-         {
-            /* GCOVR_EXCL_BR_START */
-            if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-            {
-               if (PrintSystemBasisUsesThreshold(selector->basis))
-               {
-                  snprintf(reason, reason_size,
-                           "selector[%zu] basis=%s metric_value=%.2e threshold=%.2e", i,
-                           PrintSystemBasisName(selector->basis), metric_value,
-                           selector->threshold);
-               }
-               else
-               {
-                  snprintf(reason, reason_size,
-                           "selector[%zu] basis=%s level=%d basis_value=%d", i,
-                           PrintSystemBasisName(selector->basis), selector->level,
-                           basis_value);
-               }
-            }
-            return 1;
-         }
+         int matched = PrintSystemContainsRange(&cfg->ranges, ctx->system_index);
+
+         PrintSystemSetReason(reason, reason_size, "system_index=%d ranges_size=%zu",
+                              ctx->system_index, cfg->ranges.size);
+         return matched;
       }
 
-      /* GCOVR_EXCL_BR_START */
-      if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         snprintf(reason, reason_size, "no selector matched (count=%zu)",
-                  cfg->num_selectors);
-      }
-      return 0;
+      case PRINT_SYSTEM_TYPE_ITERATIONS_OVER:
+      case PRINT_SYSTEM_TYPE_SETUP_TIME_OVER:
+      case PRINT_SYSTEM_TYPE_SOLVE_TIME_OVER:
+         return PrintSystemThresholdMatches(cfg, ctx, reason, reason_size);
+
+      case PRINT_SYSTEM_TYPE_SELECTORS:
+         return PrintSystemAnySelectorMatches(cfg, ctx, reason, reason_size);
+
+      default:
+         break;
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (reason && reason_size > 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      snprintf(reason, reason_size, "unknown type=%d", cfg->type);
-   }
+   PrintSystemSetReason(reason, reason_size, "unknown type=%d", cfg->type);
+
    return 0;
 }
 
@@ -2059,6 +2256,66 @@ PrintSystemRemoveTree(const char *path)
    /* GCOVR_EXCL_BR_STOP */
 }
 
+/* Chooses the ls_NNNNN leaf beneath `base_dir`. In overwrite mode the index
+ * advances monotonically and any directory already there is cleared; otherwise
+ * the first unused index is taken. Returns zero on failure. */
+static int
+PrintSystemChooseDumpLeaf(const PrintSystem_args *cfg, PrintSystem_args *cfg_state,
+                          const char *base_dir, char *candidate, size_t candidate_size)
+{
+   char leaf[32];
+
+   if (cfg->overwrite)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (cfg_state->next_dump_index < 0) /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+
+      snprintf(leaf, sizeof(leaf), "ls_%05d", cfg_state->next_dump_index);
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemPathJoin(candidate, candidate_size, base_dir, leaf))
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+      cfg_state->next_dump_index++;
+
+      /* GCOVR_EXCL_BR_START */
+      if (PrintSystemPathExists(candidate) && !PrintSystemRemoveTree(candidate))
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+   }
+   else
+   {
+      int next_idx = PrintSystemFindMaxDumpIndex(base_dir) + 1;
+      /* GCOVR_EXCL_BR_START */
+      if (next_idx < 0) /* GCOVR_EXCL_BR_STOP */
+      {
+         return 0; /* GCOVR_EXCL_LINE */
+      }
+
+      do
+      {
+         snprintf(leaf, sizeof(leaf), "ls_%05d", next_idx);
+         /* GCOVR_EXCL_BR_START */
+         if (!PrintSystemPathJoin(candidate, candidate_size, base_dir, leaf))
+         /* GCOVR_EXCL_BR_STOP */
+         {
+            return 0; /* GCOVR_EXCL_LINE */
+         }
+         next_idx++;
+         /* GCOVR_EXCL_BR_START */
+      } while (PrintSystemPathExists(candidate));
+      /* GCOVR_EXCL_BR_STOP */
+   }
+
+   return 1;
+}
+
 static int
 PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
                               const char *object_name, char *dump_dir,
@@ -2104,53 +2361,9 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
    }
 
    char candidate[2 * MAX_FILENAME_LENGTH];
-   char leaf[32];
-   if (cfg->overwrite)
+   if (!PrintSystemChooseDumpLeaf(cfg, cfg_state, base_dir, candidate, sizeof(candidate)))
    {
-      /* GCOVR_EXCL_BR_START */
-      if (cfg_state->next_dump_index < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-
-      snprintf(leaf, sizeof(leaf), "ls_%05d", cfg_state->next_dump_index);
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemPathJoin(candidate, sizeof(candidate), base_dir, leaf))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-      cfg_state->next_dump_index++;
-
-      /* GCOVR_EXCL_BR_START */
-      if (PrintSystemPathExists(candidate) && !PrintSystemRemoveTree(candidate))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-   }
-   else
-   {
-      int next_idx = PrintSystemFindMaxDumpIndex(base_dir) + 1;
-      /* GCOVR_EXCL_BR_START */
-      if (next_idx < 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         return 0; /* GCOVR_EXCL_LINE */
-      }
-
-      do
-      {
-         snprintf(leaf, sizeof(leaf), "ls_%05d", next_idx);
-         /* GCOVR_EXCL_BR_START */
-         if (!PrintSystemPathJoin(candidate, sizeof(candidate), base_dir, leaf))
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            return 0; /* GCOVR_EXCL_LINE */
-         }
-         next_idx++;
-         /* GCOVR_EXCL_BR_START */
-      } while (PrintSystemPathExists(candidate));
-      /* GCOVR_EXCL_BR_STOP */
+      return 0;
    }
 
    /* GCOVR_EXCL_BR_START */
@@ -2305,6 +2518,100 @@ PrintSystemAppendStageIndex(const char *dump_dir, const PrintSystemContext *ctx,
    fclose(fp);
 }
 
+/* One schedulable artifact. Exactly one of the object handles is set; a null
+ * handle means the artifact was requested but the object does not exist. */
+typedef struct
+{
+   int             bit;
+   const char     *filename;
+   const char     *label;
+   const char     *null_note;
+   HYPRE_IJMatrix  matrix;
+   HYPRE_IJVector  vector;
+   const IntArray *dofmap;
+} PrintSystemArtifact;
+
+/* Writes one artifact when it is both selected and available, logging why it
+ * was skipped otherwise. Returns zero only when the output path could not be
+ * built, which is a hard failure for the whole dump. */
+static int
+PrintSystemWriteArtifact(MPI_Comm comm, const PrintSystemArtifact *artifact,
+                         int artifacts, const char *dump_dir, const char *object_name,
+                         int ls_id_for_log)
+{
+   char path[2 * MAX_FILENAME_LENGTH];
+
+   if ((artifacts & artifact->bit) == 0)
+   {
+      return 1;
+   }
+
+   if (!artifact->matrix && !artifact->vector && !artifact->dofmap)
+   {
+      /* GCOVR_EXCL_BR_START */
+      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         /* GCOVR_EXCL_BR_STOP */
+                         "print_system skip %s: %s", artifact->label,
+                         artifact->null_note);
+      return 1;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!PrintSystemArtifactPathBuild(dump_dir, artifact->filename, path, sizeof(path)))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("print_system path too long for %s artifact",
+                           artifact->label); /* GCOVR_EXCL_LINE */
+      return 0;                              /* GCOVR_EXCL_LINE */
+   }
+
+   HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log, "print_system write %s: %s",
+                      artifact->label, path);
+
+   if (artifact->matrix)
+   {
+      HYPRE_IJMatrixPrint(artifact->matrix, path);
+   }
+   else if (artifact->vector)
+   {
+      HYPRE_IJVectorPrint(artifact->vector, path);
+   }
+   else
+   {
+      hypredrv_IntArrayWriteAsciiByRank(comm, artifact->dofmap, path);
+   }
+
+   return 1;
+}
+
+/* Rank 0 owns the per-dump metadata file and the cumulative stage index. */
+static void
+PrintSystemWriteDumpIndex(MPI_Comm comm, const PrintSystem_args *cfg,
+                          const PrintSystemContext *ctx, const char *dump_dir,
+                          const char *object_name, int ls_id_for_log)
+{
+   int mypid = 0;
+
+   MPI_Comm_rank(comm, &mypid);
+   if (mypid != 0)
+   {
+      return;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_METADATA) /* GCOVR_EXCL_BR_STOP */
+   {
+      PrintSystemWriteMetadata(dump_dir, ctx, object_name, cfg->artifacts);
+      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         "print_system write metadata: %s/metadata.txt", dump_dir);
+   }
+
+   PrintSystemAppendStageIndex(dump_dir, ctx, object_name);
+   HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                      "print_system append systems index: %s", dump_dir);
+}
+
 uint32_t
 hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
                                    HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
@@ -2313,30 +2620,40 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
                                    const IntArray *dofmap, const PrintSystemContext *ctx,
                                    const char *object_name)
 {
+   const PrintSystem_args *cfg = NULL;
+   char                    decision_reason[160];
+   char                    dump_dir[2 * MAX_FILENAME_LENGTH];
+   int                     ls_id_for_log = 0;
+
    if (!args || !ctx)
    {
       return hypredrv_ErrorCodeGet();
    }
 
-   const PrintSystem_args *cfg = &args->print_system;
-   int  ls_id_for_log = (ctx->stats_ls_id >= 0) ? ctx->stats_ls_id : ctx->system_index;
-   char decision_reason[160];
-   int  should_dump =
-      PrintSystemShouldDumpDetailed(cfg, ctx, decision_reason, sizeof(decision_reason));
+   cfg           = &args->print_system;
+   ls_id_for_log = (ctx->stats_ls_id >= 0) ? ctx->stats_ls_id : ctx->system_index;
+
+   if (!PrintSystemShouldDumpDetailed(cfg, ctx, decision_reason, sizeof(decision_reason)))
+   {
+      HYPREDRV_LOG_COMMF(
+         3, comm, object_name, ls_id_for_log,
+         "print_system evaluate: stage=%s type=%s artifacts=0x%x "
+         "system_index=%d timestep_index=%d variant=%d repetition=%d (%s)",
+         PrintSystemStageName(ctx->stage), PrintSystemTypeName(cfg->type), cfg->artifacts,
+         ctx->system_index, ctx->timestep_index, ctx->variant_index,
+         ctx->repetition_index, decision_reason);
+      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
+                         "print_system skip: selection did not match");
+      return hypredrv_ErrorCodeGet();
+   }
+
    HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
                       "print_system evaluate: stage=%s type=%s artifacts=0x%x "
                       "system_index=%d timestep_index=%d variant=%d repetition=%d (%s)",
                       PrintSystemStageName(ctx->stage), PrintSystemTypeName(cfg->type),
                       cfg->artifacts, ctx->system_index, ctx->timestep_index,
                       ctx->variant_index, ctx->repetition_index, decision_reason);
-   if (!should_dump)
-   {
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system skip: selection did not match");
-      return hypredrv_ErrorCodeGet();
-   }
 
-   char dump_dir[2 * MAX_FILENAME_LENGTH];
    if (!PrintSystemChooseDumpDir(comm, cfg, ctx, object_name, dump_dir, sizeof(dump_dir)))
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -2351,186 +2668,35 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
    HYPREDRV_LOG_COMMF(2, comm, object_name, ls_id_for_log, "print_system dump dir: %s",
                       dump_dir);
 
-   char path[2 * MAX_FILENAME_LENGTH];
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_MATRIX) && mat_A)
    {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "matrix.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
+      const PrintSystemArtifact artifacts[] = {
+         {PRINT_SYSTEM_ARTIFACT_MATRIX, "matrix.out", "matrix", "matrix object is NULL",
+          mat_A, NULL, NULL},
+         {PRINT_SYSTEM_ARTIFACT_PRECMAT, "precmat.out", "precmat",
+          "preconditioner matrix is NULL", mat_M, NULL, NULL},
+         {PRINT_SYSTEM_ARTIFACT_RHS, "rhs.out", "rhs", "rhs vector is NULL", NULL, vec_b,
+          NULL},
+         {PRINT_SYSTEM_ARTIFACT_X0, "x0.out", "x0", "initial guess vector is NULL", NULL,
+          vec_x0, NULL},
+         {PRINT_SYSTEM_ARTIFACT_XREF, "xref.out", "xref", "reference solution is NULL",
+          NULL, vec_xref, NULL},
+         {PRINT_SYSTEM_ARTIFACT_SOLUTION, "solution.out", "solution",
+          "solution vector is NULL", NULL, vec_x, NULL},
+         {PRINT_SYSTEM_ARTIFACT_DOFMAP, "dofmap.out", "dofmap", "dofmap is NULL", NULL,
+          NULL, (dofmap && dofmap->data) ? dofmap : NULL},
+      };
+
+      for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++)
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for matrix artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                       /* GCOVR_EXCL_LINE */
+         if (!PrintSystemWriteArtifact(comm, &artifacts[i], cfg->artifacts, dump_dir,
+                                       object_name, ls_id_for_log))
+         {
+            return hypredrv_ErrorCodeGet();
+         }
       }
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system write matrix: %s", path);
-      HYPRE_IJMatrixPrint(mat_A, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_MATRIX)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip matrix: matrix object is NULL");
-   }
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_PRECMAT) && mat_M)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "precmat.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for precmat artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                        /* GCOVR_EXCL_LINE */
-      }
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system write precmat: %s", path);
-      HYPRE_IJMatrixPrint(mat_M, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_PRECMAT)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip precmat: preconditioner matrix is NULL");
-   }
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_RHS) && vec_b)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "rhs.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for rhs artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                    /* GCOVR_EXCL_LINE */
-      }
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system write rhs: %s", path);
-      HYPRE_IJVectorPrint(vec_b, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_RHS)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip rhs: rhs vector is NULL");
-   }
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_X0) && vec_x0)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "x0.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for x0 artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                   /* GCOVR_EXCL_LINE */
-      }
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log, "print_system write x0: %s",
-                         /* GCOVR_EXCL_BR_STOP */
-                         path);
-      HYPRE_IJVectorPrint(vec_x0, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_X0)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip x0: initial guess vector is NULL");
-   }
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_XREF) && vec_xref)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "xref.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for xref artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                     /* GCOVR_EXCL_LINE */
-      }
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system write xref: %s", path);
-      HYPRE_IJVectorPrint(vec_xref, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_XREF)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip xref: reference solution is NULL");
-   }
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_SOLUTION) && vec_x)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "solution.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for solution artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                         /* GCOVR_EXCL_LINE */
-      }
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system write solution: %s", path);
-      HYPRE_IJVectorPrint(vec_x, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_SOLUTION)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip solution: solution vector is NULL");
-   }
-   /* GCOVR_EXCL_BR_START */
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_DOFMAP) && dofmap && dofmap->data)
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemArtifactPathBuild(dump_dir, "dofmap.out", path, sizeof(path)))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "print_system path too long for dofmap artifact"); /* GCOVR_EXCL_LINE */
-         return hypredrv_ErrorCodeGet();                       /* GCOVR_EXCL_LINE */
-      }
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system write dofmap: %s", path);
-      hypredrv_IntArrayWriteAsciiByRank(comm, dofmap, path);
-   }
-   else if (cfg->artifacts & PRINT_SYSTEM_ARTIFACT_DOFMAP)
-   {
-      /* GCOVR_EXCL_BR_START */
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         /* GCOVR_EXCL_BR_STOP */
-                         "print_system skip dofmap: dofmap is NULL");
    }
 
-   int mypid = 0;
-   MPI_Comm_rank(comm, &mypid);
-   /* GCOVR_EXCL_BR_START */
-   if ((cfg->artifacts & PRINT_SYSTEM_ARTIFACT_METADATA) && mypid == 0)
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      PrintSystemWriteMetadata(dump_dir, ctx, object_name, cfg->artifacts);
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system write metadata: %s/metadata.txt", dump_dir);
-   }
-   if (mypid == 0)
-   {
-      PrintSystemAppendStageIndex(dump_dir, ctx, object_name);
-      HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
-                         "print_system append systems index: %s", dump_dir);
-   }
+   PrintSystemWriteDumpIndex(comm, cfg, ctx, dump_dir, object_name, ls_id_for_log);
 
    HYPREDRV_LOG_COMMF(2, comm, object_name, ls_id_for_log, "print_system dump complete");
 

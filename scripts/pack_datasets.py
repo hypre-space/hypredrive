@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Pack hypredrive datasets into deterministic, per-dataset Zenodo archives.
 
-The current Zenodo dataset record is v0.1.0.  This packer defaults to the
-planned v0.3.0 release and preserves the existing archive names, for example
+The current Zenodo dataset record is 22116856.  This packer defaults to the
+v0.3.0 release and preserves the existing archive names, for example
 ``compflow6k.tar.gz``.  The release version is recorded in the generated
 manifest and checksum filenames.
 
@@ -28,7 +28,7 @@ import tarfile
 from pathlib import Path
 
 
-ZENODO_RECORD = "17471036"
+ZENODO_RECORD = "22116856"
 CURRENT_ZENODO_VERSION = "0.1.0"
 DEFAULT_VERSION = "0.3.0"
 DEFAULT_SOURCE_DIR = Path(__file__).resolve().parents[1] / "data"

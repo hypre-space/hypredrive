@@ -9,6 +9,7 @@
 #   -DTARGET_BIN=...                        path to hypredrive executable
 #   -DTEST_RUNTIME_ENV_ASSIGNMENT=KEY=VAL   optional (e.g. LD_LIBRARY_PATH=...)
 #   -DHYPREDRV_SMOKE_TEST_USES_SYCL=ON      run with a minimal env (SYCL workaround)
+#   -DHYPREDRV_SYCL_DEVICE_SELECTOR=...     optional ONEAPI selector override
 
 if(NOT DEFINED LAUNCH_DIR OR NOT DEFINED TARGET_BIN)
   message(FATAL_ERROR "HYPREDRV_SmokeCheck.cmake: LAUNCH_DIR and TARGET_BIN must be defined")
@@ -34,6 +35,15 @@ if(DEFINED TEST_RUNTIME_ENV_ASSIGNMENT AND
   set(ENV{${CMAKE_MATCH_1}} "${CMAKE_MATCH_2}")
 elseif(DEFINED TEST_RUNTIME_ENV_ASSIGNMENT AND NOT TEST_RUNTIME_ENV_ASSIGNMENT STREQUAL "")
   message(WARNING "[check] Ignoring malformed TEST_RUNTIME_ENV_ASSIGNMENT: ${TEST_RUNTIME_ENV_ASSIGNMENT}")
+endif()
+
+# Apply an explicit selector from the CMake configuration before considering
+# the inherited shell environment.  This makes the smoke test reproducible
+# when it is launched through a build-system target.
+if(HYPREDRV_SMOKE_TEST_USES_SYCL AND
+   DEFINED HYPREDRV_SYCL_DEVICE_SELECTOR AND
+   NOT HYPREDRV_SYCL_DEVICE_SELECTOR STREQUAL "")
+  set(ENV{ONEAPI_DEVICE_SELECTOR} "${HYPREDRV_SYCL_DEVICE_SELECTOR}")
 endif()
 
 # Default a SYCL device selector if the caller didn't pick one.

@@ -88,6 +88,328 @@ IJVectorRejectNonfiniteCoefficient(const char *filename)
    return 0;
 }
 
+/* Host staging buffers for one part, plus the arrays handed to hypre (identical
+ * to the host buffers unless the vector is device-resident). */
+typedef struct
+{
+   HYPRE_BigInt  *h_indices;
+   HYPRE_Complex *h_vals;
+   HYPRE_BigInt  *indices;
+   HYPRE_Complex *vals;
+} IJVectorEntryBuffers;
+
+/* Opens part `partid`, then reads and validates its 8-word header. Returns a
+ * stream positioned just past the header, or NULL with the error state set (the
+ * stream is closed on every failure path). `missing_is_not_found` selects the
+ * error reported when the file cannot be opened; `check_prepass` additionally
+ * cross-checks the part row count against the pre-scan maximum. */
+static FILE *
+IJVectorOpenPart(const char *prefixname, uint32_t partid, char *filename,
+                 size_t filename_size, uint64_t *header, uint64_t nrows_max,
+                 int check_prepass)
+{
+   FILE *fp = NULL;
+
+   snprintf(filename, filename_size, "%s.%05d.bin", prefixname, (int)partid);
+   fp = fopen(filename, "rb");
+   if (!fp)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(filename);
+      return NULL;
+   }
+
+   if (fread(header, sizeof(uint64_t), 8, fp) != 8)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
+      fclose(fp);
+      return NULL;
+   }
+
+   if (!IJVectorValidateHeader(header, filename) ||
+       (check_prepass && !IJVectorPartRowsMatchesPrepass(nrows_max, header[5], filename)))
+   {
+      fclose(fp);
+      return NULL;
+   }
+
+   return fp;
+}
+
+/* First pass: reads every part header to accumulate this rank's local row count
+ * and the largest per-part row count, which bounds the read buffers. */
+static int
+IJVectorScanParts(const char *prefixname, const uint32_t *partids, uint32_t nparts,
+                  uint64_t *nrows_sum_out, uint64_t *nrows_max_out)
+{
+   char     filename[1024];
+   uint64_t header[8];
+   uint64_t nrows_sum = 0;
+   uint64_t nrows_max = 0;
+
+   for (uint32_t part = 0; part < nparts; part++)
+   {
+      FILE *fp = IJVectorOpenPart(prefixname, partids[part], filename, sizeof(filename),
+                                  header, 0, 0);
+
+      if (!fp)
+      {
+         return 0;
+      }
+      fclose(fp);
+
+      /* LCOV_EXCL_START */
+      if (nrows_sum > UINT64_MAX - header[5])
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Vector local row count overflow while reading %s",
+                              filename);
+         return 0;
+      }
+      /* LCOV_EXCL_STOP */
+      nrows_sum += header[5];
+      nrows_max = (header[5] > nrows_max) ? header[5] : nrows_max;
+   }
+
+   *nrows_sum_out = nrows_sum;
+   *nrows_max_out = nrows_max;
+
+   return 1;
+}
+
+/* Builds this rank's slice of the global part id map. */
+static int
+IJVectorBuildPartIds(uint64_t first_part, uint32_t nparts, uint32_t **partids_out)
+{
+   uint32_t *partids = NULL;
+
+   if (nparts > (uint32_t)(SIZE_MAX / sizeof(uint32_t)))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Vector part id count exceeds allocation bounds");
+      return 0;
+   }
+
+   partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
+   /* LCOV_EXCL_START */
+   if (nparts > 0 && !partids)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate vector part id map (%u entries)", nparts);
+      return 0;
+   }
+   /* LCOV_EXCL_STOP */
+
+   for (uint32_t part = 0; part < nparts; part++)
+   {
+      partids[part] = (uint32_t)(first_part + part);
+   }
+
+   *partids_out = partids;
+
+   return 1;
+}
+
+/* Reads one part's coefficients into `h_vals`, widening from the on-disk
+ * float/double representation and rejecting non-finite entries. */
+static int
+IJVectorReadCoefficients(FILE *fp, const uint64_t *header, uint64_t nrows_max,
+                         HYPRE_Complex *h_vals, const char *filename)
+{
+   const uint64_t vsize  = header[1];
+   const uint64_t nrows  = header[5];
+   void          *buffer = NULL;
+   int            status = 1;
+
+   if (vsize != sizeof(float) && vsize != sizeof(double))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s",
+                           (long long)vsize, filename);
+      return 0;
+   }
+
+   if (nrows == 0 || !h_vals)
+   {
+      return 1;
+   }
+
+   buffer = malloc((size_t)nrows_max * (size_t)vsize);
+   if (!buffer || fread(buffer, (size_t)vsize, nrows, fp) != nrows)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
+      free(buffer);
+      return 0;
+   }
+
+   if (vsize == sizeof(float))
+   {
+      const float *src = (const float *)buffer;
+
+      for (size_t i = 0; i < nrows; i++)
+      {
+         if (!hypredrv_FloatIsFinite(src[i]))
+         {
+            status = IJVectorRejectNonfiniteCoefficient(filename);
+            break;
+         }
+         h_vals[i] = (HYPRE_Complex)src[i];
+      }
+   }
+   else
+   {
+      const double *src = (const double *)buffer;
+
+      for (size_t i = 0; i < nrows; i++)
+      {
+         if (!hypredrv_DoubleIsFinite(src[i]))
+         {
+            status = IJVectorRejectNonfiniteCoefficient(filename);
+            break;
+         }
+         h_vals[i] = (HYPRE_Complex)src[i];
+      }
+   }
+
+   free(buffer);
+
+   return status;
+}
+
+/* Copies one part's staged entries to device memory when the vector lives there. */
+static void
+IJVectorStageEntriesToDevice(IJVectorEntryBuffers *buf, uint64_t nrows)
+{
+#ifdef HYPRE_USING_GPU
+   if (buf->vals != buf->h_vals)
+   {
+      hypre_TMemcpy(buf->vals, buf->h_vals, HYPRE_Complex, nrows, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(buf->indices, buf->h_indices, HYPRE_BigInt, nrows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+   }
+#else
+   (void)buf;
+   (void)nrows;
+#endif
+}
+
+/* Second pass: reads one part's coefficients and hands them to hypre.
+ *
+ * Each runtime rank can own several consecutive stored parts when the
+ * communicator is smaller than g_nparts. Explicit indices preserve the
+ * concatenation offset; indices=NULL would restart at ilower for every part and
+ * overwrite the values loaded from preceding parts. */
+static int
+IJVectorSetPartValues(HYPRE_IJVector vec, const char *prefixname, uint32_t partid,
+                      uint64_t nrows_max, uint64_t nrows_sum, HYPRE_BigInt ilower,
+                      IJVectorEntryBuffers *buf, uint64_t *local_row_offset)
+{
+   char      filename[1024];
+   uint64_t  header[8];
+   HYPRE_Int nvalues = 0;
+   FILE     *fp = IJVectorOpenPart(prefixname, partid, filename, sizeof(filename), header,
+                                   nrows_max, 1);
+
+   if (!fp)
+   {
+      return 0;
+   }
+
+   /* Read vector coefficients */
+   if (!IJVectorReadCoefficients(fp, header, nrows_max, buf->h_vals, filename))
+   {
+      fclose(fp);
+      return 0;
+   }
+   fclose(fp);
+
+   if (header[5] > nrows_sum || *local_row_offset > nrows_sum - header[5])
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Vector part rows exceed the pre-scanned local range at %s",
+                           filename);
+      return 0;
+   }
+
+   for (uint64_t i = 0; i < header[5]; i++)
+   {
+      buf->h_indices[i] = ilower + (HYPRE_BigInt)(*local_row_offset) + (HYPRE_BigInt)i;
+   }
+
+   IJVectorStageEntriesToDevice(buf, header[5]);
+
+   nvalues = (HYPRE_Int)header[5]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
+   HYPRE_IJVectorSetValues(vec, nvalues, buf->indices, buf->vals);
+   *local_row_offset += header[5];
+
+   return 1;
+}
+
+/* Rank-collective agreement point: returns nonzero only when every rank in
+ * `comm` is still error-free, so a per-rank failure cannot leave peers blocked
+ * in the collective calls that follow. */
+static int
+IJVectorAllRanksOk(MPI_Comm comm)
+{
+   int local_ok = hypredrv_ErrorCodeActive() ? 0 : 1;
+
+   MPI_Allreduce(MPI_IN_PLACE, &local_ok, 1, MPI_INT, MPI_MIN, comm);
+
+   return local_ok;
+}
+
+/* Allocates the host staging buffers, and their device counterparts when the
+ * vector is device-resident. Returns 0 with the error state set. */
+static int
+IJVectorAllocEntryBuffers(uint64_t nrows_max, HYPRE_MemoryLocation memory_location,
+                          IJVectorEntryBuffers *buf)
+{
+#ifndef HYPRE_USING_GPU
+   (void)memory_location;
+#endif
+
+   /* Allocate variables */
+   buf->h_indices =
+      (nrows_max > 0) ? (HYPRE_BigInt *)malloc(nrows_max * sizeof(HYPRE_BigInt)) : NULL;
+   buf->h_vals =
+      (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
+   /* LCOV_EXCL_START */
+   if (nrows_max > 0 && (!buf->h_indices || !buf->h_vals))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate vector read buffers (%llu rows)",
+                           (unsigned long long)nrows_max);
+      return 0;
+   }
+/* LCOV_EXCL_STOP */
+#ifdef HYPRE_USING_GPU
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      buf->indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
+      buf->vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+      /* LCOV_EXCL_START */
+      if (nrows_max > 0 && (!buf->indices || !buf->vals))
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate device vector read buffers (%llu rows)",
+                              (unsigned long long)nrows_max);
+         return 0;
+      }
+      /* LCOV_EXCL_STOP */
+   }
+   else
+#endif
+   {
+      buf->indices = buf->h_indices;
+      buf->vals    = buf->h_vals;
+   }
+
+   return 1;
+}
+
 void
 hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
                                      uint64_t             g_nparts,
@@ -96,29 +418,17 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 {
    int      nprocs = 0, myid = 0;
    uint32_t nparts       = 0;
-   uint64_t part         = 0;
-   uint32_t offset       = 0;
    uint64_t local_nparts = 0, first_part = 0;
-
-   char     filename[1024];
-   uint64_t header[11];
 
    uint64_t nrows_sum = 0, nrows_max = 0, nrows_offset = 0, local_row_offset = 0;
 
-   uint32_t *partids  = NULL;
-   FILE     *fp       = NULL;
-   int       local_ok = 1;
+   uint32_t *partids = NULL;
 
    HYPRE_BigInt         ilower = 0, iupper = 0;
-   HYPRE_IJVector       vec       = NULL;
-   HYPRE_BigInt        *h_indices = NULL;
-   HYPRE_Complex       *h_vals    = NULL;
-   const HYPRE_BigInt  *indices   = NULL;
-   const HYPRE_Complex *vals      = NULL;
-#ifdef HYPRE_USING_GPU
-   HYPRE_BigInt  *d_indices = NULL;
-   HYPRE_Complex *d_vals    = NULL;
-#endif
+   HYPRE_IJVector       vec = NULL;
+   IJVectorEntryBuffers buf = {NULL, NULL, NULL, NULL};
+
+   *vec_ptr = NULL;
 
    /* 1a) Find number of parts per processor */
    MPI_Comm_size(comm, &nprocs);
@@ -127,7 +437,6 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    nparts = (uint32_t)local_nparts;
    if (g_nparts < (size_t)nprocs)
    {
-      *vec_ptr = NULL;
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Invalid number of parts!");
       return;
@@ -135,83 +444,21 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    if (!hypredrv_BinaryPathPrefixIsSafe(prefixname))
    {
-      *vec_ptr = NULL;
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Invalid vector data path prefix");
       return;
    }
 
    /* 1b) Compute partids array */
-   if (nparts > (uint32_t)(SIZE_MAX / sizeof(uint32_t)))
+   if (!IJVectorBuildPartIds(first_part, nparts, &partids))
    {
-      *vec_ptr = NULL;
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Vector part id count exceeds allocation bounds");
       return;
    }
-   partids = (uint32_t *)malloc(nparts * sizeof(uint32_t));
-   /* LCOV_EXCL_START */
-   if (nparts > 0 && !partids)
-   {
-      *vec_ptr = NULL;
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate vector part id map (%u entries)", nparts);
-      return;
-   }
-   /* LCOV_EXCL_STOP */
-   offset = (uint32_t)first_part;
-   for (part = 0; part < nparts; part++)
-   {
-      partids[part] = (uint32_t)(offset + part);
-   }
 
-   /* 2) Read nrows/nnz for each part */
-   nrows_max = nrows_sum = 0;
-   for (part = 0; part < nparts; part++)
-   {
-      snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
-      fp = fopen(filename, "rb");
-      if (!fp)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(filename);
-         break;
-      }
-
-      /* Read header contents */
-      if (fread(header, sizeof(uint64_t), 8, fp) != 8)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
-         fclose(fp);
-         fp = NULL;
-         break;
-      }
-      fclose(fp);
-      fp = NULL;
-
-      if (!IJVectorValidateHeader(header, filename))
-      {
-         break;
-      }
-      /* LCOV_EXCL_START */
-      if (nrows_sum > UINT64_MAX - header[5])
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Vector local row count overflow while reading %s",
-                              filename);
-         break;
-      }
-      /* LCOV_EXCL_STOP */
-      nrows_sum += header[5];
-      nrows_max = (header[5] > nrows_max) ? header[5] : nrows_max;
-   }
-
-   /* Collective agreement before the first collective: a rank that failed to read
-    * its parts must not return while peers block in MPI_Scan/Create below. */
-   local_ok = hypredrv_ErrorCodeActive() ? 0 : 1;
-   MPI_Allreduce(MPI_IN_PLACE, &local_ok, 1, MPI_INT, MPI_MIN, comm);
-   if (!local_ok)
+   /* 2) Read nrows for each part. A failure here is reported through the error
+    * state and settled collectively just below, so peers never diverge. */
+   (void)IJVectorScanParts(prefixname, partids, nparts, &nrows_sum, &nrows_max);
+   if (!IJVectorAllRanksOk(comm))
    {
       goto cleanup;
    }
@@ -226,201 +473,21 @@ hypredrv_IJVectorReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Allocate variables */
-   h_indices =
-      (nrows_max > 0) ? (HYPRE_BigInt *)malloc(nrows_max * sizeof(HYPRE_BigInt)) : NULL;
-   h_vals =
-      (nrows_max > 0) ? (HYPRE_Complex *)malloc(nrows_max * sizeof(HYPRE_Complex)) : NULL;
-   /* LCOV_EXCL_START */
-   if (nrows_max > 0 && (!h_indices || !h_vals))
+   if (!IJVectorAllocEntryBuffers(nrows_max, memory_location, &buf))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate vector read buffers (%llu rows)",
-                           (unsigned long long)nrows_max);
       goto cleanup;
-   }
-   /* LCOV_EXCL_STOP */
-#ifdef HYPRE_USING_GPU
-   if (memory_location == HYPRE_MEMORY_DEVICE)
-   {
-      indices = d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
-      vals = d_vals = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
-      /* LCOV_EXCL_START */
-      if (nrows_max > 0 && (!d_indices || !d_vals))
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate device vector read buffers (%llu rows)",
-                              (unsigned long long)nrows_max);
-         goto cleanup;
-      }
-      /* LCOV_EXCL_STOP */
-   }
-   else
-#endif
-   {
-      indices = h_indices;
-      vals    = h_vals;
    }
 
    /* 4) Fill entries */
-   for (part = 0; part < nparts; part++)
+   for (uint32_t part = 0; part < nparts; part++)
    {
-      snprintf(filename, sizeof(filename), "%s.%05d.bin", prefixname, (int)partids[part]);
-      fp = fopen(filename, "rb");
-      /* Second-pass fopen failure mirrors pass 1 but is not reachable once pass 1
-       * succeeded on the same files in a single-threaded run. */
-      /* LCOV_EXCL_START */
-      if (!fp)
+      if (!IJVectorSetPartValues(vec, prefixname, partids[part], nrows_max, nrows_sum,
+                                 ilower, &buf, &local_row_offset))
       {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(filename);
-         goto after_values;
+         break;
       }
-      /* LCOV_EXCL_STOP */
-
-      if (fread(header, sizeof(uint64_t), 8, fp) != 8) /* LCOV_EXCL_START */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Could not read header from %s", filename);
-         fclose(fp);
-         fp = NULL;
-         goto after_values;
-      }
-      /* LCOV_EXCL_STOP */
-
-      if (!IJVectorValidateHeader(header, filename)) /* LCOV_EXCL_START */
-      {
-         fclose(fp);
-         fp = NULL;
-         goto after_values;
-      }
-      /* LCOV_EXCL_STOP */
-      if (!IJVectorPartRowsMatchesPrepass(nrows_max, header[5], filename))
-      {
-         fclose(fp);
-         fp = NULL;
-         goto after_values;
-      }
-
-      /* Read vector coefficients */
-      if (header[1] == sizeof(float))
-      {
-         float *buffer = NULL;
-         if (header[5] > 0)
-         {
-            buffer = (float *)malloc((size_t)nrows_max * sizeof(float));
-            if (!buffer || fread(buffer, sizeof(float), header[5], fp) != header[5])
-            {
-               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
-               fclose(fp);
-               fp = NULL;
-               free(buffer);
-               goto after_values;
-            }
-         }
-
-         for (size_t i = 0; h_vals && i < header[5]; i++)
-         {
-            if (!hypredrv_FloatIsFinite(buffer[i]))
-            {
-               (void)IJVectorRejectNonfiniteCoefficient(filename);
-               fclose(fp);
-               fp = NULL;
-               free(buffer);
-               goto after_values;
-            }
-            h_vals[i] = (HYPRE_Complex)buffer[i];
-         }
-
-         free(buffer);
-      }
-      else if (header[1] == sizeof(double))
-      {
-         double *buffer = NULL;
-         if (header[5] > 0)
-         {
-            buffer = (double *)malloc((size_t)nrows_max * sizeof(double));
-            if (!buffer || fread(buffer, sizeof(double), header[5], fp) != header[5])
-            {
-               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
-               fclose(fp);
-               fp = NULL;
-               free(buffer);
-               goto after_values;
-            }
-         }
-
-         for (size_t i = 0; h_vals && i < header[5]; i++)
-         {
-            if (!hypredrv_DoubleIsFinite(buffer[i]))
-            {
-               (void)IJVectorRejectNonfiniteCoefficient(filename);
-               fclose(fp);
-               fp = NULL;
-               free(buffer);
-               goto after_values;
-            }
-            h_vals[i] = (HYPRE_Complex)buffer[i];
-         }
-
-         free(buffer);
-      }
-      else
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s", header[1],
-                              filename);
-         fclose(fp);
-         fp = NULL;
-         goto after_values;
-      }
-      fclose(fp);
-      fp = NULL;
-
-#ifdef HYPRE_USING_GPU
-      if (vals != h_vals)
-      {
-         hypre_TMemcpy(d_vals, h_vals, HYPRE_Complex, header[5], HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-      }
-#endif
-
-      /* Each runtime rank can own several consecutive stored parts when the
-       * communicator is smaller than g_nparts.  Explicit indices preserve the
-       * concatenation offset; indices=NULL would restart at ilower for every part
-       * and overwrite the values loaded from preceding parts. */
-      if (header[5] > nrows_sum || local_row_offset > nrows_sum - header[5])
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Vector part rows exceed the pre-scanned local range at %s",
-                              filename);
-         goto after_values;
-      }
-      for (uint64_t i = 0; i < header[5]; i++)
-      {
-         h_indices[i] = ilower + (HYPRE_BigInt)local_row_offset + (HYPRE_BigInt)i;
-      }
-#ifdef HYPRE_USING_GPU
-      if (indices != h_indices)
-      {
-         hypre_TMemcpy(d_indices, h_indices, HYPRE_BigInt, header[5], HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-      }
-#endif
-
-      HYPRE_Int nvalues =
-         (HYPRE_Int)header[5]; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
-      HYPRE_IJVectorSetValues(vec, nvalues, indices, vals);
-      local_row_offset += header[5];
    }
-
-after_values:
-   /* Collective agreement before Assemble: a per-rank failure in the fill pass
-    * above must not leave peers blocked in the collective Assemble below. */
-   local_ok = hypredrv_ErrorCodeActive() ? 0 : 1;
-   MPI_Allreduce(MPI_IN_PLACE, &local_ok, 1, MPI_INT, MPI_MIN, comm);
-   if (!local_ok)
+   if (!IJVectorAllRanksOk(comm))
    {
       goto cleanup;
    }
@@ -430,20 +497,14 @@ after_values:
 
 cleanup:
    /* Free memory */
-   /* LCOV_EXCL_START */
-   if (fp)
-   {
-      fclose(fp);
-   }
-   /* LCOV_EXCL_STOP */
    free(partids);
-   free(h_indices);
-   free(h_vals);
+   free(buf.h_indices);
+   free(buf.h_vals);
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {
-      hypre_TFree(d_indices, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(buf.indices, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(buf.vals, HYPRE_MEMORY_DEVICE);
    }
 #endif
    if (hypredrv_ErrorCodeActive())

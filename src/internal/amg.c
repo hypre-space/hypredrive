@@ -695,6 +695,121 @@ AMGSelectedDofsHash(const int *selected_dofs, size_t num_selected_dofs)
    return hash;
 }
 
+/* Rejects unusable inputs and short-circuits when the cached projection is still
+ * valid on every rank. Returns 0 to stop, 1 to rebuild the modes. */
+static int
+AMGProjectedRBMsShouldRebuild(AMG_args *args, HYPRE_IJVector vec_nn,
+                              const IntArray *dofmap, uint64_t input_generation,
+                              const int *selected_dofs, size_t num_selected_dofs,
+                              uint64_t *labels_hash_out, MPI_Comm *comm_out)
+{
+   MPI_Comm comm = MPI_COMM_NULL;
+
+   if (!args)
+   {
+      return 0;
+   }
+   if (num_selected_dofs && !selected_dofs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      return 0;
+   }
+   uint64_t labels_hash = AMGSelectedDofsHash(selected_dofs, num_selected_dofs);
+   if (!args->coarsening.nodal)
+   {
+      hypredrv_AMGDestroyRBMs(args);
+      args->interp_vec_variant = 1;
+      return 0;
+   }
+   if (!vec_nn || !dofmap)
+   {
+      /* Nodal AMG is valid without user interpolation vectors. Passing zero
+       * vectors below preserves hypre's standard nodal-coarsening behavior. */
+      hypredrv_AMGDestroyRBMs(args);
+      args->interp_vec_variant = 1;
+      return 0;
+   }
+
+   comm                = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
+   int local_cache_hit = args->interp_vec_variant == 1 &&
+                         args->rbm_source_generation == input_generation &&
+                         args->rbm_source_labels_size == num_selected_dofs &&
+                         args->rbm_source_labels_hash == labels_hash;
+   int global_cache_hit = 0;
+   MPI_Allreduce(&local_cache_hit, &global_cache_hit, 1, MPI_INT, MPI_MIN, comm);
+   if (global_cache_hit)
+   {
+      return 0;
+   }
+
+   *labels_hash_out = labels_hash;
+   *comm_out        = comm;
+
+   return 1;
+}
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+/* True when any selected entry carries a nonzero rigid-body mode; an all-zero
+ * projection would leave hypre nothing to interpolate with. */
+static int
+AMGProjectionHasNonzeroModes(HYPRE_Int num_entries, const unsigned char *selected,
+                             const HYPRE_Complex *host_values, HYPRE_Int vector_stride,
+                             HYPRE_Int index_stride)
+{
+   int local_nonzero = 0;
+
+   for (HYPRE_Int i = 0; i < num_entries && !local_nonzero; i++)
+   {
+      if (!selected[i])
+      {
+         continue;
+      }
+      for (HYPRE_Int mode = 0; mode < AMG_NUM_RBMS; mode++)
+      {
+         size_t source_index =
+            ((size_t)(AMG_FIRST_RBM_COMPONENT + mode) * (size_t)vector_stride) +
+            ((size_t)i * (size_t)index_stride);
+         if (hypre_cabs(host_values[source_index]) > 0.0)
+         {
+            local_nonzero = 1;
+            break;
+         }
+      }
+   }
+
+   return local_nonzero;
+}
+
+/* Marks the local entries whose dof label is in the selected set, which is the
+ * support of the projected rigid-body modes. Returns how many were selected. */
+static uint64_t
+AMGMarkSelectedEntries(const IntArray *dofmap, HYPRE_Int num_entries,
+                       const int *selected_dofs, size_t num_selected_dofs,
+                       int *selected_labels, unsigned char *selected)
+{
+   uint64_t projected_local = 0;
+
+   if (num_selected_dofs > 0)
+   {
+      memcpy(selected_labels, selected_dofs,
+             num_selected_dofs * sizeof(*selected_labels));
+      qsort(selected_labels, num_selected_dofs, sizeof(*selected_labels), AMGIntCompare);
+   }
+   for (HYPRE_Int i = 0; i < num_entries; i++)
+   {
+      if (num_selected_dofs > 0 &&
+          bsearch(&dofmap->data[i], selected_labels, num_selected_dofs,
+                  sizeof(*selected_labels), AMGIntCompare))
+      {
+         selected[i] = 1;
+         projected_local++;
+      }
+   }
+
+   return projected_local;
+}
+#endif
+
 void
 hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
                              const IntArray *dofmap, uint64_t input_generation,
@@ -711,39 +826,11 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    int           *selected_labels  = NULL;
    MPI_Comm       comm             = MPI_COMM_NULL;
 
-   if (!args)
-   {
-      return;
-   }
-   if (num_selected_dofs && !selected_dofs)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      return;
-   }
-   uint64_t labels_hash = AMGSelectedDofsHash(selected_dofs, num_selected_dofs);
-   if (!args->coarsening.nodal)
-   {
-      hypredrv_AMGDestroyRBMs(args);
-      args->interp_vec_variant = 1;
-      return;
-   }
-   if (!vec_nn || !dofmap)
-   {
-      /* Nodal AMG is valid without user interpolation vectors. Passing zero
-       * vectors below preserves hypre's standard nodal-coarsening behavior. */
-      hypredrv_AMGDestroyRBMs(args);
-      args->interp_vec_variant = 1;
-      return;
-   }
+   uint64_t labels_hash = 0;
 
-   comm                = hypre_IJVectorComm((hypre_IJVector *)vec_nn);
-   int local_cache_hit = args->interp_vec_variant == 1 &&
-                         args->rbm_source_generation == input_generation &&
-                         args->rbm_source_labels_size == num_selected_dofs &&
-                         args->rbm_source_labels_hash == labels_hash;
-   int global_cache_hit = 0;
-   MPI_Allreduce(&local_cache_hit, &global_cache_hit, 1, MPI_INT, MPI_MIN, comm);
-   if (global_cache_hit)
+   if (!AMGProjectedRBMsShouldRebuild(args, vec_nn, dofmap, input_generation,
+                                      selected_dofs, num_selected_dofs, &labels_hash,
+                                      &comm))
    {
       return;
    }
@@ -790,22 +877,8 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
       return;
    }
 
-   if (num_selected_dofs > 0)
-   {
-      memcpy(selected_labels, selected_dofs,
-             num_selected_dofs * sizeof(*selected_labels));
-      qsort(selected_labels, num_selected_dofs, sizeof(*selected_labels), AMGIntCompare);
-   }
-   for (HYPRE_Int i = 0; i < num_entries; i++)
-   {
-      if (num_selected_dofs > 0 &&
-          bsearch(&dofmap->data[i], selected_labels, num_selected_dofs,
-                  sizeof(*selected_labels), AMGIntCompare))
-      {
-         selected[i] = 1;
-         projected_local++;
-      }
-   }
+   projected_local = AMGMarkSelectedEntries(dofmap, num_entries, selected_dofs,
+                                            num_selected_dofs, selected_labels, selected);
 
    MPI_Allreduce(&projected_local, &projected_global, 1, MPI_UINT64_T, MPI_SUM, comm);
    MPI_Scan(&projected_local, &projected_scan, 1, MPI_UINT64_T, MPI_SUM, comm);
@@ -817,25 +890,8 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    }
    else
    {
-      int local_nonzero = 0;
-      for (HYPRE_Int i = 0; i < num_entries && !local_nonzero; i++)
-      {
-         if (!selected[i])
-         {
-            continue;
-         }
-         for (HYPRE_Int mode = 0; mode < AMG_NUM_RBMS; mode++)
-         {
-            size_t source_index =
-               ((size_t)(AMG_FIRST_RBM_COMPONENT + mode) * (size_t)vector_stride) +
-               ((size_t)i * (size_t)index_stride);
-            if (hypre_cabs(host_values[source_index]) > 0.0)
-            {
-               local_nonzero = 1;
-               break;
-            }
-         }
-      }
+      int local_nonzero = AMGProjectionHasNonzeroModes(num_entries, selected, host_values,
+                                                       vector_stride, index_stride);
       int global_nonzero = 0;
       MPI_Allreduce(&local_nonzero, &global_nonzero, 1, MPI_INT, MPI_MAX, comm);
       if (global_nonzero)
@@ -962,6 +1018,125 @@ hypredrv_AMGSetDofFunc(const AMG_args *args, const IntArray *dofmap, HYPRE_Solve
  * AMGCreate
  *-----------------------------------------------------------------------------*/
 
+/* Down/up/coarse sweep counts, each falling back to the global cycle setting. */
+static void
+AMGApplySweepCounts(HYPRE_Solver precon, const AMG_args *args)
+{
+   /* Pre-smoothing */
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.down_type, 1);
+   if (args->relaxation.down_sweeps > -1)
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.down_sweeps, 1);
+   }
+   else
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 1);
+   }
+
+   /* Post-smoothing */
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.up_type, 2);
+   if (args->relaxation.up_sweeps > -1)
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.up_sweeps, 2);
+   }
+   else
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 2);
+   }
+
+   /* Coarsest level smoothing */
+   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
+   if (args->relaxation.coarse_sweeps > -1)
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.coarse_sweeps, 3);
+   }
+   else
+   {
+      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
+   }
+}
+
+/* Per-sweep grid point schedule. */
+static void
+AMGApplyGridPointSchedule(HYPRE_Solver precon, const AMG_args *args)
+{
+   /* Per-sweep grid point schedule. The AIR algorithm skips the down cycle and
+      relaxes F-points on the way up, finishing on the C-points when there are
+      enough sweeps to do so. hypre takes ownership of the array. */
+   if (args->relaxation.points == 1)
+   {
+      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
+                               ? args->relaxation.down_sweeps
+                               : args->relaxation.num_sweeps;
+      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
+                                                              : args->relaxation.num_sweeps;
+      HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
+                               ? args->relaxation.coarse_sweeps
+                               : args->relaxation.num_sweeps;
+
+      HYPRE_Int **grid_relax_points = hypre_CTAlloc(HYPRE_Int *, 4, HYPRE_MEMORY_HOST);
+
+      grid_relax_points[0] = NULL;
+      grid_relax_points[1] = hypre_CTAlloc(HYPRE_Int, ns_down, HYPRE_MEMORY_HOST);
+      grid_relax_points[2] = hypre_CTAlloc(HYPRE_Int, ns_up, HYPRE_MEMORY_HOST);
+      grid_relax_points[3] = hypre_CTAlloc(HYPRE_Int, ns_coarse, HYPRE_MEMORY_HOST);
+
+      /* Down cycle and coarsest level relax every point */
+      for (HYPRE_Int i = 0; i < ns_down; i++) grid_relax_points[1][i] = 0;
+      for (HYPRE_Int i = 0; i < ns_coarse; i++) grid_relax_points[3][i] = 0;
+
+      /* Up cycle: F-points, with a trailing C-point sweep when ns_up > 2 */
+      for (HYPRE_Int i = 0; i < ns_up; i++) grid_relax_points[2][i] = -1;
+      if (ns_up > 2) grid_relax_points[2][ns_up - 1] = 1;
+
+      HYPRE_BoomerAMGSetGridRelaxPoints(precon, grid_relax_points);
+   }
+}
+
+/* Nodal coarsening with rigid-body-mode interpolation, used for both a top-level
+ * elasticity AMG and an MGR subblock AMG. */
+static void
+AMGApplyNodalInterpolation(HYPRE_Solver precon, const AMG_args *args)
+{
+   /* Configurable GM/LN rigid-body-mode interpolation, used for both a
+      top-level elasticity AMG and an MGR subblock AMG. The "auto" defaults
+      reproduce the historical hard-coded setup; YAML can override them
+      (coarsening.nodal_type / interp_vec_variant / smooth_interp_vecs /
+      interp_vec_qmax / interp_vec_abs_q_trunc) to experiment toward an
+      h-uniform elasticity AMG. */
+   HYPRE_Int variant = (args->coarsening.interp_vec_variant > -1)
+                          ? args->coarsening.interp_vec_variant
+                          : args->interp_vec_variant;
+   /* GM2 expands interpolation with the near-null-space vectors, so it wants a
+      nonzero QMax and smoothed vectors; the other variants keep hypre's defaults. */
+   HYPRE_Int qmax   = (variant == 2) ? 4 : 0;
+   HYPRE_Int smooth = (variant == 2) ? 1 : 0;
+
+   if (args->coarsening.interp_vec_qmax > -1)
+   {
+      qmax = args->coarsening.interp_vec_qmax;
+   }
+   if (args->coarsening.smooth_interp_vecs > -1)
+   {
+      smooth = args->coarsening.smooth_interp_vecs;
+   }
+
+   HYPRE_BoomerAMGSetNumFunctions(precon, 3);
+   HYPRE_BoomerAMGSetNodal(precon, args->coarsening.nodal_type);
+   if (args->coarsening.nodal_type == 4)
+   {
+      /* Nodal coarsening based on the row-sum norm */
+      HYPRE_BoomerAMGSetNodalDiag(precon, 1);
+   }
+   HYPRE_BoomerAMGSetInterpVecVariant(precon, variant);
+   HYPRE_BoomerAMGSetInterpVecQMax(precon, qmax);
+   HYPRE_BoomerAMGSetInterpVecAbsQTrunc(precon, args->coarsening.interp_vec_abs_q_trunc);
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   HYPRE_BoomerAMGSetSmoothInterpVectors(precon, smooth);
+#endif
+   HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, (HYPRE_ParVector *)args->rbms);
+}
+
 void
 hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
 {
@@ -1051,112 +1226,13 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
 #endif
    HYPRE_BoomerAMGSetKeepTranspose(precon, args->coarsening.keep_transpose);
 
-   /* Pre-smoothing */
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.down_type, 1);
-   if (args->relaxation.down_sweeps > -1)
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.down_sweeps, 1);
-   }
-   else
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 1);
-   }
+   AMGApplySweepCounts(precon, args);
 
-   /* Post-smoothing */
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.up_type, 2);
-   if (args->relaxation.up_sweeps > -1)
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.up_sweeps, 2);
-   }
-   else
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 2);
-   }
-
-   /* Coarsest level smoothing */
-   HYPRE_BoomerAMGSetCycleRelaxType(precon, args->relaxation.coarse_type, 3);
-   if (args->relaxation.coarse_sweeps > -1)
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.coarse_sweeps, 3);
-   }
-   else
-   {
-      HYPRE_BoomerAMGSetCycleNumSweeps(precon, args->relaxation.num_sweeps, 3);
-   }
-
-   /* Per-sweep grid point schedule. The AIR algorithm skips the down cycle and
-      relaxes F-points on the way up, finishing on the C-points when there are
-      enough sweeps to do so. hypre takes ownership of the array. */
-   if (args->relaxation.points == 1)
-   {
-      HYPRE_Int ns_down   = (args->relaxation.down_sweeps > -1)
-                               ? args->relaxation.down_sweeps
-                               : args->relaxation.num_sweeps;
-      HYPRE_Int ns_up     = (args->relaxation.up_sweeps > -1) ? args->relaxation.up_sweeps
-                                                              : args->relaxation.num_sweeps;
-      HYPRE_Int ns_coarse = (args->relaxation.coarse_sweeps > -1)
-                               ? args->relaxation.coarse_sweeps
-                               : args->relaxation.num_sweeps;
-
-      HYPRE_Int **grid_relax_points = hypre_CTAlloc(HYPRE_Int *, 4, HYPRE_MEMORY_HOST);
-
-      grid_relax_points[0] = NULL;
-      grid_relax_points[1] = hypre_CTAlloc(HYPRE_Int, ns_down, HYPRE_MEMORY_HOST);
-      grid_relax_points[2] = hypre_CTAlloc(HYPRE_Int, ns_up, HYPRE_MEMORY_HOST);
-      grid_relax_points[3] = hypre_CTAlloc(HYPRE_Int, ns_coarse, HYPRE_MEMORY_HOST);
-
-      /* Down cycle and coarsest level relax every point */
-      for (HYPRE_Int i = 0; i < ns_down; i++) grid_relax_points[1][i] = 0;
-      for (HYPRE_Int i = 0; i < ns_coarse; i++) grid_relax_points[3][i] = 0;
-
-      /* Up cycle: F-points, with a trailing C-point sweep when ns_up > 2 */
-      for (HYPRE_Int i = 0; i < ns_up; i++) grid_relax_points[2][i] = -1;
-      if (ns_up > 2) grid_relax_points[2][ns_up - 1] = 1;
-
-      HYPRE_BoomerAMGSetGridRelaxPoints(precon, grid_relax_points);
-   }
+   AMGApplyGridPointSchedule(precon, args);
 
    if (args->coarsening.nodal)
    {
-      /* Configurable GM/LN rigid-body-mode interpolation, used for both a
-         top-level elasticity AMG and an MGR subblock AMG. The "auto" defaults
-         reproduce the historical hard-coded setup; YAML can override them
-         (coarsening.nodal_type / interp_vec_variant / smooth_interp_vecs /
-         interp_vec_qmax / interp_vec_abs_q_trunc) to experiment toward an
-         h-uniform elasticity AMG. */
-      HYPRE_Int variant = (args->coarsening.interp_vec_variant > -1)
-                             ? args->coarsening.interp_vec_variant
-                             : args->interp_vec_variant;
-      /* GM2 expands interpolation with the near-null-space vectors, so it wants a
-         nonzero QMax and smoothed vectors; the other variants keep hypre's defaults. */
-      HYPRE_Int qmax   = (variant == 2) ? 4 : 0;
-      HYPRE_Int smooth = (variant == 2) ? 1 : 0;
-
-      if (args->coarsening.interp_vec_qmax > -1)
-      {
-         qmax = args->coarsening.interp_vec_qmax;
-      }
-      if (args->coarsening.smooth_interp_vecs > -1)
-      {
-         smooth = args->coarsening.smooth_interp_vecs;
-      }
-
-      HYPRE_BoomerAMGSetNumFunctions(precon, 3);
-      HYPRE_BoomerAMGSetNodal(precon, args->coarsening.nodal_type);
-      if (args->coarsening.nodal_type == 4)
-      {
-         /* Nodal coarsening based on the row-sum norm */
-         HYPRE_BoomerAMGSetNodalDiag(precon, 1);
-      }
-      HYPRE_BoomerAMGSetInterpVecVariant(precon, variant);
-      HYPRE_BoomerAMGSetInterpVecQMax(precon, qmax);
-      HYPRE_BoomerAMGSetInterpVecAbsQTrunc(precon,
-                                           args->coarsening.interp_vec_abs_q_trunc);
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-      HYPRE_BoomerAMGSetSmoothInterpVectors(precon, smooth);
-#endif
-      HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms,
-                                      (HYPRE_ParVector *)args->rbms);
+      AMGApplyNodalInterpolation(precon, args);
    }
 
    *precon_ptr = precon;

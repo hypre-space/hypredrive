@@ -384,12 +384,15 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
  * hypredrv_ScalingCompute (dofmap_custom strategy)
  *-----------------------------------------------------------------------------*/
 
-static void
-ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
-                           HYPRE_IJMatrix mat_A, IntArray *dofmap)
+/* Validates the dofmap/custom-value pairing and resolves this rank's row range.
+ * Returns zero with the error state set when the request cannot be honoured. */
+static int
+ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatrix mat_A,
+                           const IntArray *dofmap, HYPRE_ParCSRMatrix *par_A_out,
+                           HYPRE_BigInt *ilower_out, HYPRE_BigInt *iupper_out,
+                           HYPRE_Int *num_local_rows_out)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   /* GCOVR_EXCL_BR_START */
    void              *obj_A  = NULL;
    HYPRE_ParCSRMatrix par_A  = NULL;
    HYPRE_BigInt       ilower = 0, iupper = 0;
@@ -402,14 +405,14 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
    {
       hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
       hypredrv_ErrorMsgAdd("custom dofmap scaling requires a dofmap to be set");
-      return;
+      return 0;
    }
 
    if (!args->custom_values || args->custom_values->size == 0)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("custom dofmap scaling requires custom_values to be set");
-      return;
+      return 0;
    }
 
    for (size_t i = 0; i < args->custom_values->size; i++)
@@ -420,7 +423,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
          hypredrv_ErrorMsgAdd(
             "custom dofmap scaling requires nonzero custom_values (entry %zu is zero)",
             i);
-         return;
+         return 0;
       }
    }
 
@@ -440,7 +443,7 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",
                            dofmap->size, num_local_rows);
-      return;
+      return 0;
    }
 
    /* Find the maximum tag value in the dofmap */
@@ -466,6 +469,44 @@ ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *c
          "dofmap_custom: number of custom_values (%zu) does not match number of "
          "unique dofmap tags (%d)",
          args->custom_values->size, num_tags);
+      return 0;
+   }
+
+   *par_A_out          = par_A;
+   *ilower_out         = ilower;
+   *iupper_out         = iupper;
+   *num_local_rows_out = num_local_rows;
+
+   return 1;
+#else
+   /* GCOVR_EXCL_BR_START */
+   (void)comm;
+   (void)args;
+   (void)mat_A;
+   (void)dofmap;
+   (void)par_A_out;
+   (void)ilower_out;
+   (void)iupper_out;
+   (void)num_local_rows_out;
+   /* Scaling disabled on older hypre versions */
+   /* GCOVR_EXCL_BR_STOP */
+   return 0;
+#endif
+}
+
+static void
+ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
+                           HYPRE_IJMatrix mat_A, IntArray *dofmap)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* GCOVR_EXCL_BR_START */
+   HYPRE_ParCSRMatrix par_A  = NULL;
+   HYPRE_BigInt       ilower = 0, iupper = 0;
+   HYPRE_Int          num_local_rows = 0;
+
+   if (!ScalingDofmapCustomPrepare(comm, args, mat_A, dofmap, &par_A, &ilower, &iupper,
+                                   &num_local_rows))
+   {
       return;
    }
 
@@ -946,6 +987,180 @@ ScalingUpdateAppliedState(Scaling_context *ctx)
    ctx->is_applied = ctx->matrices_are_scaled || ctx->rhs_is_scaled || ctx->x_is_scaled;
 }
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+/* Checks that the context holds everything the selected scaling type needs. */
+static int
+ScalingSystemReady(Scaling_context *ctx, int apply, int log_rank)
+{
+   switch (ctx->type)
+   {
+      case SCALING_RHS_L2:
+         if (ctx->scalar_factor == 0.0)
+         {
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd(apply ? "ScalingApplyRHSL2: invalid scaling factor"
+                                       : "ScalingUndoRHSL2: invalid scaling factor");
+            HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                          apply ? "scaling apply failed: invalid scalar factor"
+                                : "scaling undo failed: invalid scalar factor");
+            return 0;
+         }
+         break;
+
+      case SCALING_DOFMAP_MAG:
+      case SCALING_DOFMAP_CUSTOM:
+      case SCALING_DOFMAP_ROW_CUSTOM:
+      case SCALING_DOFMAP_COL_CUSTOM:
+      case SCALING_DOFMAP_SIMILARITY_CUSTOM:
+         if (!ctx->scaling_vector || !ctx->inverse_scaling_vector)
+         {
+            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+            hypredrv_ErrorMsgAdd(apply
+                                    ? "ScalingApplyDofmap: scaling vectors not computed"
+                                    : "ScalingUndoDofmap: scaling vectors not computed");
+            HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                          apply ? "scaling apply failed: scaling vectors not computed"
+                                : "scaling undo failed: scaling vectors not computed");
+            return 0;
+         }
+         break;
+
+      default:
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd(apply
+                                 ? "hypredrv_ScalingApplyToSystem: unknown scaling type"
+                                 : "hypredrv_ScalingUndoOnSystem: unknown scaling type");
+         if (apply)
+         {
+            HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                          "scaling apply failed: unknown scaling type=%d",
+                          (int)ctx->type);
+         }
+         else
+         {
+            HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                          "scaling undo failed: unknown scaling type=%d", (int)ctx->type);
+         }
+         return 0;
+   }
+
+   return 1;
+}
+#endif
+
+/* Applies the configured scaling to the operators and then to the vectors. */
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+static int
+ScalingApplyToSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
+                     HYPRE_ParCSRMatrix par_M, HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
+                     int log_rank)
+{
+   if (ctx->type == SCALING_RHS_L2)
+   {
+      HYPRE_Complex s2 = ctx->scalar_factor * ctx->scalar_factor;
+      hypre_ParCSRMatrixScale(par_A, s2);
+      if (par_M != par_A)
+      {
+         hypre_ParCSRMatrixScale(par_M, s2);
+      }
+   }
+   else
+   {
+      hypre_ParVector *left = NULL, *right = NULL;
+      ScalingDofmapMatrixFactors(ctx, 1, &left, &right);
+      ScalingDiagScaleMatrices(par_A, par_M, left, right);
+   }
+   ctx->matrices_are_scaled = 1;
+   ScalingUpdateAppliedState(ctx);
+
+   if (ScalingTransformVector(ctx, vec_b, SCALING_VECTOR_RHS, 1))
+   {
+      ctx->rhs_is_scaled = 1;
+      ScalingUpdateAppliedState(ctx);
+   }
+   if (hypredrv_ErrorCodeGet())
+   {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: RHS vector transform error");
+      return 0;
+   }
+   if (ScalingTransformVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN, 1))
+   {
+      ctx->x_is_scaled = 1;
+      ScalingUpdateAppliedState(ctx);
+   }
+   if (hypredrv_ErrorCodeGet())
+   {
+      HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                    "scaling apply failed: unknown vector transform error");
+      return 0;
+   }
+
+   return 1;
+}
+#endif
+
+/* Reverses the scaling, unwinding the vectors before the operators. */
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+static int
+ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
+                    HYPRE_ParCSRMatrix par_M, HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
+                    int log_rank)
+{
+   if (ctx->x_is_scaled)
+   {
+      if (ScalingTransformVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN, 0))
+      {
+         ctx->x_is_scaled = 0;
+         ScalingUpdateAppliedState(ctx);
+      }
+      if (hypredrv_ErrorCodeGet())
+      {
+         HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                       "scaling undo failed: unknown vector transform error");
+         return 0;
+      }
+   }
+   if (ctx->rhs_is_scaled)
+   {
+      if (ScalingTransformVector(ctx, vec_b, SCALING_VECTOR_RHS, 0))
+      {
+         ctx->rhs_is_scaled = 0;
+         ScalingUpdateAppliedState(ctx);
+      }
+      if (hypredrv_ErrorCodeGet())
+      {
+         HYPREDRV_LOGF(2, log_rank, NULL, 0,
+                       "scaling undo failed: RHS vector transform error");
+         return 0;
+      }
+   }
+
+   if (ctx->matrices_are_scaled && ctx->type == SCALING_RHS_L2)
+   {
+      HYPRE_Complex s2     = ctx->scalar_factor * ctx->scalar_factor;
+      HYPRE_Complex inv_s2 = 1.0 / s2;
+      hypre_ParCSRMatrixScale(par_A, inv_s2);
+      if (par_M != par_A)
+      {
+         hypre_ParCSRMatrixScale(par_M, inv_s2);
+      }
+      ctx->matrices_are_scaled = 0;
+      ScalingUpdateAppliedState(ctx);
+   }
+   else if (ctx->matrices_are_scaled)
+   {
+      hypre_ParVector *left = NULL, *right = NULL;
+      ScalingDofmapMatrixFactors(ctx, 0, &left, &right);
+      ScalingDiagScaleMatrices(par_A, par_M, left, right);
+      ctx->matrices_are_scaled = 0;
+      ScalingUpdateAppliedState(ctx);
+   }
+
+   return 1;
+}
+#endif
+
 static void
 ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                        HYPRE_IJVector vec_b, HYPRE_IJVector vec_x, int apply)
@@ -989,56 +1204,9 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
    void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
 
-   switch (ctx->type)
+   if (!ScalingSystemReady(ctx, apply, log_rank))
    {
-      case SCALING_RHS_L2:
-         if (ctx->scalar_factor == 0.0)
-         {
-            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-            hypredrv_ErrorMsgAdd(apply ? "ScalingApplyRHSL2: invalid scaling factor"
-                                       : "ScalingUndoRHSL2: invalid scaling factor");
-            HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          apply ? "scaling apply failed: invalid scalar factor"
-                                : "scaling undo failed: invalid scalar factor");
-            goto done;
-         }
-         break;
-
-      case SCALING_DOFMAP_MAG:
-      case SCALING_DOFMAP_CUSTOM:
-      case SCALING_DOFMAP_ROW_CUSTOM:
-      case SCALING_DOFMAP_COL_CUSTOM:
-      case SCALING_DOFMAP_SIMILARITY_CUSTOM:
-         if (!ctx->scaling_vector || !ctx->inverse_scaling_vector)
-         {
-            hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-            hypredrv_ErrorMsgAdd(apply
-                                    ? "ScalingApplyDofmap: scaling vectors not computed"
-                                    : "ScalingUndoDofmap: scaling vectors not computed");
-            HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          apply ? "scaling apply failed: scaling vectors not computed"
-                                : "scaling undo failed: scaling vectors not computed");
-            goto done;
-         }
-         break;
-
-      default:
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd(apply
-                                 ? "hypredrv_ScalingApplyToSystem: unknown scaling type"
-                                 : "hypredrv_ScalingUndoOnSystem: unknown scaling type");
-         if (apply)
-         {
-            HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          "scaling apply failed: unknown scaling type=%d",
-                          (int)ctx->type);
-         }
-         else
-         {
-            HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          "scaling undo failed: unknown scaling type=%d", (int)ctx->type);
-         }
-         goto done;
+      goto done;
    }
 
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
@@ -1056,98 +1224,14 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
 
    if (apply)
    {
-      if (ctx->type == SCALING_RHS_L2)
+      if (!ScalingApplyToSystem(ctx, par_A, par_M, vec_b, vec_x, log_rank))
       {
-         HYPRE_Complex s2 = ctx->scalar_factor * ctx->scalar_factor;
-         hypre_ParCSRMatrixScale(par_A, s2);
-         if (par_M != par_A)
-         {
-            hypre_ParCSRMatrixScale(par_M, s2);
-         }
-      }
-      else
-      {
-         hypre_ParVector *left = NULL, *right = NULL;
-         ScalingDofmapMatrixFactors(ctx, 1, &left, &right);
-         ScalingDiagScaleMatrices(par_A, par_M, left, right);
-      }
-      ctx->matrices_are_scaled = 1;
-      ScalingUpdateAppliedState(ctx);
-
-      if (ScalingTransformVector(ctx, vec_b, SCALING_VECTOR_RHS, 1))
-      {
-         ctx->rhs_is_scaled = 1;
-         ScalingUpdateAppliedState(ctx);
-      }
-      if (hypredrv_ErrorCodeGet())
-      {
-         HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                       "scaling apply failed: RHS vector transform error");
-         goto done;
-      }
-      if (ScalingTransformVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN, 1))
-      {
-         ctx->x_is_scaled = 1;
-         ScalingUpdateAppliedState(ctx);
-      }
-      if (hypredrv_ErrorCodeGet())
-      {
-         HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                       "scaling apply failed: unknown vector transform error");
          goto done;
       }
    }
-   else
+   else if (!ScalingUndoOnSystem(ctx, par_A, par_M, vec_b, vec_x, log_rank))
    {
-      if (ctx->x_is_scaled)
-      {
-         if (ScalingTransformVector(ctx, vec_x, SCALING_VECTOR_UNKNOWN, 0))
-         {
-            ctx->x_is_scaled = 0;
-            ScalingUpdateAppliedState(ctx);
-         }
-         if (hypredrv_ErrorCodeGet())
-         {
-            HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          "scaling undo failed: unknown vector transform error");
-            goto done;
-         }
-      }
-      if (ctx->rhs_is_scaled)
-      {
-         if (ScalingTransformVector(ctx, vec_b, SCALING_VECTOR_RHS, 0))
-         {
-            ctx->rhs_is_scaled = 0;
-            ScalingUpdateAppliedState(ctx);
-         }
-         if (hypredrv_ErrorCodeGet())
-         {
-            HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                          "scaling undo failed: RHS vector transform error");
-            goto done;
-         }
-      }
-
-      if (ctx->matrices_are_scaled && ctx->type == SCALING_RHS_L2)
-      {
-         HYPRE_Complex s2     = ctx->scalar_factor * ctx->scalar_factor;
-         HYPRE_Complex inv_s2 = 1.0 / s2;
-         hypre_ParCSRMatrixScale(par_A, inv_s2);
-         if (par_M != par_A)
-         {
-            hypre_ParCSRMatrixScale(par_M, inv_s2);
-         }
-         ctx->matrices_are_scaled = 0;
-         ScalingUpdateAppliedState(ctx);
-      }
-      else if (ctx->matrices_are_scaled)
-      {
-         hypre_ParVector *left = NULL, *right = NULL;
-         ScalingDofmapMatrixFactors(ctx, 0, &left, &right);
-         ScalingDiagScaleMatrices(par_A, par_M, left, right);
-         ctx->matrices_are_scaled = 0;
-         ScalingUpdateAppliedState(ctx);
-      }
+      goto done;
    }
 #else
    (void)mat_A;

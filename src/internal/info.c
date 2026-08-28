@@ -72,9 +72,128 @@ static void PrintLinuxKernelTuningInformation(void);
 #endif
 static void BuildGpuBindingString(char *buffer, size_t len);
 static void PrintMpiRuntimeInformation(MPI_Comm comm);
+static void PrintCompilationInfo(void);
 static void PrintThreadingEnvironmentInformation(void);
 static void PrintCpuMemoryInformation(double bytes_to_gib);
 static int  ReadUllFromProcMeminfo(const char *field, unsigned long long *value);
+
+static void
+PrintCompilerOptimizationLevel(void)
+{
+   /* Check optimization level */
+#if defined(__OPTIMIZE__)
+   printf("Optimization          : Enabled\n");
+#elif defined(__OPTIMIZE_SIZE__)
+   printf("Optimization          : Enabled (size)\n");
+#elif defined(_MSC_VER)
+   /* MSVC doesn't define __OPTIMIZE__, optimization detection is complex */
+   printf("Optimization          : Unknown (MSVC)\n");
+#else
+   printf("Optimization          : Disabled\n");
+#endif
+   /* Check debug symbols:
+    * - NDEBUG means "not debug" (when defined, assertions are disabled, typically
+    * release)
+    * - _DEBUG is MSVC's debug macro
+    * - DEBUG might be user-defined
+    * Note: This detects debug macros, not necessarily debug symbols (-g flag) */
+#if defined(HYPRE_DEBUG)
+   printf("Debugging             : Enabled (HYPRE)\n");
+#elif defined(_DEBUG) || defined(DEBUG)
+   printf("Debugging             : Enabled\n");
+#elif defined(NDEBUG)
+   printf("Debugging             : Disabled\n");
+#else
+   printf("Debugging             : Unknown\n");
+#endif
+}
+
+static void
+PrintCompilerIdentity(void)
+{
+#ifdef __clang_version__
+   printf("Compiler              : Clang %s\n", (const char *)__clang_version__);
+#elif defined(__clang__)
+   printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
+          __clang_patchlevel__);
+#elif defined(__INTEL_COMPILER)
+   printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100,
+          (__INTEL_COMPILER % 100) / 10);
+#elif defined(__GNUC__)
+   printf("Compiler              : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__,
+          __GNUC_PATCHLEVEL__);
+#else
+   printf("Compiler              : Unknown\n");
+#endif
+#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
+   printf("OpenMP                : Supported (Version: %d)\n", _OPENMP);
+#else
+   printf("OpenMP                : Not used\n");
+#endif
+}
+
+static void
+PrintMpiLibraryIdentity(void)
+{
+   printf("MPI library           : ");
+#ifdef CRAY_MPICH_VERSION
+   printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
+#elif defined(INTEL_MPI_VERSION)
+   printf("Intel MPI (Version: %s)\n", (const char *)INTEL_MPI_VERSION);
+#elif defined(__IBM_MPI__)
+   printf("IBM Spectrum MPI (Version: %d.%d.%d)\n", __IBM_MPI_MAJOR_VERSION,
+          __IBM_MPI_MINOR_VERSION, __IBM_MPI_RELEASE_VERSION);
+#elif defined(MVAPICH2_VERSION)
+   printf("MVAPICH2 (Version: %s)\n", (const char *)MVAPICH2_VERSION);
+#elif defined(MPICH_NAME)
+   printf("MPICH (Version: %s)\n", MPICH_VERSION);
+#elif defined(OMPI_MAJOR_VERSION)
+   printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION,
+          OMPI_RELEASE_VERSION);
+#elif defined(SGI_MPI)
+   printf("SGI MPI\n");
+#else
+   printf("N/A\n");
+#endif
+}
+
+static void
+PrintTargetArchitecture(void)
+{
+#ifdef __x86_64__
+   printf("Target architecture   : x86_64\n");
+#elif defined(__i386__)
+   printf("Target architecture   : x86 (32-bit)\n");
+#elif defined(__aarch64__)
+   printf("Target architecture   : ARM64\n");
+#elif defined(__arm__)
+   printf("Target architecture   : ARM\n");
+#else
+   printf("Target architecture   : Unknown\n");
+#endif
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+   printf("Endianness            : Little-endian\n");
+#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+   printf("Endianness            : Big-endian\n");
+#else
+   printf("Endianness            : Unknown\n");
+#endif
+   printf("\n");
+}
+
+/* Shared by the hwloc-based and legacy system-information reports. */
+static void
+PrintCompilationInfo(void)
+{
+   printf("Compilation Information\n");
+   printf("------------------------\n");
+   printf("Date                  : %s at %s\n", __DATE__, __TIME__);
+
+   PrintCompilerOptimizationLevel();
+   PrintCompilerIdentity();
+   PrintMpiLibraryIdentity();
+   PrintTargetArchitecture();
+}
 
 #ifdef HAVE_HWLOC
 typedef struct
@@ -219,21 +338,18 @@ ResolveDriverName(const char *argv0, char *resolved, size_t resolved_len)
    }
 }
 
-static int
-RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
-                  char *buffer, size_t len)
+enum
 {
-   enum
-   {
-      RUN_COMMAND_CAPTURE_ARGV_CAP = 32
-   };
-   int    pipefd[2]   = {-1, -1};
-   pid_t  child_pid   = -1;
-   size_t used        = 0;
-   int    status      = 0;
-   int    read_failed = 0;
-   char   discard[1024];
-   char   exe_storage[PATH_MAX];
+   RUN_COMMAND_CAPTURE_ARGV_CAP = 32
+};
+
+/* Validates the arguments and stages a private copy of the executable path that
+ * the child can exec without depending on the caller's storage. */
+static int
+RunCommandPrepare(const char *exe_path, char *const argv[], char *buffer, size_t len,
+                  char *exe_storage, size_t exe_storage_len)
+{
+   int w = 0;
 
    if (!exe_path || !argv || !buffer || len == 0)
    {
@@ -243,86 +359,89 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
    {
       return 0;
    }
+
+   w = snprintf(exe_storage, exe_storage_len, "%s", exe_path);
+   if (w < 0 || (size_t)w >= exe_storage_len)
    {
-      int w = snprintf(exe_storage, sizeof(exe_storage), "%s", exe_path);
-      if (w < 0 || (size_t)w >= sizeof(exe_storage))
-      {
-         return 0;
-      }
+      return 0;
    }
    if (!hypredrv_BinaryPathPrefixIsSafe(exe_storage))
    {
       return 0;
    }
+
    buffer[0] = '\0';
 
-   if (pipe(pipefd) != 0)
+   return 1;
+}
+
+/* Child half of the fork: rewires stdout (and optionally stderr) onto the pipe
+ * and execs the staged path. Never returns. */
+static void
+RunCommandExecChild(int pipefd[2], int suppress_stderr, const char *exe_path,
+                    char *exe_storage, char *const argv[])
+{
+   int devnull = -1;
+
+   close(pipefd[0]);
+   if (dup2(pipefd[1], STDOUT_FILENO) < 0)
    {
-      return 0;
+      _Exit(127);
    }
-
-   child_pid = fork();
-   if (child_pid < 0)
+   if (suppress_stderr)
    {
-      close(pipefd[0]);
-      close(pipefd[1]);
-      return 0;
+      devnull = open("/dev/null", O_WRONLY);
+      if (devnull >= 0)
+      {
+         (void)dup2(devnull, STDERR_FILENO);
+         close(devnull);
+      }
    }
-
-   if (child_pid == 0)
+   close(pipefd[1]);
+   if (!hypredrv_BinaryPathPrefixIsSafe(exe_storage))
    {
-      int devnull = -1;
-      close(pipefd[0]);
-      if (dup2(pipefd[1], STDOUT_FILENO) < 0)
-      {
-         _Exit(127);
-      }
-      if (suppress_stderr)
-      {
-         devnull = open("/dev/null", O_WRONLY);
-         if (devnull >= 0)
-         {
-            (void)dup2(devnull, STDERR_FILENO);
-            close(devnull);
-         }
-      }
-      close(pipefd[1]);
-      if (!hypredrv_BinaryPathPrefixIsSafe(exe_storage))
-      {
-         _Exit(127);
-      }
-      if (argv[0] == exe_path)
-      {
-         char *alt_argv[RUN_COMMAND_CAPTURE_ARGV_CAP];
-         int   i;
-
-         for (i = 0; i < RUN_COMMAND_CAPTURE_ARGV_CAP - 1 && argv[i] != NULL; i++)
-         {
-            alt_argv[i] = (i == 0) ? exe_storage : argv[i];
-         }
-         if (argv[i] != NULL)
-         {
-            _Exit(127);
-         }
-         alt_argv[i] = NULL;
-         execv(exe_storage, alt_argv);
-      }
-      else
-      {
-         execv(exe_storage, argv);
-      }
       _Exit(127);
    }
 
-   close(pipefd[1]);
+   if (argv[0] == exe_path)
+   {
+      char *alt_argv[RUN_COMMAND_CAPTURE_ARGV_CAP];
+      int   i;
+
+      for (i = 0; i < RUN_COMMAND_CAPTURE_ARGV_CAP - 1 && argv[i] != NULL; i++)
+      {
+         alt_argv[i] = (i == 0) ? exe_storage : argv[i];
+      }
+      if (argv[i] != NULL)
+      {
+         _Exit(127);
+      }
+      alt_argv[i] = NULL;
+      execv(exe_storage, alt_argv);
+   }
+   else
+   {
+      execv(exe_storage, argv);
+   }
+   _Exit(127);
+}
+
+/* Reads the child's stdout into `buffer`, discarding anything beyond its
+ * capacity. Returns nonzero when the pipe could not be drained cleanly. */
+static int
+RunCommandDrainPipe(int fd, char *buffer, size_t len)
+{
+   char   discard[1024];
+   size_t used        = 0;
+   int    read_failed = 0;
+
    while (1)
    {
       int     store_output = (used + 1u < len);
       char   *target       = store_output ? buffer + used : discard;
       size_t  space        = store_output ? len - used - 1u : sizeof(discard);
-      ssize_t nread;
+      ssize_t nread        = read(fd, target, space);
 
-      nread = read(pipefd[0], target, space);
       if (nread > 0)
       {
          if (store_output)
@@ -342,7 +461,47 @@ RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
       read_failed = 1;
       break;
    }
+
    buffer[used] = '\0';
+
+   return read_failed;
+}
+
+static int
+RunCommandCapture(const char *exe_path, char *const argv[], int suppress_stderr,
+                  char *buffer, size_t len)
+{
+   int   pipefd[2]   = {-1, -1};
+   pid_t child_pid   = -1;
+   int   status      = 0;
+   int   read_failed = 0;
+   char  exe_storage[PATH_MAX];
+
+   if (!RunCommandPrepare(exe_path, argv, buffer, len, exe_storage, sizeof(exe_storage)))
+   {
+      return 0;
+   }
+
+   if (pipe(pipefd) != 0)
+   {
+      return 0;
+   }
+
+   child_pid = fork();
+   if (child_pid < 0)
+   {
+      close(pipefd[0]);
+      close(pipefd[1]);
+      return 0;
+   }
+   if (child_pid == 0)
+   {
+      RunCommandExecChild(pipefd, suppress_stderr, exe_path, exe_storage, argv);
+      _Exit(127); /* unreachable: the child always execs or _Exits above */
+   }
+
+   close(pipefd[1]);
+   read_failed = RunCommandDrainPipe(pipefd[0], buffer, len);
    close(pipefd[0]);
 
    while (waitpid(child_pid, &status, 0) < 0)
@@ -794,31 +953,14 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
    return *total > 0;
 }
 
-static int HYPREDRV_MAYBE_UNUSED
-QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+/* Walks the amd-smi JSON listing for the GPU object whose BDF matches
+ * `pci_busid`, reporting its index and memory usage. Returns 1 on a match. */
+static int
+AmdSmiScanGpuObjects(const char *json, const char *amd_path, const char *pci_busid,
+                     int *gpu_index, size_t *total, size_t *used)
 {
-   char amd_path[PATH_MAX];
-   char output[32768];
+   const char *ptr = json;
 
-   if (!pci_busid || !total || !used)
-   {
-      return 0;
-   }
-
-   if (!FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
-   {
-      return 0;
-   }
-
-   {
-      char *argv[] = {amd_path, "list", "--json", NULL};
-      if (!RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
-      {
-         return 0;
-      }
-   }
-
-   const char *ptr = output;
    while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
    {
       const char *obj_end = strchr(ptr, '}');
@@ -873,6 +1015,39 @@ QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size
       }
 
       ptr = obj_end + 1;
+   }
+
+   return 0;
+}
+
+static int HYPREDRV_MAYBE_UNUSED
+QueryAmdMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total, size_t *used)
+{
+   char amd_path[PATH_MAX];
+   char output[32768];
+
+   if (!pci_busid || !total || !used)
+   {
+      return 0;
+   }
+
+   if (!FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
+   {
+      return 0;
+   }
+
+   {
+      char *argv[] = {amd_path, "list", "--json", NULL};
+      if (!RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
+      {
+         return 0;
+      }
+   }
+
+   const char *ptr = output;
+   if (AmdSmiScanGpuObjects(ptr, amd_path, pci_busid, gpu_index, total, used))
+   {
+      return 1;
    }
 
    return 0;
@@ -1320,9 +1495,111 @@ ReadFileBytes(const char *path, unsigned char **data, size_t *size)
    return 1;
 }
 
+/* The ELF32 and ELF64 dynamic-section walks are structurally identical and
+ * differ only in the header, section and dynamic-entry types, so one generator
+ * macro defines both readers. Each appends every DT_NEEDED name it finds to
+ * `entries` and returns zero on a malformed image or an allocation failure. */
+#define HYPREDRV_DEFINE_ELF_NEEDED_READER(_bits)                                         \
+   static int ReadElfNeeded##_bits(const unsigned char *file, size_t size,               \
+                                   char ***entries, int *count, int *capacity)           \
+   {                                                                                     \
+      const Elf##_bits##_Ehdr *ehdr   = (const Elf##_bits##_Ehdr *)file;                 \
+      const unsigned char     *shbase = NULL;                                            \
+      size_t                   shoff = 0, shtlen = 0;                                    \
+                                                                                         \
+      if (size < sizeof(Elf##_bits##_Ehdr))                                              \
+      {                                                                                  \
+         return 0;                                                                       \
+      }                                                                                  \
+      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||                                    \
+          ehdr->e_shentsize < sizeof(Elf##_bits##_Shdr))                                 \
+      {                                                                                  \
+         return 0;                                                                       \
+      }                                                                                  \
+                                                                                         \
+      shoff  = (size_t)ehdr->e_shoff;                                                    \
+      shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;                        \
+      if (!RangeInBuffer(shoff, shtlen, size))                                           \
+      {                                                                                  \
+         return 0;                                                                       \
+      }                                                                                  \
+                                                                                         \
+      shbase = file + shoff;                                                             \
+      for (int i = 0; i < (int)ehdr->e_shnum; i++)                                       \
+      {                                                                                  \
+         const Elf##_bits##_Shdr *sh =                                                   \
+            (const Elf##_bits##_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize); \
+         const Elf##_bits##_Shdr *str_sh      = NULL;                                    \
+         const unsigned char     *dyn_base    = NULL;                                    \
+         const char              *dynstr      = NULL;                                    \
+         size_t                   dyn_entsize = 0, dyn_count = 0, dynstr_sz = 0;         \
+                                                                                         \
+         if (sh->sh_type != SHT_DYNAMIC ||                                               \
+             !RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size) ||         \
+             sh->sh_link >= ehdr->e_shnum)                                               \
+         {                                                                               \
+            continue;                                                                    \
+         }                                                                               \
+                                                                                         \
+         str_sh = (const Elf##_bits##_Shdr *)(shbase + (size_t)sh->sh_link *             \
+                                                          (size_t)ehdr->e_shentsize);    \
+         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))   \
+         {                                                                               \
+            continue;                                                                    \
+         }                                                                               \
+                                                                                         \
+         dyn_entsize =                                                                   \
+            sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf##_bits##_Dyn);          \
+         if (dyn_entsize < sizeof(Elf##_bits##_Dyn))                                     \
+         {                                                                               \
+            continue;                                                                    \
+         }                                                                               \
+                                                                                         \
+         dyn_base  = file + (size_t)sh->sh_offset;                                       \
+         dynstr    = (const char *)(file + (size_t)str_sh->sh_offset);                   \
+         dyn_count = (size_t)sh->sh_size / dyn_entsize;                                  \
+         dynstr_sz = (size_t)str_sh->sh_size;                                            \
+                                                                                         \
+         for (size_t j = 0; j < dyn_count; j++)                                          \
+         {                                                                               \
+            const Elf##_bits##_Dyn *dyn =                                                \
+               (const Elf##_bits##_Dyn *)(dyn_base + j * dyn_entsize);                   \
+            size_t off = 0;                                                              \
+                                                                                         \
+            if (dyn->d_tag != DT_NEEDED)                                                 \
+            {                                                                            \
+               continue;                                                                 \
+            }                                                                            \
+            off = (size_t)dyn->d_un.d_val;                                               \
+            if (off >= dynstr_sz)                                                        \
+            {                                                                            \
+               continue;                                                                 \
+            }                                                                            \
+            if (!AppendUniqueString(entries, count, capacity, dynstr + off))             \
+            {                                                                            \
+               return 0;                                                                 \
+            }                                                                            \
+         }                                                                               \
+      }                                                                                  \
+                                                                                         \
+      return 1;                                                                          \
+   }
+
+HYPREDRV_DEFINE_ELF_NEEDED_READER(32)
+HYPREDRV_DEFINE_ELF_NEEDED_READER(64)
+
+#undef HYPREDRV_DEFINE_ELF_NEEDED_READER
+
 static int
 ReadElfNeededEntries(const char *path, char ***needed, int *needed_count)
 {
+   unsigned char *file     = NULL;
+   size_t         size     = 0;
+   char         **entries  = NULL;
+   int            count    = 0;
+   int            capacity = 0;
+   int            ok       = 0;
+
    if (!needed || !needed_count)
    {
       return 0;
@@ -1331,17 +1608,10 @@ ReadElfNeededEntries(const char *path, char ***needed, int *needed_count)
    *needed       = NULL;
    *needed_count = 0;
 
-   unsigned char *file = NULL;
-   size_t         size = 0;
    if (!ReadFileBytes(path, &file, &size))
    {
       return 0;
    }
-
-   char **entries  = NULL;
-   int    count    = 0;
-   int    capacity = 0;
-   int    ok       = 0;
 
    if (size < EI_NIDENT || memcmp(file, ELFMAG, SELFMAG) != 0)
    {
@@ -1350,170 +1620,20 @@ ReadElfNeededEntries(const char *path, char ***needed, int *needed_count)
 
    if (file[EI_CLASS] == ELFCLASS64)
    {
-      if (size < sizeof(Elf64_Ehdr))
-      {
-         goto cleanup;
-      }
-
-      const Elf64_Ehdr *ehdr = (const Elf64_Ehdr *)file;
-      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||
-          ehdr->e_shentsize < sizeof(Elf64_Shdr))
-      {
-         goto cleanup;
-      }
-
-      size_t shoff  = (size_t)ehdr->e_shoff;
-      size_t shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;
-      if (!RangeInBuffer(shoff, shtlen, size))
-      {
-         goto cleanup;
-      }
-
-      const unsigned char *shbase = file + shoff;
-      for (int i = 0; i < (int)ehdr->e_shnum; i++)
-      {
-         const Elf64_Shdr *sh =
-            (const Elf64_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize);
-         if (sh->sh_type != SHT_DYNAMIC)
-         {
-            continue;
-         }
-
-         if (!RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size))
-         {
-            continue;
-         }
-         if (sh->sh_link >= ehdr->e_shnum)
-         {
-            continue;
-         }
-
-         const Elf64_Shdr *str_sh =
-            (const Elf64_Shdr *)(shbase +
-                                 (size_t)sh->sh_link * (size_t)ehdr->e_shentsize);
-         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))
-         {
-            continue;
-         }
-
-         size_t dyn_entsize = sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf64_Dyn);
-         if (dyn_entsize < sizeof(Elf64_Dyn))
-         {
-            continue;
-         }
-
-         const unsigned char *dyn_base = file + (size_t)sh->sh_offset;
-         const char          *dynstr   = (const char *)(file + (size_t)str_sh->sh_offset);
-         size_t               dyn_count = (size_t)sh->sh_size / dyn_entsize;
-         size_t               dynstr_sz = (size_t)str_sh->sh_size;
-
-         for (size_t j = 0; j < dyn_count; j++)
-         {
-            const Elf64_Dyn *dyn = (const Elf64_Dyn *)(dyn_base + j * dyn_entsize);
-            if (dyn->d_tag != DT_NEEDED)
-            {
-               continue;
-            }
-            size_t off = (size_t)dyn->d_un.d_val;
-            if (off >= dynstr_sz)
-            {
-               continue;
-            }
-            if (!AppendUniqueString(&entries, &count, &capacity, dynstr + off))
-            {
-               goto cleanup;
-            }
-         }
-      }
+      ok = ReadElfNeeded64(file, size, &entries, &count, &capacity);
    }
    else if (file[EI_CLASS] == ELFCLASS32)
    {
-      if (size < sizeof(Elf32_Ehdr))
-      {
-         goto cleanup;
-      }
-
-      const Elf32_Ehdr *ehdr = (const Elf32_Ehdr *)file;
-      if (ehdr->e_shoff == 0 || ehdr->e_shnum == 0 ||
-          ehdr->e_shentsize < sizeof(Elf32_Shdr))
-      {
-         goto cleanup;
-      }
-
-      size_t shoff  = (size_t)ehdr->e_shoff;
-      size_t shtlen = (size_t)ehdr->e_shnum * (size_t)ehdr->e_shentsize;
-      if (!RangeInBuffer(shoff, shtlen, size))
-      {
-         goto cleanup;
-      }
-
-      const unsigned char *shbase = file + shoff;
-      for (int i = 0; i < (int)ehdr->e_shnum; i++)
-      {
-         const Elf32_Shdr *sh =
-            (const Elf32_Shdr *)(shbase + (size_t)i * (size_t)ehdr->e_shentsize);
-         if (sh->sh_type != SHT_DYNAMIC)
-         {
-            continue;
-         }
-
-         if (!RangeInBuffer((size_t)sh->sh_offset, (size_t)sh->sh_size, size))
-         {
-            continue;
-         }
-         if (sh->sh_link >= ehdr->e_shnum)
-         {
-            continue;
-         }
-
-         const Elf32_Shdr *str_sh =
-            (const Elf32_Shdr *)(shbase +
-                                 (size_t)sh->sh_link * (size_t)ehdr->e_shentsize);
-         if (!RangeInBuffer((size_t)str_sh->sh_offset, (size_t)str_sh->sh_size, size))
-         {
-            continue;
-         }
-
-         size_t dyn_entsize = sh->sh_entsize ? (size_t)sh->sh_entsize : sizeof(Elf32_Dyn);
-         if (dyn_entsize < sizeof(Elf32_Dyn))
-         {
-            continue;
-         }
-
-         const unsigned char *dyn_base = file + (size_t)sh->sh_offset;
-         const char          *dynstr   = (const char *)(file + (size_t)str_sh->sh_offset);
-         size_t               dyn_count = (size_t)sh->sh_size / dyn_entsize;
-         size_t               dynstr_sz = (size_t)str_sh->sh_size;
-
-         for (size_t j = 0; j < dyn_count; j++)
-         {
-            const Elf32_Dyn *dyn = (const Elf32_Dyn *)(dyn_base + j * dyn_entsize);
-            if (dyn->d_tag != DT_NEEDED)
-            {
-               continue;
-            }
-            size_t off = (size_t)dyn->d_un.d_val;
-            if (off >= dynstr_sz)
-            {
-               continue;
-            }
-            if (!AppendUniqueString(&entries, &count, &capacity, dynstr + off))
-            {
-               goto cleanup;
-            }
-         }
-      }
+      ok = ReadElfNeeded32(file, size, &entries, &count, &capacity);
    }
-   else
+
+   if (ok)
    {
-      goto cleanup;
+      *needed       = entries;
+      *needed_count = count;
+      entries       = NULL;
+      count         = 0;
    }
-
-   *needed       = entries;
-   *needed_count = count;
-   entries       = NULL;
-   count         = 0;
-   ok            = 1;
 
 cleanup:
    free(file);
@@ -1669,11 +1789,120 @@ EnsurePrintedNodeCapacity(struct PrintedNodeSet *set, int required)
    return 1;
 }
 
+/* Snapshots the printable children of one node: unresolved names keep a -1 id,
+ * resolved ones carry their graph index. Returns the number of lines gathered. */
+static int
+CollectDependencyLines(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
+                       char **needed_entries, int needed_count, const int *stack,
+                       int depth, struct PrintedNodeSet *printed, const char **line_names,
+                       int *child_ids)
+{
+   int line_count = 0;
+
+   for (int i = 0; i < needed_count; i++)
+   {
+      const char *needed      = needed_entries[i];
+      const char *resolved    = ResolveNeededPath(loaded, needed);
+      int         child_index = 0;
+
+      if (!resolved)
+      {
+         line_names[line_count] = needed;
+         child_ids[line_count]  = -1;
+         line_count++;
+         continue;
+      }
+
+      child_index = FindOrAddDependencyNode(graph, resolved);
+      if (child_index < 0 || NodeIsInStack(stack, depth, child_index) ||
+          !EnsurePrintedNodeCapacity(printed, child_index + 1) ||
+          printed->flags[child_index])
+      {
+         continue;
+      }
+
+      line_names[line_count] = resolved;
+      child_ids[line_count]  = child_index;
+      line_count++;
+   }
+
+   return line_count;
+}
+
+/* A line is the last visible sibling when every later one has already been
+ * printed elsewhere in the tree. */
+static int
+DependencyLineIsLast(const int *child_ids, const struct PrintedNodeSet *printed,
+                     int index, int line_count)
+{
+   for (int j = index + 1; j < line_count; j++)
+   {
+      if (child_ids[j] < 0 || !printed->flags[child_ids[j]])
+      {
+         return 0;
+      }
+   }
+
+   return 1;
+}
+
+static void PrintDependencySubtree(struct DependencyGraph      *graph,
+                                   const struct DynamicLibList *loaded, int node_index,
+                                   const char *prefix, int *stack, int depth,
+                                   struct PrintedNodeSet *printed);
+
+/* Prints one collected dependency line and, when it resolves to a node not yet
+ * printed, recurses into that subtree. */
+static void
+PrintDependencyLine(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
+                    const char *prefix, int *stack, int depth,
+                    struct PrintedNodeSet *printed, const char **line_names,
+                    const int *child_ids, int i, int line_count)
+{
+   char next_prefix[4096];
+   int  is_last = 0;
+   int  written = 0;
+
+   if (child_ids[i] >= 0 && printed->flags[child_ids[i]])
+   {
+      return;
+   }
+
+   is_last = DependencyLineIsLast(child_ids, printed, i, line_count);
+   printf("%s%s %s%s\n", prefix, is_last ? "`--" : "|--", line_names[i],
+          child_ids[i] >= 0 ? "" : " [unresolved]");
+
+   if (child_ids[i] < 0)
+   {
+      return;
+   }
+
+   printed->flags[child_ids[i]] = 1;
+
+   written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
+                      is_last ? "    " : "|   ");
+   if (written < 0 || (size_t)written >= sizeof(next_prefix))
+   {
+      return;
+   }
+
+   stack[depth] = child_ids[i];
+   PrintDependencySubtree(graph, loaded, child_ids[i], next_prefix, stack, depth + 1,
+                          printed);
+}
+
 static void
 PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibList *loaded,
                        int node_index, const char *prefix, int *stack, int depth,
                        struct PrintedNodeSet *printed)
 {
+   struct DependencyNode *node           = NULL;
+   char                 **needed_entries = NULL;
+   const char           **line_names     = NULL;
+   int                   *child_ids      = NULL;
+   int                    needed_count   = 0;
+   int                    line_count     = 0;
+
    if (!graph || !loaded || !prefix || !stack || !printed || depth <= 0 || depth >= 256)
    {
       return;
@@ -1684,7 +1913,7 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
       return;
    }
 
-   struct DependencyNode *node = &graph->nodes[node_index];
+   node = &graph->nodes[node_index];
    if (node->needed_count <= 0)
    {
       return;
@@ -1694,11 +1923,11 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
     * FindOrAddDependencyNode() may realloc graph->nodes, which would invalidate
     * the cached node pointer while we are still iterating this node's DT_NEEDED
     * entries. */
-   char **needed_entries = node->needed;
-   int    needed_count   = node->needed_count;
+   needed_entries = node->needed;
+   needed_count   = node->needed_count;
 
-   const char **line_names = (const char **)malloc((size_t)needed_count * sizeof(char *));
-   int         *child_ids  = (int *)malloc((size_t)needed_count * sizeof(int));
+   line_names = (const char **)malloc((size_t)needed_count * sizeof(char *));
+   child_ids  = (int *)malloc((size_t)needed_count * sizeof(int));
    if (!line_names || !child_ids)
    {
       free(line_names);
@@ -1706,82 +1935,13 @@ PrintDependencySubtree(struct DependencyGraph *graph, const struct DynamicLibLis
       return;
    }
 
-   int line_count = 0;
-   for (int i = 0; i < needed_count; i++)
-   {
-      const char *needed   = needed_entries[i];
-      const char *resolved = ResolveNeededPath(loaded, needed);
-      if (!resolved)
-      {
-         line_names[line_count] = needed;
-         child_ids[line_count]  = -1;
-         line_count++;
-         continue;
-      }
-
-      int child_index = FindOrAddDependencyNode(graph, resolved);
-      if (child_index < 0 || NodeIsInStack(stack, depth, child_index))
-      {
-         continue;
-      }
-      if (!EnsurePrintedNodeCapacity(printed, child_index + 1))
-      {
-         continue;
-      }
-      if (printed->flags[child_index])
-      {
-         continue;
-      }
-
-      line_names[line_count] = resolved;
-      child_ids[line_count]  = child_index;
-      line_count++;
-   }
+   line_count = CollectDependencyLines(graph, loaded, needed_entries, needed_count, stack,
+                                       depth, printed, line_names, child_ids);
 
    for (int i = 0; i < line_count; i++)
    {
-      if (child_ids[i] >= 0 && printed->flags[child_ids[i]])
-      {
-         continue;
-      }
-
-      int is_last = 1;
-      for (int j = i + 1; j < line_count; j++)
-      {
-         if (child_ids[j] < 0 || !printed->flags[child_ids[j]])
-         {
-            is_last = 0;
-            break;
-         }
-      }
-
-      if (child_ids[i] >= 0)
-      {
-         printf("%s%s %s\n", prefix, is_last ? "`--" : "|--", line_names[i]);
-      }
-      else
-      {
-         printf("%s%s %s [unresolved]\n", prefix, is_last ? "`--" : "|--", line_names[i]);
-      }
-
-      if (child_ids[i] < 0)
-      {
-         continue;
-      }
-
-      printed->flags[child_ids[i]] = 1;
-
-      char next_prefix[4096];
-      int  written = snprintf(next_prefix, sizeof(next_prefix), "%s%s", prefix,
-                             is_last ? "    " : "|   ");
-      if (written < 0 || (size_t)written >= sizeof(next_prefix))
-      {
-         continue;
-      }
-
-      stack[depth] = child_ids[i];
-      PrintDependencySubtree(graph, loaded, child_ids[i], next_prefix, stack, depth + 1,
-                             printed);
+      PrintDependencyLine(graph, loaded, prefix, stack, depth, printed, line_names,
+                          child_ids, i, line_count);
    }
 
    free(line_names);
@@ -1905,23 +2065,46 @@ hypredrv_PrintSystemInfo(MPI_Comm comm)
  * PrintSystemInfoLegacy
  *--------------------------------------------------------------------------*/
 
-void
-hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
+/* Distinct hostnames across the gathered rank list give the node count. */
+static int
+CountUniqueHostnames(int nprocs, const char *allHostnames)
 {
-   int    myid = 0, nprocs = 0;
-   char   hostname[HYPRE_MAX_HOSTNAME];
-   double bytes_to_gib = (double)(1 << 30);
-   double mib_to_gib   = (double)(1 << 10);
-   int    gcount;
-   size_t total = 0, used = 0;
-   FILE  *fp = NULL;
-   char   buffer[32768];
+   int numNodes = 0;
 
-   MPI_Comm_rank(comm, &myid);
-   MPI_Comm_size(comm, &nprocs);
+   for (int i = 0; i < nprocs; i++)
+   {
+      int isUnique = 1;
+      for (int j = 0; j < i; j++)
+      {
+         if (strncmp(&allHostnames[i * HYPRE_MAX_HOSTNAME],
+                     &allHostnames[j * HYPRE_MAX_HOSTNAME], HYPRE_MAX_HOSTNAME) == 0)
+         {
+            isUnique = 0;
+            break;
+         }
+      }
+      if (isUnique)
+      {
+         numNodes++;
+      }
+   }
 
-   /* Get the hostname for this process. POSIX may leave the buffer unterminated if
-    * the hostname is too long, so zero-fill and force a terminator. */
+   return numNodes;
+}
+
+/* Gathers every rank's hostname into a freshly allocated nprocs-sized table.
+ * The allocation outcome is agreed collectively, so a single failing rank never
+ * leaves its peers blocked in the Allgather. Returns zero when the gather was
+ * abandoned, in which case *allHostnames_out is left untouched. */
+static int
+GatherAllHostnames(MPI_Comm comm, int nprocs, char **allHostnames_out)
+{
+   char  hostname[HYPRE_MAX_HOSTNAME];
+   char *allHostnames  = NULL;
+   int   host_alloc_ok = 0;
+
+   /* POSIX may leave the buffer unterminated if the hostname is too long, so
+    * zero-fill and force a terminator. */
    memset(hostname, 0, sizeof(hostname));
    if (gethostname(hostname, sizeof(hostname)) != 0)
    {
@@ -1929,21 +2112,539 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
    }
    hostname[sizeof(hostname) - 1] = '\0';
 
-   /* Gather hostnames on all ranks (needed for unique counts, avoids huge stack VLAs) */
-   char *allHostnames = NULL;
    if (nprocs > 0)
    {
       allHostnames = (char *)malloc((size_t)nprocs * HYPRE_MAX_HOSTNAME);
    }
-   int host_alloc_ok = allHostnames ? 1 : 0;
+   host_alloc_ok = allHostnames ? 1 : 0;
    MPI_Allreduce(MPI_IN_PLACE, &host_alloc_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!host_alloc_ok)
    {
       free(allHostnames);
-      return;
+      return 0;
    }
+
    MPI_Allgather(hostname, HYPRE_MAX_HOSTNAME, MPI_CHAR, allHostnames, HYPRE_MAX_HOSTNAME,
                  MPI_CHAR, comm);
+   *allHostnames_out = allHostnames;
+
+   return 1;
+}
+
+/* Fills the per-package CPU model strings and the package/thread counts. */
+#ifndef __APPLE__
+/* Parses /proc/cpuinfo for the per-package model strings and the physical /
+ * logical processor counts. */
+static void
+DetectCpuModelsFromProcInfo(FILE *fp, char *buffer, size_t buffer_size,
+                            int *numPhysicalCPUs_out, int *numCPUs_out,
+                            char cpuModels[8][256])
+{
+   int physicalCPUSeen = 0;
+   int numPhysicalCPUs = 0;
+   int numCPUs         = 0;
+
+   if (buffer_size == 0 || buffer_size > (size_t)INT_MAX)
+   {
+      fclose(fp);
+      return;
+   }
+
+   while (fgets(buffer, (int)buffer_size, fp))
+   {
+      if (strncmp(buffer, "physical id", 11) == 0)
+      {
+         const char *colon = strchr(buffer, ':');
+         if (!colon)
+         {
+            continue;
+         }
+         int physicalID = atoi(colon + 1);
+         if (physicalID >= 0 && physicalID < 8)
+         {
+            unsigned long long mask = 1ULL << (unsigned)physicalID;
+            if (!((unsigned long long)physicalCPUSeen & mask))
+            {
+               physicalCPUSeen = (int)((unsigned long long)physicalCPUSeen | mask);
+               numPhysicalCPUs++;
+            }
+         }
+      }
+
+      if (strncmp(buffer, "model name", 10) == 0)
+      {
+         int physicalID = numPhysicalCPUs - 1;
+         if (physicalID >= 0 && physicalID < 8)
+         {
+            const char *colon = strchr(buffer, ':');
+            if (!colon)
+            {
+               continue;
+            }
+            const char *model = colon + 1;
+            while (*model == ' ')
+            {
+               model++;
+            }
+            strncpy(cpuModels[physicalID], model, sizeof(cpuModels[physicalID]) - 1);
+            cpuModels[physicalID][sizeof(cpuModels[physicalID]) - 1] = '\0';
+         }
+      }
+   }
+   fclose(fp);
+
+   if (numPhysicalCPUs == 0)
+   {
+      char lscpu_path[PATH_MAX];
+      char lscpu_model[sizeof(cpuModels[0])] = {0};
+      if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
+          ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
+                             sizeof(lscpu_model)) &&
+          lscpu_model[0] != '\0')
+      {
+         int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
+         for (int i = 0; i < fill_count; i++)
+         {
+            snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
+         }
+      }
+   }
+
+   *numPhysicalCPUs_out = numPhysicalCPUs;
+   *numCPUs_out         = numCPUs;
+}
+#endif
+
+static void
+DetectCpuModels(int *numPhysicalCPUs_out, int *numCPUs_out, char cpuModels[8][256])
+{
+   int   numPhysicalCPUs = 0;
+   int   numCPUs         = 0;
+   FILE *fp              = NULL;
+   char  buffer[32768];
+
+#ifdef __APPLE__
+   /* The /proc/cpuinfo scan below is the only user of these. */
+   (void)fp;
+   (void)buffer;
+#endif
+
+#ifdef __APPLE__
+   size_t msize = sizeof(numCPUs);
+   sysctlbyname("hw.ncpu", &numCPUs, &msize, NULL, 0);
+
+   msize = sizeof(numPhysicalCPUs);
+   sysctlbyname("hw.packages", &numPhysicalCPUs, &msize, NULL, 0);
+
+   /* Clamp to the fixed cpuModels capacity to avoid a stack overflow when the
+    * system reports more than 8 packages. */
+   for (int i = 0; i < numPhysicalCPUs && i < 8; i++)
+   {
+      msize = sizeof(cpuModels[i]);
+      sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
+   }
+#else
+   int physicalCPUSeen = 0;
+   fp                  = fopen("/proc/cpuinfo", "r");
+   if (fp != NULL)
+   {
+      DetectCpuModelsFromProcInfo(fp, buffer, sizeof(buffer), &numPhysicalCPUs, &numCPUs,
+                                  cpuModels);
+   }
+
+   numCPUs = (int)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+
+   *numPhysicalCPUs_out = numPhysicalCPUs;
+   *numCPUs_out         = numCPUs;
+}
+
+/* Enumerates GPU models via lspci, falling back to nvidia-smi. */
+static void
+PrintDiscoveredGpuModels(void)
+{
+   int  gcount = 0;
+   char gpuInfo[256];
+
+#ifdef __APPLE__
+   /* GPU discovery below is Linux-only. */
+   (void)gcount;
+   (void)gpuInfo;
+#endif
+
+#ifndef __APPLE__
+   gcount = 0;
+   {
+      char lspci_path[PATH_MAX];
+      if (FindExecutableInPath("lspci", lspci_path, sizeof(lspci_path)))
+      {
+         char  lspci_output[32768];
+         char *line    = NULL;
+         char *saveptr = NULL;
+
+         {
+            char *argv[] = {lspci_path, NULL};
+            if (RunCommandCapture(lspci_path, argv, 1, lspci_output,
+                                  sizeof(lspci_output)))
+            {
+               line = strtok_r(lspci_output, "\n", &saveptr);
+               while (line)
+               {
+                  if ((strcasestr(line, "vga") || strcasestr(line, "3d") ||
+                       strcasestr(line, "2d") || strcasestr(line, "display") ||
+                       strcasestr(line, "accel")) &&
+                      ParseGpuControllerLine(line, gpuInfo, sizeof(gpuInfo)))
+                  {
+                     printf("GPU Model #%d          : %s\n", gcount++, gpuInfo);
+                  }
+                  line = strtok_r(NULL, "\n", &saveptr);
+               }
+            }
+         }
+      }
+      else
+      {
+         char nvidia_path[PATH_MAX];
+         if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
+         {
+            char  nvidia_output[32768];
+            char *line    = NULL;
+            char *saveptr = NULL;
+            char *argv[]  = {nvidia_path, "--query-gpu=name", "--format=csv,noheader",
+                             NULL};
+            if (RunCommandCapture(nvidia_path, argv, 1, nvidia_output,
+                                  sizeof(nvidia_output)))
+            {
+               line = strtok_r(nvidia_output, "\n", &saveptr);
+               while (line)
+               {
+                  hypredrv_TrimTrailingWhitespace(line);
+                  if (line[0] != '\0')
+                  {
+                     printf("GPU Model #%d          : %s\n", gcount++, line);
+                  }
+                  line = strtok_r(NULL, "\n", &saveptr);
+               }
+            }
+         }
+      }
+   }
+   gcount = 0;
+#endif
+}
+
+/* Legacy system-information report, section 1: CPU packages, core counts and
+ * discovered GPU models. */
+static void
+PrintLegacyCpuSection(int nprocs, const char *allHostnames)
+{
+   /* CPU packages, threads and per-package model strings. */
+   int  numPhysicalCPUs   = 0;
+   int  numCPUs           = 0;
+   char cpuModels[8][256] = {{0}};
+
+   /* Count unique hostnames */
+   int numNodes = CountUniqueHostnames(nprocs, allHostnames);
+
+   DetectCpuModels(&numPhysicalCPUs, &numCPUs, cpuModels);
+   printf("Processing Units\n");
+   printf("-----------------\n");
+   printf("Number of Nodes       : %d\n", numNodes);
+   printf("Number of Processors  : %d\n", numPhysicalCPUs);
+   printf("Number of CPU threads : %d\n", numCPUs);
+   printf("Tot. # of Processors  : %lld\n",
+          (long long)numNodes * (long long)numPhysicalCPUs);
+   printf("Tot. # of CPU threads : %lld\n", (long long)numNodes * (long long)numCPUs);
+   for (int i = 0; i < ((numPhysicalCPUs < 8) ? numPhysicalCPUs : 8); i++)
+   {
+      printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
+   }
+
+   PrintDiscoveredGpuModels();
+   printf("\n");
+}
+
+/* Per-vendor GPU memory reporting for the legacy system-information report.
+ * Each probe is best effort: a missing vendor tool simply prints nothing. */
+static void
+PrintNvidiaGpuMemory(double mib_to_gib)
+{
+   int    gcount = 0;
+   size_t total = 0, used = 0;
+   /* NVIDIA GPU Memory Information */
+   {
+      char nvidia_path[PATH_MAX];
+      if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
+      {
+         char  nvidia_output[32768];
+         char *line    = NULL;
+         char *saveptr = NULL;
+
+         {
+            char *argv[] = {nvidia_path, "--query-gpu=memory.total,memory.used",
+                            "--format=csv,noheader,nounits", NULL};
+            if (RunCommandCapture(nvidia_path, argv, 1, nvidia_output,
+                                  sizeof(nvidia_output)))
+            {
+               gcount = 0;
+               line   = strtok_r(nvidia_output, "\n", &saveptr);
+               while (line)
+               {
+                  int gpu_index = -1;
+                  if (sscanf(line, "%zu, %zu", &total, &used) == 2)
+                  {
+                     gpu_index = gcount++;
+                     printf("GPU RAM NVIDIA #%d     : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                            gpu_index, (double)used / mib_to_gib,
+                            (double)total / mib_to_gib,
+                            100.0 * (double)used / (double)total);
+                  }
+                  line = strtok_r(NULL, "\n", &saveptr);
+               }
+            }
+         }
+      }
+   }
+}
+
+static void
+PrintAmdGpuMemory(double bytes_to_gib)
+{
+   int    gcount = 0;
+   size_t total = 0, used = 0;
+   /* AMD GPU Memory Information */
+   {
+      char amd_path[PATH_MAX];
+      if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
+      {
+         char  json_output[32768];
+         char *argv[] = {amd_path, "metric", "-m", "--json", NULL};
+         if (RunCommandCapture(amd_path, argv, 1, json_output, sizeof(json_output)))
+         {
+            // Parse amd-smi JSON format for all GPUs
+            const char *total_vram_str = "\"total_vram\"";
+            const char *used_vram_str  = "\"used_vram\"";
+            const char *ptr            = json_output;
+
+            while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
+            {
+               // Find GPU index
+               int gpu_index = -1;
+               ptr           = strchr(ptr, ':');
+               if (ptr)
+               {
+                  ptr++;
+                  while (*ptr == ' ') ptr++;
+                  {
+                     char *endptr;
+                     gpu_index = (int)strtol(ptr, &endptr, 10);
+                     ptr       = endptr;
+                  }
+
+                  // Find total_vram for this GPU
+                  const char *gpu_start = ptr;
+                  const char *total_ptr = strstr(gpu_start, total_vram_str);
+                  const char *used_ptr  = strstr(gpu_start, used_vram_str);
+
+                  if (total_ptr && used_ptr)
+                  {
+                     // Extract total_vram value
+                     const char *val_ptr = strstr(total_ptr, "\"value\"");
+                     if (val_ptr)
+                     {
+                        val_ptr = strchr(val_ptr, ':');
+                        if (val_ptr)
+                        {
+                           val_ptr++;
+                           while (*val_ptr == ' ') val_ptr++;
+                           total =
+                              strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
+                        }
+                     }
+
+                     // Extract used_vram value
+                     val_ptr = strstr(used_ptr, "\"value\"");
+                     if (val_ptr)
+                     {
+                        val_ptr = strchr(val_ptr, ':');
+                        if (val_ptr)
+                        {
+                           val_ptr++;
+                           while (*val_ptr == ' ') val_ptr++;
+                           used =
+                              strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
+                        }
+                     }
+
+                     if (total > 0)
+                     {
+                        printf("GPU RAM AMD #%d        : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                               gpu_index >= 0 ? gpu_index : gcount,
+                               (double)used / bytes_to_gib, (double)total / bytes_to_gib,
+                               100.0 * (double)used / (double)total);
+                        gcount++;
+                     }
+                  }
+               }
+
+               // Move to next GPU entry
+               ptr = strstr(ptr, "}");
+               if (ptr) ptr++;
+               else break;
+            }
+         }
+      }
+   }
+}
+
+static void
+PrintIntelGpuMemory(double bytes_to_gib)
+{
+   size_t total = 0, used = 0;
+   /* Intel GPU Memory Information */
+   {
+      int intel_index = 0;
+      while (GetIntelXeCardByOrdinal(intel_index, NULL, 0))
+      {
+         if (QueryIntelXeMemoryByOrdinal(intel_index, &total, &used))
+         {
+            printf("GPU RAM Intel #%d      : %6.2f / %6.2f  (%5.2f %%) GiB\n",
+                   intel_index, (double)used / bytes_to_gib, (double)total / bytes_to_gib,
+                   100.0 * (double)used / (double)total);
+         }
+         else if (QueryIntelClinfoMemoryByOrdinal(intel_index, &total))
+         {
+            printf("GPU RAM Intel #%d      :    n/a / %6.2f  (  n/a ) GiB\n", intel_index,
+                   (double)total / bytes_to_gib);
+         }
+         else
+         {
+            break;
+         }
+         intel_index++;
+      }
+
+      if (intel_index == 0)
+      {
+         while (QueryIntelClinfoMemoryByOrdinal(intel_index, &total))
+         {
+            printf("GPU RAM Intel #%d      :    n/a / %6.2f  (  n/a ) GiB\n", intel_index,
+                   (double)total / bytes_to_gib);
+            intel_index++;
+         }
+      }
+   }
+}
+
+/* Legacy system-information report, section 2: host and accelerator memory. */
+static void
+PrintLegacyMemorySection(int nprocs, double bytes_to_gib, double mib_to_gib,
+                         const char *gpuBindingAll)
+{
+   // 2. Memory available and used
+   printf("Memory Information\n");
+   printf("------------------\n");
+   PrintCpuMemoryInformation(bytes_to_gib);
+
+   PrintNvidiaGpuMemory(mib_to_gib);
+
+   PrintAmdGpuMemory(bytes_to_gib);
+
+   PrintIntelGpuMemory(bytes_to_gib);
+
+#ifndef __APPLE__
+   PrintLinuxNumaInformation(bytes_to_gib);
+   PrintNetworkInformation();
+   PrintAcceleratorRuntimeInformation();
+#endif
+
+   if (gpuBindingAll)
+   {
+      printf("Accelerator Binding (per rank)\n");
+      printf("-------------------------------\n");
+      for (int r = 0; r < nprocs; r++)
+      {
+         printf("Rank %-3d              : %s\n", r,
+                gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
+      }
+   }
+}
+
+/* Legacy system-information report, section 3: operating system identity. */
+static void
+PrintLegacyOsSection(void)
+{
+   // 3. OS system info, release, version, machine
+   printf("\nOperating System\n");
+   printf("-----------------\n");
+   struct utsname sysinfo;
+   if (uname(&sysinfo) == 0)
+   {
+      printf("System Name           : %s\n", sysinfo.sysname);
+      printf("Node Name             : %s\n", sysinfo.nodename);
+      printf("Release               : %s\n", sysinfo.release);
+      printf("Version               : %s\n", sysinfo.version);
+      printf("Machine Architecture  : %s\n\n", sysinfo.machine);
+   }
+}
+
+/* Legacy system-information report, section 5: current working directory. */
+static void
+PrintLegacyCwdSection(void)
+{
+   // 5. Current working directory
+   printf("Current Working Directory\n");
+   printf("--------------------------\n");
+   char cwd[4096];
+   if (getcwd(cwd, sizeof(cwd)) != NULL)
+   {
+      printf("%s\n\n", cwd);
+   }
+}
+
+/* Legacy system-information report, section 6: loaded dynamic libraries. */
+static void
+PrintLegacyDynamicLibrariesSection(void)
+{
+   // 6. Dynamic libraries used
+   printf("Dynamic Libraries Loaded\n");
+   printf("------------------------\n");
+#ifdef __APPLE__
+   uint32_t dcount = _dyld_image_count();
+   for (uint32_t i = 0; i < dcount; i++)
+   {
+      const char               *name     = _dyld_get_image_name(i);
+      const struct mach_header *header   = _dyld_get_image_header(i);
+      const char               *filename = strrchr(name, '/');
+
+      filename = filename ? filename + 1 : name;
+      printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
+   }
+#else
+   if (!PrintDynamicLibrariesTree())
+   {
+      dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
+   }
+#endif
+   printf("\n");
+}
+
+void
+hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
+{
+   int    myid = 0, nprocs = 0;
+   double bytes_to_gib = (double)(1 << 30);
+   double mib_to_gib   = (double)(1 << 10);
+
+   MPI_Comm_rank(comm, &myid);
+   MPI_Comm_size(comm, &nprocs);
+
+   /* Gather hostnames on all ranks (needed for unique counts, avoids huge stack VLAs) */
+   char *allHostnames = NULL;
+   if (!GatherAllHostnames(comm, nprocs, &allHostnames))
+   {
+      return;
+   }
 
    /* Gather per-rank GPU binding strings on rank 0 */
    char gpuBindingLocal[HYPRE_MAX_GPU_BINDING];
@@ -1961,505 +2662,17 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
       printf("================================== System Information "
              "=================================\n\n");
 
-      // 1. CPU cores and model
-      int  numPhysicalCPUs   = 0;
-      int  numCPUs           = 0;
-      char cpuModels[8][256] = {{0}};
-      char gpuInfo[256]      = "Unknown";
+      PrintLegacyCpuSection(nprocs, allHostnames);
 
-      /* Count unique hostnames */
-      int numNodes = 0;
-      for (int i = 0; i < nprocs; i++)
-      {
-         int isUnique = 1;
-         for (int j = 0; j < i; j++)
-         {
-            if (strncmp(&allHostnames[i * HYPRE_MAX_HOSTNAME],
-                        &allHostnames[j * HYPRE_MAX_HOSTNAME], HYPRE_MAX_HOSTNAME) == 0)
-            {
-               isUnique = 0;
-               break;
-            }
-         }
-         if (isUnique)
-         {
-            numNodes++;
-         }
-      }
+      PrintLegacyMemorySection(nprocs, bytes_to_gib, mib_to_gib, gpuBindingAll);
 
-#ifdef __APPLE__
-      size_t msize = sizeof(numCPUs);
-      sysctlbyname("hw.ncpu", &numCPUs, &msize, NULL, 0);
+      PrintLegacyOsSection();
 
-      msize = sizeof(numPhysicalCPUs);
-      sysctlbyname("hw.packages", &numPhysicalCPUs, &msize, NULL, 0);
+      PrintCompilationInfo();
 
-      /* Clamp to the fixed cpuModels capacity to avoid a stack overflow when the
-       * system reports more than 8 packages. */
-      for (int i = 0; i < numPhysicalCPUs && i < 8; i++)
-      {
-         msize = sizeof(cpuModels[i]);
-         sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
-      }
-#else
-      int physicalCPUSeen = 0;
-      fp                  = fopen("/proc/cpuinfo", "r");
-      if (fp != NULL)
-      {
-         while (fgets(buffer, sizeof(buffer), fp))
-         {
-            if (strncmp(buffer, "physical id", 11) == 0)
-            {
-               const char *colon = strchr(buffer, ':');
-               if (!colon)
-               {
-                  continue;
-               }
-               int physicalID = atoi(colon + 1);
-               if (physicalID >= 0 && physicalID < 8)
-               {
-                  unsigned long long mask = 1ULL << (unsigned)physicalID;
-                  if (!((unsigned long long)physicalCPUSeen & mask))
-                  {
-                     physicalCPUSeen = (int)((unsigned long long)physicalCPUSeen | mask);
-                     numPhysicalCPUs++;
-                  }
-               }
-            }
+      PrintLegacyCwdSection();
 
-            if (strncmp(buffer, "model name", 10) == 0)
-            {
-               int physicalID = numPhysicalCPUs - 1;
-               if (physicalID >= 0 && physicalID < 8)
-               {
-                  const char *colon = strchr(buffer, ':');
-                  if (!colon)
-                  {
-                     continue;
-                  }
-                  const char *model = colon + 1;
-                  while (*model == ' ')
-                  {
-                     model++;
-                  }
-                  strncpy(cpuModels[physicalID], model,
-                          sizeof(cpuModels[physicalID]) - 1);
-                  cpuModels[physicalID][sizeof(cpuModels[physicalID]) - 1] = '\0';
-               }
-            }
-         }
-         fclose(fp);
-
-         if (numPhysicalCPUs == 0)
-         {
-            char lscpu_path[PATH_MAX];
-            char lscpu_model[sizeof(cpuModels[0])] = {0};
-            if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
-                ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
-                                   sizeof(lscpu_model)) &&
-                lscpu_model[0] != '\0')
-            {
-               int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
-               for (int i = 0; i < fill_count; i++)
-               {
-                  snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
-               }
-            }
-         }
-      }
-
-      numCPUs = (int)sysconf(_SC_NPROCESSORS_ONLN);
-#endif
-      if (strlen(gpuInfo) == 0)
-      {
-         strncpy(gpuInfo, "Unknown", sizeof(gpuInfo) - 1);
-         gpuInfo[sizeof(gpuInfo) - 1] = '\0';
-      }
-
-      printf("Processing Units\n");
-      printf("-----------------\n");
-      printf("Number of Nodes       : %d\n", numNodes);
-      printf("Number of Processors  : %d\n", numPhysicalCPUs);
-      printf("Number of CPU threads : %d\n", numCPUs);
-      printf("Tot. # of Processors  : %lld\n",
-             (long long)numNodes * (long long)numPhysicalCPUs);
-      printf("Tot. # of CPU threads : %lld\n", (long long)numNodes * (long long)numCPUs);
-      for (int i = 0; i < ((numPhysicalCPUs < 8) ? numPhysicalCPUs : 8); i++)
-      {
-         printf("CPU Model #%d          : %s\n", i, cpuModels[i]);
-      }
-
-#ifndef __APPLE__
-      gcount = 0;
-      {
-         char lspci_path[PATH_MAX];
-         if (FindExecutableInPath("lspci", lspci_path, sizeof(lspci_path)))
-         {
-            char  lspci_output[32768];
-            char *line    = NULL;
-            char *saveptr = NULL;
-
-            {
-               char *argv[] = {lspci_path, NULL};
-               if (RunCommandCapture(lspci_path, argv, 1, lspci_output,
-                                     sizeof(lspci_output)))
-               {
-                  line = strtok_r(lspci_output, "\n", &saveptr);
-                  while (line)
-                  {
-                     if ((strcasestr(line, "vga") || strcasestr(line, "3d") ||
-                          strcasestr(line, "2d") || strcasestr(line, "display") ||
-                          strcasestr(line, "accel")) &&
-                         ParseGpuControllerLine(line, gpuInfo, sizeof(gpuInfo)))
-                     {
-                        printf("GPU Model #%d          : %s\n", gcount++, gpuInfo);
-                     }
-                     line = strtok_r(NULL, "\n", &saveptr);
-                  }
-               }
-            }
-         }
-         else
-         {
-            char nvidia_path[PATH_MAX];
-            if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
-            {
-               char  nvidia_output[32768];
-               char *line    = NULL;
-               char *saveptr = NULL;
-               char *argv[]  = {nvidia_path, "--query-gpu=name", "--format=csv,noheader",
-                                NULL};
-               if (RunCommandCapture(nvidia_path, argv, 1, nvidia_output,
-                                     sizeof(nvidia_output)))
-               {
-                  line = strtok_r(nvidia_output, "\n", &saveptr);
-                  while (line)
-                  {
-                     hypredrv_TrimTrailingWhitespace(line);
-                     if (line[0] != '\0')
-                     {
-                        printf("GPU Model #%d          : %s\n", gcount++, line);
-                     }
-                     line = strtok_r(NULL, "\n", &saveptr);
-                  }
-               }
-            }
-         }
-      }
-      gcount = 0;
-#endif
-      printf("\n");
-
-      // 2. Memory available and used
-      printf("Memory Information\n");
-      printf("------------------\n");
-      PrintCpuMemoryInformation(bytes_to_gib);
-
-      /* NVIDIA GPU Memory Information */
-      {
-         char nvidia_path[PATH_MAX];
-         if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
-         {
-            char  nvidia_output[32768];
-            char *line    = NULL;
-            char *saveptr = NULL;
-
-            {
-               char *argv[] = {nvidia_path, "--query-gpu=memory.total,memory.used",
-                               "--format=csv,noheader,nounits", NULL};
-               if (RunCommandCapture(nvidia_path, argv, 1, nvidia_output,
-                                     sizeof(nvidia_output)))
-               {
-                  gcount = 0;
-                  line   = strtok_r(nvidia_output, "\n", &saveptr);
-                  while (line)
-                  {
-                     int gpu_index = -1;
-                     if (sscanf(line, "%zu, %zu", &total, &used) == 2)
-                     {
-                        gpu_index = gcount++;
-                        printf("GPU RAM NVIDIA #%d     : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                               gpu_index, (double)used / mib_to_gib,
-                               (double)total / mib_to_gib,
-                               100.0 * (double)used / (double)total);
-                     }
-                     line = strtok_r(NULL, "\n", &saveptr);
-                  }
-               }
-            }
-         }
-      }
-
-      /* AMD GPU Memory Information */
-      {
-         char amd_path[PATH_MAX];
-         if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
-         {
-            char  json_output[32768];
-            char *argv[] = {amd_path, "metric", "-m", "--json", NULL};
-            if (RunCommandCapture(amd_path, argv, 1, json_output, sizeof(json_output)))
-            {
-               // Parse amd-smi JSON format for all GPUs
-               const char *total_vram_str = "\"total_vram\"";
-               const char *used_vram_str  = "\"used_vram\"";
-               const char *ptr            = json_output;
-
-               while ((ptr = strstr(ptr, "\"gpu\"")) != NULL)
-               {
-                  // Find GPU index
-                  int gpu_index = -1;
-                  ptr           = strchr(ptr, ':');
-                  if (ptr)
-                  {
-                     ptr++;
-                     while (*ptr == ' ') ptr++;
-                     {
-                        char *endptr;
-                        gpu_index = (int)strtol(ptr, &endptr, 10);
-                        ptr       = endptr;
-                     }
-
-                     // Find total_vram for this GPU
-                     const char *gpu_start = ptr;
-                     const char *total_ptr = strstr(gpu_start, total_vram_str);
-                     const char *used_ptr  = strstr(gpu_start, used_vram_str);
-
-                     if (total_ptr && used_ptr)
-                     {
-                        // Extract total_vram value
-                        const char *val_ptr = strstr(total_ptr, "\"value\"");
-                        if (val_ptr)
-                        {
-                           val_ptr = strchr(val_ptr, ':');
-                           if (val_ptr)
-                           {
-                              val_ptr++;
-                              while (*val_ptr == ' ') val_ptr++;
-                              total =
-                                 strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
-                           }
-                        }
-
-                        // Extract used_vram value
-                        val_ptr = strstr(used_ptr, "\"value\"");
-                        if (val_ptr)
-                        {
-                           val_ptr = strchr(val_ptr, ':');
-                           if (val_ptr)
-                           {
-                              val_ptr++;
-                              while (*val_ptr == ' ') val_ptr++;
-                              used =
-                                 strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
-                           }
-                        }
-
-                        if (total > 0)
-                        {
-                           printf(
-                              "GPU RAM AMD #%d        : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                              gpu_index >= 0 ? gpu_index : gcount,
-                              (double)used / bytes_to_gib, (double)total / bytes_to_gib,
-                              100.0 * (double)used / (double)total);
-                           gcount++;
-                        }
-                     }
-                  }
-
-                  // Move to next GPU entry
-                  ptr = strstr(ptr, "}");
-                  if (ptr) ptr++;
-                  else break;
-               }
-            }
-         }
-      }
-
-      /* Intel GPU Memory Information */
-      {
-         int intel_index = 0;
-         while (GetIntelXeCardByOrdinal(intel_index, NULL, 0))
-         {
-            if (QueryIntelXeMemoryByOrdinal(intel_index, &total, &used))
-            {
-               printf("GPU RAM Intel #%d      : %6.2f / %6.2f  (%5.2f %%) GiB\n",
-                      intel_index, (double)used / bytes_to_gib,
-                      (double)total / bytes_to_gib, 100.0 * (double)used / (double)total);
-            }
-            else if (QueryIntelClinfoMemoryByOrdinal(intel_index, &total))
-            {
-               printf("GPU RAM Intel #%d      :    n/a / %6.2f  (  n/a ) GiB\n",
-                      intel_index, (double)total / bytes_to_gib);
-            }
-            else
-            {
-               break;
-            }
-            intel_index++;
-         }
-
-         if (intel_index == 0)
-         {
-            while (QueryIntelClinfoMemoryByOrdinal(intel_index, &total))
-            {
-               printf("GPU RAM Intel #%d      :    n/a / %6.2f  (  n/a ) GiB\n",
-                      intel_index, (double)total / bytes_to_gib);
-               intel_index++;
-            }
-         }
-      }
-
-#ifndef __APPLE__
-      PrintLinuxNumaInformation(bytes_to_gib);
-      PrintNetworkInformation();
-      PrintAcceleratorRuntimeInformation();
-#endif
-
-      if (gpuBindingAll)
-      {
-         printf("Accelerator Binding (per rank)\n");
-         printf("-------------------------------\n");
-         for (int r = 0; r < nprocs; r++)
-         {
-            printf("Rank %-3d              : %s\n", r,
-                   gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
-         }
-      }
-
-      // 3. OS system info, release, version, machine
-      printf("\nOperating System\n");
-      printf("-----------------\n");
-      struct utsname sysinfo;
-      if (uname(&sysinfo) == 0)
-      {
-         printf("System Name           : %s\n", sysinfo.sysname);
-         printf("Node Name             : %s\n", sysinfo.nodename);
-         printf("Release               : %s\n", sysinfo.release);
-         printf("Version               : %s\n", sysinfo.version);
-         printf("Machine Architecture  : %s\n\n", sysinfo.machine);
-      }
-
-      // 4. Compilation Flags Information
-      printf("Compilation Information\n");
-      printf("------------------------\n");
-      printf("Date                  : %s at %s\n", __DATE__, __TIME__);
-
-      /* Check optimization level */
-#if defined(__OPTIMIZE__)
-      printf("Optimization          : Enabled\n");
-#elif defined(__OPTIMIZE_SIZE__)
-      printf("Optimization          : Enabled (size)\n");
-#elif defined(_MSC_VER)
-      /* MSVC doesn't define __OPTIMIZE__, optimization detection is complex */
-      printf("Optimization          : Unknown (MSVC)\n");
-#else
-      printf("Optimization          : Disabled\n");
-#endif
-      /* Check debug symbols:
-       * - NDEBUG means "not debug" (when defined, assertions are disabled, typically
-       * release)
-       * - _DEBUG is MSVC's debug macro
-       * - DEBUG might be user-defined
-       * Note: This detects debug macros, not necessarily debug symbols (-g flag) */
-#if defined(HYPRE_DEBUG)
-      printf("Debugging             : Enabled (HYPRE)\n");
-#elif defined(_DEBUG) || defined(DEBUG)
-      printf("Debugging             : Enabled\n");
-#elif defined(NDEBUG)
-      printf("Debugging             : Disabled\n");
-#else
-      /* NDEBUG not defined - could be debug or release, default to unknown */
-      printf("Debugging             : Unknown\n");
-#endif
-#ifdef __clang_version__
-      printf("Compiler              : Clang %s\n", (const char *)__clang_version__);
-#elif defined(__clang__)
-      printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
-             __clang_patchlevel__);
-#elif defined(__INTEL_COMPILER)
-      printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100,
-             (__INTEL_COMPILER % 100) / 10);
-#elif defined(__GNUC__)
-      printf("Compiler              : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__,
-             __GNUC_PATCHLEVEL__);
-#else
-      printf("Compiler              : Unknown\n");
-#endif
-#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
-      printf("OpenMP                : Supported (Version: %d)\n", _OPENMP);
-#else
-      printf("OpenMP                : Not used\n");
-#endif
-      printf("MPI library           : ");
-#ifdef CRAY_MPICH_VERSION
-      printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
-#elif defined(INTEL_MPI_VERSION)
-      printf("Intel MPI (Version: %s)\n", (const char *)INTEL_MPI_VERSION);
-#elif defined(__IBM_MPI__)
-      printf("IBM Spectrum MPI (Version: %d.%d.%d)\n", __IBM_MPI_MAJOR_VERSION,
-             __IBM_MPI_MINOR_VERSION, __IBM_MPI_RELEASE_VERSION);
-#elif defined(MVAPICH2_VERSION)
-      printf("MVAPICH2 (Version: %s)\n", (const char *)MVAPICH2_VERSION);
-#elif defined(MPICH_NAME)
-      printf("MPICH (Version: %s)\n", MPICH_VERSION);
-#elif defined(OMPI_MAJOR_VERSION)
-      printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION,
-             OMPI_RELEASE_VERSION);
-#elif defined(SGI_MPI)
-      printf("SGI MPI\n");
-#else
-      printf("N/A\n");
-#endif
-#ifdef __x86_64__
-      printf("Target architecture   : x86_64\n");
-#elif defined(__i386__)
-      printf("Target architecture   : x86 (32-bit)\n");
-#elif defined(__aarch64__)
-      printf("Target architecture   : ARM64\n");
-#elif defined(__arm__)
-      printf("Target architecture   : ARM\n");
-#else
-      printf("Target architecture   : Unknown\n");
-#endif
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-      printf("Endianness            : Little-endian\n");
-#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-      printf("Endianness            : Big-endian\n");
-#else
-      printf("Endianness            : Unknown\n");
-#endif
-      printf("\n");
-
-      // 5. Current working directory
-      printf("Current Working Directory\n");
-      printf("--------------------------\n");
-      char cwd[4096];
-      if (getcwd(cwd, sizeof(cwd)) != NULL)
-      {
-         printf("%s\n\n", cwd);
-      }
-
-      // 6. Dynamic libraries used
-      printf("Dynamic Libraries Loaded\n");
-      printf("------------------------\n");
-#ifdef __APPLE__
-      uint32_t dcount = _dyld_image_count();
-      for (uint32_t i = 0; i < dcount; i++)
-      {
-         const char               *name     = _dyld_get_image_name(i);
-         const struct mach_header *header   = _dyld_get_image_header(i);
-         const char               *filename = strrchr(name, '/');
-
-         filename = filename ? filename + 1 : name;
-         printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
-      }
-#else
-      if (!PrintDynamicLibrariesTree())
-      {
-         dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
-      }
-#endif
-      printf("\n");
+      PrintLegacyDynamicLibrariesSection();
 
       PrintMpiRuntimeInformation(comm);
       PrintThreadingEnvironmentInformation();
@@ -2602,7 +2815,13 @@ PrintCpuMemoryInformation(double bytes_to_gib)
    if (host_statistics(mach_host_self(), HOST_VM_INFO, (host_info_t)&vmstat, &count) ==
        KERN_SUCCESS)
    {
-      mem_used = mem_total - (size_t)vmstat.free_count * sysconf(_SC_PAGESIZE);
+      long   page_size  = sysconf(_SC_PAGESIZE);
+      size_t free_bytes = 0;
+      if (page_size > 0)
+      {
+         free_bytes = (size_t)vmstat.free_count * (size_t)page_size;
+      }
+      mem_used = (free_bytes < mem_total) ? mem_total - free_bytes : 0;
 
       printf("CPU RAM used          : %6.2f / %6.2f  (%5.2f %%) GiB\n",
              (double)mem_used / bytes_to_gib, (double)mem_total / bytes_to_gib,
@@ -2826,144 +3045,123 @@ PrintCacheHierarchy(void)
    }
 }
 
+/* Prints the per-package CPU vendor/model strings hwloc discovered. */
+static void
+PrintPackageCpuModels(int packages)
+{
+   for (int i = 0; i < packages; i++)
+   {
+      hwloc_obj_t package       = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PACKAGE, i);
+      const char *cpuvendor     = NULL;
+      const char *cpumodel      = NULL;
+      char        cpu_desc[256] = "";
+
+      if (!package)
+      {
+         continue;
+      }
+      cpuvendor = hwloc_obj_get_info_by_name(package, "CPUVendor");
+      cpumodel  = hwloc_obj_get_info_by_name(package, "CPUModel");
+      if (!cpuvendor && !cpumodel)
+      {
+         continue;
+      }
+
+      if (cpuvendor && cpumodel)
+      {
+         snprintf(cpu_desc, sizeof(cpu_desc), "%s %s", cpuvendor, cpumodel);
+      }
+      else
+      {
+         snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpuvendor ? cpuvendor : cpumodel);
+      }
+      hypredrv_TrimTrailingWhitespace(cpu_desc);
+
+      if (packages > 1)
+      {
+         printf("CPU Model #%d         : %s\n", i, cpu_desc);
+      }
+      else
+      {
+         printf("CPU Model             : %s\n", cpu_desc);
+      }
+   }
+}
+
+/* CPU frequency is optional metadata; print it only when hwloc reports one. */
+static void
+PrintCpuFrequency(void)
+{
+   hwloc_obj_t pu       = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0);
+   const char *freq_str = pu ? hwloc_obj_get_info_by_name(pu, "CPUFrequency") : NULL;
+   double      freq_mhz = freq_str ? atof(freq_str) : 0.0;
+
+   if (freq_mhz > 0)
+   {
+      printf("CPU Frequency         : %.2f GHz\n", freq_mhz / 1000.0);
+   }
+}
+
+/* Rank-0 half of the CPU topology report. */
+static void
+PrintCpuTopologySummary(int numNodes)
+{
+   int packages = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PACKAGE);
+   int cores    = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_CORE);
+   int pus      = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PU);
+   int numas    = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
+
+   printf("CPU Topology\n");
+   printf("------------\n");
+   printf("Number of Nodes       : %d\n", numNodes);
+   printf("Packages (sockets)    : %d\n", packages);
+   printf("Cores                : %d\n", cores);
+   printf("Processing Units     : %d\n", pus);
+   printf("NUMA domains         : %d\n", numas);
+   if (cores > 0 && packages > 0)
+   {
+      printf("Cores per package    : %d\n", cores / packages);
+   }
+   if (pus > 0 && cores > 0)
+   {
+      printf("PUs per core (SMT)   : %d-way\n", pus / cores);
+   }
+   if (numNodes > 1)
+   {
+      printf("Tot. # of Processors : %lld\n", (long long)numNodes * (long long)packages);
+      printf("Tot. # of CPU threads: %lld\n", (long long)numNodes * (long long)pus);
+   }
+
+   PrintPackageCpuModels(packages);
+   PrintCpuFrequency();
+   PrintCacheHierarchy();
+}
+
 static void
 PrintCpuTopologyInfo(MPI_Comm comm)
 {
+   int   myid = 0, nprocs = 0;
+   char *allHostnames = NULL;
+
    if (topology == NULL)
    {
       return;
    }
 
-   int myid = 0, nprocs = 0;
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
 
-   // Gather hostnames for multi-node information
-   char hostname[HYPRE_MAX_HOSTNAME];
-   memset(hostname, 0, sizeof(hostname));
-   if (gethostname(hostname, sizeof(hostname)) != 0)
+   /* Hostnames are needed for the multi-node totals below. */
+   if (!GatherAllHostnames(comm, nprocs, &allHostnames))
    {
-      hostname[0] = '\0';
-   }
-   hostname[sizeof(hostname) - 1] = '\0';
-   char *allHostnames             = NULL;
-   if (nprocs > 0)
-   {
-      allHostnames = (char *)malloc((size_t)nprocs * HYPRE_MAX_HOSTNAME);
-   }
-   int host_alloc_ok = allHostnames ? 1 : 0;
-   MPI_Allreduce(MPI_IN_PLACE, &host_alloc_ok, 1, MPI_INT, MPI_MIN, comm);
-   if (!host_alloc_ok)
-   {
-      free(allHostnames);
       return;
    }
-   MPI_Allgather(hostname, HYPRE_MAX_HOSTNAME, MPI_CHAR, allHostnames, HYPRE_MAX_HOSTNAME,
-                 MPI_CHAR, comm);
 
    if (!myid)
    {
-      // Count unique hostnames
-      int numNodes = 0;
-      for (int i = 0; i < nprocs; i++)
-      {
-         int isUnique = 1;
-         for (int j = 0; j < i; j++)
-         {
-            if (strncmp(&allHostnames[i * HYPRE_MAX_HOSTNAME],
-                        &allHostnames[j * HYPRE_MAX_HOSTNAME], HYPRE_MAX_HOSTNAME) == 0)
-            {
-               isUnique = 0;
-               break;
-            }
-         }
-         if (isUnique)
-         {
-            numNodes++;
-         }
-      }
-
-      int packages = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PACKAGE);
-      int cores    = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_CORE);
-      int pus      = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_PU);
-      int numas    = hwloc_get_nbobjs_by_type(topology, HWLOC_OBJ_NUMANODE);
-
-      printf("CPU Topology\n");
-      printf("------------\n");
-      printf("Number of Nodes       : %d\n", numNodes);
-      printf("Packages (sockets)    : %d\n", packages);
-      printf("Cores                : %d\n", cores);
-      printf("Processing Units     : %d\n", pus);
-      printf("NUMA domains         : %d\n", numas);
-      if (cores > 0 && packages > 0)
-      {
-         printf("Cores per package    : %d\n", cores / packages);
-      }
-      if (pus > 0 && cores > 0)
-      {
-         printf("PUs per core (SMT)   : %d-way\n", pus / cores);
-      }
-      if (numNodes > 1)
-      {
-         printf("Tot. # of Processors : %lld\n",
-                (long long)numNodes * (long long)packages);
-         printf("Tot. # of CPU threads: %lld\n", (long long)numNodes * (long long)pus);
-      }
-
-      // Print CPU model for each package
-      for (int i = 0; i < packages; i++)
-      {
-         hwloc_obj_t package = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PACKAGE, i);
-         if (package)
-         {
-            const char *cpuvendor = hwloc_obj_get_info_by_name(package, "CPUVendor");
-            const char *cpumodel  = hwloc_obj_get_info_by_name(package, "CPUModel");
-            if (cpuvendor || cpumodel)
-            {
-               char cpu_desc[256] = "";
-               if (cpuvendor && cpumodel)
-               {
-                  snprintf(cpu_desc, sizeof(cpu_desc), "%s %s", cpuvendor, cpumodel);
-               }
-               else if (cpuvendor)
-               {
-                  snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpuvendor);
-               }
-               else
-               {
-                  snprintf(cpu_desc, sizeof(cpu_desc), "%s", cpumodel);
-               }
-               hypredrv_TrimTrailingWhitespace(cpu_desc);
-
-               if (packages > 1)
-               {
-                  printf("CPU Model #%d         : %s\n", i, cpu_desc);
-               }
-               else
-               {
-                  printf("CPU Model             : %s\n", cpu_desc);
-               }
-            }
-         }
-      }
-
-      // Get CPU frequency if available
-      hwloc_obj_t pu = hwloc_get_obj_by_type(topology, HWLOC_OBJ_PU, 0);
-      if (pu)
-      {
-         const char *freq_str = hwloc_obj_get_info_by_name(pu, "CPUFrequency");
-         if (freq_str)
-         {
-            double freq_mhz = atof(freq_str);
-            if (freq_mhz > 0)
-            {
-               printf("CPU Frequency         : %.2f GHz\n", freq_mhz / 1000.0);
-            }
-         }
-      }
-
-      PrintCacheHierarchy();
+      PrintCpuTopologySummary(CountUniqueHostnames(nprocs, allHostnames));
    }
+
    free(allHostnames);
 }
 
@@ -2977,212 +3175,254 @@ GetPciAncestor(hwloc_obj_t obj)
    return obj;
 }
 
+/* Returns the first of the listed info keys that `obj` actually carries. */
+static const char *
+HwlocFirstInfoByName(hwloc_obj_t obj, const char *const *names, size_t count)
+{
+   for (size_t i = 0; i < count; i++)
+   {
+      const char *value = hwloc_obj_get_info_by_name(obj, names[i]);
+
+      if (value)
+      {
+         return value;
+      }
+   }
+
+   return NULL;
+}
+
+static const char *const kGpuUuidKeys[]   = {"NVIDIAUUID", "AMDUUID", "LevelZeroUUID"};
+static const char *const kGpuVendorKeys[] = {"GPUVendor", "LevelZeroVendor"};
+static const char *const kGpuModelKeys[]  = {"GPUModel", "LevelZeroModel"};
+
+/* Class 0x03xx is a display controller. */
+static int
+PciObjIsDisplayController(hwloc_obj_t pci_obj)
+{
+   return (pci_obj && pci_obj->attr->pcidev.class_id >> 8 == 0x03);
+}
+
+/* GPU and coprocessor OS devices qualify, except CUDA/OpenCL coprocessors,
+ * which are better served by NVML/RSMI. */
+static int
+OsDeviceIsCandidateGpu(hwloc_obj_t os_dev)
+{
+   const char *subtype = NULL;
+
+   if (os_dev->attr->osdev.type != HWLOC_OBJ_OSDEV_GPU &&
+       os_dev->attr->osdev.type != HWLOC_OBJ_OSDEV_COPROC)
+   {
+      return 0;
+   }
+   if (os_dev->attr->osdev.type != HWLOC_OBJ_OSDEV_COPROC)
+   {
+      return 1;
+   }
+
+   subtype = os_dev->subtype;
+
+   return !(subtype && (strcmp(subtype, "CUDA") == 0 || strcmp(subtype, "OpenCL") == 0));
+}
+
+static void
+GpuInfoSetBusId(GpuInfo *gpu, hwloc_obj_t pci_obj)
+{
+   snprintf(gpu->pci_busid, sizeof(gpu->pci_busid), "%04x:%02x:%02x.%d",
+            pci_obj->attr->pcidev.domain, pci_obj->attr->pcidev.bus,
+            pci_obj->attr->pcidev.dev, pci_obj->attr->pcidev.func);
+}
+
+/* Vendor and model come from the richest source available, falling back to the
+ * raw PCI identifiers when neither the OS device nor PCI carries a name. */
+static void
+GpuInfoSetVendorAndModel(GpuInfo *gpu, hwloc_obj_t pci_obj, const char *vendor_name,
+                         const char *model_name)
+{
+   if (!vendor_name)
+   {
+      vendor_name = hwloc_obj_get_info_by_name(pci_obj, "PCIVendor");
+   }
+   if (vendor_name)
+   {
+      /* Get first word only */
+      (void)GpuInfoScanVendorFirstWord(vendor_name, gpu);
+   }
+   else
+   {
+      snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x",
+               pci_obj->attr->pcidev.vendor_id);
+   }
+
+   if (!model_name)
+   {
+      model_name = hwloc_obj_get_info_by_name(pci_obj, "PCIDevice");
+   }
+   if (model_name)
+   {
+      strncpy(gpu->model, model_name, sizeof(gpu->model) - 1);
+      gpu->model[sizeof(gpu->model) - 1] = '\0';
+   }
+   else
+   {
+      snprintf(gpu->model, sizeof(gpu->model), "0x%04x", pci_obj->attr->pcidev.device_id);
+   }
+}
+
+/* Populates one entry from an hwloc OS device and its PCI ancestor. */
+static void
+GpuInfoFillFromOsDevice(hwloc_topology_t topology, hwloc_obj_t os_dev,
+                        hwloc_obj_t pci_obj, GpuInfo *gpu)
+{
+   const char *uuid = NULL;
+
+   gpu->obj      = pci_obj;
+   gpu->ancestor = hwloc_get_non_io_ancestor_obj(topology, os_dev);
+   gpu->smi_id   = -1; /* Not set (would need OS device name parsing) */
+   GpuInfoSetBusId(gpu, pci_obj);
+
+   /* The UUID has to come from the OS device; PCI does not carry one. */
+   uuid = HwlocFirstInfoByName(os_dev, kGpuUuidKeys,
+                               sizeof(kGpuUuidKeys) / sizeof(kGpuUuidKeys[0]));
+   if (uuid)
+   {
+      strncpy(gpu->uuid, uuid, sizeof(gpu->uuid) - 1);
+      gpu->uuid[sizeof(gpu->uuid) - 1] = '\0';
+   }
+   else
+   {
+      strncpy(gpu->uuid, "N/A", sizeof(gpu->uuid) - 1);
+   }
+
+   GpuInfoSetVendorAndModel(
+      gpu, pci_obj,
+      HwlocFirstInfoByName(os_dev, kGpuVendorKeys,
+                           sizeof(kGpuVendorKeys) / sizeof(kGpuVendorKeys[0])),
+      HwlocFirstInfoByName(os_dev, kGpuModelKeys,
+                           sizeof(kGpuModelKeys) / sizeof(kGpuModelKeys[0])));
+}
+
+/* Looks for an OS device hanging off `pci_obj` that exposes a GPU UUID. */
+static void
+GpuInfoSetUuidFromMatchingOsDevice(hwloc_topology_t topology, hwloc_obj_t pci_obj,
+                                   GpuInfo *gpu)
+{
+   hwloc_obj_t os_dev = NULL;
+
+   while ((os_dev = hwloc_get_next_osdev(topology, os_dev)) != NULL)
+   {
+      const char *uuid = NULL;
+
+      if (GetPciAncestor(os_dev) != pci_obj)
+      {
+         continue;
+      }
+      uuid = HwlocFirstInfoByName(os_dev, kGpuUuidKeys,
+                                  sizeof(kGpuUuidKeys) / sizeof(kGpuUuidKeys[0]));
+      if (uuid)
+      {
+         strncpy(gpu->uuid, uuid, sizeof(gpu->uuid) - 1);
+         gpu->uuid[sizeof(gpu->uuid) - 1] = '\0';
+         break;
+      }
+   }
+
+   if (gpu->uuid[0] == '\0')
+   {
+      strncpy(gpu->uuid, "N/A", sizeof(gpu->uuid) - 1);
+   }
+}
+
+/* First pass: walk OS devices, the way mpibind does. */
+static int
+DiscoverGpusFromOsDevices(hwloc_topology_t topology, GpuInfo *gpus, int max_gpus)
+{
+   hwloc_obj_t os_dev    = NULL;
+   int         gpu_count = 0;
+
+   while ((os_dev = hwloc_get_next_osdev(topology, os_dev)) != NULL)
+   {
+      hwloc_obj_t pci_obj = NULL;
+
+      if (!OsDeviceIsCandidateGpu(os_dev))
+      {
+         continue;
+      }
+      if (gpu_count >= max_gpus)
+      {
+         break;
+      }
+
+      pci_obj = GetPciAncestor(os_dev);
+      if (!PciObjIsDisplayController(pci_obj))
+      {
+         continue;
+      }
+
+      GpuInfoFillFromOsDevice(topology, os_dev, pci_obj, &gpus[gpu_count]);
+      gpu_count++;
+   }
+
+   return gpu_count;
+}
+
+/* Fallback pass: walk PCI display controllers directly. */
+static int
+DiscoverGpusFromPciDevices(hwloc_topology_t topology, GpuInfo *gpus, int max_gpus)
+{
+   hwloc_obj_t pci_obj   = NULL;
+   int         gpu_count = 0;
+
+   while ((pci_obj = hwloc_get_next_obj_by_type(topology, HWLOC_OBJ_PCI_DEVICE,
+                                                pci_obj)) != NULL)
+   {
+      GpuInfo *gpu = NULL;
+
+      if (!PciObjIsDisplayController(pci_obj))
+      {
+         continue;
+      }
+      if (gpu_count >= max_gpus)
+      {
+         break;
+      }
+
+      gpu           = &gpus[gpu_count];
+      gpu->obj      = pci_obj;
+      gpu->ancestor = hwloc_get_non_io_ancestor_obj(topology, pci_obj);
+      gpu->smi_id   = -1;
+      GpuInfoSetBusId(gpu, pci_obj);
+      GpuInfoSetUuidFromMatchingOsDevice(topology, pci_obj, gpu);
+      GpuInfoSetVendorAndModel(gpu, pci_obj, NULL, NULL);
+      gpu_count++;
+   }
+
+   return gpu_count;
+}
+
 static int
 DiscoverGpus(GpuInfo **gpus, int *count)
 {
+   const int max_gpus  = 16;
+   int       gpu_count = 0;
+
    if (topology == NULL)
    {
       return -1;
    }
 
-   int max_gpus = 16;
-   *gpus        = (GpuInfo *)calloc(max_gpus, sizeof(GpuInfo));
+   *gpus = (GpuInfo *)calloc(max_gpus, sizeof(GpuInfo));
    if (!*gpus)
    {
       *count = 0;
       return -1;
    }
 
-   int gpu_count = 0;
-
-   // First try: Use OS devices to find GPUs (like mpibind does)
-   hwloc_obj_t os_dev = NULL;
-   while ((os_dev = hwloc_get_next_osdev(topology, os_dev)) != NULL)
-   {
-      if (os_dev->attr->osdev.type != HWLOC_OBJ_OSDEV_GPU &&
-          os_dev->attr->osdev.type != HWLOC_OBJ_OSDEV_COPROC)
-      {
-         continue;
-      }
-
-      // Skip CUDA/OpenCL coprocessors (use NVML/RSMI instead)
-      if (os_dev->attr->osdev.type == HWLOC_OBJ_OSDEV_COPROC)
-      {
-         const char *subtype = os_dev->subtype;
-         if (subtype && (strcmp(subtype, "CUDA") == 0 || strcmp(subtype, "OpenCL") == 0))
-         {
-            continue;
-         }
-      }
-
-      if (gpu_count >= max_gpus)
-      {
-         break;
-      }
-
-      // Get PCI ancestor
-      hwloc_obj_t pci_obj = GetPciAncestor(os_dev);
-      if (!pci_obj || pci_obj->attr->pcidev.class_id >> 8 != 0x03)
-      {
-         continue;
-      }
-
-      GpuInfo *gpu  = &(*gpus)[gpu_count];
-      gpu->obj      = pci_obj;
-      gpu->ancestor = hwloc_get_non_io_ancestor_obj(topology, os_dev);
-      gpu->smi_id   = -1; // Not set (would need OS device name parsing)
-
-      snprintf(gpu->pci_busid, sizeof(gpu->pci_busid), "%04x:%02x:%02x.%d",
-               pci_obj->attr->pcidev.domain, pci_obj->attr->pcidev.bus,
-               pci_obj->attr->pcidev.dev, pci_obj->attr->pcidev.func);
-
-      // Get UUID from OS device (this is the key fix!)
-      const char *uuid = hwloc_obj_get_info_by_name(os_dev, "NVIDIAUUID");
-      if (!uuid)
-      {
-         uuid = hwloc_obj_get_info_by_name(os_dev, "AMDUUID");
-      }
-      if (!uuid)
-      {
-         uuid = hwloc_obj_get_info_by_name(os_dev, "LevelZeroUUID");
-      }
-      if (uuid)
-      {
-         strncpy(gpu->uuid, uuid, sizeof(gpu->uuid) - 1);
-         gpu->uuid[sizeof(gpu->uuid) - 1] = '\0';
-      }
-      else
-      {
-         strncpy(gpu->uuid, "N/A", sizeof(gpu->uuid) - 1);
-      }
-
-      // Vendor and Model from OS device if available, otherwise from PCI
-      const char *vendor_name = hwloc_obj_get_info_by_name(os_dev, "GPUVendor");
-      if (!vendor_name)
-      {
-         vendor_name = hwloc_obj_get_info_by_name(os_dev, "LevelZeroVendor");
-      }
-      if (!vendor_name)
-      {
-         vendor_name = hwloc_obj_get_info_by_name(pci_obj, "PCIVendor");
-      }
-      if (vendor_name)
-      {
-         // Get first word only
-         (void)GpuInfoScanVendorFirstWord(vendor_name, gpu);
-      }
-      else
-      {
-         snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x",
-                  pci_obj->attr->pcidev.vendor_id);
-      }
-
-      const char *model_name = hwloc_obj_get_info_by_name(os_dev, "GPUModel");
-      if (!model_name)
-      {
-         model_name = hwloc_obj_get_info_by_name(os_dev, "LevelZeroModel");
-      }
-      if (!model_name)
-      {
-         model_name = hwloc_obj_get_info_by_name(pci_obj, "PCIDevice");
-      }
-      if (model_name)
-      {
-         strncpy(gpu->model, model_name, sizeof(gpu->model) - 1);
-         gpu->model[sizeof(gpu->model) - 1] = '\0';
-      }
-      else
-      {
-         snprintf(gpu->model, sizeof(gpu->model), "0x%04x",
-                  pci_obj->attr->pcidev.device_id);
-      }
-
-      gpu_count++;
-   }
-
-   // Fallback: If no GPUs found via OS devices, try PCI devices directly
+   gpu_count = DiscoverGpusFromOsDevices(topology, *gpus, max_gpus);
    if (gpu_count == 0)
    {
-      hwloc_obj_t pci_obj = NULL;
-      while ((pci_obj = hwloc_get_next_obj_by_type(topology, HWLOC_OBJ_PCI_DEVICE,
-                                                   pci_obj)) != NULL)
-      {
-         // Class 0x03xx is a display controller
-         if (pci_obj->attr->pcidev.class_id >> 8 != 0x03)
-         {
-            continue;
-         }
-
-         if (gpu_count >= max_gpus)
-         {
-            break;
-         }
-
-         GpuInfo *gpu  = &(*gpus)[gpu_count];
-         gpu->obj      = pci_obj;
-         gpu->ancestor = hwloc_get_non_io_ancestor_obj(topology, pci_obj);
-         gpu->smi_id   = -1;
-
-         snprintf(gpu->pci_busid, sizeof(gpu->pci_busid), "%04x:%02x:%02x.%d",
-                  pci_obj->attr->pcidev.domain, pci_obj->attr->pcidev.bus,
-                  pci_obj->attr->pcidev.dev, pci_obj->attr->pcidev.func);
-
-         // Try to find OS device for UUID
-         hwloc_obj_t os_dev = NULL;
-         while ((os_dev = hwloc_get_next_osdev(topology, os_dev)) != NULL)
-         {
-            hwloc_obj_t os_pci = GetPciAncestor(os_dev);
-            if (os_pci == pci_obj)
-            {
-               const char *uuid = hwloc_obj_get_info_by_name(os_dev, "NVIDIAUUID");
-               if (!uuid)
-               {
-                  uuid = hwloc_obj_get_info_by_name(os_dev, "AMDUUID");
-               }
-               if (!uuid)
-               {
-                  uuid = hwloc_obj_get_info_by_name(os_dev, "LevelZeroUUID");
-               }
-               if (uuid)
-               {
-                  strncpy(gpu->uuid, uuid, sizeof(gpu->uuid) - 1);
-                  gpu->uuid[sizeof(gpu->uuid) - 1] = '\0';
-                  break;
-               }
-            }
-         }
-         if (gpu->uuid[0] == '\0')
-         {
-            strncpy(gpu->uuid, "N/A", sizeof(gpu->uuid) - 1);
-         }
-
-         // Vendor
-         const char *vendor_name = hwloc_obj_get_info_by_name(pci_obj, "PCIVendor");
-         if (vendor_name)
-         {
-            (void)GpuInfoScanVendorFirstWord(vendor_name, gpu);
-         }
-         else
-         {
-            snprintf(gpu->vendor, sizeof(gpu->vendor), "0x%04x",
-                     pci_obj->attr->pcidev.vendor_id);
-         }
-
-         // Model
-         const char *model_name = hwloc_obj_get_info_by_name(pci_obj, "PCIDevice");
-         if (model_name)
-         {
-            strncpy(gpu->model, model_name, sizeof(gpu->model) - 1);
-            gpu->model[sizeof(gpu->model) - 1] = '\0';
-         }
-         else
-         {
-            snprintf(gpu->model, sizeof(gpu->model), "0x%04x",
-                     pci_obj->attr->pcidev.device_id);
-         }
-
-         gpu_count++;
-      }
+      /* Nothing surfaced through OS devices; try PCI display controllers. */
+      gpu_count = DiscoverGpusFromPciDevices(topology, *gpus, max_gpus);
    }
 
    *count = gpu_count;
@@ -3558,31 +3798,102 @@ CountChildrenRecursive(hwloc_obj_t obj, hwloc_obj_type_t type, int *count, int *
    }
 }
 
-static void
-PrintTopologyTreeCompact(hwloc_obj_t obj, int depth)
+static void PrintTopologyTreeCompact(hwloc_obj_t obj, int depth);
+
+/* Cache levels are transparent in the compact tree: they are skipped and their
+ * children are printed at the parent's depth. */
+static int
+HwlocObjIsCache(hwloc_obj_t obj)
 {
-   char indent[32];
-   /* Clamp the indent width to the buffer size; deep or synthetic hwloc topologies
-    * can exceed depth 15 and would otherwise overflow this stack buffer. */
+   return (obj->type == HWLOC_OBJ_L1CACHE || obj->type == HWLOC_OBJ_L2CACHE ||
+           obj->type == HWLOC_OBJ_L3CACHE || obj->type == HWLOC_OBJ_L4CACHE ||
+           obj->type == HWLOC_OBJ_L5CACHE);
+}
+
+/* Deep or synthetic hwloc topologies can exceed depth 15, so the indent width is
+ * clamped to the caller's buffer rather than overflowing it. */
+static void
+BuildTopologyIndent(char *indent, size_t size, int depth)
+{
    int indent_len = depth * 2;
+
    if (indent_len < 0)
    {
       indent_len = 0;
    }
-   if (indent_len > (int)sizeof(indent) - 1)
+   if (indent_len > (int)size - 1)
    {
-      indent_len = (int)sizeof(indent) - 1;
+      indent_len = (int)size - 1;
    }
    memset(indent, ' ', (size_t)indent_len);
    indent[indent_len] = '\0';
+}
 
+/* Prints the children the compact tree still descends into. PUs are folded into
+ * the die summary, so packages skip them in addition to caches. */
+static void
+PrintTopologyChildren(hwloc_obj_t obj, int depth, int skip_pu)
+{
+   for (unsigned i = 0; i < obj->arity; i++)
+   {
+      hwloc_obj_t child = obj->children[i];
+
+      if (HwlocObjIsCache(child) || (skip_pu && child->type == HWLOC_OBJ_PU))
+      {
+         continue;
+      }
+      PrintTopologyTreeCompact(child, depth + 1);
+   }
+}
+
+/* A die is summarised on one line: core and PU counts with their index ranges. */
+static void
+PrintTopologyDieSummary(hwloc_obj_t obj, const char *indent, const char *type_str)
+{
+   int core_count = 0, core_first = -1, core_last = -1;
+   int pu_count = 0, pu_first = -1, pu_last = -1;
+
+   CountChildrenRecursive(obj, HWLOC_OBJ_CORE, &core_count, &core_first, &core_last);
+   CountChildrenRecursive(obj, HWLOC_OBJ_PU, &pu_count, &pu_first, &pu_last);
+
+   printf("%s%s[%d]:", indent, type_str, obj->logical_index);
+
+   if (core_count == 1)
+   {
+      printf(" %d Core (Core[%d])", core_count, core_first);
+   }
+   else if (core_count > 1)
+   {
+      printf(" %d Cores (Core[%d-%d])", core_count, core_first, core_last);
+   }
+
+   if (pu_count > 0 && core_count > 0)
+   {
+      printf(",");
+   }
+   if (pu_count == 1)
+   {
+      printf(" %d PU (PU[%d])", pu_count, pu_first);
+   }
+   else if (pu_count > 1)
+   {
+      printf(" %d PUs (PU[%d-%d])", pu_count, pu_first, pu_last);
+   }
+
+   printf("\n");
+}
+
+static void
+PrintTopologyTreeCompact(hwloc_obj_t obj, int depth)
+{
+   char indent[32];
    char type_str[32];
+
+   BuildTopologyIndent(indent, sizeof(indent), depth);
    hwloc_obj_type_snprintf(type_str, sizeof(type_str), obj, 1);
 
-   // Skip cache objects
-   if (obj->type == HWLOC_OBJ_L1CACHE || obj->type == HWLOC_OBJ_L2CACHE ||
-       obj->type == HWLOC_OBJ_L3CACHE || obj->type == HWLOC_OBJ_L4CACHE ||
-       obj->type == HWLOC_OBJ_L5CACHE)
+   /* Skip cache objects, printing their children at this same depth. */
+   if (HwlocObjIsCache(obj))
    {
       for (unsigned i = 0; i < obj->arity; i++)
       {
@@ -3591,84 +3902,22 @@ PrintTopologyTreeCompact(hwloc_obj_t obj, int depth)
       return;
    }
 
-   // For Package: just show the name, no summary
-   if (obj->type == HWLOC_OBJ_PACKAGE)
+   /* Cores and PUs are summarised at die level, never printed individually. */
+   if (obj->type == HWLOC_OBJ_CORE || obj->type == HWLOC_OBJ_PU)
    {
-      printf("%s%s[%d]\n", indent, type_str, obj->logical_index);
-      // Recurse into Dies
-      for (unsigned i = 0; i < obj->arity; i++)
-      {
-         hwloc_obj_t child = obj->children[i];
-         if (child->type != HWLOC_OBJ_L1CACHE && child->type != HWLOC_OBJ_L2CACHE &&
-             child->type != HWLOC_OBJ_L3CACHE && child->type != HWLOC_OBJ_L4CACHE &&
-             child->type != HWLOC_OBJ_L5CACHE && child->type != HWLOC_OBJ_PU)
-         {
-            PrintTopologyTreeCompact(child, depth + 1);
-         }
-      }
-   }
-   // For Die: show summary with counts and ranges, don't recurse into cores
-   else if (obj->type == HWLOC_OBJ_DIE)
-   {
-      int core_count = 0, core_first = -1, core_last = -1;
-      int pu_count = 0, pu_first = -1, pu_last = -1;
-
-      CountChildrenRecursive(obj, HWLOC_OBJ_CORE, &core_count, &core_first, &core_last);
-      CountChildrenRecursive(obj, HWLOC_OBJ_PU, &pu_count, &pu_first, &pu_last);
-
-      printf("%s%s[%d]:", indent, type_str, obj->logical_index);
-      bool first = true;
-
-      if (core_count > 0)
-      {
-         if (core_count == 1)
-         {
-            printf(" %d Core (Core[%d])", core_count, core_first);
-         }
-         else
-         {
-            printf(" %d Cores (Core[%d-%d])", core_count, core_first, core_last);
-         }
-         first = false;
-      }
-
-      if (pu_count > 0)
-      {
-         if (!first) printf(",");
-         if (pu_count == 1)
-         {
-            printf(" %d PU (PU[%d])", pu_count, pu_first);
-         }
-         else
-         {
-            printf(" %d PUs (PU[%d-%d])", pu_count, pu_first, pu_last);
-         }
-      }
-
-      printf("\n");
-      // Don't recurse - we've shown the summary
-   }
-   else if (obj->type == HWLOC_OBJ_CORE || obj->type == HWLOC_OBJ_PU)
-   {
-      // Don't print cores and PUs individually - they're summarized at Die level
       return;
    }
-   else
+
+   /* The die summary replaces its subtree, so this branch does not recurse. */
+   if (obj->type == HWLOC_OBJ_DIE)
    {
-      // For Machine and other types, just show the object
-      printf("%s%s[%d]\n", indent, type_str, obj->logical_index);
-      // Recurse
-      for (unsigned i = 0; i < obj->arity; i++)
-      {
-         hwloc_obj_t child = obj->children[i];
-         if (child->type != HWLOC_OBJ_L1CACHE && child->type != HWLOC_OBJ_L2CACHE &&
-             child->type != HWLOC_OBJ_L3CACHE && child->type != HWLOC_OBJ_L4CACHE &&
-             child->type != HWLOC_OBJ_L5CACHE)
-         {
-            PrintTopologyTreeCompact(child, depth + 1);
-         }
-      }
+      PrintTopologyDieSummary(obj, indent, type_str);
+      return;
    }
+
+   /* Package, Machine and everything else: show the object, then recurse. */
+   printf("%s%s[%d]\n", indent, type_str, obj->logical_index);
+   PrintTopologyChildren(obj, depth, obj->type == HWLOC_OBJ_PACKAGE);
 }
 
 static void
@@ -3711,93 +3960,6 @@ PrintOperatingSystemInfo(void)
       printf("Version               : %s\n", sysinfo.version);
       printf("Machine Architecture  : %s\n\n", sysinfo.machine);
    }
-}
-
-static void
-PrintCompilationInfo(void)
-{
-   printf("Compilation Information\n");
-   printf("------------------------\n");
-   printf("Date                  : %s at %s\n", __DATE__, __TIME__);
-
-   /* Check optimization level */
-#if defined(__OPTIMIZE__)
-   printf("Optimization          : Enabled\n");
-#elif defined(__OPTIMIZE_SIZE__)
-   printf("Optimization          : Enabled (size)\n");
-#elif defined(_MSC_VER)
-   printf("Optimization          : Unknown (MSVC)\n");
-#else
-   printf("Optimization          : Disabled\n");
-#endif
-   /* Check debug symbols */
-#if defined(HYPRE_DEBUG)
-   printf("Debugging             : Enabled (HYPRE)\n");
-#elif defined(_DEBUG) || defined(DEBUG)
-   printf("Debugging             : Enabled\n");
-#elif defined(NDEBUG)
-   printf("Debugging             : Disabled\n");
-#else
-   printf("Debugging             : Unknown\n");
-#endif
-#ifdef __clang_version__
-   printf("Compiler              : Clang %s\n", (const char *)__clang_version__);
-#elif defined(__clang__)
-   printf("Compiler              : Clang %d.%d.%d\n", __clang_major__, __clang_minor__,
-          __clang_patchlevel__);
-#elif defined(__INTEL_COMPILER)
-   printf("Compiler              : Intel %d.%d\n", __INTEL_COMPILER / 100,
-          (__INTEL_COMPILER % 100) / 10);
-#elif defined(__GNUC__)
-   printf("Compiler              : GCC %d.%d.%d\n", __GNUC__, __GNUC_MINOR__,
-          __GNUC_PATCHLEVEL__);
-#else
-   printf("Compiler              : Unknown\n");
-#endif
-#if defined(HYPRE_USING_OPENMP) && defined(_OPENMP)
-   printf("OpenMP                : Supported (Version: %d)\n", _OPENMP);
-#else
-   printf("OpenMP                : Not used\n");
-#endif
-   printf("MPI library           : ");
-#ifdef CRAY_MPICH_VERSION
-   printf("Cray MPI (Version: %s)\n", TOSTRING(CRAY_MPICH_VERSION));
-#elif defined(INTEL_MPI_VERSION)
-   printf("Intel MPI (Version: %s)\n", (const char *)INTEL_MPI_VERSION);
-#elif defined(__IBM_MPI__)
-   printf("IBM Spectrum MPI (Version: %d.%d.%d)\n", __IBM_MPI_MAJOR_VERSION,
-          __IBM_MPI_MINOR_VERSION, __IBM_MPI_RELEASE_VERSION);
-#elif defined(MVAPICH2_VERSION)
-   printf("MVAPICH2 (Version: %s)\n", (const char *)MVAPICH2_VERSION);
-#elif defined(MPICH_NAME)
-   printf("MPICH (Version: %s)\n", MPICH_VERSION);
-#elif defined(OMPI_MAJOR_VERSION)
-   printf("OpenMPI (Version: %d.%d.%d)\n", OMPI_MAJOR_VERSION, OMPI_MINOR_VERSION,
-          OMPI_RELEASE_VERSION);
-#elif defined(SGI_MPI)
-   printf("SGI MPI\n");
-#else
-   printf("N/A\n");
-#endif
-#ifdef __x86_64__
-   printf("Target architecture   : x86_64\n");
-#elif defined(__i386__)
-   printf("Target architecture   : x86 (32-bit)\n");
-#elif defined(__aarch64__)
-   printf("Target architecture   : ARM64\n");
-#elif defined(__arm__)
-   printf("Target architecture   : ARM\n");
-#else
-   printf("Target architecture   : Unknown\n");
-#endif
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-   printf("Endianness            : Little-endian\n");
-#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-   printf("Endianness            : Big-endian\n");
-#else
-   printf("Endianness            : Unknown\n");
-#endif
-   printf("\n");
 }
 
 static void
@@ -4382,12 +4544,11 @@ PrintNetworkInformation(void)
    printf("\n");
 }
 
-static void
-PrintAcceleratorRuntimeInformation(void)
+/* Vendor driver/runtime probes for the accelerator report. Each returns
+ * nonzero when it managed to print something. */
+static int
+PrintNvidiaRuntimeInfo(void)
 {
-   printf("Accelerator Runtime Information\n");
-   printf("--------------------------------\n");
-
    int printed = 0;
 
    {
@@ -4471,6 +4632,14 @@ PrintAcceleratorRuntimeInformation(void)
       }
    }
 
+   return printed;
+}
+
+static int
+PrintAmdRuntimeInfo(void)
+{
+   int printed = 0;
+
    {
       char amd_path[PATH_MAX];
       if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
@@ -4512,6 +4681,21 @@ PrintAcceleratorRuntimeInformation(void)
          }
       }
    }
+
+   return printed;
+}
+
+static void
+PrintAcceleratorRuntimeInformation(void)
+{
+   printf("Accelerator Runtime Information\n");
+   printf("--------------------------------\n");
+
+   int printed = 0;
+
+   printed |= PrintNvidiaRuntimeInfo();
+
+   printed |= PrintAmdRuntimeInfo();
 
    const char *level_zero = getenv("ONEAPI_DEVICE_SELECTOR");
    if (level_zero && level_zero[0])

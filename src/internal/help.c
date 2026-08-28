@@ -1471,6 +1471,37 @@ HelpPrintUnknown(FILE *out, const char *topic, const HelpNode *nearest)
    return 1;
 }
 
+/* Normalises a help topic ("a.b" and "A:B" both become "a:b") and splits it
+ * into path tokens. Returns the token count, capped at `max_tokens`. */
+static int
+HelpTokenizeTopic(const char *topic, char *buf, size_t buf_size, char **tokens,
+                  int max_tokens)
+{
+   int ntokens = 0;
+
+   snprintf(buf, buf_size, "%s", topic);
+   for (char *p = buf; *p; p++)
+   {
+      if (*p == '.')
+      {
+         *p = ':';
+      }
+      else
+      {
+         *p = (char)tolower((unsigned char)*p);
+      }
+   }
+
+   char *save = NULL;
+   for (char *tok = strtok_r(buf, ":", &save); tok && ntokens < max_tokens;
+        tok       = strtok_r(NULL, ":", &save))
+   {
+      tokens[ntokens++] = tok;
+   }
+
+   return ntokens;
+}
+
 static int
 HelpResolve(const char *topic, const HelpNode **node_out, const HelpNode **nearest_out,
             char *normalized, size_t normalized_size, const char **key_out)
@@ -1498,28 +1529,9 @@ HelpResolve(const char *topic, const HelpNode **node_out, const HelpNode **neare
       return 1;
    }
 
-   char buf[512];
-   snprintf(buf, sizeof(buf), "%s", topic);
-   for (char *p = buf; *p; p++)
-   {
-      if (*p == '.')
-      {
-         *p = ':';
-      }
-      else
-      {
-         *p = (char)tolower((unsigned char)*p);
-      }
-   }
-
-   char *save = NULL;
+   char  buf[512];
    char *tokens[64];
-   int   ntokens = 0;
-   for (char *tok = strtok_r(buf, ":", &save); tok && ntokens < 64;
-        tok       = strtok_r(NULL, ":", &save))
-   {
-      tokens[ntokens++] = tok;
-   }
+   int   ntokens = HelpTokenizeTopic(topic, buf, sizeof(buf), tokens, 64);
 
    for (int i = 0; i < ntokens; i++)
    {

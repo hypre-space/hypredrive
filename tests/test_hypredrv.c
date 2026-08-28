@@ -2851,7 +2851,7 @@ test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep(void)
             "linear_system:\n"
             "  dirname: %s\n"
             "  init_suffix: 0\n"
-            "  last_suffix: 24\n"
+            "  last_suffix: 4\n"
             "  rhs_filename: IJ.out.b\n"
             "  matrix_filename: IJ.out.A\n"
             "  dofmap_filename: dofmap.out\n"

@@ -387,6 +387,89 @@ compress_blosc(size_t isize, const void *input, size_t header_size, void **outpu
  * hypredrv_compress
  *-----------------------------------------------------------------------------*/
 
+/* Algorithms whose backing library was not compiled in are rejected up front, so
+ * the dispatch switches below only ever see something they can handle. */
+static int
+CompressionAlgorithmAvailable(comp_alg_t algo, const char *direction)
+{
+#if !defined(HYPREDRV_USING_LZ4)
+   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("LZ4 %s not enabled during build time!", direction);
+      return 0;
+   }
+#endif
+#if !defined(HYPREDRV_USING_BLOSC)
+   if (algo == COMP_BLOSC)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
+      hypredrv_ErrorMsgAdd("BLOSC %s not enabled during build time!", direction);
+      return 0;
+   }
+#endif
+
+   (void)algo;
+   (void)direction;
+
+   return 1;
+}
+
+/* Hands the payload to the compression backend matching `algo`. */
+static int
+CompressDispatch(comp_alg_t algo, size_t isize, const void *input, size_t header_size,
+                 int compression_level, void **output_ptr, size_t *comp_size)
+{
+   /* GCOVR_EXCL_BR_START */
+   switch (algo)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      case COMP_ZLIB:
+         if (!compress_zlib(isize, input, header_size, output_ptr, comp_size))
+         {
+            return 0;
+         }
+         break;
+      case COMP_ZSTD:
+         if (!compress_zstd(isize, input, header_size, output_ptr, comp_size,
+                            compression_level))
+         {
+            return 0;
+         }
+         break;
+#ifdef HYPREDRV_USING_LZ4
+      case COMP_LZ4: /* GCOVR_EXCL_LINE */
+         if (!compress_lz4(isize, input, header_size, output_ptr, comp_size))
+         {
+            return 0;
+         }
+         break;
+      case COMP_LZ4HC: /* GCOVR_EXCL_LINE */
+         if (!compress_lz4hc(isize, input, header_size, output_ptr, comp_size))
+         {
+            return 0;
+         }
+         break;
+#endif
+#ifdef HYPREDRV_USING_BLOSC
+      case COMP_BLOSC: /* GCOVR_EXCL_LINE */
+         if (!compress_blosc(isize, input, header_size, output_ptr, comp_size))
+         {
+            return 0;
+         }
+         break;
+#endif
+      default:
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Unknown or unsupported compression algorithm: %d", algo);
+         return 0;
+      }
+   }
+
+   return 1;
+}
+
 void
 hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osize_ptr,
                   void **output_ptr, int compression_level)
@@ -430,68 +513,15 @@ hypredrv_compress(comp_alg_t algo, size_t isize, const void *input, size_t *osiz
       return;
    }
 
-#if !defined(HYPREDRV_USING_LZ4)
-   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   if (!CompressionAlgorithmAvailable(algo, "compression"))
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("LZ4 compression not enabled during build time!");
       return;
    }
-#endif
-#if !defined(HYPREDRV_USING_BLOSC)
-   if (algo == COMP_BLOSC)
-   {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("BLOSC compression not enabled during build time!");
-      return;
-   }
-#endif
 
-   /* GCOVR_EXCL_BR_START */
-   switch (algo)
-   /* GCOVR_EXCL_BR_STOP */
+   if (!CompressDispatch(algo, isize, input, header_size, compression_level, output_ptr,
+                         &comp_size))
    {
-      case COMP_ZLIB:
-         if (!compress_zlib(isize, input, header_size, output_ptr, &comp_size))
-         {
-            return;
-         }
-         break;
-      case COMP_ZSTD:
-         if (!compress_zstd(isize, input, header_size, output_ptr, &comp_size,
-                            compression_level))
-         {
-            return;
-         }
-         break;
-#ifdef HYPREDRV_USING_LZ4
-      case COMP_LZ4: /* GCOVR_EXCL_LINE */
-         if (!compress_lz4(isize, input, header_size, output_ptr, &comp_size))
-         {
-            return;
-         }
-         break;
-      case COMP_LZ4HC: /* GCOVR_EXCL_LINE */
-         if (!compress_lz4hc(isize, input, header_size, output_ptr, &comp_size))
-         {
-            return;
-         }
-         break;
-#endif
-#ifdef HYPREDRV_USING_BLOSC
-      case COMP_BLOSC: /* GCOVR_EXCL_LINE */
-         if (!compress_blosc(isize, input, header_size, output_ptr, &comp_size))
-         {
-            return;
-         }
-         break;
-#endif
-      default:
-      {
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("Unknown or unsupported compression algorithm: %d", algo);
-         return;
-      }
+      return;
    }
 
    *osize_ptr = header_size + comp_size;
@@ -635,6 +665,57 @@ decompress_blosc(size_t isize, const void *input, size_t header_size, size_t ori
  * hypredrv_decompress
  *-----------------------------------------------------------------------------*/
 
+/* Hands the payload to the decompression backend matching `algo`. */
+static int
+DecompressDispatch(comp_alg_t algo, size_t isize, const void *input, size_t header_size,
+                   size_t *orig_size, void **output_ptr)
+{
+   /* GCOVR_EXCL_BR_START */
+   switch (algo)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      case COMP_ZLIB:
+         if (!decompress_zlib(isize, input, header_size, orig_size, output_ptr))
+         {
+            return 0;
+         }
+         break;
+      case COMP_ZSTD:
+         if (!decompress_zstd(isize, input, header_size, *orig_size, output_ptr))
+         {
+            return 0;
+         }
+         break;
+#ifdef HYPREDRV_USING_LZ4
+      case COMP_LZ4:   /* GCOVR_EXCL_LINE */
+      case COMP_LZ4HC: /* GCOVR_EXCL_LINE */
+         if (!decompress_lz4(isize, input, header_size, *orig_size, output_ptr))
+         {
+            return 0;
+         }
+         break;
+#endif
+#ifdef HYPREDRV_USING_BLOSC
+      case COMP_BLOSC: /* GCOVR_EXCL_LINE */
+         if (!decompress_blosc(isize, input, header_size, *orig_size, output_ptr))
+         {
+            return 0;
+         }
+         break;
+#endif
+      default:
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Unknown or unsupported decompression algorithm: %d", algo);
+         free(*output_ptr);
+         *output_ptr = NULL;
+         return 0;
+      }
+   }
+
+   return 1;
+}
+
 void
 hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *osize_ptr,
                     void **output_ptr)
@@ -700,22 +781,10 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
       return;
    }
 
-#if !defined(HYPREDRV_USING_LZ4)
-   if (algo == COMP_LZ4 || algo == COMP_LZ4HC)
+   if (!CompressionAlgorithmAvailable(algo, "decompression"))
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("LZ4 decompression not enabled during build time!");
       return;
    }
-#endif
-#if !defined(HYPREDRV_USING_BLOSC)
-   if (algo == COMP_BLOSC)
-   {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_LIB);
-      hypredrv_ErrorMsgAdd("BLOSC decompression not enabled during build time!");
-      return;
-   }
-#endif
 
    {
       /* GCOVR_EXCL_BR_START */
@@ -726,47 +795,9 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
       /* GCOVR_EXCL_BR_STOP */
    }
 
-   /* GCOVR_EXCL_BR_START */
-   switch (algo)
-   /* GCOVR_EXCL_BR_STOP */
+   if (!DecompressDispatch(algo, isize, input, header_size, &orig_size, output_ptr))
    {
-      case COMP_ZLIB:
-         if (!decompress_zlib(isize, input, header_size, &orig_size, output_ptr))
-         {
-            return;
-         }
-         break;
-      case COMP_ZSTD:
-         if (!decompress_zstd(isize, input, header_size, orig_size, output_ptr))
-         {
-            return;
-         }
-         break;
-#ifdef HYPREDRV_USING_LZ4
-      case COMP_LZ4:   /* GCOVR_EXCL_LINE */
-      case COMP_LZ4HC: /* GCOVR_EXCL_LINE */
-         if (!decompress_lz4(isize, input, header_size, orig_size, output_ptr))
-         {
-            return;
-         }
-         break;
-#endif
-#ifdef HYPREDRV_USING_BLOSC
-      case COMP_BLOSC: /* GCOVR_EXCL_LINE */
-         if (!decompress_blosc(isize, input, header_size, orig_size, output_ptr))
-         {
-            return;
-         }
-         break;
-#endif
-      default:
-      {
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("Unknown or unsupported decompression algorithm: %d", algo);
-         free(*output_ptr);
-         *output_ptr = NULL;
-         return;
-      }
+      return;
    }
 
    *osize_ptr = orig_size;

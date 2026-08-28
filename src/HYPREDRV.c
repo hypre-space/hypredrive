@@ -780,47 +780,10 @@ LogMGRCachedHandles(HYPREDRV_t hypredrv, const MGR_args *mgr, const char *msg)
  * Tear down all object-owned state; shared by Destroy and the Finalize sweep
  *-----------------------------------------------------------------------------*/
 
-static uint32_t
-DestroyObjectInternal(HYPREDRV_t hypredrv)
+/* Releases the scaling context and the owned system matrices. */
+static void
+DestroyOwnedMatrices(HYPREDRV_t hypredrv)
 {
-   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv)) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
-      return hypredrv_ErrorCodeGet();
-   }
-
-   HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal begin");
-
-   /* Remove the handle from the live registry before tearing down owned state
-    * so finalize-time sweeps never revisit an object that is already mid-destroy. */
-   hypredrv_RuntimeUnregisterObject(hypredrv);
-   HYPREDRV_LOG_OBJECTF(2, hypredrv, "live object removed from registry (active=%d)",
-                        hypredrv_RuntimeGetActiveCount());
-
-   /* Embedded/library-mode consumers like GEOS expect general.statistics to
-    * flush with the object lifetime rather than from a separate driver hook. */
-   int print_statistics = 0;
-   if (hypredrv->lib_mode && hypredrv->iargs && hypredrv->mypid == 0)
-   {
-      print_statistics = hypredrv->iargs->general.statistics;
-   }
-
-   /* Destroy solver/preconditioner objects before tearing down dependent state. */
-   if (hypredrv->iargs)
-   {
-      if (hypredrv->solver)
-      {
-         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-      }
-      if (hypredrv->precon)
-      {
-         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon, hypredrv->stats,
-                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
-         hypredrv->precon_is_setup = false;
-      }
-   }
-
    if (hypredrv->scaling_ctx)
    {
       hypredrv_ScalingContextDestroy(hypredrv->comm, &hypredrv->scaling_ctx);
@@ -845,7 +808,13 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
          HYPRE_IJVectorDestroy(hypredrv->vec_s[i]);
       }
    }
+}
 
+/* Vectors and auxiliary operators created by HYPREDRV itself, plus the ones the
+ * caller handed over ownership of. */
+static void
+DestroyOwnedVectors(HYPREDRV_t hypredrv)
+{
    /* Always destroy these vectors since they are created by HYPREDRV. */
    if (hypredrv->vec_x && hypredrv->owns_vec_x)
    {
@@ -895,6 +864,51 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    {
       HYPRE_IJVectorDestroy(hypredrv->vec_xref);
    }
+}
+
+static uint32_t
+DestroyObjectInternal(HYPREDRV_t hypredrv)
+{
+   if (!hypredrv || !hypredrv_RuntimeObjectIsLive(hypredrv)) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   HYPREDRV_LOG_OBJECTF(1, hypredrv, "DestroyObjectInternal begin");
+
+   /* Remove the handle from the live registry before tearing down owned state
+    * so finalize-time sweeps never revisit an object that is already mid-destroy. */
+   hypredrv_RuntimeUnregisterObject(hypredrv);
+   HYPREDRV_LOG_OBJECTF(2, hypredrv, "live object removed from registry (active=%d)",
+                        hypredrv_RuntimeGetActiveCount());
+
+   /* Embedded/library-mode consumers like GEOS expect general.statistics to
+    * flush with the object lifetime rather than from a separate driver hook. */
+   int print_statistics = 0;
+   if (hypredrv->lib_mode && hypredrv->iargs && hypredrv->mypid == 0)
+   {
+      print_statistics = hypredrv->iargs->general.statistics;
+   }
+
+   /* Destroy solver/preconditioner objects before tearing down dependent state. */
+   if (hypredrv->iargs)
+   {
+      if (hypredrv->solver)
+      {
+         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
+      }
+      if (hypredrv->precon)
+      {
+         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                                &hypredrv->precon, hypredrv->stats,
+                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+         hypredrv->precon_is_setup = false;
+      }
+   }
+
+   DestroyOwnedMatrices(hypredrv);
+   DestroyOwnedVectors(hypredrv);
 
    hypredrv_IntArrayDestroy(&hypredrv->dofmap);
    hypredrv_IntArrayDestroy(&hypredrv->precon_reuse_timesteps.ids);
@@ -3133,6 +3147,38 @@ HYPREDRV_PreconSetup(HYPREDRV_t hypredrv)
  * Set up the linear solver, rebuilding or reusing the preconditioner as decided
  *-----------------------------------------------------------------------------*/
 
+/* Computes the scaling factors and applies them to the system before setup.
+ * Returns 0 when a rank failed, having already restored the system state. */
+static int
+SetupApplyScaling(HYPREDRV_t hypredrv)
+{
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+   {
+      hypredrv_ScalingCompute(hypredrv->comm, &hypredrv->iargs->scaling,
+                              hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->vec_b,
+                              hypredrv->dofmap);              /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
+      {
+         return 0;
+      }
+   }
+
+   /* Apply scaling before setup if enabled */
+   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+   {
+      hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
+                                    hypredrv->mat_M, hypredrv->vec_b,
+                                    hypredrv->vec_x);         /* GCOVR_EXCL_BR_LINE */
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
+      {
+         RestoreScaledSystemState(hypredrv, 0);
+         return 0;
+      }
+   }
+
+   return 1;
+}
+
 uint32_t
 HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 {
@@ -3182,28 +3228,9 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
    }
 
    /* Compute scaling if enabled (recompute for each system if needed) */
-   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
+   if (!SetupApplyScaling(hypredrv))
    {
-      hypredrv_ScalingCompute(hypredrv->comm, &hypredrv->iargs->scaling,
-                              hypredrv->scaling_ctx, hypredrv->mat_A, hypredrv->vec_b,
-                              hypredrv->dofmap);              /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
-      {
-         return hypredrv_ErrorCodeGet();
-      }
-   }
-
-   /* Apply scaling before setup if enabled */
-   if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled)
-   {
-      hypredrv_ScalingApplyToSystem(hypredrv->scaling_ctx, hypredrv->mat_A,
-                                    hypredrv->mat_M, hypredrv->vec_b,
-                                    hypredrv->vec_x);         /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
-      {
-         RestoreScaledSystemState(hypredrv, 0);
-         return hypredrv_ErrorCodeGet();
-      }
+      return hypredrv_ErrorCodeGet();
    }
 
    SetSolverRefSolution(hypredrv);
@@ -3257,6 +3284,172 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
 /*-----------------------------------------------------------------------------
  * Apply the linear solver to solve the linear system
  *-----------------------------------------------------------------------------*/
+
+/* Solve path for an already-scaled system: the residual norms are measured
+ * against the scaled operators, then unscaled for reporting. */
+/* Records the outcome of this solve for the adaptive reuse policy. A no-op
+ * unless adaptive reuse is configured. */
+static void
+RecordAdaptiveReuseObservation(HYPREDRV_t hypredrv, int solve_succeeded)
+{
+   PreconReuseObservation obs;
+
+   if (!hypredrv->iargs || !hypredrv->iargs->precon_reuse.enabled ||
+       hypredrv->iargs->precon_reuse.policy != PRECON_REUSE_POLICY_ADAPTIVE)
+   {
+      return;
+   }
+
+   hypredrv_PreconReuseBuildObservation(hypredrv, hypredrv->precon_reuse_timesteps.starts,
+                                        &obs);
+   obs.solve_succeeded = solve_succeeded;
+   hypredrv_PreconReuseStateRecordObservation(&hypredrv->precon_reuse_state, &obs);
+}
+
+static uint32_t
+SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
+                  double *r0_norm_out, double *x_norm_out, double *xref_norm_out,
+                  double *e_norm_out, int *solve_succeeded_out)
+{
+   double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
+   double x_norm = 0.0, xref_norm = 0.0, e_norm = 0.0;
+   int    succeeded = 1;
+
+   HYPREDRV_LOG_OBJECTF(2, hypredrv, "solving scaled system"); /* GCOVR_EXCL_BR_LINE */
+   int xref_scaled = 0;
+
+   /* Compute initial residual norm before solve (on current system state) */
+   hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
+                                            hypredrv->vec_x, "L2", &r0_norm);
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+   {
+      RestoreScaledSystemState(hypredrv, 0);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   if (hypredrv->vec_xref)
+   {
+      hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
+                                    SCALING_VECTOR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
+      xref_scaled = !hypredrv_ErrorCodeActive();
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
+      {
+         RestoreScaledSystemState(hypredrv, xref_scaled);
+         return hypredrv_ErrorCodeGet();
+      }
+      xref_scaled = 1;
+   }
+
+   SetPendingSolvePathContext(hypredrv);
+   hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   hypredrv_StatsInitialResNormSet(hypredrv->stats, r0_norm);
+
+   /* Solve on scaled system */
+   HYPRE_Int iters =
+      hypredrv_SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
+                               hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
+   if (iters < 0 && !hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("Scaled solver returned a negative iteration count");
+   }
+   if (hypredrv_DistributedErrorStateSync(
+          hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */ /* solver failure injection */
+   {
+      succeeded = 0; /* GCOVR_EXCL_BR_LINE */
+      hypredrv_StatsIterSet(hypredrv->stats, 0);
+      hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END,
+                             "solve"); /* GCOVR_EXCL_BR_LINE */
+      RestoreScaledSystemState(hypredrv, xref_scaled);
+      RecordAdaptiveReuseObservation(hypredrv, succeeded);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   hypredrv_StatsIterSet(hypredrv->stats, (int)iters);
+   hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "solve");
+
+   /* Undo scaling on the solution/reference and restore the caller's system. */
+   if (RestoreScaledSystemState(hypredrv, xref_scaled)) /* GCOVR_EXCL_BR_LINE */
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Compute residual norms on original (now restored) system */
+   hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
+   hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
+                                            hypredrv->vec_x, "L2",
+                                            &r_norm); /* GCOVR_EXCL_BR_LINE */
+   b_norm = (b_norm > 0.0) ? b_norm : 1.0;            /* GCOVR_EXCL_BR_LINE */
+   hypredrv_StatsRelativeResNormSet(hypredrv->stats, r_norm / b_norm);
+
+   *b_norm_out          = b_norm;
+   *r_norm_out          = r_norm;
+   *r0_norm_out         = r0_norm;
+   *x_norm_out          = x_norm;
+   *xref_norm_out       = xref_norm;
+   *e_norm_out          = e_norm;
+   *solve_succeeded_out = succeeded;
+
+   /* Completed the scaled solve. Return 0 rather than the current error code:
+    * a nonzero return makes the caller bail out immediately, which would skip
+    * the collective error sync that every rank has to reach. Rank-local errors
+    * raised here are settled there instead. */
+   return 0;
+}
+
+/* Solve path for an unscaled system: hypredrv_SolverApply already records the
+ * residual statistics itself. */
+static void
+SolveUnscaledSystem(HYPREDRV_t hypredrv, int *solve_succeeded_out)
+{
+   int succeeded = 1;
+
+   HYPREDRV_LOG_OBJECTF(2, hypredrv, "solving unscaled system");
+   SetPendingSolvePathContext(hypredrv);
+   /* No scaling - use standard hypredrv_SolverApply which handles everything including
+    * stats */
+   uint32_t error_before_solve = hypredrv_ErrorCodeGet();
+   char     default_object_name[32];
+   bool     pushed_default_name = PushDefaultLogObjectName(hypredrv, default_object_name,
+                                                           sizeof(default_object_name));
+   hypredrv_SolverApply(hypredrv->iargs->solver_method, hypredrv->solver, hypredrv->mat_A,
+                        hypredrv->vec_b, hypredrv->vec_x, hypredrv->stats);
+   PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
+   succeeded = (hypredrv_ErrorCodeGet() == error_before_solve);
+   /* hypredrv_SolverApply already computed and set all stats */
+
+   *solve_succeeded_out = succeeded;
+}
+
+/* Post-solve diagnostics: per-block residual norms, and the error/solution
+ * norms against a reference solution when one was supplied. */
+static void
+ReportSolveDiagnostics(HYPREDRV_t hypredrv, double *x_norm, double *xref_norm,
+                       double *e_norm)
+{
+   char residual_object_name[32];
+   residual_object_name[0] = '\0';
+   const char *solve_object_name =
+      ResolveLogObjectName(hypredrv, residual_object_name, sizeof(residual_object_name));
+   hypredrv_LinearSystemLogBlockResidualNorms(
+      hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x, hypredrv->dofmap,
+      hypredrv->iargs->ls.dof_labels, solve_object_name,
+      hypredrv_StatsGetLinearSystemID(hypredrv->stats));
+
+   if (hypredrv->vec_xref)
+   {
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", xref_norm);
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", x_norm);
+      hypredrv_LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2",
+                                            e_norm); /* GCOVR_EXCL_BR_LINE */
+      if (!hypredrv->mypid)                          /* GCOVR_EXCL_BR_LINE */
+      {
+         printf("L2 norm of error: %e\n", (double)*e_norm);
+         printf("L2 norm of solution: %e\n", (double)*x_norm);
+         printf("L2 norm of ref. solution: %e\n", (double)*xref_norm);
+      }
+   }
+}
 
 uint32_t
 HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
@@ -3313,117 +3506,27 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
 
    /* Perform solve */ /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->scaling_ctx && hypredrv->iargs->scaling.enabled &&
-       hypredrv->scaling_ctx->is_applied)                         /* GCOVR_EXCL_BR_LINE */
-   {                                                              /* GCOVR_EXCL_BR_LINE */
-      HYPREDRV_LOG_OBJECTF(2, hypredrv, "solving scaled system"); /* GCOVR_EXCL_BR_LINE */
-      int xref_scaled = 0;
+       hypredrv->scaling_ctx->is_applied) /* GCOVR_EXCL_BR_LINE */
+   {
+      uint32_t solve_error =
+         SolveScaledSystem(hypredrv, &b_norm, &r_norm, &r0_norm, &x_norm, &xref_norm,
+                           &e_norm, &solve_succeeded);
 
-      /* Compute initial residual norm before solve (on current system state) */
-      hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
-                                               hypredrv->vec_x, "L2", &r0_norm);
-      if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+      if (solve_error)
       {
-         RestoreScaledSystemState(hypredrv, 0);
-         return hypredrv_ErrorCodeGet();
+         return solve_error;
       }
-
-      if (hypredrv->vec_xref)
-      {
-         hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_xref,
-                                       SCALING_VECTOR_UNKNOWN); /* GCOVR_EXCL_BR_LINE */
-         xref_scaled = !hypredrv_ErrorCodeActive();
-         if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
-         {
-            RestoreScaledSystemState(hypredrv, xref_scaled);
-            return hypredrv_ErrorCodeGet();
-         }
-         xref_scaled = 1;
-      }
-
-      SetPendingSolvePathContext(hypredrv);
-      hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
-      hypredrv_StatsInitialResNormSet(hypredrv->stats, r0_norm);
-
-      /* Solve on scaled system */
-      HYPRE_Int iters =
-         hypredrv_SolverSolveOnly(hypredrv->iargs->solver_method, hypredrv->solver,
-                                  hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x);
-      if (iters < 0 && !hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("Scaled solver returned a negative iteration count");
-      }
-      if (hypredrv_DistributedErrorStateSync(
-             hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */ /* solver failure injection */
-      {
-         solve_succeeded = 0; /* GCOVR_EXCL_BR_LINE */
-         hypredrv_StatsIterSet(hypredrv->stats, 0);
-         hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END,
-                                "solve"); /* GCOVR_EXCL_BR_LINE */
-         RestoreScaledSystemState(hypredrv, xref_scaled);
-         if (hypredrv->iargs &&
-             hypredrv->iargs->precon_reuse.enabled && /* GCOVR_EXCL_BR_LINE */
-             hypredrv->iargs->precon_reuse.policy ==
-                PRECON_REUSE_POLICY_ADAPTIVE) /* GCOVR_EXCL_BR_LINE */
-         {
-            PreconReuseObservation obs;
-            hypredrv_PreconReuseBuildObservation(
-               hypredrv, hypredrv->precon_reuse_timesteps.starts, &obs);
-            obs.solve_succeeded = solve_succeeded;
-            hypredrv_PreconReuseStateRecordObservation(&hypredrv->precon_reuse_state,
-                                                       &obs);
-         }
-         return hypredrv_ErrorCodeGet();
-      }
-
-      hypredrv_StatsIterSet(hypredrv->stats, (int)iters);
-      hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "solve");
-
-      /* Undo scaling on the solution/reference and restore the caller's system. */
-      if (RestoreScaledSystemState(hypredrv, xref_scaled)) /* GCOVR_EXCL_BR_LINE */
-      {
-         return hypredrv_ErrorCodeGet();
-      }
-
-      /* Compute residual norms on original (now restored) system */
-      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
-      hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
-                                               hypredrv->vec_x, "L2",
-                                               &r_norm); /* GCOVR_EXCL_BR_LINE */
-      b_norm = (b_norm > 0.0) ? b_norm : 1.0;            /* GCOVR_EXCL_BR_LINE */
-      hypredrv_StatsRelativeResNormSet(hypredrv->stats, r_norm / b_norm);
    }
    else
    {
-      HYPREDRV_LOG_OBJECTF(2, hypredrv, "solving unscaled system");
-      SetPendingSolvePathContext(hypredrv);
-      /* No scaling - use standard hypredrv_SolverApply which handles everything including
-       * stats */
-      uint32_t error_before_solve = hypredrv_ErrorCodeGet();
-      char     default_object_name[32];
-      bool pushed_default_name = PushDefaultLogObjectName(hypredrv, default_object_name,
-                                                          sizeof(default_object_name));
-      hypredrv_SolverApply(hypredrv->iargs->solver_method, hypredrv->solver,
-                           hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x,
-                           hypredrv->stats);
-      PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
-      solve_succeeded = (hypredrv_ErrorCodeGet() == error_before_solve);
-      /* hypredrv_SolverApply already computed and set all stats */
+      SolveUnscaledSystem(hypredrv, &solve_succeeded);
    }
 
    hypredrv_HypreConsumeErrors();
    if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) /* GCOVR_EXCL_BR_LINE */
    {
       solve_succeeded = 0;
-      if (hypredrv->iargs && hypredrv->iargs->precon_reuse.enabled &&
-          hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE)
-      {
-         PreconReuseObservation obs;
-         hypredrv_PreconReuseBuildObservation(
-            hypredrv, hypredrv->precon_reuse_timesteps.starts, &obs);
-         obs.solve_succeeded = solve_succeeded;
-         hypredrv_PreconReuseStateRecordObservation(&hypredrv->precon_reuse_state, &obs);
-      }
+      RecordAdaptiveReuseObservation(hypredrv, solve_succeeded);
       return hypredrv_ErrorCodeGet();
    }
 
@@ -3434,39 +3537,11 @@ HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv)
                                                hypredrv->vec_x);
    }
 
-   char residual_object_name[32];
-   residual_object_name[0] = '\0';
-   const char *solve_object_name =
-      ResolveLogObjectName(hypredrv, residual_object_name, sizeof(residual_object_name));
-   hypredrv_LinearSystemLogBlockResidualNorms(
-      hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x, hypredrv->dofmap,
-      hypredrv->iargs->ls.dof_labels, solve_object_name,
-      hypredrv_StatsGetLinearSystemID(hypredrv->stats));
+   ReportSolveDiagnostics(hypredrv, &x_norm, &xref_norm, &e_norm);
 
-   if (hypredrv->vec_xref)
-   {
-      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", &xref_norm);
-      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", &x_norm);
-      hypredrv_LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2",
-                                            &e_norm); /* GCOVR_EXCL_BR_LINE */
-      if (!hypredrv->mypid)                           /* GCOVR_EXCL_BR_LINE */
-      {
-         printf("L2 norm of error: %e\n", (double)e_norm);
-         printf("L2 norm of solution: %e\n", (double)x_norm);
-         printf("L2 norm of ref. solution: %e\n", (double)xref_norm);
-      }
-   }
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "solve finished (iters=%d)",
                         hypredrv_StatsGetLastIter(hypredrv->stats));
-   if (hypredrv->iargs && hypredrv->iargs->precon_reuse.enabled &&
-       hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE)
-   {
-      PreconReuseObservation obs;
-      hypredrv_PreconReuseBuildObservation(hypredrv,
-                                           hypredrv->precon_reuse_timesteps.starts, &obs);
-      obs.solve_succeeded = solve_succeeded;
-      hypredrv_PreconReuseStateRecordObservation(&hypredrv->precon_reuse_state, &obs);
-   }
+   RecordAdaptiveReuseObservation(hypredrv, solve_succeeded);
    MaybeDumpLinearSystem(hypredrv, PRINT_SYSTEM_STAGE_APPLY);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_LinearSolverApply end");
 

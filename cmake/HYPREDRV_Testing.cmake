@@ -34,12 +34,17 @@ endif()
 set(HYPREDRV_LSAN_OPTIONS "${_hypredrv_lsan_options_default}" CACHE STRING
     "LeakSanitizer runtime options applied to CTest tests")
 
+set(_hypredrv_gpu_enabled FALSE)
+if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP OR HYPRE_ENABLE_SYCL)
+    set(_hypredrv_gpu_enabled TRUE)
+endif()
+
 # GPU regression tests explicitly exercise the lazy initialization path through
 # the command-line override. CPU tests use the YAML default without adding a
 # GPU-specific argument.
 set(_hypredrv_gpu_device_lazy_init_target_args "")
 set(_hypredrv_gpu_device_lazy_init_overrides "")
-if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+if(_hypredrv_gpu_enabled)
     set(_hypredrv_gpu_device_lazy_init_target_args
         "-a|--general:device_lazy_init|on")
     set(_hypredrv_gpu_device_lazy_init_overrides
@@ -54,7 +59,7 @@ if(_hypredrv_gpu_device_lazy_init_overrides)
 endif()
 
 set(_hypredrv_regression_batching_default OFF)
-if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+if(_hypredrv_gpu_enabled)
     set(_hypredrv_regression_batching_default ON)
 endif()
 option(HYPREDRV_ENABLE_REGRESSION_TEST_BATCHING
@@ -69,6 +74,11 @@ if(HYPRE_ENABLE_HIP)
     set(_hypredrv_gpu_visible_devices_env_default "ROCR_VISIBLE_DEVICES")
 elseif(HYPRE_ENABLE_CUDA)
     set(_hypredrv_gpu_visible_devices_env_default "CUDA_VISIBLE_DEVICES")
+elseif(HYPRE_ENABLE_SYCL)
+    # Level Zero exposes a stable affinity mask that can be set per CTest
+    # resource allocation.  Users of another SYCL backend can override this
+    # with HYPREDRV_GPU_VISIBLE_DEVICES_ENV.
+    set(_hypredrv_gpu_visible_devices_env_default "ZE_AFFINITY_MASK")
 endif()
 if(_hypredrv_gpu_visible_devices_env_default)
     set(HYPREDRV_GPU_VISIBLE_DEVICES_ENV
@@ -86,6 +96,36 @@ if(_hypredrv_gpu_visible_devices_env_default)
         message(FATAL_ERROR
             "HYPREDRV_GPU_TEST_LAUNCHER must be AUTO, MPIEXEC, or FLUX")
     endif()
+
+    set(HYPREDRV_GPU_TEST_DEVICE_IDS "" CACHE STRING
+        "Comma-separated GPU IDs used by CTest resource allocation")
+    set(HYPREDRV_GPU_TEST_PARALLEL_LEVEL "" CACHE STRING
+        "CTest parallel level for GPU tests (default: number of configured GPUs)")
+    set(HYPREDRV_GPU_TEST_TIMEOUT 60 CACHE STRING
+        "CTest timeout in seconds for tests that consume GPU resources")
+    if(NOT HYPREDRV_GPU_TEST_TIMEOUT MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "HYPREDRV_GPU_TEST_TIMEOUT must be a positive integer")
+    endif()
+
+    option(HYPREDRV_GPU_TEST_AUTODETECT_HIP_DEVICES
+        "Use rocminfo to enumerate HIP devices when no scheduler list is available"
+        OFF)
+
+    set(_hypredrv_gpu_test_apply_visibility_default ON)
+    if(HYPRE_ENABLE_SYCL AND
+       HYPREDRV_GPU_VISIBLE_DEVICES_ENV STREQUAL "ZE_AFFINITY_MASK" AND
+       (NOT DEFINED ENV{ZE_AFFINITY_MASK} OR
+        "$ENV{ZE_AFFINITY_MASK}" STREQUAL ""))
+        # An unqualified Level Zero affinity mask is not portable across
+        # drivers.  Keep the CTest allocation for scheduling, but let the
+        # configured ONEAPI_DEVICE_SELECTOR choose the device unless the
+        # scheduler supplied a mask or the user explicitly enables it.
+        set(_hypredrv_gpu_test_apply_visibility_default OFF)
+    endif()
+    option(HYPREDRV_GPU_TEST_APPLY_VISIBILITY
+        "Apply CTest GPU allocations to the accelerator visibility environment"
+        ${_hypredrv_gpu_test_apply_visibility_default})
 endif()
 
 # Make the generated CMake `test` target self-contained for GPU builds.  CTest
@@ -93,8 +133,7 @@ endif()
 # so generate one in the build tree and append the corresponding arguments to
 # CMAKE_CTEST_ARGUMENTS.  The device IDs are taken from the scheduler/runtime
 # environment at configure time and can be overridden for unusual mappings.
-if(HYPREDRV_ENABLE_TESTING AND
-   (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP))
+if(HYPREDRV_ENABLE_TESTING AND _hypredrv_gpu_enabled)
     get_property(_hypredrv_ctest_gpu_resources_configured GLOBAL
         PROPERTY HYPREDRV_CTEST_GPU_RESOURCES_CONFIGURED)
     if(NOT _hypredrv_ctest_gpu_resources_configured)
@@ -111,6 +150,31 @@ if(HYPREDRV_ENABLE_TESTING AND
                DEFINED ENV{CUDA_VISIBLE_DEVICES} AND
                NOT "$ENV{CUDA_VISIBLE_DEVICES}" STREQUAL "")
             set(_hypredrv_gpu_device_ids_default "$ENV{CUDA_VISIBLE_DEVICES}")
+        elseif(HYPRE_ENABLE_SYCL)
+            if(DEFINED ENV{ZE_AFFINITY_MASK} AND
+               NOT "$ENV{ZE_AFFINITY_MASK}" STREQUAL "")
+                set(_hypredrv_gpu_device_ids_default
+                    "$ENV{ZE_AFFINITY_MASK}")
+            else()
+                # ONEAPI_DEVICE_SELECTOR may include an explicit device list,
+                # for example level_zero:gpu:0,1.  A selector without indices
+                # is intentionally handled by the one-device fallback below.
+                foreach(_device_env IN ITEMS
+                        ONEAPI_DEVICE_SELECTOR SYCL_DEVICE_FILTER)
+                    if(DEFINED ENV{${_device_env}} AND
+                       NOT "$ENV{${_device_env}}" STREQUAL "")
+                        string(REGEX MATCH
+                            "gpu:([0-9]+(,[0-9]+)*)$"
+                            _hypredrv_sycl_selector_match
+                            "$ENV{${_device_env}}")
+                        if(_hypredrv_sycl_selector_match)
+                            set(_hypredrv_gpu_device_ids_default
+                                "${CMAKE_MATCH_1}")
+                            break()
+                        endif()
+                    endif()
+                endforeach()
+            endif()
         endif()
 
         # A command-line/cache value is an explicit override.  Otherwise use
@@ -126,11 +190,13 @@ if(HYPREDRV_ENABLE_TESTING AND
             "${_hypredrv_gpu_device_ids}")
         list(FILTER _hypredrv_gpu_device_ids EXCLUDE REGEX "^$")
 
-        # If the scheduler did not provide a visibility list, use rocminfo to
-        # discover the number of HIP GPU agents.  The IDs are then the usual
-        # zero-based ROCr IDs.  A conservative one-device fallback keeps the
-        # generated test target usable on systems without rocminfo.
-        if(NOT _hypredrv_gpu_device_ids AND HYPRE_ENABLE_HIP)
+        # If explicitly requested, use rocminfo to discover the number of HIP
+        # GPU agents.  This is opt-in because heterogeneous AMD nodes can
+        # expose integrated and discrete agents in the same list.  The
+        # scheduler visibility list or HYPREDRV_GPU_TEST_DEVICE_IDS is the
+        # preferred way to select the intended devices.
+        if(NOT _hypredrv_gpu_device_ids AND HYPRE_ENABLE_HIP AND
+           HYPREDRV_GPU_TEST_AUTODETECT_HIP_DEVICES)
             find_program(_hypredrv_rocminfo_executable rocminfo)
             if(_hypredrv_rocminfo_executable)
                 execute_process(
@@ -146,6 +212,12 @@ if(HYPREDRV_ENABLE_TESTING AND
                         _hypredrv_gpu_agents "${_hypredrv_rocminfo_output}")
                     list(LENGTH _hypredrv_gpu_agents _hypredrv_gpu_agent_count)
                     if(_hypredrv_gpu_agent_count GREATER 0)
+                        if(_hypredrv_gpu_agent_count GREATER 1)
+                            message(WARNING
+                                "rocminfo found ${_hypredrv_gpu_agent_count} HIP agents; "
+                                "set HYPREDRV_GPU_TEST_DEVICE_IDS to exclude integrated "
+                                "or otherwise unsuitable devices")
+                        endif()
                         math(EXPR _hypredrv_gpu_last_id
                             "${_hypredrv_gpu_agent_count} - 1")
                         foreach(_device_id RANGE 0 ${_hypredrv_gpu_last_id})
@@ -166,16 +238,67 @@ if(HYPREDRV_ENABLE_TESTING AND
         set(_hypredrv_normalized_gpu_device_ids "")
         foreach(_device_id IN LISTS _hypredrv_gpu_device_ids)
             string(STRIP "${_device_id}" _device_id)
-            if(NOT _device_id MATCHES "^[a-z0-9_]+$")
+            if(NOT _device_id MATCHES "^[A-Za-z0-9_.:/-]+$")
                 message(FATAL_ERROR
                     "Invalid GPU resource ID '${_device_id}'. "
-                    "CTest resource IDs must contain lowercase letters, digits, or underscores.")
+                    "GPU resource IDs may contain letters, digits, '.', ':', '/', '_', or '-'.")
             endif()
             list(APPEND _hypredrv_normalized_gpu_device_ids "${_device_id}")
         endforeach()
         list(REMOVE_DUPLICATES _hypredrv_normalized_gpu_device_ids)
         set(_hypredrv_gpu_device_ids "${_hypredrv_normalized_gpu_device_ids}")
         list(LENGTH _hypredrv_gpu_device_ids _hypredrv_gpu_device_count)
+
+        # A four-rank dataset regression must be schedulable for any positive
+        # number of visible GPUs.  Advertise enough slots for four total ranks,
+        # distributing those slots across the visible devices.  With four or
+        # more devices this is one slot per device; with fewer devices, MPI
+        # ranks intentionally share a device.  An explicit cache value always
+        # wins.
+        math(EXPR _hypredrv_gpu_resource_slots_default
+            "(4 + ${_hypredrv_gpu_device_count} - 1) / ${_hypredrv_gpu_device_count}")
+
+        # Keep an automatically selected default in sync if a configured
+        # build tree is reused under a different GPU allocation.  An explicit
+        # cache value remains untouched.  The internal value marker also lets
+        # us distinguish a previous automatic default from a user-provided
+        # value on subsequent configure passes.
+        set(_hypredrv_gpu_resource_slots_was_auto FALSE)
+        if(DEFINED HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO AND
+           HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO AND
+           DEFINED HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO_VALUE AND
+           DEFINED HYPREDRV_GPU_TEST_RESOURCE_SLOTS AND
+           HYPREDRV_GPU_TEST_RESOURCE_SLOTS STREQUAL
+           HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO_VALUE)
+            set(_hypredrv_gpu_resource_slots_was_auto TRUE)
+        endif()
+        get_property(_hypredrv_gpu_resource_slots_is_set CACHE
+            HYPREDRV_GPU_TEST_RESOURCE_SLOTS PROPERTY TYPE SET)
+        set(HYPREDRV_GPU_TEST_RESOURCE_SLOTS
+            "${_hypredrv_gpu_resource_slots_default}" CACHE STRING
+            "CTest GPU slots advertised per physical GPU; increase to let MPI ranks share a GPU")
+        if(NOT _hypredrv_gpu_resource_slots_is_set)
+            set(HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO TRUE CACHE INTERNAL
+                "Whether GPU resource slots were automatically selected" FORCE)
+            set(HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO_VALUE
+                "${_hypredrv_gpu_resource_slots_default}" CACHE INTERNAL
+                "Last automatically selected GPU resource slot count" FORCE)
+        elseif(_hypredrv_gpu_resource_slots_was_auto)
+            set(HYPREDRV_GPU_TEST_RESOURCE_SLOTS
+                "${_hypredrv_gpu_resource_slots_default}" CACHE STRING
+                "CTest GPU slots advertised per physical GPU; increase to let MPI ranks share a GPU"
+                FORCE)
+            set(HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO_VALUE
+                "${_hypredrv_gpu_resource_slots_default}" CACHE INTERNAL
+                "Last automatically selected GPU resource slot count" FORCE)
+        elseif(DEFINED HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO)
+            set(HYPREDRV_GPU_TEST_RESOURCE_SLOTS_AUTO FALSE CACHE INTERNAL
+                "Whether GPU resource slots were automatically selected" FORCE)
+        endif()
+        if(NOT HYPREDRV_GPU_TEST_RESOURCE_SLOTS MATCHES "^[1-9][0-9]*$")
+            message(FATAL_ERROR
+                "HYPREDRV_GPU_TEST_RESOURCE_SLOTS must be a positive integer")
+        endif()
 
         if(DEFINED HYPREDRV_GPU_TEST_PARALLEL_LEVEL AND
            NOT "${HYPREDRV_GPU_TEST_PARALLEL_LEVEL}" STREQUAL "")
@@ -189,6 +312,9 @@ if(HYPREDRV_ENABLE_TESTING AND
             message(FATAL_ERROR
                 "HYPREDRV_GPU_TEST_PARALLEL_LEVEL must be a positive integer")
         endif()
+        set(HYPREDRV_GPU_TEST_PARALLEL_LEVEL_EFFECTIVE
+            "${_hypredrv_gpu_parallel_level}" CACHE INTERNAL
+            "Effective CTest parallel level for GPU tests" FORCE)
 
         set(HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE
             "${CMAKE_BINARY_DIR}/hypredrive-ctest-gpus.json"
@@ -207,7 +333,7 @@ if(HYPREDRV_ENABLE_TESTING AND
                 string(APPEND _hypredrv_gpu_resource_spec ",\n")
             endif()
             string(APPEND _hypredrv_gpu_resource_spec
-                "        { \"id\": \"${_device_id}\", \"slots\": 1 }")
+                "        { \"id\": \"${_device_id}\", \"slots\": ${HYPREDRV_GPU_TEST_RESOURCE_SLOTS} }")
             math(EXPR _hypredrv_gpu_resource_index
                 "${_hypredrv_gpu_resource_index} + 1")
         endforeach()
@@ -245,6 +371,7 @@ if(HYPREDRV_ENABLE_TESTING AND
 
         message(STATUS
             "CTest GPU resources: IDs=${_hypredrv_gpu_device_ids}; "
+            "slots per GPU=${HYPREDRV_GPU_TEST_RESOURCE_SLOTS}; "
             "parallel level=${_hypredrv_gpu_parallel_level}; "
             "spec=${HYPREDRV_GPU_TEST_RESOURCE_SPEC_FILE}")
         set_property(GLOBAL PROPERTY HYPREDRV_CTEST_GPU_RESOURCES_CONFIGURED TRUE)
@@ -262,6 +389,9 @@ if(HYPREDRV_ENABLE_TESTING AND
         unset(_hypredrv_resource_spec_arg_index)
         unset(_hypredrv_has_ctest_parallel_arg)
         unset(_hypredrv_gpu_parallel_level)
+        unset(_hypredrv_gpu_resource_slots_default)
+        unset(_hypredrv_gpu_resource_slots_was_auto)
+        unset(_hypredrv_gpu_resource_slots_is_set)
         unset(_device_env)
         unset(_device_id)
     endif()
@@ -320,6 +450,14 @@ function(hypredrv_append_test_environment test_name)
         list(APPEND _env_list
             "HYPREDRV_GPU_TEST_LAUNCHER=${HYPREDRV_GPU_TEST_LAUNCHER}")
     endif()
+    if(DEFINED HYPREDRV_GPU_TEST_APPLY_VISIBILITY)
+        list(APPEND _env_list
+            "HYPREDRV_GPU_TEST_APPLY_VISIBILITY=${HYPREDRV_GPU_TEST_APPLY_VISIBILITY}")
+    endif()
+    if(HYPRE_ENABLE_SYCL AND HYPREDRV_SYCL_DEVICE_SELECTOR)
+        list(APPEND _env_list
+            "ONEAPI_DEVICE_SELECTOR=${HYPREDRV_SYCL_DEVICE_SELECTOR}")
+    endif()
     list(APPEND _env_list
         "HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS=${HYPREDRV_USE_MPIEXEC_FOR_SINGLE_RANK_TESTS}")
     get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
@@ -347,12 +485,18 @@ endfunction()
 # Function for adding tests
 # Options:
 #   INFO - if set, pass -i to show full system info
-set(HYPREDRV_FAIL_REGEX_DEFAULT
-    "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|Segmentation fault|Abort\\("
+string(CONCAT HYPREDRV_FAIL_REGEX_DEFAULT
+    "HYPREDRIVE Failure!!!|BAD TERMINATION OF ONE OF YOUR APPLICATION PROCESSES|"
+    "Segmentation fault|SIGSEGV|SIGABRT|Abort\\(|Aborted|"
+    "MPI[_ ]?ABORT|CUDA[ \\t]+(ERROR|error)|HIP[ \\t]+(ERROR|error)|"
+    "CUSPARSE[ \\t]+(ERROR|error)|out[_ ]of[_ ]memory|"
+    "illegal[ \\t]+memory[ \\t]+access|invalid[ \\t]+device[ \\t]+ordinal|"
+    "insufficient[ \\t]+resources|corrupted size vs\\.? prev_size|"
+    "terminate called after throwing|AddressSanitizer:|UndefinedBehaviorSanitizer:"
 )
 
 set(HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER 1)
-if(HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP)
+if(_hypredrv_gpu_enabled)
     set(HYPREDRV_GPU_PROBLEM_SIZE_MULTIPLIER 5)
 endif()
 
@@ -381,7 +525,7 @@ set(HYPREDRV_GPU_DISABLED_TESTS
 get_property(_hypredrv_gpu_test_policy_reported GLOBAL
     PROPERTY HYPREDRV_GPU_TEST_POLICY_REPORTED
 )
-if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND NOT _hypredrv_gpu_test_policy_reported)
+if(_hypredrv_gpu_enabled AND NOT _hypredrv_gpu_test_policy_reported)
     if(HYPREDRV_ENABLE_ALL_TESTS)
         message(STATUS "GPU test policy: all tests enabled (GPU skip list overridden)")
     else()
@@ -398,7 +542,7 @@ unset(_hypredrv_gpu_test_policy_reported)
 
 function(hypredrv_maybe_disable_gpu_test test_name)
     if(NOT HYPREDRV_ENABLE_ALL_TESTS AND
-       (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       _hypredrv_gpu_enabled AND
        test_name IN_LIST HYPREDRV_GPU_DISABLED_TESTS)
         set_tests_properties(${test_name} PROPERTIES DISABLED TRUE)
     endif()
@@ -406,19 +550,24 @@ endfunction()
 
 # Declare the GPU resources consumed by a test.  The resource specification is
 # intentionally supplied at test time because the number and IDs of devices
-# vary by machine.  One CTest resource group is created per MPI rank so the
-# run script can expose one distinct device to each rank.
+# vary by machine.  One CTest resource group is created per MPI rank.  A
+# physical device may advertise multiple slots when MPI ranks are intentionally
+# shared on the same GPU.
 function(hypredrv_set_gpu_test_resources test_name num_procs)
-    if((HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+    if(_hypredrv_gpu_enabled AND
        NOT "${num_procs}" STREQUAL "" AND num_procs GREATER 0)
         set_tests_properties(${test_name}
             PROPERTIES RESOURCE_GROUPS "${num_procs},gpus:1")
+        if(HYPREDRV_GPU_TEST_TIMEOUT)
+            set_tests_properties(${test_name}
+                PROPERTIES TIMEOUT "${HYPREDRV_GPU_TEST_TIMEOUT}")
+        endif()
     endif()
 endfunction()
 
 function(hypredrv_test_disabled_by_gpu_policy test_name out_var)
     if(NOT HYPREDRV_ENABLE_ALL_TESTS AND
-       (HYPRE_ENABLE_CUDA OR HYPRE_ENABLE_HIP) AND
+       _hypredrv_gpu_enabled AND
        test_name IN_LIST HYPREDRV_GPU_DISABLED_TESTS)
         set(${out_var} TRUE PARENT_SCOPE)
     else()
@@ -889,6 +1038,7 @@ endfunction()
 if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
     # Define hypre version checks for selecting which tests to run.
     hypredrv_check_hypre_version(21900 0)
+    hypredrv_check_hypre_version(22100 0)
     hypredrv_check_hypre_version(22500 0)
     hypredrv_check_hypre_version(22900 0)
     hypredrv_check_hypre_version(23000 0)
@@ -1251,7 +1401,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1277,7 +1427,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-grelax-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|grelax=1|MGR G-relax setup reuse at level 2: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|grelax=1|MGR G-relax setup reuse at level 2: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1303,7 +1453,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-coarse-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|coarse=1|MGR coarsest setup reuse: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|coarse=1|MGR coarsest setup reuse: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1329,7 +1479,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7-mgr-frelax-ilu-reuse.yml
                         ${_hypredrv_gpu_device_lazy_init_override_arg}
-                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|frelax=1|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #24"
+                        "-DREQUIRE_CONTAINS:STRING=preserving cached MGR handles across destroy|frelax=1|MGR F-relax setup reuse at level 0: reuse=1|Solving linear system #4"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             )
@@ -1346,6 +1496,69 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         endif()
 
         hypredrv_flush_batched_hypredrive_tests()
+
+        if(HYPREDRV_HAVE_HYPRE_22100_DEV0)
+            # The GEOS MGR strategy datasets keep their own input YAML in each
+            # MPI-layout directory.  Use the configured data list instead of
+            # globbing the source tree: datasets are downloaded after configure
+            # in CI and are intentionally ignored by git.
+            foreach(_dataset_name IN LISTS HYPREDRV_DATASETS)
+                # These datasets use different input arrangements and have
+                # dedicated regressions elsewhere in this file.
+                if(_dataset_name STREQUAL "compflow6k" OR
+                   _dataset_name STREQUAL "poromech2k" OR
+                   _dataset_name STREQUAL "ps3d10pt7")
+                    continue()
+                endif()
+
+                # The MHD strategy inputs use nested MGR F-relaxation, which was
+                # added on the HYPRE 3.1 development stream at develop >= 5.
+                # Keep these tests enabled for supported HYPRE builds, but do not
+                # make the older-version compatibility configurations fail on a
+                # feature they cannot provide.
+                if(_dataset_name MATCHES "^mhd" AND NOT HYPREDRV_HAVE_HYPRE_30100_DEV5)
+                    message(STATUS
+                        "Skipping ${_dataset_name} dataset regressions: "
+                        "nested MGR F-relaxation requires HYPRE >= 3.1.0 develop >= 5")
+                    continue()
+                endif()
+
+                foreach(_dataset_variant IN ITEMS np1 np4)
+                    if(_dataset_variant STREQUAL "np1")
+                        set(_dataset_num_procs 1)
+                    else()
+                        set(_dataset_num_procs 4)
+                    endif()
+
+                    set(_dataset_variant_dir
+                        "${CMAKE_SOURCE_DIR}/data/${_dataset_name}/${_dataset_variant}")
+                    string(MAKE_C_IDENTIFIER
+                        "${_dataset_name}_${_dataset_variant}" _dataset_test_suffix)
+                    set(_dataset_test_name
+                        "hypredrive_test_${_dataset_test_suffix}")
+
+                    add_executable_test(${_dataset_test_name} hypredrive-cli
+                        ${_dataset_num_procs}
+                        WORKING_DIRECTORY "${_dataset_variant_dir}"
+                        ARGS input.yml
+                        REQUIRE_CONTAINS "Solving linear system #0"
+                    )
+                    set_tests_properties(${_dataset_test_name}
+                        PROPERTIES
+                            LABELS "integration;hypredrive;dataset"
+                    )
+                endforeach()
+            endforeach()
+        else()
+            message(STATUS
+                "Skipping GEOS MGR dataset tests: HYPRE >= 2.21.0 is required")
+        endif()
+        unset(_dataset_variant_dir)
+        unset(_dataset_variant)
+        unset(_dataset_num_procs)
+        unset(_dataset_name)
+        unset(_dataset_test_suffix)
+        unset(_dataset_test_name)
 
         # Test main.c help/usage/error branches
         # Note: --help exits with 0, so we need to allow that

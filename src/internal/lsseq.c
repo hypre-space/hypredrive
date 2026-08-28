@@ -370,173 +370,145 @@ LSSeqDataDestroy(LSSeqData *seq)
    memset(seq, 0, sizeof(*seq));
 }
 
+/* Reads and validates the mandatory LSSeq info header and its payload. The
+ * stream is closed on every failure path, matching the caller's contract. */
 static int
-LSSeqDataLoad(const char *filename, LSSeqData *seq)
+LSSeqLoadInfoHeader(FILE *fp, LSSeqData *seq, const char *filename, uint64_t info_offset)
 {
-   FILE          *fp          = NULL;
-   size_t         n_sys_parts = 0;
-   const uint64_t info_offset = (uint64_t)sizeof(LSSeqHeader);
+   uint64_t expected_min_part_offset = info_offset + (uint64_t)sizeof(LSSeqInfoHeader);
+   uint64_t expected_payload_end     = 0;
 
-   /* GCOVR_EXCL_BR_START */
-   if (!filename || !seq) /* GCOVR_EXCL_BR_STOP */
+   if (!(seq->header.flags & LSSEQ_FLAG_HAS_INFO))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid arguments to LSSeqDataLoad");
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Missing mandatory LSSeq info header in '%s'", filename);
       return 0;
    }
 
-   memset(seq, 0, sizeof(*seq));
-   fp = fopen(filename, "rb");
-   /* GCOVR_EXCL_BR_START */
-   if (!fp) /* GCOVR_EXCL_BR_STOP */
+   if (seq->header.offset_part_meta < expected_min_part_offset)
    {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid LSSeq info offsets in '%s' (offset_part_meta=%llu)",
+                           filename, (unsigned long long)seq->header.offset_part_meta);
       return 0;
    }
 
    /* GCOVR_EXCL_BR_START */
-   if (!LSSeqReadAt(fp, 0, &seq->header, sizeof(seq->header), "lsseq header"))
+   if (!LSSeqReadAt(fp, info_offset, &seq->info_header, sizeof(seq->info_header),
+                    "info header"))
    /* GCOVR_EXCL_BR_STOP */
    {
       fclose(fp);
       return 0;
    }
 
-   if (!LSSeqValidateHeader(&seq->header, filename))
+   /* GCOVR_EXCL_BR_START */
+   if (seq->info_header.magic != LSSEQ_INFO_MAGIC ||
+       seq->info_header.version != LSSEQ_INFO_VERSION)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid LSSeq info header in '%s' (magic=%llu version=%u)",
+                           filename, (unsigned long long)seq->info_header.magic,
+                           seq->info_header.version);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (seq->info_header.endian_tag != UINT32_C(0x01020304)) /* GCOVR_EXCL_BR_STOP */
+   {
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Unsupported LSSeq info endianness tag in '%s' "
+                           "(tag=0x%08x)",
+                           filename, (unsigned int)seq->info_header.endian_tag);
+      return 0;
+   }
+
+   /* Bound payload size to avoid accidental huge allocations. */
+   /* GCOVR_EXCL_BR_START */
+   if (seq->info_header.payload_size > (uint64_t)LSSEQ_INFO_PAYLOAD_MAX_BYTES ||
+       seq->info_header.payload_size > (uint64_t)SIZE_MAX - 1u)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("LSSeq info payload too large in '%s' (%llu bytes)", filename,
+                           (unsigned long long)seq->info_header.payload_size);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqCheckedAddU64(expected_min_part_offset,
+                           (uint64_t)seq->info_header.payload_size, &expected_payload_end,
+                           "info payload end"))
+   /* GCOVR_EXCL_BR_STOP */
    {
       fclose(fp);
       return 0;
    }
-
+   if (seq->header.offset_part_meta < expected_payload_end)
    {
-      uint64_t expected_min_part_offset = info_offset + (uint64_t)sizeof(LSSeqInfoHeader);
-      uint64_t expected_payload_end     = 0;
+      fclose(fp);
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("LSSeq info payload overlaps part metadata in '%s' "
+                           "(payload_end=%llu part_off=%llu)",
+                           filename, (unsigned long long)expected_payload_end,
+                           (unsigned long long)seq->header.offset_part_meta);
+      return 0;
+   }
 
-      if (!(seq->header.flags & LSSEQ_FLAG_HAS_INFO))
+   /* GCOVR_EXCL_BR_START */
+   if (seq->info_header.payload_size > 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      uint64_t hash          = UINT64_C(1469598103934665603);
+      seq->info_payload_size = (size_t)seq->info_header.payload_size;
+      seq->info_payload      = (char *)malloc(seq->info_payload_size + 1u);
+      /* GCOVR_EXCL_BR_START */
+      if (!seq->info_payload) /* GCOVR_EXCL_BR_STOP */
       {
          fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Missing mandatory LSSeq info header in '%s'", filename);
-         return 0;
-      }
-
-      if (seq->header.offset_part_meta < expected_min_part_offset)
-      {
-         fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd(
-            "Invalid LSSeq info offsets in '%s' (offset_part_meta=%llu)", filename,
-            (unsigned long long)seq->header.offset_part_meta);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate LSSeq info payload (%zu bytes)",
+                              seq->info_payload_size);
          return 0;
       }
 
       /* GCOVR_EXCL_BR_START */
-      if (!LSSeqReadAt(fp, info_offset, &seq->info_header, sizeof(seq->info_header),
-                       "info header"))
+      if (!LSSeqReadAt(fp, expected_min_part_offset, seq->info_payload,
+                       seq->info_payload_size, "info payload"))
       /* GCOVR_EXCL_BR_STOP */
       {
          fclose(fp);
+         LSSeqDataDestroy(seq);
          return 0;
       }
+      seq->info_payload[seq->info_payload_size] = '\0';
 
+      hash = LSSeqFNV1a64(seq->info_payload, seq->info_payload_size, hash);
       /* GCOVR_EXCL_BR_START */
-      if (seq->info_header.magic != LSSEQ_INFO_MAGIC ||
-          seq->info_header.version != LSSEQ_INFO_VERSION)
-      /* GCOVR_EXCL_BR_STOP */
+      if (hash != seq->info_header.payload_hash_fnv1a64) /* GCOVR_EXCL_BR_STOP */
       {
          fclose(fp);
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid LSSeq info header in '%s' (magic=%llu version=%u)",
-                              filename, (unsigned long long)seq->info_header.magic,
-                              seq->info_header.version);
+         hypredrv_ErrorMsgAdd("LSSeq info payload hash mismatch in '%s'", filename);
+         LSSeqDataDestroy(seq);
          return 0;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (seq->info_header.endian_tag != UINT32_C(0x01020304)) /* GCOVR_EXCL_BR_STOP */
-      {
-         fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Unsupported LSSeq info endianness tag in '%s' "
-                              "(tag=0x%08x)",
-                              filename, (unsigned int)seq->info_header.endian_tag);
-         return 0;
-      }
-
-      /* Bound payload size to avoid accidental huge allocations. */
-      /* GCOVR_EXCL_BR_START */
-      if (seq->info_header.payload_size > (uint64_t)LSSEQ_INFO_PAYLOAD_MAX_BYTES ||
-          seq->info_header.payload_size > (uint64_t)SIZE_MAX - 1u)
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("LSSeq info payload too large in '%s' (%llu bytes)",
-                              filename,
-                              (unsigned long long)seq->info_header.payload_size);
-         return 0;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqCheckedAddU64(expected_min_part_offset,
-                              (uint64_t)seq->info_header.payload_size,
-                              &expected_payload_end, "info payload end"))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         fclose(fp);
-         return 0;
-      }
-      if (seq->header.offset_part_meta < expected_payload_end)
-      {
-         fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("LSSeq info payload overlaps part metadata in '%s' "
-                              "(payload_end=%llu part_off=%llu)",
-                              filename, (unsigned long long)expected_payload_end,
-                              (unsigned long long)seq->header.offset_part_meta);
-         return 0;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (seq->info_header.payload_size > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         uint64_t hash          = UINT64_C(1469598103934665603);
-         seq->info_payload_size = (size_t)seq->info_header.payload_size;
-         seq->info_payload      = (char *)malloc(seq->info_payload_size + 1u);
-         /* GCOVR_EXCL_BR_START */
-         if (!seq->info_payload) /* GCOVR_EXCL_BR_STOP */
-         {
-            fclose(fp);
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-            hypredrv_ErrorMsgAdd("Failed to allocate LSSeq info payload (%zu bytes)",
-                                 seq->info_payload_size);
-            return 0;
-         }
-
-         /* GCOVR_EXCL_BR_START */
-         if (!LSSeqReadAt(fp, expected_min_part_offset, seq->info_payload,
-                          seq->info_payload_size, "info payload"))
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            fclose(fp);
-            LSSeqDataDestroy(seq);
-            return 0;
-         }
-         seq->info_payload[seq->info_payload_size] = '\0';
-
-         hash = LSSeqFNV1a64(seq->info_payload, seq->info_payload_size, hash);
-         /* GCOVR_EXCL_BR_START */
-         if (hash != seq->info_header.payload_hash_fnv1a64) /* GCOVR_EXCL_BR_STOP */
-         {
-            fclose(fp);
-            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("LSSeq info payload hash mismatch in '%s'", filename);
-            LSSeqDataDestroy(seq);
-            return 0;
-         }
       }
    }
+
+   return 1;
+}
+
+/* Allocates the part, pattern, system-part and timestep metadata arrays sized by
+ * the validated header. Closes the stream and reports on any failure. */
+static int
+LSSeqAllocMetadata(FILE *fp, LSSeqData *seq, size_t *n_sys_parts_out)
+{
+   size_t n_sys_parts = 0;
 
    {
       size_t part_meta_bytes = 0;
@@ -653,6 +625,60 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
          LSSeqDataDestroy(seq);
          return 0;
       }
+   }
+
+   *n_sys_parts_out = n_sys_parts;
+
+   return 1;
+}
+
+static int
+LSSeqDataLoad(const char *filename, LSSeqData *seq)
+{
+   FILE          *fp          = NULL;
+   size_t         n_sys_parts = 0;
+   const uint64_t info_offset = (uint64_t)sizeof(LSSeqHeader);
+
+   /* GCOVR_EXCL_BR_START */
+   if (!filename || !seq) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid arguments to LSSeqDataLoad");
+      return 0;
+   }
+
+   memset(seq, 0, sizeof(*seq));
+   fp = fopen(filename, "rb");
+   /* GCOVR_EXCL_BR_START */
+   if (!fp) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqReadAt(fp, 0, &seq->header, sizeof(seq->header), "lsseq header"))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      fclose(fp);
+      return 0;
+   }
+
+   if (!LSSeqValidateHeader(&seq->header, filename))
+   {
+      fclose(fp);
+      return 0;
+   }
+
+   if (!LSSeqLoadInfoHeader(fp, seq, filename, info_offset))
+   {
+      return 0;
+   }
+
+   if (!LSSeqAllocMetadata(fp, seq, &n_sys_parts))
+   {
+      return 0;
    }
 
    if (!LSSeqReadAt(fp, seq->header.offset_part_meta, seq->parts,
@@ -1475,6 +1501,99 @@ hypredrv_LSSeqReadSummary(const char *filename, int *num_systems, int *num_patte
    return 1;
 }
 
+/* Stages one part's matrix slice into the shared temporary files that
+ * hypredrv_IJMatrixReadMultipartBinary() consumes. Returns zero on failure. */
+static int
+LSSeqStageMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
+                     const uint32_t *part_order, const char *prefix, char *part_filename,
+                     size_t part_filename_size)
+{
+   uint32_t                   part_id = part_order[tmp_part_id];
+   const LSSeqPartMeta       *part    = &seq->parts[part_id];
+   const LSSeqSystemPartMeta *sys =
+      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
+   void                   *rows = NULL, *cols = NULL, *vals = NULL;
+   size_t                  rows_size = 0, cols_size = 0, vals_size = 0;
+   const LSSeqPatternMeta *pattern       = NULL;
+   size_t                  expected_size = 0;
+
+   if (sys->pattern_id >= seq->header.num_patterns)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid pattern id %u for system %d part %u", sys->pattern_id,
+                           ls_id, part_id);
+      return 0;
+   }
+   pattern = &seq->patterns[sys->pattern_id];
+   if (pattern->part_id != part_id)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd(
+         "Pattern-part mismatch for system %d part %u (pattern part=%u)", ls_id, part_id,
+         pattern->part_id);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
+                            /* GCOVR_EXCL_BR_STOP */
+                            /* GCOVR_EXCL_BR_START */
+                            &expected_size, "matrix index blob size") ||
+       /* GCOVR_EXCL_BR_STOP */
+       !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "matrix index blob"))
+   {
+      return 0;
+   }
+   if (!LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->rows_blob_offset,
+                      /* GCOVR_EXCL_BR_START */
+                      pattern->rows_blob_size, expected_size, &rows, &rows_size) ||
+       /* GCOVR_EXCL_BR_STOP */
+       !LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->cols_blob_offset,
+                      pattern->cols_blob_size, expected_size, &cols, &cols_size))
+   {
+      free(rows);
+      free(cols);
+      return 0;
+   }
+
+   if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
+                               seq->header.offset_blob_data, seq->part_blob_table,
+                               part_id, 0, sys->values_blob_offset, sys->values_blob_size,
+                               &vals, &vals_size))
+   {
+      free(rows);
+      free(cols);
+      free(vals);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
+                                /* GCOVR_EXCL_BR_STOP */
+                                tmp_part_id, ".bin"))
+   {
+      free(rows);
+      free(cols);
+      free(vals);
+      return 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqWriteMatrixPartFile(part_filename, part, pattern, rows, cols, vals))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      free(rows);
+      free(cols);
+      free(vals);
+      return 0;
+   }
+
+   free(rows);
+   free(cols);
+   free(vals);
+
+   return 1;
+}
+
 int
 hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                          HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
@@ -1544,97 +1663,8 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    }
    for (int i = 0; i < nparts && local_ok; i++)
    {
-      uint32_t                   tmp_part_id = (uint32_t)partids[i];
-      uint32_t                   part_id     = part_order[tmp_part_id];
-      const LSSeqPartMeta       *part        = &seq.parts[part_id];
-      const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
-      void                   *rows = NULL, *cols = NULL, *vals = NULL;
-      size_t                  rows_size = 0, cols_size = 0, vals_size = 0;
-      const LSSeqPatternMeta *pattern       = NULL;
-      size_t                  expected_size = 0;
-
-      if (sys->pattern_id >= seq.header.num_patterns)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid pattern id %u for system %d part %u",
-                              sys->pattern_id, ls_id, part_id);
-         local_ok = 0;
-         break;
-      }
-      pattern = &seq.patterns[sys->pattern_id];
-      if (pattern->part_id != part_id)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd(
-            "Pattern-part mismatch for system %d part %u (pattern part=%u)", ls_id,
-            part_id, pattern->part_id);
-         local_ok = 0;
-         break;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
-                               /* GCOVR_EXCL_BR_STOP */
-                               /* GCOVR_EXCL_BR_START */
-                               &expected_size, "matrix index blob size") ||
-          /* GCOVR_EXCL_BR_STOP */
-          !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES,
-                                  "matrix index blob"))
-      {
-         local_ok = 0;
-         break;
-      }
-      if (!LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, pattern->rows_blob_offset,
-                         /* GCOVR_EXCL_BR_START */
-                         pattern->rows_blob_size, expected_size, &rows, &rows_size) ||
-          /* GCOVR_EXCL_BR_STOP */
-          !LSSeqReadBlob(fp, (comp_alg_t)seq.header.codec, pattern->cols_blob_offset,
-                         pattern->cols_blob_size, expected_size, &cols, &cols_size))
-      {
-         free(rows);
-         free(cols);
-         local_ok = 0;
-         break;
-      }
-
-      if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq.header.codec,
-                                  seq.header.offset_blob_data, seq.part_blob_table,
-                                  part_id, 0, sys->values_blob_offset,
-                                  sys->values_blob_size, &vals, &vals_size))
-      {
-         free(rows);
-         free(cols);
-         free(vals);
-         local_ok = 0;
-         break;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqFormatPartFilename(part_filename, sizeof(part_filename), prefix,
-                                   /* GCOVR_EXCL_BR_STOP */
-                                   tmp_part_id, ".bin"))
-      {
-         free(rows);
-         free(cols);
-         free(vals);
-         local_ok = 0;
-         break;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqWriteMatrixPartFile(part_filename, part, pattern, rows, cols, vals))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         free(rows);
-         free(cols);
-         free(vals);
-         local_ok = 0;
-         break;
-      }
-
-      free(rows);
-      free(cols);
-      free(vals);
+      local_ok = LSSeqStageMatrixPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
+                                      prefix, part_filename, sizeof(part_filename));
    }
 
 stage_sync:
@@ -1823,6 +1853,119 @@ cleanup:
    return ok;
 }
 
+/* Stages one part's dofmap slice into the shared temporary file that
+ * hypredrv_IntArrayParRead() consumes. Returns zero on any local failure. */
+static int
+LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
+                     const uint32_t *part_order, const char *prefix, char *part_filename,
+                     size_t part_filename_size)
+{
+   uint32_t                   part_id = part_order[tmp_part_id];
+   const LSSeqSystemPartMeta *sys =
+      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
+   int32_t *dof_data = NULL;
+   size_t   dof_size = 0;
+   FILE    *out      = NULL;
+
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
+                                /* GCOVR_EXCL_BR_STOP */
+                                tmp_part_id, NULL))
+   {
+      return 0;
+   }
+   out = hypredrv_FopenCreateRestricted(part_filename, 0, 0);
+   if (!out) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not create dofmap temporary part '%s'", part_filename);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (sys->dof_num_entries > 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      size_t expected_size = 0;
+      /* GCOVR_EXCL_BR_START */
+      if (!LSSeqCheckedMulSize((size_t)sys->dof_num_entries, sizeof(int32_t),
+                               /* GCOVR_EXCL_BR_STOP */
+                               /* GCOVR_EXCL_BR_START */
+                               &expected_size, "dof payload size") ||
+          /* GCOVR_EXCL_BR_STOP */
+          !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "dof payload"))
+      {
+         fclose(out);
+         return 0;
+      }
+      /* GCOVR_EXCL_BR_START */
+      if (!LSSeqReadPartBlobSlice(
+             /* GCOVR_EXCL_BR_STOP */
+             fp, (comp_alg_t)seq->header.codec, seq->header.offset_blob_data,
+             seq->part_blob_table, part_id, 2, sys->dof_blob_offset,
+             (uint64_t)expected_size, (void **)&dof_data, &dof_size))
+      {
+         fclose(out);
+         free(dof_data);
+         return 0;
+      }
+   }
+
+   fprintf(out, "%llu\n", (unsigned long long)sys->dof_num_entries);
+   for (uint64_t j = 0; j < sys->dof_num_entries; j++)
+   {
+      /* GCOVR_EXCL_BR_START */
+      int value = dof_data ? (int)dof_data[j] : 0;
+      /* GCOVR_EXCL_BR_STOP */
+      fprintf(out, "%d\n", value);
+   }
+   fclose(out);
+   free(dof_data);
+
+   return 1;
+}
+
+/* Prepares the per-rank staging state for a dofmap read: this rank's part ids,
+ * the stored-to-runtime part order, the open sequence file and the shared
+ * temporary prefix. Returns 0 on any local failure. */
+static int
+LSSeqPrepareDofmapStaging(MPI_Comm comm, const LSSeqData *seq, int ls_id,
+                          const char *filename, int **partids, int *nparts,
+                          uint32_t **part_order, FILE **fp, char *prefix,
+                          size_t prefix_size)
+{
+   int myid = 0;
+
+   if (!LSSeqLocalPartIDs(comm, seq->header.num_parts, partids, nparts))
+   /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+   if (!LSSeqBuildPartOrder(seq, part_order)) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+
+   *fp = fopen(filename, "rb");
+   if (!*fp) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
+
+      return 0;
+   }
+
+   prefix[0] = '\0';
+   MPI_Comm_rank(comm, &myid);
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, prefix_size))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      return 0;
+   }
+
+   return 1;
+}
+
 int
 hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                          IntArray **dofmap_ptr)
@@ -1834,7 +1977,6 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    int       nparts                      = 0;
    char      prefix[MAX_FILENAME_LENGTH] = {0};
    char      part_filename[MAX_FILENAME_LENGTH];
-   int       myid     = 0;
    int       local_ok = 1;
    int       ok       = 0;
 
@@ -1875,32 +2017,8 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
       goto stage_sync;
    }
 
-   if (!LSSeqLocalPartIDs(comm, seq.header.num_parts, &partids, &nparts))
-   /* GCOVR_EXCL_BR_LINE */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-   if (!LSSeqBuildPartOrder(&seq, &part_order)) /* GCOVR_EXCL_BR_LINE */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   fp = fopen(filename, "rb");
-   if (!fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   prefix[0] = '\0';
-   MPI_Comm_rank(comm, &myid);
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, sizeof(prefix)))
-   /* GCOVR_EXCL_BR_STOP */
+   if (!LSSeqPrepareDofmapStaging(comm, &seq, ls_id, filename, &partids, &nparts,
+                                  &part_order, &fp, prefix, sizeof(prefix)))
    {
       local_ok = 0;
       goto stage_sync;
@@ -1908,72 +2026,8 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
 
    for (int i = 0; i < nparts && local_ok; i++)
    {
-      uint32_t                   tmp_part_id = (uint32_t)partids[i];
-      uint32_t                   part_id     = part_order[tmp_part_id];
-      const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
-      int32_t *dof_data = NULL;
-      size_t   dof_size = 0;
-      FILE    *out      = NULL;
-
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqFormatPartFilename(part_filename, sizeof(part_filename), prefix,
-                                   /* GCOVR_EXCL_BR_STOP */
-                                   tmp_part_id, NULL))
-      {
-         local_ok = 0;
-         break;
-      }
-      out = hypredrv_FopenCreateRestricted(part_filename, 0, 0);
-      if (!out) /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAdd("Could not create dofmap temporary part '%s'",
-                              part_filename);
-         local_ok = 0;
-         break;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (sys->dof_num_entries > 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         size_t expected_size = 0;
-         /* GCOVR_EXCL_BR_START */
-         if (!LSSeqCheckedMulSize((size_t)sys->dof_num_entries, sizeof(int32_t),
-                                  /* GCOVR_EXCL_BR_STOP */
-                                  /* GCOVR_EXCL_BR_START */
-                                  &expected_size, "dof payload size") ||
-             /* GCOVR_EXCL_BR_STOP */
-             !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "dof payload"))
-         {
-            fclose(out);
-            local_ok = 0;
-            break;
-         }
-         /* GCOVR_EXCL_BR_START */
-         if (!LSSeqReadPartBlobSlice(
-                /* GCOVR_EXCL_BR_STOP */
-                fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
-                seq.part_blob_table, part_id, 2, sys->dof_blob_offset,
-                (uint64_t)expected_size, (void **)&dof_data, &dof_size))
-         {
-            fclose(out);
-            free(dof_data);
-            local_ok = 0;
-            break;
-         }
-      }
-
-      fprintf(out, "%llu\n", (unsigned long long)sys->dof_num_entries);
-      for (uint64_t j = 0; j < sys->dof_num_entries; j++)
-      {
-         /* GCOVR_EXCL_BR_START */
-         int value = dof_data ? (int)dof_data[j] : 0;
-         /* GCOVR_EXCL_BR_STOP */
-         fprintf(out, "%d\n", value);
-      }
-      fclose(out);
-      free(dof_data);
+      local_ok = LSSeqStageDofmapPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
+                                      prefix, part_filename, sizeof(part_filename));
    }
 
 stage_sync:

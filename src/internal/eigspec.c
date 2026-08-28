@@ -466,6 +466,85 @@ hypredrv_EigSpecComputeSymmetric(int n, double *A_cm, int want_vectors, double *
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
+/* Applies the preconditioner to the dense operator so the reported spectrum is
+ * that of the preconditioned system rather than of A alone. */
+static uint32_t
+EigSpecApplyPreconditioner(HYPRE_IJMatrix mat_A, MPI_Comm comm, void *precon_ctx,
+                           hypredrv_PreconApplyFn precon_apply, Stats *stats, int n,
+                           double **A_cm)
+{
+   HYPRE_BigInt   jlower, jupper;
+   HYPRE_IJVector t = NULL, col = NULL;
+
+   HYPRE_IJMatrixGetLocalRange(mat_A, &jlower, &jupper, &jlower, &jupper);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, &t);
+   HYPRE_IJVectorSetObjectType(t, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(t, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorAssemble(t);
+   HYPRE_IJVectorCreate(comm, jlower, jupper, &col);
+   HYPRE_IJVectorSetObjectType(col, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(col, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorAssemble(col);
+
+   double *B_cm = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
+   if (!B_cm)
+   {
+      HYPRE_IJVectorDestroy(t);
+      HYPRE_IJVectorDestroy(col);
+      free(*A_cm);
+      *A_cm = NULL;
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate %zu bytes for preconditioned dense "
+                           "matrix",
+                           (size_t)n * (size_t)n * sizeof(double));
+      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+      return hypredrv_ErrorCodeGet();
+   }
+   int loc_n = (int)(jupper - jlower + 1);
+   for (int i = 0; i < n; i++)
+   {
+      /* Set t to A(:,i) using A_cm and apply preconditioner solve: col = M^{-1} t */
+      void           *obj_t, *obj_c;
+      HYPRE_ParVector par_t, par_c;
+      HYPRE_IJVectorGetObject(t, &obj_t);
+      par_t                 = (HYPRE_ParVector)obj_t;
+      hypre_Vector *v_loc_t = hypre_ParVectorLocalVector(par_t);
+      double       *tdata   = hypre_VectorData(v_loc_t);
+      for (int r = 0; r < loc_n; r++) tdata[r] = (*A_cm)[(int)(jlower) + r + i * n];
+
+      HYPRE_IJVectorGetObject(col, &obj_c);
+      par_c                 = (HYPRE_ParVector)obj_c;
+      hypre_Vector *v_loc_c = hypre_ParVectorLocalVector(par_c);
+      double       *cdata   = hypre_VectorData(v_loc_c);
+      for (int r = 0; r < loc_n; r++) cdata[r] = 0.0;
+
+      if (precon_apply)
+      {
+         precon_apply(precon_ctx, (void *)t, (void *)col);
+      }
+
+      for (int r = 0; r < loc_n; r++)
+      {
+         int global_r           = (int)jlower + r;
+         B_cm[global_r + i * n] = cdata[r];
+      }
+   }
+
+   /* Each rank filled only the rows it owns (disjoint ranges), so a SUM reduction
+    * assembles the full preconditioned operator on every rank. Without this, each
+    * rank would run LAPACK on a matrix whose non-local rows are zero, producing
+    * silently wrong eigenvalues in parallel. */
+   MPI_Allreduce(MPI_IN_PLACE, B_cm, n * n, MPI_DOUBLE, MPI_SUM, comm);
+
+   free(*A_cm);
+   *A_cm = B_cm;
+
+   HYPRE_IJVectorDestroy(t);
+   HYPRE_IJVectorDestroy(col);
+
+   return 0;
+}
+
 uint32_t
 hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ctx,
                         hypredrv_PreconApplyFn precon_apply, Stats *stats)
@@ -514,73 +593,13 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
    /* Build preconditioned dense matrix B = M^{-1} A if requested */
    if (eargs->preconditioned)
    {
-      HYPRE_BigInt   jlower, jupper;
-      HYPRE_IJVector t = NULL, col = NULL;
+      uint32_t precon_rc = EigSpecApplyPreconditioner(mat_A, comm, precon_ctx,
+                                                      precon_apply, stats, n, &A_cm);
 
-      HYPRE_IJMatrixGetLocalRange(mat_A, &jlower, &jupper, &jlower, &jupper);
-      HYPRE_IJVectorCreate(comm, jlower, jupper, &t);
-      HYPRE_IJVectorSetObjectType(t, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(t, HYPRE_MEMORY_HOST);
-      HYPRE_IJVectorAssemble(t);
-      HYPRE_IJVectorCreate(comm, jlower, jupper, &col);
-      HYPRE_IJVectorSetObjectType(col, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(col, HYPRE_MEMORY_HOST);
-      HYPRE_IJVectorAssemble(col);
-
-      double *B_cm = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
-      if (!B_cm)
+      if (precon_rc)
       {
-         HYPRE_IJVectorDestroy(t);
-         HYPRE_IJVectorDestroy(col);
-         free(A_cm);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate %zu bytes for preconditioned dense "
-                              "matrix",
-                              (size_t)n * (size_t)n * sizeof(double));
-         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
-         return hypredrv_ErrorCodeGet();
+         return precon_rc;
       }
-      int loc_n = (int)(jupper - jlower + 1);
-      for (int i = 0; i < n; i++)
-      {
-         /* Set t to A(:,i) using A_cm and apply preconditioner solve: col = M^{-1} t */
-         void           *obj_t, *obj_c;
-         HYPRE_ParVector par_t, par_c;
-         HYPRE_IJVectorGetObject(t, &obj_t);
-         par_t                 = (HYPRE_ParVector)obj_t;
-         hypre_Vector *v_loc_t = hypre_ParVectorLocalVector(par_t);
-         double       *tdata   = hypre_VectorData(v_loc_t);
-         for (int r = 0; r < loc_n; r++) tdata[r] = A_cm[(int)(jlower) + r + i * n];
-
-         HYPRE_IJVectorGetObject(col, &obj_c);
-         par_c                 = (HYPRE_ParVector)obj_c;
-         hypre_Vector *v_loc_c = hypre_ParVectorLocalVector(par_c);
-         double       *cdata   = hypre_VectorData(v_loc_c);
-         for (int r = 0; r < loc_n; r++) cdata[r] = 0.0;
-
-         if (precon_apply)
-         {
-            precon_apply(precon_ctx, (void *)t, (void *)col);
-         }
-
-         for (int r = 0; r < loc_n; r++)
-         {
-            int global_r           = (int)jlower + r;
-            B_cm[global_r + i * n] = cdata[r];
-         }
-      }
-
-      /* Each rank filled only the rows it owns (disjoint ranges), so a SUM reduction
-       * assembles the full preconditioned operator on every rank. Without this, each
-       * rank would run LAPACK on a matrix whose non-local rows are zero, producing
-       * silently wrong eigenvalues in parallel. */
-      MPI_Allreduce(MPI_IN_PLACE, B_cm, n * n, MPI_DOUBLE, MPI_SUM, comm);
-
-      free(A_cm);
-      A_cm = B_cm;
-
-      HYPRE_IJVectorDestroy(t);
-      HYPRE_IJVectorDestroy(col);
    }
 
    if (eargs->hermitian)

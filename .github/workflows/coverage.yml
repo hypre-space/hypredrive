@@ -67,9 +67,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v1
+          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v1
+            datasets-v2-
 
       - name: Build HYPRE
         id: build-hypre
@@ -99,14 +99,10 @@ jobs:
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
 
-      - name: Fetch datasets (optional)
+      - name: Fetch datasets
         run: |
           set -euxo pipefail
-          if [ ! -d "data/ps3d10pt7" ] || [ -z "$(ls -A data/ps3d10pt7 2>/dev/null)" ]; then
-            cmake --build $BUILD_DIR --target data --parallel
-          else
-            echo "Datasets already cached, skipping download"
-          fi
+          cmake --build "$BUILD_DIR" --target data --parallel
 
       - name: Generate coverage report
         env:
