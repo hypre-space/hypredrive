@@ -10,6 +10,10 @@
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#endif
 #include "internal/containers.h"
 
 /*-----------------------------------------------------------------------------
@@ -417,6 +421,13 @@ void
 hypredrv_SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 {
    const char *last_slash = strrchr(filename, '/');
+#ifdef _WIN32
+   const char *last_backslash = strrchr(filename, '\\');
+   if (last_backslash && (!last_slash || last_backslash > last_slash))
+   {
+      last_slash = last_backslash;
+   }
+#endif
    char       *dirname    = NULL;
    char       *basename   = NULL;
 
@@ -485,6 +496,76 @@ hypredrv_CombineFilename(const char *dirname, const char *basename, char **filen
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_Realpath
+ *
+ * Resolve an existing path and return a newly allocated canonical spelling.
+ * MinGW does not provide the POSIX realpath(path, NULL) extension, so use the
+ * corresponding CRT routine there and normalize its directory separators for
+ * the path-security checks shared with Unix.
+ *-----------------------------------------------------------------------------*/
+
+char *
+hypredrv_Realpath(const char *path)
+{
+   if (!path)
+   {
+      return NULL;
+   }
+
+#ifdef _WIN32
+   if (_access(path, 0) != 0)
+   {
+      return NULL;
+   }
+
+   char *resolved = _fullpath(NULL, path, 0);
+   if (resolved)
+   {
+      for (char *p = resolved; *p; p++)
+      {
+         if (*p == '\\')
+         {
+            *p = '/';
+         }
+      }
+   }
+   return resolved;
+#else
+   return realpath(path, NULL);
+#endif
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_Mkdtemp
+ *
+ * Create a unique temporary directory from a template ending in XXXXXX.
+ *-----------------------------------------------------------------------------*/
+
+char *
+hypredrv_Mkdtemp(char *path_template)
+{
+   if (!path_template)
+   {
+      return NULL;
+   }
+
+#ifdef _WIN32
+   size_t length = strlen(path_template);
+   if (length < 6 || strcmp(path_template + length - 6, "XXXXXX") != 0)
+   {
+      return NULL;
+   }
+   if (_mktemp_s(path_template, length + 1) != 0 || _mkdir(path_template) != 0)
+   {
+      return NULL;
+   }
+   return path_template;
+#else
+   return mkdtemp(path_template);
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_IsYAMLFilename
  *
  * Returns true if string is a filename (no spaces) with a YAML extension
@@ -525,10 +606,22 @@ hypredrv_PathIsUnderRoot(const char *path, const char *root)
    }
 
    size_t root_len = strlen(root);
-   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   if (root_len == 0 ||
+#ifdef _WIN32
+       _strnicmp(path, root, root_len) != 0
+#else
+       strncmp(path, root, root_len) != 0
+#endif
+   )
    {
       return false;
    }
 
-   return (path[root_len] == '\0' || path[root_len] == '/') != 0;
+   return (path[root_len] == '\0' || path[root_len] == '/' ||
+#ifdef _WIN32
+           path[root_len] == '\\'
+#else
+           0
+#endif
+           ) != 0;
 }

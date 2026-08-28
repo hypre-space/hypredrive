@@ -246,7 +246,11 @@ endif()
 
 # Link math library as PUBLIC so static consumers that also link static HYPRE
 # receive libm after transitive dependencies (required in compatibility builds).
-target_link_libraries(HYPREDRV PUBLIC m)
+# Windows toolchains provide the math functions through the C runtime and do not
+# have a separate libm to link.
+if(NOT WIN32)
+    target_link_libraries(HYPREDRV PUBLIC m)
+endif()
 
 if(UNIX AND NOT APPLE)
     # Guard against regressions where static consumers lose libm and fail link.

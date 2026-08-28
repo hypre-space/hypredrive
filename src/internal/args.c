@@ -1335,7 +1335,7 @@ LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_si
       goto cleanup;
    }
 
-   root_dir = realpath(dirname, NULL);
+   root_dir = hypredrv_Realpath(dirname);
    if (!root_dir)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -1343,7 +1343,7 @@ LoadResolvedConfigPath(const char *candidate, char *cfg_path, size_t cfg_path_si
       goto cleanup;
    }
 
-   resolved = realpath(candidate, NULL);
+   resolved = hypredrv_Realpath(candidate);
    if (!resolved)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);

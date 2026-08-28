@@ -58,6 +58,8 @@ FILE *hypredrv_FopenCreateRestricted(const char *path, int append, int binary);
 int   hypredrv_ComputeNumberOfDigits(int);
 void  hypredrv_SplitFilename(const char *, char **, char **);
 void  hypredrv_CombineFilename(const char *, const char *, char **);
+char *hypredrv_Realpath(const char *);
+char *hypredrv_Mkdtemp(char *);
 bool  hypredrv_IsYAMLFilename(const char *);
 bool  hypredrv_PathIsUnderRoot(const char *, const char *);
 

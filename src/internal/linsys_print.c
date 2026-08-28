@@ -18,6 +18,14 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+#define HYPREDRV_MKDIR(path, mode) _mkdir(path)
+#define HYPREDRV_RMDIR(path) _rmdir(path)
+#else
+#define HYPREDRV_MKDIR(path, mode) mkdir(path, mode)
+#define HYPREDRV_RMDIR(path) rmdir(path)
+#endif
 #include "internal/error.h"
 #include "internal/linsys.h"
 #include "logging.h"
@@ -1359,7 +1367,7 @@ PrintDataNextSeriesDir(char *run_dir, size_t run_dir_size)
    struct stat st;
    if (stat(root, &st) != 0)
    {
-      (void)mkdir(root, 0775);
+      (void)HYPREDRV_MKDIR(root, 0775);
    }
 
    int  max_idx = -1;
@@ -1388,7 +1396,7 @@ PrintDataNextSeriesDir(char *run_dir, size_t run_dir_size)
    /* GCOVR_EXCL_BR_START */
    if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
    {
-      (void)mkdir(run_dir, 0775);
+      (void)HYPREDRV_MKDIR(run_dir, 0775);
    }
 }
 
@@ -2030,7 +2038,8 @@ PrintSystemEnsureDir(const char *path)
             if (stat(current, &st) != 0)
             {
                /* GCOVR_EXCL_BR_START */
-               if (mkdir(current, 0775) != 0 && errno != EEXIST) /* GCOVR_EXCL_BR_STOP */
+               if (HYPREDRV_MKDIR(current, 0775) != 0 &&
+                   errno != EEXIST) /* GCOVR_EXCL_BR_STOP */
                {
                   return 0;
                }
@@ -2201,6 +2210,43 @@ PrintSystemRemoveTree(const char *path)
       return 0; /* GCOVR_EXCL_LINE */
    }
 
+#ifdef _WIN32
+   DIR *dir = opendir(path);
+   /* Windows does not provide the POSIX open-directory flags or fdopendir. */
+   if (!dir)
+   {
+      if (errno == ENOENT)
+      {
+         return 1; /* GCOVR_EXCL_LINE */
+      }
+      return (remove(path) == 0) || (errno == ENOENT);
+   }
+
+   int                  ok    = 1;
+   const struct dirent *entry = NULL;
+   while (ok && (entry = readdir(dir)) != NULL)
+   {
+      if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+      {
+         continue;
+      }
+
+      char child[2 * MAX_FILENAME_LENGTH];
+      if (!PrintSystemPathJoin(child, sizeof(child), path, entry->d_name))
+      {
+         ok = 0;
+         break;
+      }
+      ok = PrintSystemRemoveTree(child);
+   }
+   closedir(dir);
+
+   if (!ok)
+   {
+      return 0;
+   }
+   return (HYPREDRV_RMDIR(path) == 0) || (errno == ENOENT);
+#else
    /* Open directory without following symlinks (avoids lstat+unlink TOCTOU). */
    int dfd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
    /* GCOVR_EXCL_BR_START */
@@ -2254,6 +2300,7 @@ PrintSystemRemoveTree(const char *path)
    /* GCOVR_EXCL_BR_START */
    return (rmdir(path) == 0) || (errno == ENOENT);
    /* GCOVR_EXCL_BR_STOP */
+#endif
 }
 
 /* Chooses the ls_NNNNN leaf beneath `base_dir`. In overwrite mode the index

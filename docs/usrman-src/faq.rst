@@ -50,7 +50,9 @@ execution.
 Can I compile `hypredrive` on Windows machines?
 -----------------------------------------------
 
-No. The project does not currently plan to support Windows.
+Yes. Windows builds are supported with MinGW-w64 and Microsoft MPI. The tested
+binary distribution is the x86_64 Julia artifact; see :ref:`Installation` for
+the source-build requirements and :ref:`Interfaces_Julia` for artifact details.
 
 How do I debug solver failures?
 -------------------------------
