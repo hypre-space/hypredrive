@@ -201,6 +201,9 @@ jobs, with one matrix entry per runner and MPI flavor.  The Julia BinaryBuilder
 recipe may cross-build its supported target list from one Linux job.  A single
 workflow can finish with one collector job that depends on every build job,
 verifies the complete matrix, and uploads all artifacts to the GitHub Release.
+For pull-request runs, the shared ``Generate Artifacts`` label starts both
+packaging workflows; ``Run Python Wheels`` and ``Run Julia Artifacts`` remain
+available for selective reruns.
 The current repository keeps Python and Julia packaging workflows separate
 because their build systems differ; each tag-triggered collector uploads to the
 same release.  If they are consolidated later, use one shared collector rather

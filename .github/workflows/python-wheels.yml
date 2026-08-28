@@ -26,11 +26,17 @@ jobs:
         github.event_name == 'push' ||
         (
           github.event.action == 'labeled' &&
-          github.event.label.name == 'Run Python Wheels'
+          (
+            github.event.label.name == 'Run Python Wheels' ||
+            github.event.label.name == 'Generate Artifacts'
+          )
         ) ||
         (
           github.event.action != 'labeled' &&
-          contains(github.event.pull_request.labels.*.name, 'Run Python Wheels')
+          (
+            contains(github.event.pull_request.labels.*.name, 'Run Python Wheels') ||
+            contains(github.event.pull_request.labels.*.name, 'Generate Artifacts')
+          )
         )
       }}
     name: ${{ matrix.os }} | ${{ matrix.arch }} | ${{ matrix.mpi_flavor }}
