@@ -15,7 +15,8 @@
 
 static int      g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
 static bool     g_hypredrv_log_stdout = false;
-static MPI_Comm g_last_log_comm       = MPI_COMM_NULL;
+static MPI_Comm g_last_log_comm;
+static bool     g_last_log_comm_valid = false;
 static int      g_last_log_rank       = -1;
 
 static void LogVf(int level, int mypid, const char *object_name, int ls_id,
@@ -121,7 +122,7 @@ hypredrv_LogReset(void)
 {
    g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
    g_hypredrv_log_stdout = false;
-   g_last_log_comm       = MPI_COMM_NULL;
+   g_last_log_comm_valid = false;
    g_last_log_rank       = -1;
 }
 
@@ -168,7 +169,7 @@ hypredrv_LogRankFromComm(MPI_Comm comm)
       return -1;
    }
 
-   if (comm == g_last_log_comm)
+   if (g_last_log_comm_valid && comm == g_last_log_comm)
    {
       return g_last_log_rank;
    }
@@ -180,8 +181,9 @@ hypredrv_LogRankFromComm(MPI_Comm comm)
       return -1;
    }
 
-   g_last_log_comm = comm;
-   g_last_log_rank = mypid;
+   g_last_log_comm       = comm;
+   g_last_log_comm_valid = true;
+   g_last_log_rank       = mypid;
 
    return mypid;
 }
