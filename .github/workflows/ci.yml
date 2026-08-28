@@ -118,7 +118,14 @@ jobs:
         run: |
           set -euxo pipefail
           mpi_inc="$(cygpath -m "${MSMPI_INC}")"
-          mpi_lib="$(cygpath -m "${MSMPI_LIB64}/msmpi.lib")"
+          mpi_lib_dir="$(cygpath -u "${MSMPI_LIB64}")"
+          if [[ -f "${mpi_lib_dir}/msmpi64.lib" ]]; then
+            mpi_lib="${mpi_lib_dir}/msmpi64.lib"
+          else
+            mpi_lib="${mpi_lib_dir}/msmpi.lib"
+          fi
+          test -f "${mpi_lib}"
+          mpi_lib="$(cygpath -m "${mpi_lib}")"
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc \
@@ -138,7 +145,15 @@ jobs:
             -DMPI_C_LIB_NAMES=msmpi \
             -DMPI_msmpi_LIBRARY="${mpi_lib}" \
             -DMPI_C_LIBRARIES="${mpi_lib}" \
-            -DMPI_C_WORKS=TRUE
+            -DMPI_C_WORKS=TRUE \
+            -DMPI_CXX_HEADER_DIR="${mpi_inc}" \
+            -DMPI_CXX_INCLUDE_DIRS="${mpi_inc}" \
+            -DMPI_CXX_LIB_NAMES=msmpi \
+            -DMPI_CXX_msmpi_LIBRARY="${mpi_lib}" \
+            -DMPI_CXX_LIBRARIES="${mpi_lib}" \
+            -DMPI_CXX_WORKS=TRUE \
+            -DMPI_C_VERSION=3.0 \
+            -DMPI_CXX_VERSION=3.0
           cmake --build build --parallel
 
   python-interface:
@@ -169,7 +184,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -283,7 +298,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -606,7 +621,7 @@ jobs:
 
       - name: Setup ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
@@ -720,7 +735,7 @@ jobs:
 
       - name: Cache ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
 
       - name: Upload logs on failure
         if: failure()
@@ -869,7 +884,7 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
           key: ${{ runner.os }}-${{ matrix.dependency.cache_key }}-${{ github.sha }}
           restore-keys: |
@@ -927,7 +942,7 @@ jobs:
           ctest "${CTEST_ARGS[@]}"
 
       - name: Cache ccache
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
 
       - name: Upload logs on failure
         if: failure()
@@ -969,14 +984,14 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-mixedint-
 
       - name: Cache datasets
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: data
           key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}

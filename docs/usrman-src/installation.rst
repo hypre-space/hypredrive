@@ -22,8 +22,8 @@ Prerequisites
 Windows builds are supported with a MinGW-w64 toolchain and Microsoft MPI. Install the
 Microsoft MPI SDK and runtime, CMake, Ninja, and the x86_64 MinGW-w64 compiler. The
 64-bit Microsoft MPI import library must be visible to CMake. The Windows Julia
-artifact is the simplest option when a source build is not required; see
-:ref:`Interfaces_Julia`.
+artifact is a separate packaging path for Julia users, not a prerequisite for
+native C/C++ builds; see :ref:`Interfaces_Julia`.
 
 .. note::
 

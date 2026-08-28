@@ -24,6 +24,26 @@ function(_hypredrv_set_cache_bool_default var_name value doc)
     endif()
 endfunction()
 
+function(_hypredrv_seed_msmpi_library)
+    if(NOT WIN32 OR NOT DEFINED ENV{MSMPI_LIB64} OR MPI_msmpi_LIBRARY)
+        return()
+    endif()
+
+    file(TO_CMAKE_PATH "$ENV{MSMPI_LIB64}" _hypredrv_msmpi_lib_dir)
+    find_file(_hypredrv_msmpi_library
+        NAMES msmpi64.lib msmpi.lib
+        HINTS "${_hypredrv_msmpi_lib_dir}"
+        NO_DEFAULT_PATH)
+    if(_hypredrv_msmpi_library)
+        set(MPI_msmpi_LIBRARY "${_hypredrv_msmpi_library}" CACHE FILEPATH
+            "Location of the Microsoft MPI library" FORCE)
+        if(NOT DEFINED MPI_GUESS_LIBRARY_NAME)
+            set(MPI_GUESS_LIBRARY_NAME MSMPI CACHE STRING
+                "MPI implementation to prefer when locating MPI" FORCE)
+        endif()
+    endif()
+endfunction()
+
 function(_hypredrv_patch_hypre_mgr_col_lumped_bcf_leak hypre_source_dir)
     set(_hypredrv_hypre_mgr_interp_file
         "${hypre_source_dir}/src/parcsr_ls/par_mgr_interp.c")
@@ -932,6 +952,7 @@ if(HYPRE_ENABLE_DSUPERLU)
 
         include(FetchContent)
 
+        _hypredrv_seed_msmpi_library()
         find_package(MPI REQUIRED COMPONENTS C CXX)
 
         FetchContent_Declare(
@@ -1145,6 +1166,7 @@ if(NOT HYPRE_FOUND)
     include(FetchContent)
 
     # Check for MPI (required by HYPRE)
+    _hypredrv_seed_msmpi_library()
     find_package(MPI REQUIRED COMPONENTS C)
 
     # Decide whether to use autotools (hypre < 3.0.0) or CMake build

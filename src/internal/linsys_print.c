@@ -2202,6 +2202,8 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
 }
 
 #ifdef _WIN32
+static int PrintSystemRemoveTree(const char *path);
+
 static int
 PrintSystemRemoveTreeWindows(const char *path)
 {
