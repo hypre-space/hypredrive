@@ -4,7 +4,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 
 ## Bash Scripts
 
-- [check_complexity.sh](./check_complexity.sh): Tracks per-function cyclomatic complexity with `lizard` and fails when any function exceeds the allowed threshold.
+- [check_complexity.sh](./check_complexity.sh): Tracks per-function cyclomatic complexity.
 - [check_private_prefix.sh](./check_private_prefix.sh): Checks that private `libHYPREDRV` callables use the `hypredrv_` prefix.
 - [check_symbol_prefix.sh](./check_symbol_prefix.sh): Verifies that all global symbols in the built `libHYPREDRV` library use approved prefixes.
 - [compare_output.sh](./compare_output.sh): Normalizes timestamps, versions, and paths before diffing an output file against a reference output.
@@ -25,7 +25,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [analyze_statistics.py](./analyze_statistics.py): Parses statistics outputs and generates plots for iterations, timings, and related solver metrics.
 - [eigplot.py](./eigplot.py): Reads eigenvalue files and plots the spectrum with summary statistics and optional histogram or inset views.
 - [job_launcher.py](./job_launcher.py): Portable wrapper automating job submission across diverse HPC platforms.
-- [parse_logs.py](./parse_logs.py): Mode-based HypreDrive log analyzer. Use `--mode block_norms` to extract block Frobenius norms as labeled tables, Python matrices, or CSV.
+- [parse_logs.py](./parse_logs.py): hypredrive log analyzer designed for evaluating internal statistics.
 - [plot_convergence.py](./plot_convergence.py): Parses solver convergence histories and plots residual-vs-iteration data for one or more runs.
 - [pack_datasets.py](./pack_datasets.py): Creates deterministic per-dataset tarballs, checksums, and a manifest for the next Zenodo data release.
 - [spmat_reorder.py](./spmat_reorder.py): Reorders HYPRE IJ matrices by dofmap index groups and can write reordered matrices and partition info.
