@@ -428,8 +428,8 @@ hypredrv_SplitFilename(const char *filename, char **dirname_ptr, char **basename
       last_slash = last_backslash;
    }
 #endif
-   char       *dirname    = NULL;
-   char       *basename   = NULL;
+   char *dirname  = NULL;
+   char *basename = NULL;
 
    if (last_slash != NULL)
    {

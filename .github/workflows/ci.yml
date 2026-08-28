@@ -56,30 +56,90 @@ jobs:
           (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
         )
       }}
-    name: Ubuntu | Windows MinGW/MS-MPI build
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      HYPREDRV_BINARY_GIT_SHA: ${{ github.sha }}
-      HYPREDRV_BINARY_HYPRE_GIT_SHA: 341f9089807934407a52ea8324759f3af1e49a57
-      HYPREDRV_BINARY_REPOSITORY: https://github.com/${{ github.repository }}.git
+    name: Windows | MinGW-w64 | MS-MPI
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Julia
-        uses: julia-actions/setup-julia@4c0cb0fce8556fdb04a90347310e5db8b1f98fb9 # v2
+      - name: Set up MinGW-w64
+        uses: msys2/setup-msys2@v2
         with:
-          version: '1.10'
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ninja
 
-      - name: Install BinaryBuilder
-        run: julia -e 'using Pkg; Pkg.add("BinaryBuilder")'
+      - name: Install Microsoft MPI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msmpiRoot = Join-Path $env:RUNNER_TEMP 'msmpi'
+          New-Item -ItemType Directory -Force -Path $msmpiRoot | Out-Null
 
-      - name: Build Windows MinGW/MS-MPI artifact
-        run: >-
-          julia interfaces/julia/binary/build_tarballs.jl
-          x86_64-w64-mingw32
-          --verbose
-          --deploy=local
+          $sdkPath = Join-Path $msmpiRoot 'msmpisdk.msi'
+          $runtimePath = Join-Path $msmpiRoot 'msmpisetup.exe'
+          $baseUrl = 'https://download.microsoft.com/download/7/2/7/72731ebb-b63c-4170-ade7-836966263a8f'
+          Invoke-WebRequest -Uri "$baseUrl/msmpisdk.msi" -OutFile $sdkPath
+          Invoke-WebRequest -Uri "$baseUrl/msmpisetup.exe" -OutFile $runtimePath
+
+          $expectedSdkSha256 = '8ccbc77a0cfe1e30f7495a759886b4d99b2c494b9b9ad414dcda1da84c00d3fa'
+          $expectedRuntimeSha256 = '47443829114d8d8670f77af98939fe876d33eceb35d0ce4e0e85efeec4d87213'
+          if ((Get-FileHash -Algorithm SHA256 $sdkPath).Hash.ToLowerInvariant() -ne $expectedSdkSha256) {
+            throw 'MS-MPI SDK checksum mismatch'
+          }
+          if ((Get-FileHash -Algorithm SHA256 $runtimePath).Hash.ToLowerInvariant() -ne $expectedRuntimeSha256) {
+            throw 'MS-MPI runtime checksum mismatch'
+          }
+
+          $sdkInstall = Start-Process msiexec.exe -ArgumentList @('/quiet', '/passive', '/qn', '/i', $sdkPath) -Wait -PassThru
+          if ($sdkInstall.ExitCode -ne 0) {
+            throw "MS-MPI SDK installation failed with exit code $($sdkInstall.ExitCode)"
+          }
+          $runtimeInstall = Start-Process $runtimePath -ArgumentList @('-unattend') -Wait -PassThru
+          if ($runtimeInstall.ExitCode -ne 0) {
+            throw "MS-MPI runtime installation failed with exit code $($runtimeInstall.ExitCode)"
+          }
+
+          foreach ($name in @('MSMPI_BIN', 'MSMPI_INC', 'MSMPI_LIB64')) {
+            $value = [Environment]::GetEnvironmentVariable($name, 'Machine')
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "MS-MPI did not define $name"
+            }
+            Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value ([Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine'))
+
+      - name: Configure and build hypredrive
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          mpi_inc="$(cygpath -m "${MSMPI_INC}")"
+          mpi_lib="$(cygpath -m "${MSMPI_LIB64}/msmpi.lib")"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DBUILD_SHARED_LIBS=ON \
+            -DHYPRE_VERSION=v3.2.0 \
+            -DHYPREDRV_ENABLE_TESTING=OFF \
+            -DHYPREDRV_ENABLE_EXAMPLES=OFF \
+            -DHYPRE_ENABLE_MPI=ON \
+            -DHYPRE_ENABLE_FORTRAN=OFF \
+            -DHYPRE_ENABLE_CUDA=OFF \
+            -DHYPRE_ENABLE_HIP=OFF \
+            -DHYPRE_ENABLE_SYCL=OFF \
+            -DMPI_C_HEADER_DIR="${mpi_inc}" \
+            -DMPI_C_INCLUDE_DIRS="${mpi_inc}" \
+            -DMPI_C_INCLUDE_PATH="${mpi_inc}" \
+            -DMPI_C_LIB_NAMES=msmpi \
+            -DMPI_msmpi_LIBRARY="${mpi_lib}" \
+            -DMPI_C_LIBRARIES="${mpi_lib}" \
+            -DMPI_C_WORKS=TRUE
+          cmake --build build --parallel
 
   python-interface:
     if: >-

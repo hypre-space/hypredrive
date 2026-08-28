@@ -132,7 +132,6 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
 #ifndef __APPLE__
 #define _GNU_SOURCE 1
 #endif
-#include "internal/info.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -146,6 +145,7 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
+#include "internal/info.h"
 #include "internal/utils.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>

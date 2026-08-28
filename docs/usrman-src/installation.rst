@@ -27,8 +27,8 @@ artifact is the simplest option when a source build is not required; see
 
 .. note::
 
-   Windows CI currently validates the MinGW-w64/MS-MPI configuration. MSVC is not a
-   tested toolchain.
+   Windows CI validates this MinGW-w64/MS-MPI configuration on a native Windows
+   runner. MSVC is not a tested toolchain.
 
 .. _CMakeInstall:
 

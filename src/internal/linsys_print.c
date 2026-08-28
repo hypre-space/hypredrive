@@ -2201,16 +2201,10 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
    return max_idx;
 }
 
-static int
-PrintSystemRemoveTree(const char *path)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (!path || path[0] == '\0') /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-
 #ifdef _WIN32
+static int
+PrintSystemRemoveTreeWindows(const char *path)
+{
    DIR *dir = opendir(path);
    /* Windows does not provide the POSIX open-directory flags or fdopendir. */
    if (!dir)
@@ -2246,6 +2240,20 @@ PrintSystemRemoveTree(const char *path)
       return 0;
    }
    return (HYPREDRV_RMDIR(path) == 0) || (errno == ENOENT);
+}
+#endif
+
+static int
+PrintSystemRemoveTree(const char *path)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (!path || path[0] == '\0') /* GCOVR_EXCL_BR_STOP */
+   {
+      return 0; /* GCOVR_EXCL_LINE */
+   }
+
+#ifdef _WIN32
+   return PrintSystemRemoveTreeWindows(path);
 #else
    /* Open directory without following symlinks (avoids lstat+unlink TOCTOU). */
    int dfd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
