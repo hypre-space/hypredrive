@@ -117,6 +117,10 @@ A few conventions appear in the output:
    ``--help`` shows the schema in your build. It shows version-dependent options only
    when the current `hypre` version supports them.
 
+For a normal solve, pass one or more YAML filenames as positional arguments, for example
+``hypredrive-cli examples/ex1.yml``. The ``<input.yml>`` shown in the help output is the
+schema-help form and is not a literal required filename.
+
 System information is hidden by default. Pass ``-i`` or ``--info`` to print the
 detected machine and software environment. The selected HYPRE execution policy
 is printed after input configuration is resolved and whenever it changes. With

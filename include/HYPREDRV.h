@@ -376,7 +376,11 @@ extern "C"
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note It is expected that argv[1] is the name of the input file in YAML format
+    * @note In a driver-style argument vector, the YAML filename may appear anywhere
+    *       in argv (normally argv[1]); ``-a`` or ``--args`` enables subsequent
+    *       key/value overrides. In the library-style form, argv[0] may be either a
+    *       YAML filename or an in-memory YAML string, followed by optional override
+    *       pairs. An argc value of 1 is therefore valid for an in-memory YAML string.
     *
     * Example Usage:
     * @code
@@ -2111,9 +2115,9 @@ extern "C"
     * @return Returns an error code with 0 indicating success
     *
     * @note When hypredrive is built **without** `-DHYPREDRV_ENABLE_EIGSPEC=ON`,
-    * this function is a silent no-op: it prints a one-time warning to stderr on
-    * rank 0 and returns success. It is therefore safe to leave the call
-    * unconditionally in application code.
+    * this function is a no-op: it prints a one-time warning to stderr on rank 0
+    * and returns success. It is therefore safe to leave the call unconditionally
+    * in application code.
     *
     * @note When built **with** `-DHYPREDRV_ENABLE_EIGSPEC=ON`, this function
     * operates on a single MPI rank and writes eigenvalues (and optionally

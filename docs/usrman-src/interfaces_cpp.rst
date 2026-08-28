@@ -54,9 +54,8 @@ Usage
 its destructor. Methods throw ``hypredrive::error`` when the underlying C API
 returns a nonzero status. The original status is available through
 ``error::code()``. To print the C-side diagnostic for a caught exception, call
-``hypredrive::describe_error(e.code())``. Explicit
-Call ``destroy_linear_solver()`` only to release solver state before the driver
-goes out of scope.
+``hypredrive::describe_error(e.code())``. Call ``destroy_linear_solver()`` explicitly
+only to release solver state before the driver goes out of scope.
 
 Configuration
 -------------
@@ -169,6 +168,12 @@ to the generated API reference.
      - :cpp:func:`HYPREDRV_LinearSystemResetInitialGuess`
    * - ``hypredrive::driver::set_prec_matrix``
      - :cpp:func:`HYPREDRV_LinearSystemSetPrecMatrix`
+   * - ``hypredrive::driver::set_discrete_gradient``
+     - :cpp:func:`HYPREDRV_LinearSystemSetDiscreteGradient`
+   * - ``hypredrive::driver::set_discrete_curl``
+     - :cpp:func:`HYPREDRV_LinearSystemSetDiscreteCurl`
+   * - ``hypredrive::driver::set_coordinates``
+     - :cpp:func:`HYPREDRV_LinearSystemSetCoordinates`
    * - ``hypredrive::driver::set_dofmap``
      - :cpp:func:`HYPREDRV_LinearSystemSetDofmap`
    * - ``hypredrive::driver::set_interleaved_dofmap``
@@ -183,6 +188,8 @@ to the generated API reference.
      - :cpp:func:`HYPREDRV_LinearSystemPrint`
    * - ``hypredrive::driver::set_near_null_space``
      - :cpp:func:`HYPREDRV_LinearSystemSetNearNullSpace`
+   * - ``hypredrive::driver::set_coarse_schur``
+     - :cpp:func:`HYPREDRV_LinearSystemSetCoarseSchur`
    * - ``hypredrive::driver::set_null_space``
      - :cpp:func:`HYPREDRV_LinearSystemSetNullSpace`
    * - ``hypredrive::driver::get_solution_values_raw``

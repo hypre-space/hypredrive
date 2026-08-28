@@ -126,26 +126,43 @@ CMake options reference
 *Feature options*
 
 - ``-DHYPREDRV_ENABLE_EIGSPEC=ON`` — Eigenspectrum support (requires LAPACK). Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_EXPERIMENTAL=ON`` — Enable experimental features. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_TESTING=ON`` — CTest-based unit and integration tests. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_ALL_TESTS=ON`` — Force tests that are normally disabled for a
+  particular configuration. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_COVERAGE=ON`` — Coverage instrumentation. This option also enables testing, examples, and data. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_ANALYSIS=ON`` — Sanitizers and optional ``clang-tidy`` / ``cppcheck`` targets. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_DATA=ON`` — Dataset download targets (implied by testing). Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_DOCS=ON`` — Documentation targets (``docs``, ``sphinx-doc``, ``sphinx-latexpdf``). Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_EXAMPLES=ON`` — Standalone example programs under ``examples/src``. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_EXAMPLE_OMP=ON`` — OpenMP parallel assembly in example drivers. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_HWLOC=ON`` — hwloc-based topology reporting. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_CALIPER=ON`` — Caliper instrumentation. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_COMPRESSION=ON`` — Lossless compression backends and the ``hypredrive-lsseq`` utility. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_FUZZING=ON`` — Fuzzing harnesses and replay tests; this enables
+  the required testing configuration and, outside coverage builds, the analysis
+  configuration. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_CUDA=ON`` — Enable CUDA in HYPRE and bundled dependencies that support it. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_HIP=ON`` — Enable HIP in HYPRE and bundled dependencies that support it. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_SYCL=ON`` — Enable SYCL in HYPRE and bundled dependencies that support it. Default: ``OFF``.
+- ``-DHYPREDRV_SYCL_DEVICE_CODE_SPLIT=<per_source|per_kernel>`` — Select the SYCL
+  device-code split mode for an automatic HYPRE build. Default: ``per_source``.
+- ``-DHYPREDRV_SYCL_DEVICE_SELECTOR=<selector>`` — Set ``ONEAPI_DEVICE_SELECTOR`` for
+  SYCL CTest and smoke tests. Default: empty.
 - ``-DHYPREDRV_BUILD_DSUPERLU=ON`` — Fetch and build SuperLU_DIST and
   enable it in the automatic HYPRE build. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_CPP=ON`` — Build the C++ interface. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_FORTRAN=ON`` — Build the Fortran interface. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_PYTHON=ON`` — Build the Python extension as part of the top-level CMake build. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_MATLAB=ON`` — Build the MATLAB/Octave MEX interface. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_JULIA=ON`` — Build the Julia interface. Default: ``OFF``.
 
 *Option interactions*
 
 - ``HYPREDRV_ENABLE_TESTING=ON`` implies ``HYPREDRV_ENABLE_DATA=ON``.
 - ``HYPREDRV_ENABLE_COVERAGE=ON`` implies testing, examples, and data.
+- Coverage instrumentation and sanitizer analysis are mutually exclusive; when coverage is
+  enabled, sanitizer instrumentation is disabled.
 - The ``check`` smoke-test target is always available regardless of ``HYPREDRV_ENABLE_TESTING``.
 
 *Accelerator builds*
@@ -261,18 +278,9 @@ For the full CTest-based suite (requires ``-DHYPREDRV_ENABLE_TESTING=ON``):
 
     $ ctest --test-dir build --output-on-failure
 
-A passing smoke test looks like:
-
-.. code-block:: text
-
-    Running tests (equivalent to autotools make check)
-    Test project /path/to/hypredrive/build
-        Start 1: test_ex1_1proc
-    1/2 Test #1: test_ex1_1proc ....................   Passed
-        Start 2: test_ex2_4proc
-    2/2 Test #2: test_ex2_4proc ....................   Passed
-
-    100% tests passed, 2 tests passed out of 2
+The ``check`` target runs the ``examples/ex1.yml`` smoke solve when the
+``data/ps3d10pt7`` dataset is present. If the dataset is absent or empty, the target
+prints a skip message and explains how to fetch it; it does not run a solve.
 
 Troubleshooting
 ---------------

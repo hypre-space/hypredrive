@@ -69,6 +69,9 @@ Lifecycle and Setup
 - :cpp:func:`HYPREDRV_Destroy` - Destroy a hypredrive object and release its managed resources.
 - :cpp:func:`HYPREDRV_Finalize` - Auto-destroy any remaining live handles and tear down global runtime state.
 - :cpp:func:`HYPREDRV_ErrorCodeDescribe` - Print a human-readable description for a hypredrive error code.
+- :cpp:func:`HYPREDRV_ErrorCodeClear` - Clear the current error state.
+- :cpp:func:`HYPREDRV_ErrorInvalidValue` - Report an invalid argument value.
+- :cpp:func:`HYPREDRV_SafeCallHandleError` - Handle an error returned by a safe API call.
 - :cpp:func:`HYPREDRV_PrintLibInfo` - Print version and startup information for hypredrive and hypre.
 - :cpp:func:`HYPREDRV_PrintSystemInfo` - Print detected machine and software environment information.
 - :cpp:func:`HYPREDRV_PrintExitInfo` - Print shutdown information for a driver-style run.
@@ -94,12 +97,18 @@ Linear System Setup
 - :cpp:func:`HYPREDRV_LinearSystemComputeEigenspectrum` - Compute the eigenspectrum of the current matrix when enabled.
 - :cpp:func:`HYPREDRV_LinearSystemReadMatrix` - Read the system matrix from file input.
 - :cpp:func:`HYPREDRV_LinearSystemSetMatrix` - Attach a user-provided system matrix.
+- :cpp:func:`HYPREDRV_LinearSystemSetMatrixFromCSR` - Copy a CSR matrix into hypredrive-owned storage.
 - :cpp:func:`HYPREDRV_LinearSystemSetRHS` - Attach a user-provided right-hand side vector.
+- :cpp:func:`HYPREDRV_LinearSystemSetRHSFromArray` - Copy RHS values into hypredrive-owned storage.
+- :cpp:func:`HYPREDRV_LinearSystemSetDiscreteGradient` - Attach a discrete gradient operator.
+- :cpp:func:`HYPREDRV_LinearSystemSetDiscreteCurl` - Attach a discrete curl operator.
+- :cpp:func:`HYPREDRV_LinearSystemSetCoordinates` - Attach coordinate data for the linear system.
 - :cpp:func:`HYPREDRV_LinearSystemSetInitialGuess` - Set or rebuild the initial guess vector.
 - :cpp:func:`HYPREDRV_LinearSystemSetSolution` - Set the vector that receives the solver result.
 - :cpp:func:`HYPREDRV_LinearSystemSetReferenceSolution` - Set the reference solution used for error-aware workflows.
 - :cpp:func:`HYPREDRV_LinearSystemResetInitialGuess` - Restore the initial guess to its configured original state.
 - :cpp:func:`HYPREDRV_LinearSystemSetPrecMatrix` - Set the matrix used for preconditioner setup.
+- :cpp:func:`HYPREDRV_LinearSystemSetCoarseSchur` - Set a coarse-level Schur-complement matrix.
 - :cpp:func:`HYPREDRV_LinearSystemSetDofmap` - Set an explicit local degree-of-freedom map.
 - :cpp:func:`HYPREDRV_LinearSystemSetInterleavedDofmap` - Build an interleaved degree-of-freedom map.
 - :cpp:func:`HYPREDRV_LinearSystemSetContiguousDofmap` - Build a contiguous degree-of-freedom map.
@@ -114,6 +123,7 @@ Linear System Accessors
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 - :cpp:func:`HYPREDRV_LinearSystemGetSolutionValues` - Get a host pointer to the local solution values array.
+- :cpp:func:`HYPREDRV_LinearSystemGetSolutionLength` - Get the local solution-vector length.
 - :cpp:func:`HYPREDRV_LinearSystemGetSolutionNorm` - Compute a named norm of the current solution vector.
 - :cpp:func:`HYPREDRV_LinearSystemGetSolution` - Get the solution vector object.
 - :cpp:func:`HYPREDRV_LinearSystemGetRHSValues` - Get a pointer to the local RHS values array.

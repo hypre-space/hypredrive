@@ -8,9 +8,12 @@
 Fortran Interface
 =================
 
-The Fortran interface provides thin bindings to the public ``HYPREDRV_`` C API.
-It supports Fortran applications that use MPI and need hypredrive without C glue
-code.
+The Fortran interface provides thin bindings to the Fortran-compatible subset of
+the public ``HYPREDRV_`` C API. It supports Fortran applications that use MPI and
+need hypredrive without C glue code. APIs that require C pointer-to-array
+contracts not represented by this module, including the discrete gradient, curl,
+coordinate, and coarse-Schur setters, remain available through the C and C++
+interfaces.
 
 Prerequisites
 -------------
@@ -167,10 +170,11 @@ for example ``-a --solver:pcg:max_iter 50``.
 API coverage
 ------------
 
-The module provides procedures for the public ``HYPREDRV_`` functions in
-``include/HYPREDRV.h``. These procedures cover lifecycle control, errors, input, presets,
-linear systems, solvers, state vectors, statistics, annotations, and timing. The module
-also provides small Fortran helpers, such as ``HYPREDRV_Check`` and
+The module provides procedures for the Fortran-compatible public ``HYPREDRV_``
+functions in ``include/HYPREDRV.h``. These procedures cover lifecycle control,
+errors, input, presets, linear systems, solvers, state vectors, statistics,
+annotations, and timing. The module also provides small Fortran helpers, such as
+``HYPREDRV_Check`` and
 ``HYPREDRV_BigIntSize``.
 
 The Fortran interface preserves the C API ownership rules. Borrowed HYPRE objects remain

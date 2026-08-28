@@ -12,9 +12,11 @@ Input Structure (YAML)
 file. Application code can pass a YAML string to ``HYPREDRV_InputArgsParse``. Both forms
 use the same YAML structure.
 
-Most keywords are optional and have default values. The driver requires some keywords,
-such as ``linear_system``. The reference marks these keywords as `required` or
-`possibly required`, based on other settings.
+Most keywords are optional and have default values. In a file-based driver workflow,
+the ``preconditioner`` section is required; ``solver`` defaults to ``pcg`` and
+``linear_system`` must provide a file-backed system. Library callers can omit the
+``linear_system`` section when they attach in-memory matrices and vectors through the
+C API. The reference marks conditionally required keywords as `possibly required`.
 
 .. note::
 
@@ -76,16 +78,16 @@ The ``general`` section contains global settings that apply to the entire execut
   Use repetitions for benchmarks and profiles. The default is `1`.
 
 - ``dev_pool_size`` - Initial size of the umpire device memory pool. hypre ignores
-  this parameter without umpire support. The default is `8 GB`.
+  this parameter without umpire support. The default is `2 GB`.
 
 - ``uvm_pool_size`` - Initial size of the umpire unified virtual memory pool. hypre
-  ignores this parameter without umpire support. The default is `8 GB`.
+  ignores this parameter without umpire support. The default is `2 GB`.
 
 - ``host_pool_size`` - Initial size of the umpire host memory pool. hypre ignores
-  this parameter without umpire support. The default is `8 GB`.
+  this parameter without umpire support. The default is `2 GB`.
 
 - ``pinned_pool_size`` - Initial size of the umpire pinned host memory pool. hypre
-  ignores this parameter without umpire support. The default is `512 MB`.
+  ignores this parameter without umpire support. The default is `0.1 GB` (100 MB).
 
 - ``exec_policy`` - Selects the ``host`` (CPU) or ``device`` (GPU) for computations.
   Without GPU support, ``host`` is the only valid value. Otherwise, the default is
@@ -111,10 +113,10 @@ This example shows the ``general`` section:
       device_lazy_init: no
       print_config_params: yes
       num_repetitions: 1
-      dev_pool_size: 8.0
-      uvm_pool_size: 8.0
-      host_pool_size: 8.0
-      pinned_pool_size: 0.5
+      dev_pool_size: 2.0
+      uvm_pool_size: 2.0
+      host_pool_size: 2.0
+      pinned_pool_size: 0.1
       exec_policy: device
       use_vendor_spgemm: yes
       use_vendor_spmv: yes
@@ -122,33 +124,49 @@ This example shows the ``general`` section:
 Linear System
 -------------
 
-The required ``linear_system`` section describes the linear system that
-`hypredrive` solves.
+The optional ``linear_system`` section describes the linear system that
+`hypredrive` solves. A file-based driver run needs a matrix source here; a library
+caller may instead attach the matrix and vectors programmatically.
 
-- ``type`` - The format of the linear system matrix. Available options are ``ij`` and
-  ``mtx``. The default value for this parameter is ``ij``.
+- ``type`` - The format of the linear system matrix. Available options are ``online``,
+  ``ij``, ``parcsr``, and ``mtx``. The default value is ``ij``. The file reader supports
+  ``ij`` and ``mtx``; ``online`` and ``parcsr`` are for programmatic/in-memory workflows.
 
-- ``matrix_filename`` - (Required) The filename of the linear system matrix. This
-  parameter does not have a default value.
+- ``matrix_filename`` - (Possibly required) Filename of the linear system matrix. A
+  file-based run can use this, ``matrix_basename``, or ``sequence_filename`` as its
+  matrix source. This parameter has no default. Library callers can omit all file
+  sources and use ``HYPREDRV_LinearSystemSetMatrix`` or
+  ``HYPREDRV_LinearSystemSetMatrixFromCSR``.
 
 - ``precmat_filename`` - Filename of the matrix that hypredrive uses to compute the
-  preconditioner. The original system matrix is the default.
+  preconditioner. ``precmat_basename`` and ``precmat_sequence_filename`` are alternative
+  sources. The original system matrix is the default.
   In the C API, ``HYPREDRV_LinearSystemSetPrecMatrix(h, mat)`` overrides this file-based
   path when ``mat`` is non-NULL.
 
 - ``rhs_filename`` - (Possibly required) Filename of the right-hand side vector.
-  This parameter has no default and is required when ``rhs_mode`` is ``file``.
+  ``rhs_basename`` is an alternative for a sequence of files. These parameters have no
+  default and a file source is required when ``rhs_mode`` is ``file``.
 
 - ``x0_filename`` - (Possibly required) Filename of the initial guess for the
   left-hand side vector. This parameter has no default and is required when
   ``init_guess_mode`` is ``file``.
-  In the C API, ``HYPREDRV_LinearSystemSetInitialGuess(h, vec)`` overrides this
-  file/default path when ``vec`` is non-NULL.
+  When present, it is read as the literal path supplied; it takes precedence over
+  ``init_guess_mode`` and sequence filename resolution. In the C API,
+  ``HYPREDRV_LinearSystemSetInitialGuess(h, vec)`` overrides this file/default path
+  when ``vec`` is non-NULL.
 
 - ``xref_filename`` - (Optional) The filename of the reference solution vector used by
-  tagged residual/error reporting. In the C API,
+  tagged residual/error reporting. ``xref_basename`` is an alternative file source. An
+  explicit filename or basename replaces a reference generated by ``rhs_mode: randsol``.
+  In the C API,
   ``HYPREDRV_LinearSystemSetReferenceSolution(h, vec)`` overrides file/default behavior
   when ``vec`` is non-NULL.
+
+- ``sol_filename`` - Accepted for compatibility, but it does not currently select a
+  solution output path. Scheduled ``print_system`` dumps use ``solution.out`` in the
+  selected output directory, and ``HYPREDRV_LinearSystemPrint`` writes the matrix, RHS,
+  and dofmap rather than using this key.
 
 .. _linear_system_dofmap:
 
@@ -158,6 +176,21 @@ Degrees of Freedom Map
 - ``dofmap_filename`` - (Possibly required) Filename of the degree-of-freedom
   mapping array (`dofmap`). This parameter has no default and is required for
   the ``mgr`` preconditioner.
+
+- ``dof_labels`` - Optional mapping from symbolic degree-of-freedom labels to integer
+  tags. It can be written as a YAML block or flow mapping. For example:
+
+  .. code-block:: yaml
+
+      linear_system:
+        dof_labels:
+          v_x: 0
+          v_y: 1
+          p: 2
+
+  Keys are normalized to lowercase. MGR ``f_dofs`` entries can use these labels as
+  well as integer tags. A symbolic label requires this mapping and an unknown label
+  is an error.
 
 - ``init_guess_mode`` - Choice of initial guess vector. Available options are:
 
@@ -170,7 +203,7 @@ Degrees of Freedom Map
     distribution), it falls back to a vector of zeros.
 
   The default value is ``zeros``. When ``x0_filename`` is present, `hypredrive` reads the
-  vector from that file.
+  literal path supplied there, regardless of this mode.
 
   .. note::
      In the library API, passing ``NULL`` to
@@ -179,8 +212,18 @@ Degrees of Freedom Map
      ``HYPREDRV_LinearSystemSetPrecMatrix`` preserves the file/default behavior described
      in this section.
 
-- ``rhs_mode`` - Selects the source of the right-hand side vector. It accepts the
-  same options as ``init_guess_mode``.
+- ``rhs_mode`` - Selects the source of the right-hand side vector. Available options are:
+
+  - ``zeros``: Generates a vector of zeros.
+  - ``ones``: Generates a vector of ones.
+  - ``random``: Generates a vector of random numbers between `0` and `1`.
+  - ``file``: Reads the vector from ``rhs_filename``, ``rhs_basename``, or a sequence
+    container. This is the default.
+  - ``randsol``: Generates a random reference solution, computes ``b = A*xref``, and
+    stores that reference for tagged error checks.
+
+  When the mode is not ``file``, hypredrive does not read ``rhs_filename`` or
+  ``rhs_basename``. The generated random vectors use the fixed seed `2023`.
 
 - ``dirname`` - (Possibly required) Name of the top-level data directory. Use this
   parameter to remove repeated directory names from file paths. This parameter
@@ -188,9 +231,9 @@ Degrees of Freedom Map
 
 - ``sequence_filename`` - (Optional) Path to a lossless compressed sequence
   container from ``hypredrive-lsseq``. When set, hypredrive reads the matrix,
-  right-hand side, and optional dofmap from the container. It does not use the
-  directory, filename, or basename fields. Container metadata gives the number
-  of systems.
+  file-mode right-hand side, and optional dofmap from the container. It does not use
+  the directory, filename, or basename fields. With a non-file ``rhs_mode``, the RHS
+  is generated instead. Container metadata gives the number of systems.
 
 - ``precmat_sequence_filename`` - (Optional) Path to a lossless compressed sequence
   container whose matrix is used to build the preconditioner. This avoids unpacking
@@ -233,6 +276,31 @@ Degrees of Freedom Map
 
 - ``digits_suffix`` - (Optional) Number of digits used to build complete filenames when
   using the ``basename`` or ``dirname`` options. This parameter has a default value of 5.
+
+Eigenspectrum diagnostics
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The optional ``eigspec`` subsection enables a diagnostic full eigenspectrum calculation
+for small systems. The driver invokes it after building a system when hypredrive is
+built with ``-DHYPREDRV_ENABLE_EIGSPEC=ON``; library callers can invoke
+``HYPREDRV_LinearSystemComputeEigenspectrum`` directly.
+
+- ``enable`` - Enable the calculation. Default: ``off``.
+- ``vectors`` - Also write eigenvectors. Default: ``off``.
+- ``hermitian`` - Use the symmetric/Hermitian LAPACK path. Default: ``off``.
+- ``preconditioned`` - Compute the spectrum of :math:`M^{-1}A` using the configured
+  preconditioner instead of :math:`A`. Default: ``off``.
+- ``output_prefix`` - Prefix for output files. Default: ``eig``.
+
+The feature gathers the matrix and expands it to a dense array on one rank, so it is
+not a distributed eigensolver. It uses :math:`O(n^2)` memory and :math:`O(n^3)` time,
+requires a square positive-size matrix, and rejects a matrix dimension greater than
+``20000``. The build also requires LAPACK. Rank 0 writes
+``<output_prefix>.values.txt`` and, when ``vectors`` is enabled,
+``<output_prefix>.vectors.bin`` in the current directory. General problems may produce
+real/imaginary pairs in the values file; the Hermitian path writes real values. When
+the feature is not compiled in, the API call is a successful no-op with a one-time
+rank-0 warning.
 
 Scheduled linear-system dumps
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -356,7 +424,7 @@ CLI overrides can target nested keys, for example:
 
 .. code-block:: bash
 
-    hypredrive-cli --config input.yml --linear_system:print_system:enabled on
+    hypredrive-cli input.yml -a --linear_system:print_system:enabled on
 
 
 This example shows the ``linear_system`` section:
@@ -447,8 +515,8 @@ reconstruction. See :ref:`utilities` for the container structure.
 Solver
 ------
 
-The mandatory ``solver`` section specifies the Krylov solver configuration. These
-solver types are available:
+The optional ``solver`` section specifies the Krylov solver configuration. If it is
+omitted, hypredrive uses ``pcg``. These solver types are available:
 
 - ``pcg`` - Preconditioned conjugate gradient.
 - ``bicgstab`` - Bi-conjugate gradient stabilized.
@@ -501,6 +569,22 @@ selected by the dofmap tag of unknown :math:`i`. The transformed systems are:
      - Similarity scaling for balancing asymmetric block couplings while
        preserving the eigenvalues of :math:`A`.
 
+The exact vector and matrix transformations are applied before solver setup and
+reversed after the solve. For ``rhs_l2``, with
+:math:`s = 1/\sqrt{\|b\|_2}`, application uses
+:math:`A \leftarrow s^2 A`, :math:`M \leftarrow s^2 M`,
+:math:`b \leftarrow s b`, and :math:`v \leftarrow v/s` for unknown and reference
+vectors. Recovery uses :math:`x \leftarrow s x`, :math:`b \leftarrow b/s`, and
+:math:`A,M \leftarrow A/s^2,M/s^2`. A zero RHS uses :math:`s=1`.
+
+For the congruence dofmap modes (``dofmap_mag`` and ``dofmap_custom``), application
+uses :math:`A \leftarrow D A D`, :math:`M \leftarrow D M D`,
+:math:`b \leftarrow D b`, and :math:`v \leftarrow v/D`; recovery uses
+:math:`x \leftarrow D x`, :math:`b \leftarrow b/D`, and
+:math:`A,M \leftarrow D^{-1} A D^{-1},D^{-1} M D^{-1}`. The row, column, and
+similarity variants use the corresponding transformations in the table above, so
+only the affected RHS or unknown vectors are scaled.
+
 Congruence scaling multiplies both opposite coupling blocks :math:`A_{ij}` and
 :math:`A_{ji}` by the same factor :math:`D_{ii}D_{jj}`. Consequently,
 ``dofmap_custom`` cannot change the magnitude ratio between those blocks.
@@ -544,7 +628,7 @@ Available keywords:
   tags 0, 1, and 2, provide three entries in that order.
 
 Scaling requires hypre 3.0.0 or newer. On older builds, YAML parsing succeeds,
-but hypredrive disables scaling at run time without a message.
+but hypredrive logs a message and disables scaling at run time.
 
 Example configuration with RHS L2 scaling:
 
@@ -620,12 +704,19 @@ The available keywords to further configure the preconditioned conjugate gradien
 - ``two_norm`` - Turn on/off L2 norm for the residual. Available values are ``yes`` or
   ``no``. Default value is ``yes``.
 
+- ``stop_crit`` - Select the stopping criterion used by hypre. Available values are
+  ``yes`` or ``no``. Default value is ``no``.
+
 - ``rel_change`` - Turn on/off an additional convergence criteria that checks for a relative
   change in the solution vector. Available values are ``yes`` or ``no``. Default value is
   ``no``.
 
 - ``print_level`` - Verbosity level for the iterative solver. `1` turns on convergence
-  history reporting. Default value is `0`.
+  history reporting. The default is `1` in the block form shown below. The scalar
+  shorthand ``solver: pcg`` preserves the quiet legacy behavior and sets it to `0`.
+
+- ``recompute_res`` - Recompute the residual during PCG iterations. Available values are
+  ``yes`` or ``no``. Default value is ``no``.
 
 - ``relative_tol`` - Relative tolerance based on the norm of the residual vector and used
   for determining convergence of the iterative solver. Available values are any positive
@@ -638,7 +729,7 @@ The available keywords to further configure the preconditioned conjugate gradien
 - ``residual_tol`` - Tolerance used for determining convergence of the iterative solver
   and based on the norm of the difference between subsequent residual vectors. Available
   values are any positive floating point number. Default value is ``0.0``, meaning that
-  the residual tolerance-based convergence criteria is inactive.
+  the residual tolerance-based convergence criterion is inactive.
 
 - ``conv_fac_tol`` - Tolerance used for determining convergence of the iterative solver
   and based on the convergence factor ratio of subsequent iterations. Available values are
@@ -654,8 +745,10 @@ given below:
       pcg:
         max_iter: 100
         two_norm: yes
+        stop_crit: no
         rel_change: no
         print_level: 1
+        recompute_res: no
         relative_tol: 1.0e-6
         absolute_tol: 0.0
         residual_tol: 0.0
@@ -667,10 +760,17 @@ BiCGSTAB
 The available keywords to further configure the bi-conjugate gradient stabilized solver
 (``bicgstab``) are all optional and given below:
 
-- ``min_iter`` - Minimum number of iterations. Available values are any positive integer.
+- ``min_iter`` - Minimum number of iterations. Available values are any non-negative
+  integer. Default value is ``0``.
 
-- ``max_iter``, ``print_level``, ``relative_tol``, ``absolute_tol``, ``residual_tol``, and
-  ``conv_fac_tol`` - See :ref:`pcg` for a description of these variables.
+- ``max_iter``, ``print_level``, ``relative_tol``, ``absolute_tol``, and ``conv_fac_tol``
+  - See :ref:`pcg` for a description of these variables.
+
+- ``stop_crit`` - Select the stopping criterion used by hypre. Available values are
+  ``yes`` or ``no``. Default value is ``no``.
+
+- ``logging`` - Enable hypre logging. Available values are ``yes`` or ``no``. Default
+  value is ``yes``.
 
 The code block representing the default parameter values for the ``solver:bicgstab`` section is
 given below:
@@ -681,10 +781,11 @@ given below:
       bicgstab:
         min_iter: 0
         max_iter: 100
+        stop_crit: no
+        logging: yes
         print_level: 1
         relative_tol: 1.0e-6
         absolute_tol: 0.0
-        residual_tol: 0.0
         conv_fac_tol: 0.0
 
 .. _gmres:
@@ -705,6 +806,12 @@ The available keywords to further configure the generalized minimal residual sol
   ``absolute_tol``, and ``conv_fac_tol`` - See :ref:`pcg` for a description of these
   variables.
 
+- ``stop_crit`` - Select the stopping criterion used by hypre. Available values are
+  ``yes`` or ``no``. Default value is ``no``.
+
+- ``logging`` - Enable hypre logging. Available values are ``yes`` or ``no``. Default
+  value is ``yes``.
+
 The code block representing the default parameter values for the ``solver:gmres`` section is
 given below:
 
@@ -714,9 +821,11 @@ given below:
       gmres:
         min_iter: 0
         max_iter: 300
+        stop_crit: no
         skip_real_res_check: no
         krylov_dim: 30
         rel_change: no
+        logging: yes
         print_level: 1
         relative_tol: 1.0e-6
         absolute_tol: 0.0
@@ -729,7 +838,8 @@ The available keywords to further configure the flexible generalized minimal res
 solver (``fgmres``) are all optional and given below:
 
 - ``min_iter``, ``max_iter``, ``krylov_dim``, ``print_level``, ``relative_tol``,
-  ``absolute_tol`` - See :ref:`gmres` for a description of these variables.
+  ``absolute_tol``, and ``logging`` - See :ref:`gmres` for a description of these
+  variables.
 
 The code block representing the default parameter values for the ``solver:fgmres`` section is
 given below:
@@ -741,6 +851,7 @@ given below:
         min_iter: 0
         max_iter: 300
         krylov_dim: 30
+        logging: yes
         print_level: 1
         relative_tol: 1.0e-6
         absolute_tol: 0.0
@@ -759,6 +870,7 @@ configuration. Available options for the preconditioner type are:
 - ``mgr``: multigrid reduction.
 - ``ams``: auxiliary-space Maxwell solver (for H(curl) / edge-element problems).
 - ``ads``: auxiliary-space divergence solver (for H(div) / face-element problems).
+- ``schwarz``: overlapping Schwarz (available with HYPRE 3.1.0 develop number 55 or newer).
 
 Put a configurable preconditioner type at a new indentation level below
 ``preconditioner``. The fixed ``jacobi`` and ``gauss-seidel`` types use scalar forms.
@@ -1056,6 +1168,7 @@ preconditioner:
 
     - ``mod_classical``
     - ``least_squares``
+    - ``mod_classical_he``
     - ``direct_sep_weights``
     - ``multipass``
     - ``multipass_sep_weights``
@@ -1071,7 +1184,9 @@ preconditioner:
     - ``direct_sep_weights``
     - ``mm_extended``
     - ``mm_extended+i``
+    - ``mm-ext+i`` (alias)
     - ``mm_extended+e``
+    - ``mm-ext+e`` (alias)
     - ``blk_direct``
     - ``one_point``
 
@@ -1236,7 +1351,7 @@ preconditioner:
 
   - ``max_nnz_row`` - maximum number of elements per row for computing interpolation in
     aggressive coarsening levels. Available values are any non-negative integer. Default
-    value is `4`.
+    value is `0` (no limit).
 
   - ``P12_trunc_factor`` - Truncation factor for the P1 and P2 matrices. These
     matrices build two-stage interpolation. Use a nonnegative floating-point
@@ -1321,7 +1436,7 @@ preconditioner:
 
   - ``coarse_sweeps`` - number of smoothing sweeps in the coarsest level. Available values
     are any integer greater or equal than `-1`, which turns off the selection of sweeps at
-    the specific cycle. Default value is `-1`.
+    the specific cycle. Default value is `1`.
 
   - ``num_sweeps`` - number of pre and post-smoothing sweeps. Available values are any
     non-negative integer. Default value is `1`.
@@ -1355,7 +1470,7 @@ preconditioner:
     options, see `HYPRE_BoomerAMGSetOuterWt
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv425HYPRE_BoomerAMGSetOuterWt12HYPRE_Solver10HYPRE_Real>`_. Default value is `1.0`.
 
-- ``relaxation`` - subsection detailing complex smoother options:
+- ``smoother`` - subsection detailing complex smoother options:
 
   - ``type`` - complex smoother type. For detailed information, see `HYPRE_BoomerAMGSetSmoothType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_BoomerAMGSetSmoothType12HYPRE_Solver9HYPRE_Int>`_. Available
@@ -1417,7 +1532,7 @@ This example shows the default values for ``preconditioner:amg``:
           coarse_type: ge
           down_sweeps: -1
           up_sweeps: -1
-          coarse_sweeps: -1
+          coarse_sweeps: 1
           num_sweeps: 1
           order: 0
           points: all
@@ -1469,7 +1584,7 @@ preconditioner:
   are any positive integer. Default value is `200`.
 
 - ``schur_max_iter`` - Maximum number of the Schur system solve. Available values
-  are any positive integer. Default value is `5`. This option has effect only when
+  are any positive integer. Default value is `3`. This option has effect only when
   ``type`` is greater or equal than `10`.
 
 - ``droptol`` - Dropping tolerance for computing the triangular factors when using
@@ -1511,15 +1626,16 @@ inverse (FSAI) preconditioner:
 - ``max_iter``, ``tolerance``, and ``print_level`` - See :ref:`amg` for a description of
   these variables.
 
-- ``type`` - algorithm type used for building FSAI. For available
+- ``algo_type`` - algorithm type used for building FSAI. Available values are ``bj-afsai``
+  (`1`, the default), ``bj-afsai-omp`` (`2`), and ``bj-sfsai`` (`3`). For additional
   options, see `HYPRE_FSAISetAlgoType
   <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv421HYPRE_FSAISetAlgoType12HYPRE_Solver9HYPRE_Int>`_. Default
-  value is `1` (Adaptive) for CPUs and `3` (Static) for GPUs.
+  value is `1`.
 
 - ``ls_type`` - solver type for the local linear systems in FSAI. For available
   options, see `HYPRE_FSAISetLocalSolveType
   <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_FSAISetLocalSolveType12HYPRE_Solver9HYPRE_Int>`_. Default
-  value is `0` (Gauss-Jordan).
+  value is `1`.
 
 - ``max_steps`` - maximum number of steps for computing the sparsity pattern
   of G. Available values are any positive integer. Default value is `5`.
@@ -1552,7 +1668,7 @@ This example shows the default values for ``preconditioner:fsai``:
         max_iter: 1
         print_level: 0
         algo_type: 1
-        ls_type: 0
+        ls_type: 1
         max_steps: 5
         max_step_size: 3
         max_nnz_row: 15
@@ -1575,6 +1691,24 @@ preconditioner:
   options, see `HYPRE_MGRSetPrintLevel
   <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv422HYPRE_MGRSetPrintLevel12HYPRE_Solver9HYPRE_Int>`_. Default
   value is `0` (no printout).
+
+- ``non_c_to_f`` - Whether non-C points are treated as F points. This is an integer
+  switch passed to hypre. Default value is `1`.
+
+- ``pmax`` - Maximum number of interpolation elements retained per row. A value of
+  `0` leaves hypre's default/unlimited behavior. Default value is `0`.
+
+- ``num_levels`` - Number of MGR levels. When levels are supplied in the YAML ``level``
+  and ``coarsest_level`` sections, hypredrive derives this value from those entries.
+  The standalone default is `0`.
+
+- ``relax_type`` - Base MGR relaxation type. Named values include ``jacobi`` (`7`),
+  ``h-fgs`` (`3`), ``h-bgs`` (`4`), ``ch-gs`` (`5`), ``h-ssor`` (`6`),
+  ``hl1-ssor`` (`8`), ``l1-fgs`` (`13`), ``l1-bgs`` (`14`), ``chebyshev`` (`16`),
+  and ``l1-jacobi`` (`18`). The default is ``jacobi`` (`7`).
+
+- ``nonglk_max_elmts`` - Maximum number of entries retained per row in the non-Galerkin
+  coarse operator. Default value is `1`; HYPRE versions without this setter ignore it.
 
 - ``coarse_th`` - threshold for dropping small entries on the coarse grid. Available
   values are any non-negative floating point numbers. Default value is `0.0`, which means
@@ -1617,9 +1751,9 @@ preconditioner:
   next YAML indentation level.
 
   - ``f_dofs`` - (Mandatory) Array containing the identifiers of F (fine) degrees of
-    freedom to be treated in the current level. Available values are any integer numbers
-    from `0` to `n_dofs - 1`, where `n_dofs` represent the unique number of degrees of
-    freedom identifiers.
+    freedom to be treated in the current level. Available values are integer numbers
+    from `0` to `n_dofs - 1`, where `n_dofs` represents the unique number of degree-of-
+    freedom identifiers, or symbolic labels defined by ``linear_system.dof_labels``.
 
   - ``matched_q`` - opt into a CPU-only matched approximate block
     factorization on this level. Available values are ``off`` (the default),
@@ -1701,7 +1835,7 @@ preconditioner:
   - ``f_relaxation`` - relaxation method targeting F points. For available options, see
     `HYPRE_MGRSetLevelFRelaxType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_MGRSetLevelFRelaxType12HYPRE_SolverP9HYPRE_Int>`_. Default
-    value is `0` (Jacobi). Use ``none`` to deactivate F-relaxation.
+    value is `7` (Jacobi). Use ``none`` to deactivate F-relaxation.
 
     A nested managed ``amg`` F-relaxation may opt into
     ``symmetric_diagonal_scaling: on``. On CPUs this clones the extracted F block,
@@ -1714,7 +1848,8 @@ preconditioner:
   - ``g_relaxation`` - global relaxation method targeting F and C points. For available
     options, see `HYPRE_MGRSetGlobalSmoothType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv428HYPRE_MGRSetGlobalSmoothType12HYPRE_Solver9HYPRE_Int>`_. Default
-    value is `2` (Jacobi). Use ``none`` to deactivate global relaxation.
+    value is `-1` (none). Use a named smoother such as ``blk-jacobi`` to enable global
+    relaxation.
 
   - ``f_relaxation`` and ``g_relaxation`` also accept a nested Krylov solver block with an
     optional nested preconditioner. Supported Krylov solvers are ``pcg``, ``gmres``,
@@ -1745,13 +1880,13 @@ preconditioner:
         level:
           0:
             f_dofs: [0, 2]
-            f_relaxation: mgr
+            f_relaxation:
               mgr:
                 level:
                   0:
                     f_dofs: [2] # refers to the same parent label 2 (no relabeling)
                 coarsest_level:
-                  amg:
+                  amg: {}
 
   - ``restriction_type`` - algorithm for computing the restriction operator. Accepted values
     are ``injection``, ``jacobi``, ``approx-inv``, ``blk-jacobi``, ``cpr-like``,
@@ -1789,6 +1924,11 @@ This example shows the default values for ``preconditioner:mgr``:
         tolerance: 0.0
         max_iter: 1
         print_level: 0
+        non_c_to_f: 1
+        pmax: 0
+        num_levels: 0
+        relax_type: jacobi
+        nonglk_max_elmts: 1
         coarse_th: 0.0
         interp_sweeps: 0
         interp_weight: 1.0
@@ -1798,7 +1938,6 @@ This example shows the default values for ``preconditioner:mgr``:
           0:
             f_dofs: [1, 2] # Example usage where DOFs 1 and 2 are treated in MGR's 1st level
             f_relaxation: single
-              sweeps: 1
             g_relaxation: none
             restriction_type: injection
             prolongation_type: jacobi
