@@ -3033,7 +3033,7 @@ MGRComponentReuseShouldKeep(const MGRComponentReuse_args *reuse,
 static int
 MGRSetComponentSetupReuse(HYPRE_Solver solver, int set_reuse)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if HYPRE_CHECK_MIN_VERSION(30100, 50)
    if (!solver)
    {
       return 0;
@@ -3765,7 +3765,7 @@ hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
    {
       return 0;
    }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return 0;
 #endif
 
@@ -3842,7 +3842,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       return 0;
    }
 
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    for (int n = 0; n < num_refs; n++)
    {
       MGRComponentReuse_args *reuse = MGRComponentReuseArgs(args, &refs[n]);
@@ -3921,7 +3921,7 @@ hypredrv_MGRRefreshComponentsForSetup(MGR_args *args, HYPRE_Solver precon,
    {
       return;
    }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    (void)timestep_starts;
    (void)stats;
    (void)next_ls_id;
@@ -4133,7 +4133,7 @@ hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_s
    {
       return;
    }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    (void)timestep_starts;
    (void)stats;
    (void)next_ls_id;

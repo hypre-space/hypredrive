@@ -122,8 +122,8 @@ For a normal solve, pass one or more YAML filenames as positional arguments, for
 schema-help form and is not a literal required filename.
 
 System information is hidden by default. Pass ``-i`` or ``--info`` to print the
-detected machine and software environment. The selected HYPRE execution policy
-is printed after input configuration is resolved and whenever it changes. With
+detected machine and software environment. The command-line driver prints the
+selected HYPRE execution policy after input configuration is resolved. With
 HYPRE 3.0 or newer, the policy name identifies the device backend when applicable
 (for example, ``Host`` or ``Device (CUDA)``). At every nonzero
 ``HYPREDRV_LOG_LEVEL``, the effective policy is also logged at those points.
