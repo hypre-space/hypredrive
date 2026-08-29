@@ -19,9 +19,7 @@ cmake -DHYPREDRV_ENABLE_DATA=ON -B build && cmake --build build -j -t check
 ```
 
 - hypre is fetched automatically if not found. Pass `-DHYPRE_ROOT=<path>` to use an existing install.
-- Pass `-DHYPREDRV_BUILD_DSUPERLU=ON` to fetch SuperLU_DIST and enable
-  HYPRE's distributed direct-solver support. Accelerator builds use
-  `HYPREDRV_ENABLE_CUDA`, `HYPREDRV_ENABLE_HIP`, or `HYPREDRV_ENABLE_SYCL`.
+- Enable accelerator support via `HYPREDRV_ENABLE_CUDA/HIP/SYCL`.
 - Check [installation instructions](https://hypredrive.readthedocs.io/en/latest/installation.html) for details, including the available library options.
 
 ## Examples
@@ -35,14 +33,22 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml
 **Library** -- call the API from your own code (see [example drivers](https://hypredrive.readthedocs.io/en/latest/library_examples.html) in the docs).
 
 ```C
+   #include <mpi.h>
+   #include "HYPREDRV.h"
+
    // 1. Setup hypredrive options from YAML input
+   MPI_Init(NULL, NULL);
    HYPREDRV_t hdrv = NULL;
    HYPREDRV_Initialize();
    HYPREDRV_Create(MPI_COMM_WORLD, &hdrv);
    HYPREDRV_SetLibraryMode(hdrv);
-   HYPREDRV_InputArgsParse(1, yaml_text, hdrv); // Solver options are parsed here
+   const char *yaml_text = "solver: pcg\n"
+                           "preconditioner: amg\n";
+   char *yaml_argv[] = {(char *)yaml_text};
+   HYPREDRV_InputArgsParse(1, yaml_argv, hdrv); // Solver options are parsed here
 
    // 2. Setup linear system ("A" and "b" are built previously)
+   // The application retains ownership of these objects in library mode.
    HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix) A);
    HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector) b);
 
@@ -55,6 +61,7 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml
    // 4. Cleanup
    HYPREDRV_Destroy(&hdrv);
    HYPREDRV_Finalize();
+   MPI_Finalize();
 ```
 
 Documentation is available at [hypredrive.readthedocs.io](https://hypredrive.readthedocs.io/en/latest/). For contribution instructions, see [CONTRIBUTING.md](CONTRIBUTING.md).

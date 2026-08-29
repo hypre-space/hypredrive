@@ -27,7 +27,6 @@ typedef enum
 
 /* Convenience initializer macro (keeps fields consistent when adding presets). */
 #define HYPREDRV_PRESET(_id, _kind, _help)                                 \
-   (hypredrv_Preset)                                                       \
    {                                                                       \
       .name = #_id, .text = preset_##_id, .help = (_help), .kind = (_kind) \
    }

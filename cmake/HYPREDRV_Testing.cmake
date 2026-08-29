@@ -1045,6 +1045,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(23300 0)
     hypredrv_check_hypre_version(30000 0)
     hypredrv_check_hypre_version(30100 0)
+    hypredrv_check_hypre_version(30200 0)
     hypredrv_check_hypre_version(30100 5)
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
@@ -1497,8 +1498,9 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
 
         hypredrv_flush_batched_hypredrive_tests()
 
-        if(HYPREDRV_HAVE_HYPRE_22100_DEV0)
-            # The GEOS MGR strategy datasets keep their own input YAML in each
+        if(HYPREDRV_HAVE_HYPRE_30200_DEV0)
+            # The new GEOS MGR strategy datasets require the HYPRE 3.2.0 MGR
+            # behavior.  They keep their own input YAML in each
             # MPI-layout directory.  Use the configured data list instead of
             # globbing the source tree: datasets are downloaded after configure
             # in CI and are intentionally ignored by git.
@@ -1551,7 +1553,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             endforeach()
         else()
             message(STATUS
-                "Skipping GEOS MGR dataset tests: HYPRE >= 2.21.0 is required")
+                "Skipping GEOS MGR dataset tests: HYPRE >= 3.2.0 is required")
         endif()
         unset(_dataset_variant_dir)
         unset(_dataset_variant)

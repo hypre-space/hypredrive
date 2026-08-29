@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/presets.h"
+#include "internal/compatibility.h"
 #include "internal/error.h"
 
 #include <ctype.h>

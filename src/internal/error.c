@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "HYPREDRV_utils.h"
+#include "internal/compatibility.h"
 
 #ifdef __linux__
 
@@ -644,7 +645,11 @@ hypredrv_SafeCallHandleError(uint32_t error_code, MPI_Comm comm, const char *fil
       const char *debug_env = getenv("HYPREDRV_DEBUG");
       if (debug_env && strcmp(debug_env, "1") == 0)
       {
+#ifdef SIGTRAP
          raise(SIGTRAP); /* Breakpoint for gdb */
+#else
+         raise(SIGABRT); /* SIGTRAP is not provided by all Windows runtimes */
+#endif
       }
       else
       {

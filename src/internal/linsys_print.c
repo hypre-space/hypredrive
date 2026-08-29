@@ -6,7 +6,6 @@
  ******************************************************************************/
 
 #include <ctype.h>
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -15,9 +14,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "internal/compatibility.h"
+#ifndef _MSC_VER
+#include <dirent.h>
 #include <strings.h>
+#endif
 #include <sys/stat.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
+#ifdef _WIN32
+#include <direct.h>
+#define HYPREDRV_MKDIR(path, mode) _mkdir(path)
+#define HYPREDRV_RMDIR(path) _rmdir(path)
+#else
+#define HYPREDRV_MKDIR(path, mode) mkdir(path, mode)
+#define HYPREDRV_RMDIR(path) rmdir(path)
+#endif
+
+#ifdef _MSC_VER
+#define HYPREDRV_STAT_STRUCT struct _stat
+#define HYPREDRV_STAT(path, info) _stat((path), (info))
+#define HYPREDRV_STAT_IS_DIR(mode) (((mode) & _S_IFMT) == _S_IFDIR)
+#else
+#define HYPREDRV_STAT_STRUCT struct stat
+#define HYPREDRV_STAT(path, info) stat((path), (info))
+#define HYPREDRV_STAT_IS_DIR(mode) S_ISDIR(mode)
+#endif
 #include "internal/error.h"
 #include "internal/linsys.h"
 #include "logging.h"
@@ -34,6 +57,7 @@ typedef struct
 } PrintSystemSeenKeys;
 
 static const char *PrintSystemStageName(int stage);
+static int         PrintSystemFindMaxDumpIndex(const char *base_dir);
 
 void
 hypredrv_PrintSystemSetDefaultArgs(PrintSystem_args *args)
@@ -1355,40 +1379,20 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
 static void
 PrintDataNextSeriesDir(char *run_dir, size_t run_dir_size)
 {
-   const char *root = "hypre-data";
-   struct stat st;
-   if (stat(root, &st) != 0)
+   const char          *root = "hypre-data";
+   HYPREDRV_STAT_STRUCT st;
+   if (HYPREDRV_STAT(root, &st) != 0)
    {
-      (void)mkdir(root, 0775);
+      (void)HYPREDRV_MKDIR(root, 0775);
    }
 
-   int  max_idx = -1;
-   DIR *dir     = opendir(root);
-   /* GCOVR_EXCL_BR_START */
-   if (dir) /* GCOVR_EXCL_BR_STOP */
-   {
-      const struct dirent *ent = NULL;
-      while ((ent = readdir(dir)) != NULL)
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (ent->d_name[0] == 'l' && ent->d_name[1] == 's' && ent->d_name[2] == '_')
-         /* GCOVR_EXCL_BR_STOP */
-         {
-            int idx = (int)strtol(ent->d_name + 3, NULL, 10);
-            if (idx > max_idx)
-            {
-               max_idx = idx;
-            }
-         }
-      }
-      closedir(dir);
-   }
+   int max_idx  = PrintSystemFindMaxDumpIndex(root);
    int next_idx = max_idx + 1;
    snprintf(run_dir, run_dir_size, "%s/ls_%05d", root, next_idx);
    /* GCOVR_EXCL_BR_START */
-   if (stat(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
+   if (HYPREDRV_STAT(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
    {
-      (void)mkdir(run_dir, 0775);
+      (void)HYPREDRV_MKDIR(run_dir, 0775);
    }
 }
 
@@ -2026,16 +2030,17 @@ PrintSystemEnsureDir(const char *path)
          /* GCOVR_EXCL_BR_START */
          if (current[0] != '\0') /* GCOVR_EXCL_BR_STOP */
          {
-            struct stat st;
-            if (stat(current, &st) != 0)
+            HYPREDRV_STAT_STRUCT st;
+            if (HYPREDRV_STAT(current, &st) != 0)
             {
                /* GCOVR_EXCL_BR_START */
-               if (mkdir(current, 0775) != 0 && errno != EEXIST) /* GCOVR_EXCL_BR_STOP */
+               if (HYPREDRV_MKDIR(current, 0775) != 0 &&
+                   errno != EEXIST) /* GCOVR_EXCL_BR_STOP */
                {
                   return 0;
                }
             }
-            else if (!S_ISDIR(st.st_mode))
+            else if (!HYPREDRV_STAT_IS_DIR(st.st_mode))
             {
                return 0;
             }
@@ -2051,9 +2056,9 @@ PrintSystemEnsureDir(const char *path)
 static int
 PrintSystemPathExists(const char *path)
 {
-   struct stat st;
+   HYPREDRV_STAT_STRUCT st;
    /* GCOVR_EXCL_BR_START */
-   return (path && stat(path, &st) == 0);
+   return (path && HYPREDRV_STAT(path, &st) == 0);
    /* GCOVR_EXCL_BR_STOP */
 }
 
@@ -2127,6 +2132,39 @@ PrintSystemArtifactPathBuild(const char *dump_dir, const char *artifact_name,
 }
 
 static int
+PrintSystemDumpIndexParse(const char *entry_name, bool entry_is_dir)
+{
+   if (!entry_is_dir || strncmp(entry_name, "ls_", 3) != 0)
+   {
+      return -1;
+   }
+
+   const char *digits = entry_name + 3;
+   /* GCOVR_EXCL_BR_START */
+   if (*digits == '\0') /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1;
+   }
+
+   for (const char *p = digits; *p != '\0'; p++)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!isdigit((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
+      {
+         return -1;
+      }
+   }
+
+   long idx_long = strtol(digits, NULL, 10);
+   /* GCOVR_EXCL_BR_START */
+   if (idx_long < 0 || idx_long > INT_MAX) /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1;
+   }
+   return (int)idx_long;
+}
+
+static int
 PrintSystemFindMaxDumpIndex(const char *base_dir)
 {
    /* GCOVR_EXCL_BR_START */
@@ -2135,6 +2173,23 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
       return -1; /* GCOVR_EXCL_LINE */
    }
 
+#ifdef _MSC_VER
+   char               pattern[2 * MAX_FILENAME_LENGTH];
+   struct _finddata_t entry;
+   intptr_t           handle;
+   int                written = snprintf(pattern, sizeof(pattern), "%s/*", base_dir);
+   if (written < 0 || (size_t)written >= sizeof(pattern))
+   {
+      return -1; /* GCOVR_EXCL_LINE */
+   }
+
+   handle = _findfirst(pattern, &entry);
+   /* GCOVR_EXCL_BR_START */
+   if (handle == -1L) /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1; /* GCOVR_EXCL_LINE */
+   }
+#else
    DIR *dir = opendir(base_dir);
    /* GCOVR_EXCL_BR_START */
    if (!dir) /* GCOVR_EXCL_BR_STOP */
@@ -2142,55 +2197,142 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
       return -1; /* GCOVR_EXCL_LINE */
    }
 
-   int                  max_idx = -1;
-   const struct dirent *entry   = NULL;
-   while ((entry = readdir(dir)) != NULL)
+   const struct dirent *entry = NULL;
+   entry                      = readdir(dir);
+#endif
+
+   int max_idx = -1;
+   do
    {
-      if (strncmp(entry->d_name, "ls_", 3) != 0)
-      {
-         continue;
-      }
-
-      const char *digits = entry->d_name + 3;
-      /* GCOVR_EXCL_BR_START */
-      if (*digits == '\0') /* GCOVR_EXCL_BR_STOP */
-      {
-         continue; /* GCOVR_EXCL_LINE */
-      }
-
-      bool all_digits = true;
-      for (const char *p = digits; *p != '\0'; p++)
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!isdigit((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-         {
-            all_digits = false; /* GCOVR_EXCL_LINE */
-            break;              /* GCOVR_EXCL_LINE */
-         }
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!all_digits) /* GCOVR_EXCL_BR_STOP */
-      {
-         continue; /* GCOVR_EXCL_LINE */
-      }
-
-      long idx_long = strtol(digits, NULL, 10);
-      /* GCOVR_EXCL_BR_START */
-      if (idx_long < 0 || idx_long > INT_MAX) /* GCOVR_EXCL_BR_STOP */
-      {
-         continue; /* GCOVR_EXCL_LINE */
-      }
-      int idx = (int)idx_long;
+#ifdef _MSC_VER
+      const char *entry_name   = entry.name;
+      bool        entry_is_dir = (entry.attrib & _A_SUBDIR) != 0;
+#else
+      const char *entry_name   = entry->d_name;
+      bool        entry_is_dir = true;
+#endif
+      int idx = PrintSystemDumpIndexParse(entry_name, entry_is_dir);
       /* GCOVR_EXCL_BR_START */
       if (idx > max_idx) /* GCOVR_EXCL_BR_STOP */
       {
          max_idx = idx;
       }
    }
-
+#ifdef _MSC_VER
+   while (_findnext(handle, &entry) == 0);
+   _findclose(handle);
+#else
+   while ((entry = readdir(dir)) != NULL);
    closedir(dir);
+#endif
    return max_idx;
 }
+
+#ifdef _WIN32
+static int PrintSystemRemoveTree(const char *path);
+
+#ifdef _MSC_VER
+static int
+PrintSystemRemoveTreeWindows(const char *path)
+{
+   HYPREDRV_STAT_STRUCT st;
+   if (HYPREDRV_STAT(path, &st) != 0)
+   {
+      return errno == ENOENT;
+   }
+   if (!HYPREDRV_STAT_IS_DIR(st.st_mode))
+   {
+      return (remove(path) == 0) || (errno == ENOENT);
+   }
+
+   char               pattern[2 * MAX_FILENAME_LENGTH];
+   struct _finddata_t entry;
+   intptr_t           handle;
+   int                written = snprintf(pattern, sizeof(pattern), "%s/*", path);
+   if (written < 0 || (size_t)written >= sizeof(pattern))
+   {
+      return 0;
+   }
+
+   handle = _findfirst(pattern, &entry);
+   if (handle == -1L)
+   {
+      return errno == ENOENT ? 1 : 0;
+   }
+
+   int ok = 1;
+   do
+   {
+      if (!strcmp(entry.name, ".") || !strcmp(entry.name, ".."))
+      {
+         continue;
+      }
+
+      char child[2 * MAX_FILENAME_LENGTH];
+      if (!PrintSystemPathJoin(child, sizeof(child), path, entry.name))
+      {
+         ok = 0;
+         break;
+      }
+      if (entry.attrib & _A_SUBDIR)
+      {
+         ok = PrintSystemRemoveTree(child);
+      }
+      else
+      {
+         ok = (remove(child) == 0) || (errno == ENOENT);
+      }
+   } while (ok && _findnext(handle, &entry) == 0);
+
+   _findclose(handle);
+   if (!ok)
+   {
+      return 0;
+   }
+   return (HYPREDRV_RMDIR(path) == 0) || (errno == ENOENT);
+}
+#else
+static int
+PrintSystemRemoveTreeWindows(const char *path)
+{
+   DIR *dir = opendir(path);
+   /* Windows does not provide the POSIX open-directory flags or fdopendir. */
+   if (!dir)
+   {
+      if (errno == ENOENT)
+      {
+         return 1; /* GCOVR_EXCL_LINE */
+      }
+      return (remove(path) == 0) || (errno == ENOENT);
+   }
+
+   int                  ok    = 1;
+   const struct dirent *entry = NULL;
+   while (ok && (entry = readdir(dir)) != NULL)
+   {
+      if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+      {
+         continue;
+      }
+
+      char child[2 * MAX_FILENAME_LENGTH];
+      if (!PrintSystemPathJoin(child, sizeof(child), path, entry->d_name))
+      {
+         ok = 0;
+         break;
+      }
+      ok = PrintSystemRemoveTree(child);
+   }
+   closedir(dir);
+
+   if (!ok)
+   {
+      return 0;
+   }
+   return (HYPREDRV_RMDIR(path) == 0) || (errno == ENOENT);
+}
+#endif
+#endif
 
 static int
 PrintSystemRemoveTree(const char *path)
@@ -2201,6 +2343,9 @@ PrintSystemRemoveTree(const char *path)
       return 0; /* GCOVR_EXCL_LINE */
    }
 
+#ifdef _WIN32
+   return PrintSystemRemoveTreeWindows(path);
+#else
    /* Open directory without following symlinks (avoids lstat+unlink TOCTOU). */
    int dfd = open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
    /* GCOVR_EXCL_BR_START */
@@ -2254,6 +2399,7 @@ PrintSystemRemoveTree(const char *path)
    /* GCOVR_EXCL_BR_START */
    return (rmdir(path) == 0) || (errno == ENOENT);
    /* GCOVR_EXCL_BR_STOP */
+#endif
 }
 
 /* Chooses the ls_NNNNN leaf beneath `base_dir`. In overwrite mode the index
@@ -2425,7 +2571,7 @@ PrintSystemWriteMetadata(const char *dump_dir, const PrintSystemContext *ctx,
    {
       return; /* GCOVR_EXCL_LINE */
    }
-   int fd = open(metadata_path, O_WRONLY | O_CREAT | O_TRUNC, (mode_t)0600);
+   int fd = open(metadata_path, O_WRONLY | O_CREAT | O_TRUNC, 0600);
    /* GCOVR_EXCL_BR_START */
    if (fd < 0) /* GCOVR_EXCL_BR_STOP */
    {
@@ -2494,7 +2640,7 @@ PrintSystemAppendStageIndex(const char *dump_dir, const PrintSystemContext *ctx,
       return; /* GCOVR_EXCL_LINE */
    }
 
-   int fd = open(index_path, O_WRONLY | O_APPEND | O_CREAT, (mode_t)0600);
+   int fd = open(index_path, O_WRONLY | O_APPEND | O_CREAT, 0600);
    /* GCOVR_EXCL_BR_START */
    if (fd < 0) /* GCOVR_EXCL_BR_STOP */
    {

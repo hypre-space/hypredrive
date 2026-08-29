@@ -267,14 +267,6 @@ LogExecutionPolicy(HYPREDRV_t hypredrv)
       hypredrv_ExecutionPolicyName(hypredrv->iargs->general.exec_policy));
 }
 
-static void
-ReportExecutionPolicy(HYPREDRV_t hypredrv)
-{
-   hypredrv_PrintExecutionPolicy(hypredrv->comm, hypredrv->iargs->general.exec_policy,
-                                 stdout);
-   LogExecutionPolicy(hypredrv);
-}
-
 static int
 ValidateDevicePreconditioner(HYPREDRV_t hypredrv, int device_requested, precon_t method,
                              const precon_args *args)
@@ -1345,7 +1337,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
 
    HYPREDRV_SAFE_CALL(ApplyConfiguredDeviceInitialization(hypredrv));
 
-   ReportExecutionPolicy(hypredrv);
+   LogExecutionPolicy(hypredrv);
    HYPREDRV_LOG_OBJECTF(1, hypredrv, "HYPREDRV_InputArgsParse end");
 
    return hypredrv_ErrorCodeGet();
@@ -1633,7 +1625,7 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
    hypredrv_InputArgsApplyPreconPreset(hypredrv->iargs, preset, variant_idx);
    if (!hypredrv_ErrorCodeGet() && created_input_args)
    {
-      ReportExecutionPolicy(hypredrv);
+      LogExecutionPolicy(hypredrv);
    }
 
    return hypredrv_ErrorCodeGet();
@@ -1673,7 +1665,7 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
                                               &hypredrv->iargs->solver);
       if (created_input_args)
       {
-         ReportExecutionPolicy(hypredrv);
+         LogExecutionPolicy(hypredrv);
       }
       return hypredrv_ErrorCodeGet();
    }
@@ -1687,7 +1679,7 @@ HYPREDRV_InputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
    DestroyActiveSolver(hypredrv);
    if (created_input_args)
    {
-      ReportExecutionPolicy(hypredrv);
+      LogExecutionPolicy(hypredrv);
    }
 
    return hypredrv_ErrorCodeGet();

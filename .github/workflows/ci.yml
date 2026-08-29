@@ -43,6 +43,119 @@ jobs:
       - name: Verify CMake and Autotools source lists are synchronized
         run: python3 scripts/check_source_sync.py
 
+  windows-mingw-build:
+    if: >-
+      ${{
+        (
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) &&
+        (
+          github.event_name != 'pull_request' ||
+          (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+        )
+      }}
+    name: Windows | MinGW-w64 | MS-MPI
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up MinGW-w64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-ninja
+
+      - name: Install Microsoft MPI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msmpiRoot = Join-Path $env:RUNNER_TEMP 'msmpi'
+          New-Item -ItemType Directory -Force -Path $msmpiRoot | Out-Null
+
+          $sdkPath = Join-Path $msmpiRoot 'msmpisdk.msi'
+          $runtimePath = Join-Path $msmpiRoot 'msmpisetup.exe'
+          $baseUrl = 'https://download.microsoft.com/download/7/2/7/72731ebb-b63c-4170-ade7-836966263a8f'
+          Invoke-WebRequest -Uri "$baseUrl/msmpisdk.msi" -OutFile $sdkPath
+          Invoke-WebRequest -Uri "$baseUrl/msmpisetup.exe" -OutFile $runtimePath
+
+          $expectedSdkSha256 = '8ccbc77a0cfe1e30f7495a759886b4d99b2c494b9b9ad414dcda1da84c00d3fa'
+          $expectedRuntimeSha256 = '47443829114d8d8670f77af98939fe876d33eceb35d0ce4e0e85efeec4d87213'
+          if ((Get-FileHash -Algorithm SHA256 $sdkPath).Hash.ToLowerInvariant() -ne $expectedSdkSha256) {
+            throw 'MS-MPI SDK checksum mismatch'
+          }
+          if ((Get-FileHash -Algorithm SHA256 $runtimePath).Hash.ToLowerInvariant() -ne $expectedRuntimeSha256) {
+            throw 'MS-MPI runtime checksum mismatch'
+          }
+
+          $sdkInstall = Start-Process msiexec.exe -ArgumentList @('/quiet', '/passive', '/qn', '/i', $sdkPath) -Wait -PassThru
+          if ($sdkInstall.ExitCode -ne 0) {
+            throw "MS-MPI SDK installation failed with exit code $($sdkInstall.ExitCode)"
+          }
+          $runtimeInstall = Start-Process $runtimePath -ArgumentList @('-unattend') -Wait -PassThru
+          if ($runtimeInstall.ExitCode -ne 0) {
+            throw "MS-MPI runtime installation failed with exit code $($runtimeInstall.ExitCode)"
+          }
+
+          foreach ($name in @('MSMPI_BIN', 'MSMPI_INC', 'MSMPI_LIB64')) {
+            $value = [Environment]::GetEnvironmentVariable($name, 'Machine')
+            if ([string]::IsNullOrWhiteSpace($value)) {
+              throw "MS-MPI did not define $name"
+            }
+            Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value ([Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine'))
+
+      - name: Configure and build hypredrive
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          mpi_inc="$(cygpath -m "${MSMPI_INC}")"
+          mpi_lib_dir="$(cygpath -u "${MSMPI_LIB64}")"
+          if [[ -f "${mpi_lib_dir}/msmpi64.lib" ]]; then
+            mpi_lib="${mpi_lib_dir}/msmpi64.lib"
+          else
+            mpi_lib="${mpi_lib_dir}/msmpi.lib"
+          fi
+          test -f "${mpi_lib}"
+          mpi_lib="$(cygpath -m "${mpi_lib}")"
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=gcc \
+            -DCMAKE_CXX_COMPILER=g++ \
+            -DBUILD_SHARED_LIBS=ON \
+            -DHYPRE_VERSION=v3.2.0 \
+            -DHYPREDRV_ENABLE_TESTING=OFF \
+            -DHYPREDRV_ENABLE_EXAMPLES=OFF \
+            -DHYPRE_ENABLE_MPI=ON \
+            -DHYPRE_ENABLE_FORTRAN=OFF \
+            -DHYPRE_ENABLE_CUDA=OFF \
+            -DHYPRE_ENABLE_HIP=OFF \
+            -DHYPRE_ENABLE_SYCL=OFF \
+            -DMPI_C_HEADER_DIR="${mpi_inc}" \
+            -DMPI_C_INCLUDE_DIRS="${mpi_inc}" \
+            -DMPI_C_INCLUDE_PATH="${mpi_inc}" \
+            -DMPI_C_LIB_NAMES=msmpi \
+            -DMPI_msmpi_LIBRARY="${mpi_lib}" \
+            -DMPI_C_LIBRARIES="${mpi_lib}" \
+            -DMPI_C_WORKS=TRUE \
+            -DMPI_CXX_HEADER_DIR="${mpi_inc}" \
+            -DMPI_CXX_INCLUDE_DIRS="${mpi_inc}" \
+            -DMPI_CXX_LIB_NAMES=msmpi \
+            -DMPI_CXX_msmpi_LIBRARY="${mpi_lib}" \
+            -DMPI_CXX_LIBRARIES="${mpi_lib}" \
+            -DMPI_CXX_WORKS=TRUE \
+            -DMPI_C_VERSION=3.0 \
+            -DMPI_CXX_VERSION=3.0
+          cmake --build build --parallel
+
   python-interface:
     if: >-
       ${{
@@ -71,7 +184,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -90,6 +203,7 @@ jobs:
         timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
         run: |
+          brew untap --force aws/tap >/dev/null 2>&1 || true
           brew update
           brew install cmake ninja mpich
           echo "MPICH_CC=clang" >> $GITHUB_ENV
@@ -185,7 +299,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           cache: pip
@@ -508,7 +622,7 @@ jobs:
 
       - name: Setup ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
@@ -519,6 +633,7 @@ jobs:
         timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
         run: |
+          brew untap --force aws/tap >/dev/null 2>&1 || true
           brew update
           brew install mpich clang-format
           # Get and display compiler version
@@ -622,7 +737,7 @@ jobs:
 
       - name: Cache ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
 
       - name: Upload logs on failure
         if: failure()
@@ -771,7 +886,7 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
           key: ${{ runner.os }}-${{ matrix.dependency.cache_key }}-${{ github.sha }}
           restore-keys: |
@@ -829,7 +944,7 @@ jobs:
           ctest "${CTEST_ARGS[@]}"
 
       - name: Cache ccache
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
 
       - name: Upload logs on failure
         if: failure()
@@ -871,14 +986,14 @@ jobs:
           echo "OMPI_CXX=g++" >> $GITHUB_ENV
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639
+        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-mixedint-
 
       - name: Cache datasets
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: data
           key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}

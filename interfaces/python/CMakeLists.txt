@@ -312,6 +312,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_build_info.py"
 )
 install(TARGETS _core
         LIBRARY DESTINATION "${_hypredrive_python_install_package_dir}"
+        RUNTIME DESTINATION "${_hypredrive_python_install_package_dir}"
 )
 
 if(_hypredrive_python_bundle_core)

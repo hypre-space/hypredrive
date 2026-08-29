@@ -4696,7 +4696,7 @@ test_MGRCreate_coarsest_level_fsai_destroyed(void)
    TEST_HYPRE_FINALIZE();
 }
 
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
 static void
 test_PreconDestroy_mgr_frelax_ilu_reclaims_after_hypre_destroy(void)
 {
@@ -5304,7 +5304,7 @@ test_MGRComponentReuseSetupMode_policy_shape_and_selector_paths(void)
    mgr.coarsest_level.type        = 0;
 
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
    ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_runtime_unsupported, 1);
    return;
@@ -5354,7 +5354,7 @@ test_MGRComponentReuseSetupMode_nested_shape_unsupported(void)
 
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].f_relaxation.reuse, 1);
    ASSERT_EQ(hypredrv_MGRComponentReuseSetupMode(&mgr, NULL, 1), 0);
-#if HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if HYPRE_CHECK_MIN_VERSION(30100, 50)
    ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_type_unsupported, 1);
 #else
    ASSERT_EQ(mgr.level[0].f_relaxation.reuse.warned_runtime_unsupported, 1);
@@ -5389,7 +5389,7 @@ test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
    precon_test_set_static_mgr_component_reuse(&mgr.level[0].g_relaxation.reuse, 1);
    precon_test_set_static_mgr_component_reuse(&mgr.coarsest_level.reuse, 1);
 
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 0);
    hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
    ASSERT_EQ(mgr.keep_frelax[0], 0);
@@ -5459,7 +5459,7 @@ test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles(void)
    ASSERT_NOT_NULL(args.mgr.grelax[0]);
    ASSERT_NOT_NULL(args.mgr.csolver);
 
-#if HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if HYPRE_CHECK_MIN_VERSION(30100, 50)
    HYPRE_Solver old_frelax = args.mgr.frelax[0];
    HYPRE_Solver old_grelax = args.mgr.grelax[0];
    HYPRE_Solver old_coarse = args.mgr.csolver;
@@ -7585,7 +7585,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_amg_log_dispatch_no_rbms);
    RUN_TEST(test_MGRCreate_coarsest_level_branches);
    RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
    RUN_TEST(test_PreconDestroy_mgr_frelax_ilu_reclaims_after_hypre_destroy);
 #endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)

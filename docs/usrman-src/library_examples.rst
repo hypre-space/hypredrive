@@ -2490,7 +2490,7 @@ The following code snippet shows the linear system setup and solve within a Newt
    HYPREDRV_LinearSolverDestroy(hdrv);
 
    // Update solution vector (U^{k + 1} = U^{k} + ΔU)
-   HYPREDRV_StateVectorApplyCorrection(hdrv);
+   HYPREDRV_StateVectorApplyCorrection(hdrv, 0);
 
    // Cleanup IJ objects (recreated each Newton iteration)
    HYPRE_IJMatrixDestroy(A);
@@ -2544,7 +2544,7 @@ This code sets up state vectors for a time-step application:
          HYPREDRV_LinearSolverApply(hdrv);
 
          // Apply Newton correction: U^{k+1} = U^k + ΔU
-         HYPREDRV_StateVectorApplyCorrection(hdrv);
+         HYPREDRV_StateVectorApplyCorrection(hdrv, 0);
       }
 
       // At end of time step, cycle states for next iteration

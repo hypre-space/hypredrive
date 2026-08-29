@@ -11,6 +11,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
+#include <fenv.h>
+#endif
+
 /*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntSet
  *-----------------------------------------------------------------------------*/
@@ -73,6 +77,32 @@ hypredrv_FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
  * hypredrv_FieldTypeDoubleSet
  *-----------------------------------------------------------------------------*/
 
+/* HYPRE may enable floating-point traps during runtime initialization.  The C
+ * library's strtod implementation is allowed to perform an overflowing
+ * intermediate operation while converting a syntactically valid but out of
+ * range value, so keep that implementation detail from escaping as SIGFPE.
+ * Restore the caller's environment before returning so this parser does not
+ * change HYPRE's diagnostic policy. */
+static int
+hypredrv_FieldParseDouble(const char *src, char **end, double *value)
+{
+#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
+   fenv_t env;
+
+   if (feholdexcept(&env) != 0)
+   {
+      return 0;
+   }
+
+   *value = strtod(src, end);
+   (void)fesetenv(&env);
+#else
+   *value = strtod(src, end);
+#endif
+
+   return 1;
+}
+
 void
 hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
 {
@@ -81,8 +111,8 @@ hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
    double      val;
 
    errno = 0;
-   val   = strtod(src, &end);
-   if (end == src || *end != '\0')
+   if (!hypredrv_FieldParseDouble(src, &end, &val) || end == src || *end != '\0' ||
+       errno == ERANGE || !hypredrv_DoubleIsFinite(val))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid floating-point value '%s' for key '%s'", src,

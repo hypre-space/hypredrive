@@ -1233,7 +1233,7 @@ run_preset_only_configuration_for_capture(void *context)
 }
 
 static void
-test_HYPREDRV_preset_only_configuration_prints_execution_policy_once(void)
+test_HYPREDRV_preset_only_configuration_does_not_print_execution_policy(void)
 {
    reset_state();
 
@@ -1241,7 +1241,7 @@ test_HYPREDRV_preset_only_configuration_prints_execution_policy_once(void)
    capture_stdout_output(run_preset_only_configuration_for_capture, NULL, output,
                          sizeof(output));
 
-   ASSERT_EQ(count_substr(output, "HYPRE execution policy:"), 1);
+   ASSERT_EQ(count_substr(output, "HYPRE execution policy:"), 0);
 }
 
 static void
@@ -5704,7 +5704,7 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_stream_stdout_stays_off_stderr);
    RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
    RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
-   RUN_TEST(test_HYPREDRV_preset_only_configuration_prints_execution_policy_once);
+   RUN_TEST(test_HYPREDRV_preset_only_configuration_does_not_print_execution_policy);
    RUN_TEST(test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name);
    RUN_TEST(
       test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);

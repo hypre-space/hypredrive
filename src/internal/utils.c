@@ -9,7 +9,13 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
+#ifdef _WIN32
+#include <direct.h>
+#include <io.h>
+#endif
 #include "internal/containers.h"
 
 /*-----------------------------------------------------------------------------
@@ -36,6 +42,13 @@ hypredrv_HypreConsumeErrors(void)
    HYPRE_Int hypre_error = HYPRE_GetError();
    HYPRE_Int hard_error  = hypre_error & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
 
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+   int local_hard_error  = hard_error != 0;
+   int global_hard_error = 0;
+   MPI_Allreduce(&local_hard_error, &global_hard_error, 1, MPI_INT, MPI_LOR,
+                 MPI_COMM_WORLD);
+#endif
+
    if (!hypre_error)
    {
 #if HYPRE_CHECK_MIN_VERSION(23300, 0)
@@ -43,6 +56,13 @@ hypredrv_HypreConsumeErrors(void)
        * any diagnostics retained by print mode 1 even when no sticky flag is
        * left for us to consume. */
       HYPRE_ClearErrorMessages();
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+      if (global_hard_error)
+      {
+         HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+         fflush(stderr);
+      }
 #endif
       return;
    }
@@ -53,18 +73,20 @@ hypredrv_HypreConsumeErrors(void)
       fprintf(stderr, "[HYPREDRV] HYPRE hard error flags=0x%x, argument=%d\n",
               (unsigned)hypre_error, (int)HYPRE_GetErrorArg());
       fflush(stderr);
-#if HYPRE_CHECK_MIN_VERSION(22900, 0)
-      /* HYPRE's detailed diagnostics include the source file, line, and the
-       * message passed by the failing routine. Emit them before clearing the
-       * sticky error state so applications do not see only "Generic error". */
-      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
-      fflush(stderr);
-#endif
       HYPRE_DescribeError(hypre_error, hypre_err_msg);
       hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
       hypredrv_ErrorMsgAddUnique("HYPRE reported error 0x%x: %s", (unsigned)hypre_error,
                                  hypre_err_msg);
    }
+#if HYPRE_CHECK_MIN_VERSION(22900, 0)
+   /* HYPRE_PrintErrorMessages is collective; print local diagnostics only
+    * after all ranks have agreed that at least one hard error occurred. */
+   if (global_hard_error)
+   {
+      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+      fflush(stderr);
+   }
+#endif
 #if HYPRE_CHECK_MIN_VERSION(23300, 0)
    /* HYPRE_ClearErrorMessages was added in 2.33.0. Clear both soft-warning
     * diagnostics and the hard-error messages printed above. */
@@ -230,7 +252,7 @@ hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
    {
       flags |= O_TRUNC;
    }
-   fd = open(path, flags, (mode_t)0600);
+   fd = open(path, flags, 0600);
    if (fd < 0)
    {
       return NULL;
@@ -401,8 +423,15 @@ void
 hypredrv_SplitFilename(const char *filename, char **dirname_ptr, char **basename_ptr)
 {
    const char *last_slash = strrchr(filename, '/');
-   char       *dirname    = NULL;
-   char       *basename   = NULL;
+#ifdef _WIN32
+   const char *last_backslash = strrchr(filename, '\\');
+   if (last_backslash && (!last_slash || last_backslash > last_slash))
+   {
+      last_slash = last_backslash;
+   }
+#endif
+   char *dirname  = NULL;
+   char *basename = NULL;
 
    if (last_slash != NULL)
    {
@@ -469,6 +498,76 @@ hypredrv_CombineFilename(const char *dirname, const char *basename, char **filen
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_Realpath
+ *
+ * Resolve an existing path and return a newly allocated canonical spelling.
+ * MinGW does not provide the POSIX realpath(path, NULL) extension, so use the
+ * corresponding CRT routine there and normalize its directory separators for
+ * the path-security checks shared with Unix.
+ *-----------------------------------------------------------------------------*/
+
+char *
+hypredrv_Realpath(const char *path)
+{
+   if (!path)
+   {
+      return NULL;
+   }
+
+#ifdef _WIN32
+   if (_access(path, 0) != 0)
+   {
+      return NULL;
+   }
+
+   char *resolved = _fullpath(NULL, path, 0);
+   if (resolved)
+   {
+      for (char *p = resolved; *p; p++)
+      {
+         if (*p == '\\')
+         {
+            *p = '/';
+         }
+      }
+   }
+   return resolved;
+#else
+   return realpath(path, NULL);
+#endif
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_Mkdtemp
+ *
+ * Create a unique temporary directory from a template ending in XXXXXX.
+ *-----------------------------------------------------------------------------*/
+
+char *
+hypredrv_Mkdtemp(char *path_template)
+{
+   if (!path_template)
+   {
+      return NULL;
+   }
+
+#ifdef _WIN32
+   size_t length = strlen(path_template);
+   if (length < 6 || strcmp(path_template + length - 6, "XXXXXX") != 0)
+   {
+      return NULL;
+   }
+   if (_mktemp_s(path_template, length + 1) != 0 || _mkdir(path_template) != 0)
+   {
+      return NULL;
+   }
+   return path_template;
+#else
+   return mkdtemp(path_template);
+#endif
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_IsYAMLFilename
  *
  * Returns true if string is a filename (no spaces) with a YAML extension
@@ -509,10 +608,22 @@ hypredrv_PathIsUnderRoot(const char *path, const char *root)
    }
 
    size_t root_len = strlen(root);
-   if (root_len == 0 || strncmp(path, root, root_len) != 0)
+   if (root_len == 0 ||
+#ifdef _WIN32
+       _strnicmp(path, root, root_len) != 0
+#else
+       strncmp(path, root, root_len) != 0
+#endif
+   )
    {
       return false;
    }
 
-   return (path[root_len] == '\0' || path[root_len] == '/') != 0;
+   return (path[root_len] == '\0' || path[root_len] == '/' ||
+#ifdef _WIN32
+           path[root_len] == '\\'
+#else
+           0
+#endif
+           ) != 0;
 }

@@ -12,8 +12,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <sys/types.h>
 #include <unistd.h>
+#endif
 #include "internal/error.h"
 #include "internal/linsys.h"
 #include "internal/utils.h"
@@ -258,7 +260,11 @@ LSSeqReadAt(FILE *fp, uint64_t offset, void *buffer, size_t nbytes, const char *
    }
 
    /* GCOVR_EXCL_BR_START */
+#ifdef _MSC_VER
+   if (_fseeki64(fp, (int64_t)offset, SEEK_SET) != 0) /* GCOVR_EXCL_BR_STOP */
+#else
    if (fseeko(fp, (off_t)offset, SEEK_SET) != 0) /* GCOVR_EXCL_BR_STOP */
+#endif
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Could not seek to offset %llu while reading %s",
@@ -1120,7 +1126,15 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
 static void
 LSSeqSanitizedTmpRoot(char *out, size_t out_len)
 {
+#ifdef _WIN32
+   const char *raw = getenv("TEMP");
+   if (!raw || raw[0] == '\0')
+   {
+      raw = getenv("TMP");
+   }
+#else
    const char *raw = getenv("TMPDIR");
+#endif
 
    if (!out || out_len == 0)
    {
@@ -1129,7 +1143,11 @@ LSSeqSanitizedTmpRoot(char *out, size_t out_len)
    if (!raw || raw[0] == '\0' || strstr(raw, "..") != NULL || strlen(raw) >= out_len ||
        !hypredrv_BinaryPathPrefixIsSafe(raw))
    {
+#ifdef _WIN32
+      (void)snprintf(out, out_len, ".");
+#else
       (void)snprintf(out, out_len, "/tmp");
+#endif
    }
    else
    {
@@ -1169,7 +1187,7 @@ LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
       return 0;
    }
 
-   if (!mkdtemp(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
+   if (!hypredrv_Mkdtemp(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAdd("Could not create LSSeq temporary directory under '%s'",
@@ -1250,7 +1268,7 @@ LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *pref
       {
          success = 0;
       }
-      else if (!mkdtemp(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
+      else if (!hypredrv_Mkdtemp(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
       {
          success = 0;
       }

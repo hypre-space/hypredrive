@@ -47,8 +47,9 @@ Source install:
 When run from a full hypredrive checkout, this automatically builds and bundles
 the in-tree HYPREDRV/HYPRE libraries. When run from a standalone source
 distribution, CMake falls back to finding an installed MPI-enabled
-HYPREDRV/HYPRE stack. Binary MPI wheels are currently GitHub Actions artifacts,
-not PyPI or TestPyPI packages.
+HYPREDRV/HYPRE stack. Binary MPI wheels are published as GitHub Release assets
+and are available as Actions artifacts from PR/manual runs; they are not PyPI
+or TestPyPI packages.
 
 Against an installed hypredrive:
 
@@ -83,15 +84,17 @@ Use this mode for developer and CI builds. It requires Python, NumPy, and Cython
 during configuration and build. Thus, CMake disables ``HYPREDRV_ENABLE_PYTHON``
 by default.
 
-Experimental wheel artifacts
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Wheel artifacts
+~~~~~~~~~~~~~~~
 
-The project CI can build experimental Python wheel artifacts for Linux and macOS.
+The project CI builds Python wheel artifacts for Linux, macOS, and Windows.
 These wheels bundle host-only ``libHYPREDRV`` and ``libHYPRE`` inside the Python
-package, but they do not bundle MPI.
+package, but they do not bundle an MPI runtime.
 
-On pull requests, the wheel workflow runs only when the PR has the
-``Run Python Wheels`` label. It can also be started manually with
+On pull requests, the wheel workflow runs when the PR has the
+``Run Python Wheels`` label or the shared ``Generate Artifacts`` label. The
+shared label also runs the Julia artifact workflow; use the component-specific
+label when only Python wheels are needed. It can also be started manually with
 ``workflow_dispatch``.
 
 1. Download a wheel artifact from a GitHub Actions ``Python Wheels`` workflow run.
@@ -108,9 +111,19 @@ On pull requests, the wheel workflow runs only when the PR has the
    unzip hypredrive-wheels-*.zip -d wheelhouse
    python -m pip install wheelhouse/hypredrive-*.whl
 
-CI builds wheel artifacts for each MPI flavor. Use an ``mpich`` wheel with an
-MPICH-compatible runtime and an ``openmpi`` wheel with an OpenMPI-compatible
-runtime.
+CI builds CPython 3.10 through 3.14 wheels for MPICH and OpenMPI on Linux
+x86_64/aarch64, MPICH and OpenMPI on macOS x86_64/arm64, and Microsoft MPI on
+Windows x86_64. Use an ``mpich`` wheel with an MPICH-compatible runtime, an
+``openmpi`` wheel with an OpenMPI-compatible runtime, or the Windows ``msmpi``
+wheel with the Microsoft MPI runtime. The Windows distribution is named
+``hypredrive-msmpi`` but imports as ``hypredrive``. Windows ARM64 is not
+included because the Microsoft MPI build used by the wheel has no ARM64
+runtime. The Windows wheel test uses the binary ``mpi4py`` distribution; it
+does not compile ``mpi4py`` against a different MPI implementation.
+
+For a version tag, the workflow uploads all wheels to the corresponding
+GitHub Release. Pull-request and manually dispatched runs provide the wheels
+as GitHub Actions artifacts only.
 
 Use a source install instead for custom HYPRE builds, GPU support,
 BIGINT/MIXEDINT, vendor MPI stacks, or downstream-packager control over shared

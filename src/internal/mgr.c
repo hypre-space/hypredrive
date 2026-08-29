@@ -308,7 +308,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
 
    if (!MGRFRelaxEquilSetupPreconditionsOk(wrapper, A, b, x))
    {
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    MPI_Comm comm = MGRFRelaxEquilComm(wrapper);
@@ -318,7 +318,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    {
       hypre_error_w_msg(HYPRE_ERROR_GENERIC,
                         "MGR symmetric F-block scaling requires a valid CPU matrix");
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    hypre_CSRMatrix *A_diag = hypre_ParCSRMatrixDiag(A);
@@ -333,7 +333,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    {
       hypre_error_w_msg(HYPRE_ERROR_MEMORY,
                         "Failed to allocate symmetric F-block scaling data");
-      ierr = hypre_error_flag;
+      ierr = HYPRE_GetError();
       goto cleanup;
    }
 
@@ -346,7 +346,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
          HYPRE_ERROR_GENERIC,
          "MGR symmetric F-block scaling requires aligned square partitions and "
          "finite positive diagonals");
-      ierr = hypre_error_flag;
+      ierr = HYPRE_GetError();
       goto cleanup;
    }
 
@@ -359,7 +359,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
          hypre_error_w_msg(HYPRE_ERROR_GENERIC,
                            "Failed to scale the MGR F-block collectively");
       }
-      ierr = ierr ? ierr : hypre_error_flag;
+      ierr = ierr ? ierr : HYPRE_GetError();
       goto cleanup;
    }
 
@@ -489,7 +489,7 @@ MGRFRelaxEquilWrapperSolve(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    {
       hypre_error_w_msg(HYPRE_ERROR_GENERIC,
                         "MGR symmetric F-block solver has no valid communicator");
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    if (!MGRFRelaxEquilSolveViewsOk(wrapper, A, b, x, &v))
@@ -497,7 +497,7 @@ MGRFRelaxEquilWrapperSolve(void *wrapper_v, void *A_v, void *b_v, void *x_v)
       hypre_error_w_msg(
          HYPRE_ERROR_GENERIC,
          "MGR symmetric F-block solver state or vector sizes do not match");
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    for (HYPRE_Int i = 0; i < v.n; i++)
@@ -3033,7 +3033,7 @@ MGRComponentReuseShouldKeep(const MGRComponentReuse_args *reuse,
 static int
 MGRSetComponentSetupReuse(HYPRE_Solver solver, int set_reuse)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if HYPRE_CHECK_MIN_VERSION(30100, 50)
    if (!solver)
    {
       return 0;
@@ -3765,7 +3765,7 @@ hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
    {
       return 0;
    }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return 0;
 #endif
 
@@ -3842,7 +3842,7 @@ hypredrv_MGRComponentReuseSetupMode(MGR_args *args, const Stats *stats, int next
       return 0;
    }
 
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    for (int n = 0; n < num_refs; n++)
    {
       MGRComponentReuse_args *reuse = MGRComponentReuseArgs(args, &refs[n]);
@@ -3921,7 +3921,7 @@ hypredrv_MGRRefreshComponentsForSetup(MGR_args *args, HYPRE_Solver precon,
    {
       return;
    }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    (void)timestep_starts;
    (void)stats;
    (void)next_ls_id;
@@ -4133,7 +4133,7 @@ hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_s
    {
       return;
    }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 38)
+#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
    (void)timestep_starts;
    (void)stats;
    (void)next_ls_id;
@@ -4729,6 +4729,8 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
                      HYPRE_Int any_polynomial_matched_q, const Stats *stats,
                      int next_ls_id)
 {
+   HYPRE_Int relax_type = args->relax_type;
+
    HYPRE_MGRSetCpointsByPointMarkerArray(precon, plan->num_dofs_hypre,
                                          plan->num_levels - 1, plan->num_c_dofs,
                                          plan->c_dofs, plan->dofmap_data);
@@ -4771,7 +4773,7 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
 #if HYPRE_CHECK_MIN_VERSION(22000, 0)
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
 #endif
-   HYPRE_MGRSetRelaxType(precon, args->relax_type); /* TODO: we shouldn't need this */
+   HYPRE_MGRSetRelaxType(precon, relax_type); /* TODO: we shouldn't need this */
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after base hypre setup: code=0x%x",
                       hypredrv_ErrorCodeGet());

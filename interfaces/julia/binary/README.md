@@ -2,7 +2,9 @@
 
 The Julia package can load HYPREDRV from three places: `HYPREDRV_LIBRARY`,
 `HYPREDRV_PREFIX`/`HYPREDRV_DIR`, or a Julia artifact named
-`hypredrive_mpi_trampoline`.
+`hypredrive_mpi_trampoline`. Release artifacts are built for x86_64/aarch64
+Linux glibc, x86_64/aarch64 macOS, and x86_64 Windows. The Linux and macOS
+artifacts use MPItrampoline and the Windows artifact uses Microsoft MPI.
 
 Release artifacts are intentionally bound before tagging:
 
@@ -18,7 +20,9 @@ expected to fail rather than ship an empty artifact table. The verification is
 tag-exact, so bindings for a different release tag are rejected.
 
 `bind_artifact.jl` derives the artifact name from `src/artifacts.jl` so the
-loader and maintainer tooling have a single source of truth.
+loader and maintainer tooling have a single source of truth. The tag workflow
+uploads all five tarballs to the GitHub Release; the manual binding workflow
+writes all five platform entries into `Artifacts.toml` before the tag is made.
 
 If a platform binding already exists, `bind_artifact.jl` refuses to overwrite it
 unless `HYPREDRV_ARTIFACT_REPLACE=1` is set. The release workflow sets this only

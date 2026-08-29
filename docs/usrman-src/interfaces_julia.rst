@@ -89,8 +89,9 @@ searches ``lib/julia``, ``lib``, ``lib64/julia``, and ``lib64`` below that prefi
 
 Without these environment variables, the package first searches ``Artifacts.toml`` for
 ``hypredrive_mpi_trampoline``. It then searches the source tree and calls
-``Libdl.find_library``. The artifact contains the HYPREDRV Julia bridge for MPItrampoline.
-The ``MPItrampoline_jll`` package supplies MPItrampoline.
+``Libdl.find_library``. The artifact contains the HYPREDRV Julia bridge and its
+platform MPI linkage. Linux and macOS use ``MPItrampoline_jll``; Windows uses
+``MicrosoftMPI_jll``.
 
 Example
 -------
@@ -209,10 +210,12 @@ model uses a source tree or installation prefix. Users build HYPREDRV from this
 checkout or install HYPREDRV separately and set
 ``HYPREDRV_DIR`` or ``HYPREDRV_LIBRARY``.
 
-Julia artifacts permit binary releases from this repository. The initial policy uses
-MPItrampoline. GitHub Releases stores the Linux x86_64 glibc archives. The
-``hypredrive_mpi_trampoline`` entry in ``interfaces/julia/Artifacts.toml`` identifies
-these archives.
+Julia artifacts permit binary releases from this repository. The release artifact
+set contains x86_64 and aarch64 Linux glibc, x86_64 and aarch64 macOS, and x86_64
+Windows archives. The Linux and macOS builds use MPItrampoline; the Windows build
+uses Microsoft MPI.
+The ``hypredrive_mpi_trampoline`` entry in ``interfaces/julia/Artifacts.toml``
+identifies these platform-specific archives.
 
 Release maintainers run the ``Julia Artifacts`` workflow on the release branch. Enable
 ``update_artifacts_toml`` and set ``release_tag`` to the new tag. Create the tag from the
@@ -223,8 +226,9 @@ Local BinaryBuilder runs require a working container runner. If Docker cleanup f
 ``sudo chown``, use the GitHub workflow. A machine with passwordless ``sudo`` or
 unprivileged container support is another option.
 
-The project does not currently ship artifacts for other platforms or MPI implementations.
-This includes macOS, Linux aarch64, musl, Windows, OpenMPI, and custom MPI. Users on these
-systems build from source or use an installation prefix. ``MPItrampoline_jll`` is a normal
-dependency. Thus, a clean Julia environment can preload the artifact without extension
-activation.
+The project does not currently ship artifacts for other architectures or MPI
+implementations. This includes Windows ARM64, Linux musl, OpenMPI, and custom MPI.
+Users on these systems build from source or use an installation prefix.
+``MPItrampoline_jll`` and ``MicrosoftMPI_jll`` are normal dependencies; the
+loader selects the applicable runtime on each supported platform and preloads it
+without extension activation.

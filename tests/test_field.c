@@ -35,6 +35,25 @@ test_FieldTypeDoubleSet(void)
 }
 
 static void
+test_FieldTypeDoubleSet_rejects_nonfinite_values(void)
+{
+   const char *values[] = {"1e309", "1e-400", "nan", "inf", "-inf"};
+
+   for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+   {
+      double    target = 17.0;
+      YAMLnode *node   = make_node(values[i]);
+
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_FieldTypeDoubleSet(&target, node);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+      ASSERT_EQ_DOUBLE(target, 17.0, 0.0);
+      hypredrv_YAMLnodeDestroy(node);
+   }
+}
+
+static void
 test_FieldTypeCharSet(void)
 {
    char      target = 0;
@@ -150,6 +169,7 @@ main(void)
 {
    RUN_TEST(test_FieldTypeIntSet);
    RUN_TEST(test_FieldTypeDoubleSet);
+   RUN_TEST(test_FieldTypeDoubleSet_rejects_nonfinite_values);
    RUN_TEST(test_FieldTypeCharSet);
    RUN_TEST(test_FieldTypeStringSet);
    RUN_TEST(test_FieldTypeStringSet_empty_when_unmapped);

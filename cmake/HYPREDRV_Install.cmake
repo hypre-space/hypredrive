@@ -6,6 +6,9 @@
 # Installation rules
 include(${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_ExportHelpers.cmake)
 
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/HYPREDRV)
+
 function(_hypredrv_install_hypre_public_headers_from_target target)
     get_target_property(_hypre_include_dirs ${target} INTERFACE_INCLUDE_DIRECTORIES)
     if(NOT _hypre_include_dirs)

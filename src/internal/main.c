@@ -10,7 +10,9 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 #include "internal/help.h"
+#include "internal/info.h"
 #include "internal/utils.h"
+#include "object.h"
 
 static void
 PrintUsage(const char *argv0)
@@ -251,6 +253,10 @@ RunOneConfig(MPI_Comm comm, int myid, int argc, char **argv, int print_lib_info,
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_InputArgsSetPreconPreset(obj, preset_name));
    }
+
+   /* User-facing execution-policy output belongs to the command-line driver;
+    * library API calls only emit the policy through the internal log. */
+   hypredrv_PrintExecutionPolicy(comm, obj->iargs->general.exec_policy, stdout);
 
    RunSolveLoops(obj);
 

@@ -5,7 +5,7 @@
 using BinaryBuilder
 
 name = "HYPREDRV"
-version = VersionNumber(get(ENV, "HYPREDRV_BINARY_VERSION", "0.2.0"))
+version = VersionNumber(get(ENV, "HYPREDRV_BINARY_VERSION", "0.3.0"))
 repo_url = get(ENV, "HYPREDRV_BINARY_REPOSITORY", "https://github.com/hypre-space/hypredrive.git")
 default_hypre_ref = "341f9089807934407a52ea8324759f3af1e49a57"
 
@@ -26,16 +26,44 @@ source_ref = resolve_git_ref(repo_url, get(ENV, "HYPREDRV_BINARY_GIT_SHA",
 hypre_ref = get(ENV, "HYPREDRV_BINARY_HYPRE_GIT_SHA", default_hypre_ref)
 
 sources = [
-    GitSource(repo_url, source_ref; unpack_target="hypredrive"),
-    GitSource("https://github.com/hypre-space/hypre.git", hypre_ref; unpack_target="hypre"),
+    GitSource(repo_url, source_ref),
+    GitSource("https://github.com/hypre-space/hypre.git", hypre_ref),
 ]
 
 script = replace(raw"""
 cd ${WORKSPACE}/srcdir/hypredrive
+
+# CMake and Ninja are host tools.  Put the host dependency directory before the
+# rootfs so the recipe does not pick up the older CMake shipped by BinaryBuilder.
+export PATH="${host_bindir}:${PATH}"
+
+if [[ ${target} == *-w64-mingw32* ]]; then
+    mpi_library_name=msmpi
+    mpi_library=${prefix}/lib/msmpi64.lib
+    cmake_system_name="-DCMAKE_SYSTEM_NAME=Windows"
+else
+    # MPItrampoline_jll exposes libmpi, but the installed filename is
+    # platform-specific (libmpitrampoline.so on Linux and a versioned
+    # libmpitrampoline.*.dylib on macOS). Discover the packaged file rather
+    # than assuming the JLL product's logical name is its filename.
+    mpi_library_name=mpitrampoline
+    mpi_library="$(find ${prefix}/lib -maxdepth 1 \
+        \( -name 'libmpitrampoline.so*' -o -name 'libmpitrampoline.*.dylib' \) \
+        -print -quit)"
+    test -n "${mpi_library}"
+    if [[ ${target} == *-apple-darwin* ]]; then
+        cmake_system_name="-DCMAKE_SYSTEM_NAME=Darwin"
+    else
+        cmake_system_name=""
+    fi
+fi
+
 cmake -S . -B build -G Ninja \
+    ${cmake_system_name} \
     -DCMAKE_INSTALL_PREFIX=${prefix} \
     -DCMAKE_PREFIX_PATH=${prefix} \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON \
     -DBUILD_SHARED_LIBS=ON \
     -DHYPRE_VERSION=@HYPRE_REF@ \
     -DFETCHCONTENT_SOURCE_DIR_HYPRE=${WORKSPACE}/srcdir/hypre \
@@ -48,17 +76,30 @@ cmake -S . -B build -G Ninja \
     -DHYPRE_ENABLE_HIP=OFF \
     -DHYPRE_ENABLE_SYCL=OFF \
     -DCMAKE_C_COMPILER=${CC} \
-    -DMPI_C_COMPILER=${CC} \
+    -DCMAKE_CXX_COMPILER=${CXX} \
     -DMPI_C_HEADER_DIR=${prefix}/include \
     -DMPI_C_INCLUDE_DIRS=${prefix}/include \
-    -DMPI_C_LIB_NAMES=mpi \
-    -DMPI_mpi_LIBRARY=${prefix}/lib/libmpi.${dlext} \
-    -DMPI_C_LIBRARIES=${prefix}/lib/libmpi.${dlext} \
-    -DMPI_C_WORKS=TRUE
+    -DMPI_C_LIB_NAMES=${mpi_library_name} \
+    -DMPI_${mpi_library_name}_LIBRARY=${mpi_library} \
+    -DMPI_C_LIBRARIES=${mpi_library} \
+    -DMPI_C_WORKS=TRUE \
+    -DMPI_CXX_HEADER_DIR=${prefix}/include \
+    -DMPI_CXX_INCLUDE_DIRS=${prefix}/include \
+    -DMPI_CXX_LIB_NAMES=${mpi_library_name} \
+    -DMPI_CXX_LIBRARIES=${mpi_library} \
+    -DMPI_CXX_WORKS=TRUE \
+    -DMPI_C_VERSION=3.0 \
+    -DMPI_CXX_VERSION=3.0
 cmake --build build --target install --parallel ${nproc}
 """, "@HYPRE_REF@" => hypre_ref)
 
-platforms = [Platform("x86_64", "linux"; libc="glibc")]
+platforms = [
+    Platform("x86_64", "linux"; libc="glibc"),
+    Platform("x86_64", "macos"),
+    Platform("x86_64", "windows"),
+    Platform("aarch64", "linux"; libc="glibc"),
+    Platform("aarch64", "macos"),
+]
 
 products = [
     LibraryProduct("libHYPREDRV", :libHYPREDRV; dont_dlopen=true),
@@ -66,9 +107,12 @@ products = [
 ]
 
 dependencies = [
-    BuildDependency("CMake_jll"),
-    BuildDependency("Ninja_jll"),
-    Dependency("MPItrampoline_jll"; compat="5.5"),
+    HostBuildDependency("CMake_jll"),
+    HostBuildDependency("Ninja_jll"),
+    Dependency("MPItrampoline_jll"; compat="5",
+               platforms=filter(!Sys.iswindows, platforms)),
+    Dependency("MicrosoftMPI_jll"; compat="10.1.2",
+               platforms=filter(Sys.iswindows, platforms)),
 ]
 
 build_tarballs(ARGS, name, version, sources, script, platforms, products, dependencies;

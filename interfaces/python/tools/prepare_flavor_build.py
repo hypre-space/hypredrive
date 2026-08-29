@@ -16,6 +16,7 @@ from pathlib import Path
 
 _DIST_NAMES = {
     "mpich": "hypredrive-mpich",
+    "msmpi": "hypredrive-msmpi",
     "openmpi": "hypredrive-openmpi",
 }
 

@@ -8,7 +8,6 @@
 #include "internal/yaml.h"
 #include <limits.h>
 #include <stdint.h>
-#include <unistd.h>
 
 /*-----------------------------------------------------------------------------
  * gcovr branch coverage: GCOVR_EXCL_BR_START / GCOVR_EXCL_BR_STOP regions mark branch
@@ -221,7 +220,7 @@ YAMLincludeContextInit(YAMLincludeContext *ctx, const char *root_dir)
    /* GCOVR_EXCL_BR_START */
    const char *dir = (root_dir && strlen(root_dir) > 0) ? root_dir : ".";
    /* GCOVR_EXCL_BR_STOP */
-   ctx->root_dir = realpath(dir, NULL);
+   ctx->root_dir = hypredrv_Realpath(dir);
    if (!ctx->root_dir)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -351,7 +350,7 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
       return false;                   /* GCOVR_EXCL_LINE */
    }
 
-   char *resolved = realpath(combined, NULL);
+   char *resolved = hypredrv_Realpath(combined);
    /* GCOVR_EXCL_BR_START */
    if (!resolved) /* GCOVR_EXCL_BR_STOP */
    {

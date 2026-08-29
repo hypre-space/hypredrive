@@ -5,10 +5,133 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#ifdef _WIN32
+
+#include "internal/info.h"
+#include "HYPREDRV_config.h"
+#include "HYPRE_config.h"
+#include "internal/utils.h"
+
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+
+void
+hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
+{
+   int myid = 0;
+
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      if (print_datetime)
+      {
+         time_t     now    = time(NULL);
+         struct tm *tm_now = localtime(&now);
+         char       buffer[100];
+
+         if (tm_now && strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_now))
+         {
+            printf("Date and time: %s\n", buffer);
+         }
+      }
+
+#if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
+      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s (%s)\n", HYPREDRV_DEVELOP_STRING,
+             HYPREDRV_BRANCH_NAME);
+#elif defined(HYPREDRV_DEVELOP_STRING)
+      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s\n", HYPREDRV_DEVELOP_STRING);
+#elif defined(HYPREDRV_GIT_SHA)
+      printf("\nUsing HYPREDRV_GIT_SHA: %s\n", HYPREDRV_GIT_SHA);
+#elif defined(HYPREDRV_RELEASE_VERSION)
+      printf("\nUsing HYPREDRV_RELEASE_VERSION: %s\n", HYPREDRV_RELEASE_VERSION);
+#endif
+
+#if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
+      printf("Using HYPRE_DEVELOP_STRING: %s (%s)\n", HYPRE_DEVELOP_STRING,
+             HYPRE_BRANCH_NAME);
+#elif defined(HYPRE_DEVELOP_STRING)
+      printf("Using HYPRE_DEVELOP_STRING: %s\n", HYPRE_DEVELOP_STRING);
+#elif defined(HYPRE_RELEASE_VERSION)
+      printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
+#endif
+   }
+}
+
+void
+hypredrv_PrintSystemInfo(MPI_Comm comm)
+{
+   int myid = 0;
+
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      printf("================================== System Information "
+             "=================================\n\n");
+      printf("Windows system information is not available in this build.\n\n");
+   }
+}
+
+const char *
+hypredrv_ExecutionPolicyName(int exec_policy)
+{
+   HYPRE_ExecutionPolicy hypre_exec_policy =
+      exec_policy ? HYPRE_EXEC_DEVICE : HYPRE_EXEC_HOST;
+
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+   return HYPRE_GetExecutionPolicyName(hypre_exec_policy);
+#else
+   return hypre_exec_policy == HYPRE_EXEC_DEVICE ? "Device" : "Host";
+#endif
+}
+
+void
+hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
+{
+   int myid = 0;
+
+   if (!stream)
+   {
+      return;
+   }
+
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      fprintf(stream, "HYPRE execution policy: %s\n\n",
+              hypredrv_ExecutionPolicyName(exec_policy));
+   }
+}
+
+void
+hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
+{
+   int myid = 0;
+
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
+   {
+      time_t      now    = time(NULL);
+      struct tm  *tm_now = localtime(&now);
+      char        buffer[100];
+      const char *driver_name = (argv0 && argv0[0]) ? argv0 : "Driver";
+
+      if (tm_now && strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_now))
+      {
+         printf("Date and time: %s\n%s done!\n", buffer, driver_name);
+      }
+      else
+      {
+         printf("Date and time: (time unavailable)\n%s done!\n", driver_name);
+      }
+   }
+}
+
+#else
+
 #ifndef __APPLE__
 #define _GNU_SOURCE 1
 #endif
-#include "internal/info.h"
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -22,6 +145,7 @@
 #include <unistd.h>
 #include "HYPREDRV_config.h"
 #include "HYPRE_config.h"
+#include "internal/info.h"
 #include "internal/utils.h"
 #ifdef HYPRE_USING_OPENMP
 #include <omp.h>
@@ -4895,3 +5019,5 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
       printf("Date and time: %s\n%s done!\n", buffer, driver_name);
    }
 }
+
+#endif /* _WIN32 */
