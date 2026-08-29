@@ -260,7 +260,11 @@ LSSeqReadAt(FILE *fp, uint64_t offset, void *buffer, size_t nbytes, const char *
    }
 
    /* GCOVR_EXCL_BR_START */
+#ifdef _MSC_VER
+   if (_fseeki64(fp, (int64_t)offset, SEEK_SET) != 0) /* GCOVR_EXCL_BR_STOP */
+#else
    if (fseeko(fp, (off_t)offset, SEEK_SET) != 0) /* GCOVR_EXCL_BR_STOP */
+#endif
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Could not seek to offset %llu while reading %s",

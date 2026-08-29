@@ -2132,6 +2132,39 @@ PrintSystemArtifactPathBuild(const char *dump_dir, const char *artifact_name,
 }
 
 static int
+PrintSystemDumpIndexParse(const char *entry_name, bool entry_is_dir)
+{
+   if (!entry_is_dir || strncmp(entry_name, "ls_", 3) != 0)
+   {
+      return -1;
+   }
+
+   const char *digits = entry_name + 3;
+   /* GCOVR_EXCL_BR_START */
+   if (*digits == '\0') /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1;
+   }
+
+   for (const char *p = digits; *p != '\0'; p++)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (!isdigit((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
+      {
+         return -1;
+      }
+   }
+
+   long idx_long = strtol(digits, NULL, 10);
+   /* GCOVR_EXCL_BR_START */
+   if (idx_long < 0 || idx_long > INT_MAX) /* GCOVR_EXCL_BR_STOP */
+   {
+      return -1;
+   }
+   return (int)idx_long;
+}
+
+static int
 PrintSystemFindMaxDumpIndex(const char *base_dir)
 {
    /* GCOVR_EXCL_BR_START */
@@ -2173,54 +2206,17 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
    {
 #ifdef _MSC_VER
       const char *entry_name = entry.name;
+      bool        entry_is_dir = (entry.attrib & _A_SUBDIR) != 0;
 #else
       const char *entry_name = entry->d_name;
+      bool        entry_is_dir = true;
 #endif
-      if (
-#ifdef _MSC_VER
-         !(entry.attrib & _A_SUBDIR) ||
-#endif
-         strncmp(entry_name, "ls_", 3) != 0)
-      {
-         goto next_entry;
-      }
-
-      const char *digits = entry_name + 3;
-      /* GCOVR_EXCL_BR_START */
-      if (*digits == '\0') /* GCOVR_EXCL_BR_STOP */
-      {
-         goto next_entry; /* GCOVR_EXCL_LINE */
-      }
-
-      bool all_digits = true;
-      for (const char *p = digits; *p != '\0'; p++)
-      {
-         /* GCOVR_EXCL_BR_START */
-         if (!isdigit((unsigned char)*p)) /* GCOVR_EXCL_BR_STOP */
-         {
-            all_digits = false; /* GCOVR_EXCL_LINE */
-            break;              /* GCOVR_EXCL_LINE */
-         }
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!all_digits) /* GCOVR_EXCL_BR_STOP */
-      {
-         goto next_entry; /* GCOVR_EXCL_LINE */
-      }
-
-      long idx_long = strtol(digits, NULL, 10);
-      /* GCOVR_EXCL_BR_START */
-      if (idx_long < 0 || idx_long > INT_MAX) /* GCOVR_EXCL_BR_STOP */
-      {
-         goto next_entry; /* GCOVR_EXCL_LINE */
-      }
-      int idx = (int)idx_long;
+      int idx = PrintSystemDumpIndexParse(entry_name, entry_is_dir);
       /* GCOVR_EXCL_BR_START */
       if (idx > max_idx) /* GCOVR_EXCL_BR_STOP */
       {
          max_idx = idx;
       }
-   next_entry:;
    }
 #ifdef _MSC_VER
    while (_findnext(handle, &entry) == 0);
