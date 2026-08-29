@@ -70,6 +70,8 @@ jobs:
       # intentionally changing the bundled HYPRE ABI used by Julia artifacts.
       HYPREDRV_BINARY_HYPRE_GIT_SHA: 341f9089807934407a52ea8324759f3af1e49a57
       HYPREDRV_BINARY_REPOSITORY: https://github.com/${{ github.repository }}.git
+      # The Linux runner cross-compiles the macOS artifacts.
+      BINARYBUILDER_AUTOMATIC_APPLE: true
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

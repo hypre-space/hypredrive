@@ -2205,10 +2205,10 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
    do
    {
 #ifdef _MSC_VER
-      const char *entry_name = entry.name;
+      const char *entry_name   = entry.name;
       bool        entry_is_dir = (entry.attrib & _A_SUBDIR) != 0;
 #else
-      const char *entry_name = entry->d_name;
+      const char *entry_name   = entry->d_name;
       bool        entry_is_dir = true;
 #endif
       int idx = PrintSystemDumpIndexParse(entry_name, entry_is_dir);
