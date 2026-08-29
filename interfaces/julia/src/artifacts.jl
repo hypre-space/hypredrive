@@ -43,37 +43,77 @@ function _mpi_runtime_jll_module()
     end
 end
 
+function _mpi_runtime_artifact_root()
+    # MPItrampoline_jll is augmented by MPIPreferences.  If the user has not
+    # selected MPItrampoline as the active MPI ABI, the JLL module remains
+    # loadable but does not expose an artifact directory or library path.  The
+    # HYPREDRV artifact is nevertheless linked against MPItrampoline, so resolve
+    # that artifact directly for the preload step.  Windows uses Microsoft MPI
+    # and is intentionally left to the normal JLL wrapper path above.
+    Sys.iswindows() && return nothing
+
+    try
+        pkgpath = Base.locate_package(Base.PkgId(_MPITRAMPOLINE_JLL_UUID,
+                                                  "MPItrampoline_jll"))
+        pkgpath === nothing && return nothing
+
+        artifacts_toml = normpath(joinpath(dirname(pkgpath), "..", "Artifacts.toml"))
+        isfile(artifacts_toml) || return nothing
+
+        platform = Base.BinaryPlatforms.HostPlatform()
+        platform["mpi"] = "MPItrampoline"
+        LazyArtifacts.artifact_hash("MPItrampoline", artifacts_toml;
+                                    platform=platform) === nothing && return nothing
+        root = LazyArtifacts.ensure_artifact_installed("MPItrampoline", artifacts_toml;
+                                                       platform=platform)
+        return isdir(root) ? root : nothing
+    catch err
+        @debug "MPItrampoline_jll artifact is unavailable" exception = (err, catch_backtrace())
+        return nothing
+    end
+end
+
 function _preload_mpi_runtime()
     mpi_runtime_jll = _mpi_runtime_jll_module()
-    mpi_runtime_jll === nothing && return nothing
 
     lock(_state_lock)
     try
         _mpi_runtime_handle[] !== nothing && return nothing
 
         candidates = String[]
-        for property in (:libmpi, :libmpitrampoline, :libmpi_path, :libmpitrampoline_path)
-            if isdefined(mpi_runtime_jll, property)
-                value = getproperty(mpi_runtime_jll, property)
-                value isa AbstractString && push!(candidates, String(value))
+        if mpi_runtime_jll !== nothing
+            for property in (:libmpi, :libmpitrampoline, :libmpi_path, :libmpitrampoline_path)
+                if isdefined(mpi_runtime_jll, property)
+                    value = getproperty(mpi_runtime_jll, property)
+                    value isa AbstractString && push!(candidates, String(value))
+                end
             end
         end
 
         libdirs = String[]
-        if isdefined(mpi_runtime_jll, :LIBPATH_list)
-            append!(libdirs, mpi_runtime_jll.LIBPATH_list)
-        end
-        if isdefined(mpi_runtime_jll, :LIBPATH)
-            libpath = mpi_runtime_jll.LIBPATH[]
-            if !isempty(libpath)
-                append!(libdirs, split(libpath, Sys.iswindows() ? ';' : ':'))
+        if mpi_runtime_jll !== nothing
+            if isdefined(mpi_runtime_jll, :LIBPATH_list)
+                append!(libdirs, mpi_runtime_jll.LIBPATH_list)
+            end
+            if isdefined(mpi_runtime_jll, :LIBPATH)
+                libpath = mpi_runtime_jll.LIBPATH[]
+                if !isempty(libpath)
+                    append!(libdirs, split(libpath, Sys.iswindows() ? ';' : ':'))
+                end
+            end
+            if isdefined(mpi_runtime_jll, :artifact_dir)
+                root = mpi_runtime_jll.artifact_dir
+                push!(libdirs, joinpath(root, "lib"))
+                push!(libdirs, joinpath(root, "bin"))
+                push!(libdirs, root)
             end
         end
-        if isdefined(mpi_runtime_jll, :artifact_dir)
-            root = mpi_runtime_jll.artifact_dir
-            push!(libdirs, joinpath(root, "lib"))
-            push!(libdirs, joinpath(root, "bin"))
-            push!(libdirs, root)
+
+        fallback_root = _mpi_runtime_artifact_root()
+        if fallback_root !== nothing
+            push!(libdirs, joinpath(fallback_root, "lib"))
+            push!(libdirs, joinpath(fallback_root, "bin"))
+            push!(libdirs, fallback_root)
         end
         unique!(libdirs)
 
@@ -104,7 +144,7 @@ function _preload_mpi_runtime()
             end
         end
 
-        if isdefined(mpi_runtime_jll, :libmpi_handle)
+        if mpi_runtime_jll !== nothing && isdefined(mpi_runtime_jll, :libmpi_handle)
             handle = mpi_runtime_jll.libmpi_handle
             if handle isa Ptr && handle != C_NULL
                 # This handle is owned by the runtime JLL. We cache it only as a
