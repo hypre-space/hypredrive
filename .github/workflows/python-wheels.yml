@@ -193,7 +193,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_TEST_REQUIRES_WINDOWS=pytest scipy mpi4py'
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_BEFORE_TEST_WINDOWS=python -m pip install --only-binary=mpi4py mpi4py'
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_BEFORE_BUILD_WINDOWS=python -m pip install delvewheel'
-          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=delvewheel repair --exclude msmpi.dll -w {dest_dir} {wheel}'
+          Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=delvewheel repair --ignore-existing --exclude msmpi.dll -w {dest_dir} {wheel}'
 
       - name: Build wheels
         run: >-
