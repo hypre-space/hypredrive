@@ -94,11 +94,11 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p julia-artifacts
-          find products -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -print -exec cp {} julia-artifacts/ \;
-          tarball_count=$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | wc -l)
+          find products -type f \( -name '*.tar.gz' -o -name '*.tgz' \) ! -name '*-logs*' -print -exec cp {} julia-artifacts/ \;
+          tarball_count=$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) ! -name '*-logs*' | wc -l)
           test "$tarball_count" -eq 5
           for target in x86_64-linux-gnu x86_64-apple-darwin x86_64-w64-mingw32 aarch64-linux-gnu aarch64-apple-darwin; do
-            test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -name "*${target}*" -print -quit)"
+            test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) ! -name '*-logs*' -name "*${target}*" -print -quit)"
           done
 
       - name: Validate artifact lookup and dlopen
