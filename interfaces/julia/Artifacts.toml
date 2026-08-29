@@ -1,6 +1,42 @@
-# This file is intentionally empty in source checkouts until release tarballs are bound.
-#
-# The expected artifact name is "hypredrive_mpi_trampoline". The historical key
-# now covers the platform-specific HYPREDRV Julia bridge: MPItrampoline is used
-# on Linux/macOS and Microsoft MPI on Windows. Release tooling should bind the
-# platform tarballs with `interfaces/julia/binary/bind_artifact.jl`.
+[[hypredrive_mpi_trampoline]]
+arch = "aarch64"
+git-tree-sha1 = "e16df9bc981c97a7f5a364027f00e1d223cf8884"
+os = "macos"
+
+    [[hypredrive_mpi_trampoline.download]]
+    sha256 = "39f6fa2ccb5db1b3bc4e36c6a77138b2f3b8adf6e780a1e8c913659fbeeea865"
+    url = "https://github.com/hypre-space/hypredrive/releases/download/v0.3.0/HYPREDRV.v0.3.0.aarch64-apple-darwin.tar.gz"
+[[hypredrive_mpi_trampoline]]
+arch = "aarch64"
+git-tree-sha1 = "d92139e9db31036cf389df6590ff991a12000e3c"
+libc = "glibc"
+os = "linux"
+
+    [[hypredrive_mpi_trampoline.download]]
+    sha256 = "a987139db4203715f2bd3af96ae051c82bdef94aa989084d681d028363835f01"
+    url = "https://github.com/hypre-space/hypredrive/releases/download/v0.3.0/HYPREDRV.v0.3.0.aarch64-linux-gnu.tar.gz"
+[[hypredrive_mpi_trampoline]]
+arch = "x86_64"
+git-tree-sha1 = "bbd507822829629541c4444f7b4aa2bb5d4b7bf9"
+os = "macos"
+
+    [[hypredrive_mpi_trampoline.download]]
+    sha256 = "1f60c4a93221f9530131702e3d2f165aa8b81ef091b1811718b7e965c2520c2a"
+    url = "https://github.com/hypre-space/hypredrive/releases/download/v0.3.0/HYPREDRV.v0.3.0.x86_64-apple-darwin.tar.gz"
+[[hypredrive_mpi_trampoline]]
+arch = "x86_64"
+git-tree-sha1 = "d557de4aedafc2832a12486d1e95855ec41084b2"
+libc = "glibc"
+os = "linux"
+
+    [[hypredrive_mpi_trampoline.download]]
+    sha256 = "2f1840b6f473e47a9800ca724d1c276da7becaf06ee9a97a6c8c248dd7b0493d"
+    url = "https://github.com/hypre-space/hypredrive/releases/download/v0.3.0/HYPREDRV.v0.3.0.x86_64-linux-gnu.tar.gz"
+[[hypredrive_mpi_trampoline]]
+arch = "x86_64"
+git-tree-sha1 = "e2d581ff9cb36eacd30c29da3350865b14c3ad2d"
+os = "windows"
+
+    [[hypredrive_mpi_trampoline.download]]
+    sha256 = "d88d42a475848ce1b3ac2f4fa37627d012b88287a05ab5c5349719cabba2db90"
+    url = "https://github.com/hypre-space/hypredrive/releases/download/v0.3.0/HYPREDRV.v0.3.0.x86_64-w64-mingw32.tar.gz"
