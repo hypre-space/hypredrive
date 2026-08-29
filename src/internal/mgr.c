@@ -308,7 +308,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
 
    if (!MGRFRelaxEquilSetupPreconditionsOk(wrapper, A, b, x))
    {
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    MPI_Comm comm = MGRFRelaxEquilComm(wrapper);
@@ -318,7 +318,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    {
       hypre_error_w_msg(HYPRE_ERROR_GENERIC,
                         "MGR symmetric F-block scaling requires a valid CPU matrix");
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    hypre_CSRMatrix *A_diag = hypre_ParCSRMatrixDiag(A);
@@ -333,7 +333,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    {
       hypre_error_w_msg(HYPRE_ERROR_MEMORY,
                         "Failed to allocate symmetric F-block scaling data");
-      ierr = hypre_error_flag;
+      ierr = HYPRE_GetError();
       goto cleanup;
    }
 
@@ -346,7 +346,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
          HYPRE_ERROR_GENERIC,
          "MGR symmetric F-block scaling requires aligned square partitions and "
          "finite positive diagonals");
-      ierr = hypre_error_flag;
+      ierr = HYPRE_GetError();
       goto cleanup;
    }
 
@@ -359,7 +359,7 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
          hypre_error_w_msg(HYPRE_ERROR_GENERIC,
                            "Failed to scale the MGR F-block collectively");
       }
-      ierr = ierr ? ierr : hypre_error_flag;
+      ierr = ierr ? ierr : HYPRE_GetError();
       goto cleanup;
    }
 
@@ -489,7 +489,7 @@ MGRFRelaxEquilWrapperSolve(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    {
       hypre_error_w_msg(HYPRE_ERROR_GENERIC,
                         "MGR symmetric F-block solver has no valid communicator");
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    if (!MGRFRelaxEquilSolveViewsOk(wrapper, A, b, x, &v))
@@ -497,7 +497,7 @@ MGRFRelaxEquilWrapperSolve(void *wrapper_v, void *A_v, void *b_v, void *x_v)
       hypre_error_w_msg(
          HYPRE_ERROR_GENERIC,
          "MGR symmetric F-block solver state or vector sizes do not match");
-      return hypre_error_flag;
+      return HYPRE_GetError();
    }
 
    for (HYPRE_Int i = 0; i < v.n; i++)

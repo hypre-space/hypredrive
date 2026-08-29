@@ -51,7 +51,11 @@ else
         \( -name 'libmpitrampoline.so*' -o -name 'libmpitrampoline.*.dylib' \) \
         -print -quit)"
     test -n "${mpi_library}"
-    cmake_system_name=""
+    if [[ ${target} == *-apple-darwin* ]]; then
+        cmake_system_name="-DCMAKE_SYSTEM_NAME=Darwin"
+    else
+        cmake_system_name=""
+    fi
 fi
 
 cmake -S . -B build -G Ninja \

@@ -1531,6 +1531,8 @@ if(NOT HYPRE_FOUND)
         add_subdirectory(${hypre_SOURCE_DIR}/src ${hypre_BINARY_DIR})
         if(WIN32 AND BUILD_SHARED_LIBS AND TARGET HYPRE)
             set_target_properties(HYPRE PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+        elseif(APPLE AND BUILD_SHARED_LIBS AND TARGET HYPRE)
+            set_target_properties(HYPRE PROPERTIES INSTALL_RPATH "@loader_path")
         endif()
         set(CMAKE_INSTALL_PREFIX "${_hypredrv_saved_install_prefix}" CACHE PATH
             "Install path prefix, prepended onto install directories." FORCE)
