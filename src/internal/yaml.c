@@ -8,7 +8,6 @@
 #include "internal/yaml.h"
 #include <limits.h>
 #include <stdint.h>
-#include <unistd.h>
 
 /*-----------------------------------------------------------------------------
  * gcovr branch coverage: GCOVR_EXCL_BR_START / GCOVR_EXCL_BR_STOP regions mark branch

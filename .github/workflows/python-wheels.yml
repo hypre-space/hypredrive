@@ -137,6 +137,7 @@ jobs:
         if: startsWith(runner.os, 'macOS')
         run: |
           set -euxo pipefail
+          brew untap --force aws/tap >/dev/null 2>&1 || true
           echo "CIBW_REPAIR_WHEEL_COMMAND_MACOS=cp {wheel} {dest_dir}" >> "$GITHUB_ENV"
           if [ "${{ matrix.mpi_flavor }}" = "mpich" ]; then
             echo "CIBW_BEFORE_ALL_MACOS=brew install mpich" >> "$GITHUB_ENV"

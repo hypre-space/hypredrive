@@ -105,7 +105,7 @@ products = [
 dependencies = [
     HostBuildDependency("CMake_jll"),
     HostBuildDependency("Ninja_jll"),
-    Dependency("MPItrampoline_jll"; compat="5.5",
+    Dependency("MPItrampoline_jll"; compat="5",
                platforms=filter(!Sys.iswindows, platforms)),
     Dependency("MicrosoftMPI_jll"; compat="10.1.2",
                platforms=filter(Sys.iswindows, platforms)),

@@ -11,6 +11,13 @@
 #include <stdbool.h>
 #include "HYPREDRV.h"
 
+#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
+#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index) \
+   __attribute__((format(printf, _format_index, _argument_index)))
+#else
+#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index)
+#endif
+
 enum
 {
    HYPREDRV_LOG_LEVEL_OFF = 0,
@@ -24,12 +31,12 @@ int  hypredrv_LogLevelGet(void);
 bool hypredrv_LogEnabled(int level);
 int  hypredrv_LogRankFromComm(MPI_Comm comm);
 void hypredrv_LogCommf(int level, MPI_Comm comm, const char *object_name, int ls_id,
-                       const char *fmt, ...) __attribute__((format(printf, 5, 6)));
+                       const char *fmt, ...) HYPREDRV_PRINTF_FORMAT(5, 6);
 
 void hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id,
-                   const char *fmt, ...) __attribute__((format(printf, 5, 6)));
+                   const char *fmt, ...) HYPREDRV_PRINTF_FORMAT(5, 6);
 void hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
-   __attribute__((format(printf, 3, 4)));
+   HYPREDRV_PRINTF_FORMAT(3, 4);
 void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
                            const char *header, const char *text);
 

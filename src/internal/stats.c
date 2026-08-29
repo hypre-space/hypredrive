@@ -11,7 +11,9 @@
 #include <mpi.h>
 #include <stdarg.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 /*
  * gcovr: GCOVR_EXCL_BR_START / GCOVR_EXCL_BR_STOP regions tag branch outcomes that are

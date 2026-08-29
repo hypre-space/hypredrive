@@ -9,7 +9,9 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <string.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 #ifdef _WIN32
 #include <direct.h>
 #include <io.h>
@@ -250,7 +252,7 @@ hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
    {
       flags |= O_TRUNC;
    }
-   fd = open(path, flags, (mode_t)0600);
+   fd = open(path, flags, 0600);
    if (fd < 0)
    {
       return NULL;

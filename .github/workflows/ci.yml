@@ -203,6 +203,7 @@ jobs:
         timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
         run: |
+          brew untap --force aws/tap >/dev/null 2>&1 || true
           brew update
           brew install cmake ninja mpich
           echo "MPICH_CC=clang" >> $GITHUB_ENV
@@ -632,6 +633,7 @@ jobs:
         timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
         run: |
+          brew untap --force aws/tap >/dev/null 2>&1 || true
           brew update
           brew install mpich clang-format
           # Get and display compiler version

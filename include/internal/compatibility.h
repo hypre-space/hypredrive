@@ -12,6 +12,33 @@
 
 #include "HYPRE_utilities.h"
 
+/* MSVC exposes a number of POSIX-compatible CRT routines with a leading
+ * underscore.  Keep the implementation sources portable without making the
+ * public API depend on these names. */
+#if defined(_MSC_VER)
+#include <direct.h>
+#include <io.h>
+#include <process.h>
+#include <string.h>
+
+#define access(...) _access(__VA_ARGS__)
+#define close(...) _close(__VA_ARGS__)
+#define dup(...) _dup(__VA_ARGS__)
+#define dup2(...) _dup2(__VA_ARGS__)
+#define fdopen(...) _fdopen(__VA_ARGS__)
+#define fileno(...) _fileno(__VA_ARGS__)
+#define getpid(...) _getpid(__VA_ARGS__)
+#define open(...) _open(__VA_ARGS__)
+#define read(...) _read(__VA_ARGS__)
+#define rmdir(...) _rmdir(__VA_ARGS__)
+#define strdup(...) _strdup(__VA_ARGS__)
+#define strtok_r(...) strtok_s(__VA_ARGS__)
+#define strcasecmp(...) _stricmp(__VA_ARGS__)
+#define strncasecmp(...) _strnicmp(__VA_ARGS__)
+#define unlink(...) _unlink(__VA_ARGS__)
+#define write(...) _write(__VA_ARGS__)
+#endif
+
 /* Provide stable version macros even when older hypre headers don't define them. */
 #ifndef HYPREDRV_HYPRE_RELEASE_NUMBER
 #ifdef HYPRE_RELEASE_NUMBER

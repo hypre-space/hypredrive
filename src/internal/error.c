@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "HYPREDRV_utils.h"
+#include "internal/compatibility.h"
 
 #ifdef __linux__
 
