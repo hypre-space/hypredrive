@@ -71,9 +71,15 @@ test_InputArgsCreate_general_vendor_defaults(void)
 #ifdef HYPRE_USING_GPU
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+#if defined(HYPRE_USING_CUDA) || defined(HYPRE_USING_HIP)
+   ASSERT_EQ(args->general.use_vendor_sptrans, 0);
+#else
+   ASSERT_EQ(args->general.use_vendor_sptrans, 1);
+#endif
 #else
    ASSERT_EQ(args->general.use_vendor_spgemm, 0);
    ASSERT_EQ(args->general.use_vendor_spmv, 0);
+   ASSERT_EQ(args->general.use_vendor_sptrans, 0);
 #endif
    ASSERT_STREQ(args->general.name, "");
    ASSERT_STREQ(args->general.statistics_filename, "");
@@ -95,6 +101,7 @@ test_InputArgsParseGeneral_flags(void)
                             "  print_config_params: no\n"
                             "  use_vendor_spgemm: yes\n"
                             "  use_vendor_spmv: yes\n"
+                            "  use_vendor_sptrans: yes\n"
                             "  num_repetitions: 3\n"
                             "  dev_pool_size: 2\n"
                             "  uvm_pool_size: 3\n"
@@ -117,6 +124,7 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+   ASSERT_EQ(args->general.use_vendor_sptrans, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
    ASSERT_EQ((int)(args->general.dev_pool_size / (double)GB_TO_BYTES), 2);
    ASSERT_EQ((int)(args->general.uvm_pool_size / (double)GB_TO_BYTES), 3);
@@ -1044,11 +1052,12 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    char *overrides[] = {
       "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
       "--general:statistics",  "off", "--general:use_vendor_spgemm",      "on",
-      "--general:use_vendor_spmv", "on", "--general:statistics_filename",
-      "stats_cli.out", "--general:device_lazy_init", "off",
+      "--general:use_vendor_spmv", "on", "--general:use_vendor_sptrans", "on",
+      "--general:statistics_filename", "stats_cli.out", "--general:device_lazy_init",
+      "off",
    };
 
-   input_args *args = parse_config_with_overrides(yaml_text, 14, overrides);
+   input_args *args = parse_config_with_overrides(yaml_text, 16, overrides);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
    ASSERT_EQ(args->solver.pcg.max_iter, 50);
@@ -1057,6 +1066,7 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+   ASSERT_EQ(args->general.use_vendor_sptrans, 1);
    ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_STREQ(args->general.statistics_filename, "stats_cli.out");
 

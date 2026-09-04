@@ -390,6 +390,47 @@ function(_hypredrv_detect_hypre_sycl_usage)
     endforeach()
 endfunction()
 
+function(_hypredrv_detect_hypre_openmp_usage)
+    # A superbuild may provide this integration hint explicitly. Otherwise
+    # infer it from HYPRE's CMake option, target definitions, or config header.
+    if(DEFINED HYPREDRV_HYPRE_USE_OPENMP)
+        return()
+    endif()
+
+    set(HYPREDRV_HYPRE_USE_OPENMP FALSE PARENT_SCOPE)
+
+    if(HYPRE_ENABLE_OPENMP)
+        set(HYPREDRV_HYPRE_USE_OPENMP TRUE PARENT_SCOPE)
+        return()
+    endif()
+
+    if(NOT TARGET HYPRE::HYPRE)
+        return()
+    endif()
+
+    get_target_property(_hypre_compile_defs HYPRE::HYPRE INTERFACE_COMPILE_DEFINITIONS)
+    if(_hypre_compile_defs)
+        foreach(_def IN LISTS _hypre_compile_defs)
+            if(_def MATCHES "(^|[^A-Za-z0-9_])HYPRE_USING_OPENMP([^A-Za-z0-9_]|$)")
+                set(HYPREDRV_HYPRE_USE_OPENMP TRUE PARENT_SCOPE)
+                return()
+            endif()
+        endforeach()
+    endif()
+
+    get_target_property(_hypre_include_dirs HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
+    _hypredrv_collect_plain_include_dirs_for_deps(_hypre_plain_include_dirs ${_hypre_include_dirs})
+    foreach(_inc_dir IN LISTS _hypre_plain_include_dirs)
+        if(EXISTS "${_inc_dir}/HYPRE_config.h")
+            file(READ "${_inc_dir}/HYPRE_config.h" _hypre_config_content)
+            if(_hypre_config_content MATCHES "#define[ \t]+HYPRE_USING_OPENMP([ \t]+1)?")
+                set(HYPREDRV_HYPRE_USE_OPENMP TRUE PARENT_SCOPE)
+                return()
+            endif()
+        endif()
+    endforeach()
+endfunction()
+
 function(_hypredrv_hypre_needs_cuda_nvjitlink result_var)
     set(_needs_nvjitlink FALSE)
 
@@ -1678,6 +1719,7 @@ endif()
 # Get HYPRE properties
 if(TARGET HYPRE::HYPRE)
     _hypredrv_detect_hypre_sycl_usage()
+    _hypredrv_detect_hypre_openmp_usage()
     _hypredrv_ensure_hypre_cuda_nvjitlink()
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
@@ -1746,6 +1788,7 @@ if(TARGET HYPRE::HYPRE)
     message(STATUS "  include directories: ${HYPRE_INCLUDE_DIRS}")
     message(STATUS "  libraries: ${HYPRE_LIBRARY_FILE}")
     message(STATUS "  uses SYCL: ${HYPREDRV_HYPRE_USES_SYCL}")
+    message(STATUS "  uses OpenMP: ${HYPREDRV_HYPRE_USE_OPENMP}")
 
     # Build a runtime library search path for CTest so executables can launch
     # when HYPRE's transitive shared-library dependencies (e.g., Caliper) are
