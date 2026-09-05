@@ -315,6 +315,7 @@ ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv)
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
       HYPRE_SetSpGemmUseVendor(hypredrv->iargs->general.use_vendor_spgemm);
       HYPRE_SetSpMVUseVendor(hypredrv->iargs->general.use_vendor_spmv);
+      HYPRE_SetSpTransUseVendor(hypredrv->iargs->general.use_vendor_sptrans);
 #endif
 
 #ifdef HYPRE_USING_UMPIRE

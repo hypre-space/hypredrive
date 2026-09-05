@@ -7,8 +7,13 @@
 
 #include "internal/utils.h"
 #include <ctype.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <string.h>
+#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
+#include <fenv.h>
+#endif
 #ifndef _MSC_VER
 #include <unistd.h>
 #endif
@@ -17,6 +22,62 @@
 #include <io.h>
 #endif
 #include "internal/containers.h"
+
+bool
+hypredrv_ParseInt(const char *text, int *value)
+{
+   char *end = NULL;
+   long  parsed;
+
+   if (!text || !value)
+   {
+      return false;
+   }
+   errno  = 0;
+   parsed = strtol(text, &end, 10);
+   if (end == text || end[strspn(end, " \t\r\n\f\v")] != '\0' || errno == ERANGE ||
+       parsed < INT_MIN || parsed > INT_MAX)
+   {
+      return false;
+   }
+   *value = (int)parsed;
+   return true;
+}
+
+bool
+hypredrv_ParseDouble(const char *text, double *value)
+{
+   char  *end = NULL;
+   double parsed;
+   int    range_error;
+
+   if (!text || !value)
+   {
+      return false;
+   }
+#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
+   /* strtod may overflow internally. Restore the caller's floating-point
+    * environment without re-raising conversion exceptions. */
+   fenv_t env;
+   if (feholdexcept(&env) != 0)
+   {
+      return false;
+   }
+#endif
+   errno       = 0;
+   parsed      = strtod(text, &end);
+   range_error = errno == ERANGE;
+#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
+   (void)fesetenv(&env);
+#endif
+   if (end == text || end[strspn(end, " \t\r\n\f\v")] != '\0' || range_error ||
+       !hypredrv_DoubleIsFinite(parsed))
+   {
+      return false;
+   }
+   *value = parsed;
+   return true;
+}
 
 /*-----------------------------------------------------------------------------
  * hypredrv_HypreClearConvergenceErrors / hypredrv_HypreConsumeErrors

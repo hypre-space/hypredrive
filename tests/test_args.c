@@ -71,9 +71,15 @@ test_InputArgsCreate_general_vendor_defaults(void)
 #ifdef HYPRE_USING_GPU
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+#if defined(HYPRE_USING_CUDA) || defined(HYPRE_USING_HIP)
+   ASSERT_EQ(args->general.use_vendor_sptrans, 0);
+#else
+   ASSERT_EQ(args->general.use_vendor_sptrans, 1);
+#endif
 #else
    ASSERT_EQ(args->general.use_vendor_spgemm, 0);
    ASSERT_EQ(args->general.use_vendor_spmv, 0);
+   ASSERT_EQ(args->general.use_vendor_sptrans, 0);
 #endif
    ASSERT_STREQ(args->general.name, "");
    ASSERT_STREQ(args->general.statistics_filename, "");
@@ -95,6 +101,7 @@ test_InputArgsParseGeneral_flags(void)
                             "  print_config_params: no\n"
                             "  use_vendor_spgemm: yes\n"
                             "  use_vendor_spmv: yes\n"
+                            "  use_vendor_sptrans: yes\n"
                             "  num_repetitions: 3\n"
                             "  dev_pool_size: 2\n"
                             "  uvm_pool_size: 3\n"
@@ -117,6 +124,7 @@ test_InputArgsParseGeneral_flags(void)
    ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+   ASSERT_EQ(args->general.use_vendor_sptrans, 1);
    ASSERT_EQ(args->general.num_repetitions, 3);
    ASSERT_EQ((int)(args->general.dev_pool_size / (double)GB_TO_BYTES), 2);
    ASSERT_EQ((int)(args->general.uvm_pool_size / (double)GB_TO_BYTES), 3);
@@ -1044,11 +1052,12 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    char *overrides[] = {
       "--solver:pcg:max_iter", "50",  "--preconditioner:amg:print_level", "2",
       "--general:statistics",  "off", "--general:use_vendor_spgemm",      "on",
-      "--general:use_vendor_spmv", "on", "--general:statistics_filename",
-      "stats_cli.out", "--general:device_lazy_init", "off",
+      "--general:use_vendor_spmv", "on", "--general:use_vendor_sptrans", "on",
+      "--general:statistics_filename", "stats_cli.out", "--general:device_lazy_init",
+      "off",
    };
 
-   input_args *args = parse_config_with_overrides(yaml_text, 14, overrides);
+   input_args *args = parse_config_with_overrides(yaml_text, 16, overrides);
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
    ASSERT_EQ(args->solver.pcg.max_iter, 50);
@@ -1057,6 +1066,7 @@ test_YAMLtreeUpdate_overrides_solver_and_precon(void)
    ASSERT_EQ(args->general.statistics, 0);
    ASSERT_EQ(args->general.use_vendor_spgemm, 1);
    ASSERT_EQ(args->general.use_vendor_spmv, 1);
+   ASSERT_EQ(args->general.use_vendor_sptrans, 1);
    ASSERT_EQ(args->general.device_lazy_init, 0);
    ASSERT_STREQ(args->general.statistics_filename, "stats_cli.out");
 
@@ -2119,6 +2129,58 @@ test_PreconPreset_user_registered_unknown_type_rejected(void)
    hypredrv_PresetFreeUserPresets();
 }
 
+static void
+test_InputArgsParse_rejects_malformed_numbers(void)
+{
+   const struct
+   {
+      const char *format;
+      const char *invalid;
+   } cases[] = {
+      {"general:\n  host_pool_size: %s\n", "2GB"},
+      {"general:\n  dev_pool_size: %s\n", "-1"},
+      {"general:\n  uvm_pool_size: %s\n", "1e308"},
+      {"general:\n  pinned_pool_size: %s\n", "nan"},
+      {"solver:\n  scaling:\n    custom_values: [1, %s]\n  pcg:\n    max_iter: 10\n",
+       "nan"},
+      {"preconditioner:\n  reuse:\n    frequency: %s\n  amg:\n    max_iter: 1\n", "2x"},
+      {"preconditioner:\n  reuse:\n    frequency: %s\n  amg:\n    max_iter: 1\n",
+       "2147483648"},
+      {"preconditioner:\n  reuse:\n    type: adaptive\n    adaptive:\n      "
+       "positive_floor: %s\n  amg:\n    max_iter: 1\n",
+       "nan"},
+      {"linear_system:\n  print_system:\n    type: iterations_over\n    stage: apply\n   "
+       " threshold: %s\n",
+       "nan"},
+      {"linear_system:\n  dof_labels:\n    p: %s\n", "2x"},
+      {"linear_system:\n  dof_labels: {p: %s}\n", "2147483648"},
+   };
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      for (int invalid = 0; invalid <= 1; invalid++)
+      {
+         char config[512];
+         hypredrv_ErrorStateReset();
+         snprintf(config, sizeof(config), cases[i].format,
+                  invalid ? cases[i].invalid : "2");
+         if (!strstr(config, "preconditioner:")) strcat(config, "preconditioner: amg\n");
+         input_args *args = parse_config(config);
+         if (invalid)
+         {
+            ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+            ASSERT_NULL(args);
+         }
+         else
+         {
+            ASSERT_FALSE(hypredrv_ErrorCodeActive());
+            ASSERT_NOT_NULL(args);
+            hypredrv_InputArgsDestroy(&args);
+         }
+      }
+   }
+   hypredrv_ErrorStateReset();
+}
+
 int
 main(int argc, char **argv)
 {
@@ -2126,6 +2188,7 @@ main(int argc, char **argv)
 
    RUN_TEST(test_InputArgsCreate_general_vendor_defaults);
    RUN_TEST(test_InputArgsParseGeneral_flags);
+   RUN_TEST(test_InputArgsParse_rejects_malformed_numbers);
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);

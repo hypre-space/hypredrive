@@ -101,6 +101,10 @@ The ``general`` section contains global settings that apply to the entire execut
   kernels when available. Values: ``yes`` / ``no``. Default: ``yes`` on GPU-enabled builds
   and ``no`` otherwise.
 
+- ``use_vendor_sptrans`` - Use vendor-optimized sparse matrix transpose (SpTrans) kernels
+  when available. Values: ``yes`` / ``no``. Default: ``no`` on CUDA/HIP builds, ``yes`` on
+  other GPU-enabled builds, and ``no`` otherwise.
+
 
 This example shows the ``general`` section:
 
@@ -120,6 +124,7 @@ This example shows the ``general`` section:
       exec_policy: device
       use_vendor_spgemm: yes
       use_vendor_spmv: yes
+      use_vendor_sptrans: yes
 
 Linear System
 -------------

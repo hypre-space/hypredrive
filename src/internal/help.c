@@ -911,6 +911,7 @@ static const HelpKeyDoc GeneralKeyDocs[] = {
    {"exec_policy", "Execution policy for hypre operations"},
    {"use_vendor_spgemm", "Use vendor sparse matrix-matrix kernels when available"},
    {"use_vendor_spmv", "Use vendor sparse matrix-vector kernels when available"},
+   {"use_vendor_sptrans", "Use vendor sparse matrix-transpose kernels when available"},
    {"num_repetitions", "Number of repeated solve runs"},
    {"dev_pool_size", "Initial device memory pool size in GB"},
    {"uvm_pool_size", "Initial unified-memory pool size in GB"},

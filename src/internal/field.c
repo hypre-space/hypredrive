@@ -6,14 +6,8 @@
  ******************************************************************************/
 
 #include "internal/field.h"
-#include <errno.h>
-#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
-#include <fenv.h>
-#endif
 
 /*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntSet
@@ -23,21 +17,12 @@ void
 hypredrv_FieldTypeIntSet(void *field, const YAMLnode *node)
 {
    const char *src = (node && node->mapped_val) ? node->mapped_val : "";
-   char       *end = NULL;
-   long        val;
-
-   errno = 0;
-   val   = strtol(src, &end, 10);
-   /* Reject empty/garbage input and out-of-range values instead of invoking the
-    * undefined behavior of sscanf("%d") on an unrepresentable value. */
-   if (end == src || *end != '\0' || errno == ERANGE || val < INT_MIN || val > INT_MAX)
+   if (!hypredrv_ParseInt(src, (int *)field))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid integer value '%s' for key '%s'", src,
                            node ? node->key : "<unknown>");
-      return;
    }
-   *((int *)field) = (int)val;
 }
 
 /*-----------------------------------------------------------------------------
@@ -50,15 +35,15 @@ hypredrv_FieldTypeIntArraySet(void *field, const YAMLnode *node)
    IntArray *int_array = NULL;
 
    hypredrv_StrToIntArray(node->mapped_val, &int_array);
+   if (!int_array)
+   {
+      return;
+   }
 
    /* Free any array already stored in this field before overwriting it, so setting
     * the same key twice (e.g. file value plus a CLI override) does not leak. */
-   IntArray *existing = *((IntArray **)field);
-   if (existing)
-   {
-      hypredrv_IntArrayDestroy(&existing);
-   }
-   *((void **)field) = int_array;
+   hypredrv_IntArrayDestroy((IntArray **)field);
+   *((IntArray **)field) = int_array;
 }
 
 /*-----------------------------------------------------------------------------
@@ -77,49 +62,16 @@ hypredrv_FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
  * hypredrv_FieldTypeDoubleSet
  *-----------------------------------------------------------------------------*/
 
-/* HYPRE may enable floating-point traps during runtime initialization.  The C
- * library's strtod implementation is allowed to perform an overflowing
- * intermediate operation while converting a syntactically valid but out of
- * range value, so keep that implementation detail from escaping as SIGFPE.
- * Restore the caller's environment before returning so this parser does not
- * change HYPRE's diagnostic policy. */
-static int
-hypredrv_FieldParseDouble(const char *src, char **end, double *value)
-{
-#if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
-   fenv_t env;
-
-   if (feholdexcept(&env) != 0)
-   {
-      return 0;
-   }
-
-   *value = strtod(src, end);
-   (void)fesetenv(&env);
-#else
-   *value = strtod(src, end);
-#endif
-
-   return 1;
-}
-
 void
 hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
 {
    const char *src = (node && node->mapped_val) ? node->mapped_val : "";
-   char       *end = NULL;
-   double      val;
-
-   errno = 0;
-   if (!hypredrv_FieldParseDouble(src, &end, &val) || end == src || *end != '\0' ||
-       errno == ERANGE || !hypredrv_DoubleIsFinite(val))
+   if (!hypredrv_ParseDouble(src, (double *)field))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid floating-point value '%s' for key '%s'", src,
                            node ? node->key : "<unknown>");
-      return;
    }
-   *((double *)field) = val;
 }
 
 /*-----------------------------------------------------------------------------
@@ -168,14 +120,14 @@ hypredrv_FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
    DoubleArray *double_array = NULL;
 
    hypredrv_StrToDoubleArray(node->mapped_val, &double_array);
+   if (!double_array)
+   {
+      return;
+   }
 
    /* Free any array already stored in this field before overwriting it. */
-   DoubleArray *existing = *((DoubleArray **)field);
-   if (existing)
-   {
-      hypredrv_DoubleArrayDestroy(&existing);
-   }
-   *((void **)field) = double_array;
+   hypredrv_DoubleArrayDestroy((DoubleArray **)field);
+   *((DoubleArray **)field) = double_array;
 }
 
 /*-----------------------------------------------------------------------------

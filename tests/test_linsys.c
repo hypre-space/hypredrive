@@ -1446,108 +1446,40 @@ static void
 test_hypredrv_LinearSystemSetNearNullSpace_success(void)
 {
    TEST_HYPRE_INIT();
-
-   int           num_entries = 0;
-   HYPRE_IJMatrix mat        = create_nearnullspace_test_matrix(&num_entries);
-
+   HYPRE_ClearAllErrors();
+   int            size = 0;
+   HYPRE_IJMatrix mat  = create_nearnullspace_test_matrix(&size);
+   ASSERT_EQ(size, 1);
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJVector vec_nn = NULL;
-
-   /* Test success path with matching num_entries */
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetNearNullSpace(MPI_COMM_SELF, &args, mat, num_entries, 1, NULL,
-                                &vec_nn);
-
-   /* Function was called - may have hypre errors with minimal matrix, that's ok */
-   if (vec_nn)
+   HYPRE_IJVector vec      = NULL;
+   HYPRE_BigInt   index    = 0;
+   HYPRE_Complex  supplied = 2.5, actual = -1.0;
+   /* Replacing the vector exercises ownership as well as default zero values. */
+   for (int pass = 0; pass < 2; pass++)
    {
-      HYPRE_IJVectorDestroy(vec_nn);
+      hypredrv_ErrorStateReset();
+      hypredrv_LinearSystemSetNearNullSpace(MPI_COMM_SELF, &args, mat, 1, 1,
+                                            pass ? &supplied : NULL, &vec);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(vec);
+      ASSERT_EQ(HYPRE_IJVectorGetValues(vec, 1, &index, &actual), 0);
+      ASSERT_EQ_DOUBLE(actual, pass ? supplied : 0.0, 0.0);
    }
-
+   HYPRE_IJVectorDestroy(vec);
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemSetNearNullSpace_destroy_previous(void)
-{
-   TEST_HYPRE_INIT();
-
-   int           num_entries = 0;
-   HYPRE_IJMatrix mat        = create_nearnullspace_test_matrix(&num_entries);
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJVector vec_nn = NULL;
-
-   /* Create first vector */
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetNearNullSpace(MPI_COMM_SELF, &args, mat, num_entries, 1, NULL,
-                                &vec_nn);
-
-   /* Create second vector - should destroy previous if first succeeded */
-   if (vec_nn)
-   {
-      HYPRE_IJVector old_vec = vec_nn;
-      hypredrv_ErrorCodeResetAll();
-      hypredrv_LinearSystemSetNearNullSpace(MPI_COMM_SELF, &args, mat, num_entries, 1, NULL,
-                                   &vec_nn);
-      /* If both succeeded, should be a new vector */
-      if (vec_nn && vec_nn != old_vec)
-      {
-         HYPRE_IJVectorDestroy(vec_nn);
-      }
-      else if (vec_nn)
-      {
-         HYPRE_IJVectorDestroy(vec_nn);
-      }
-   }
-
-   HYPRE_IJMatrixDestroy(mat);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemGetValidValues_all_branches(void)
-{
-   /* Test all branches in hypredrv_LinearSystemGetValidValues */
-   StrIntMapArray type_map = hypredrv_LinearSystemGetValidValues("type");
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(type_map, "online"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(type_map, "ij"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(type_map, "parcsr"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(type_map, "mtx"));
-
-   StrIntMapArray rhs_map = hypredrv_LinearSystemGetValidValues("rhs_mode");
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(rhs_map, "zeros"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(rhs_map, "ones"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(rhs_map, "file"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(rhs_map, "random"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(rhs_map, "randsol"));
-
-   StrIntMapArray init_map = hypredrv_LinearSystemGetValidValues("init_guess_mode");
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(init_map, "zeros"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(init_map, "ones"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(init_map, "file"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(init_map, "random"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(init_map, "previous"));
-
-   /* Test else branch - key that doesn't match any condition */
-   StrIntMapArray void_map = hypredrv_LinearSystemGetValidValues("unknown_key");
-   ASSERT_EQ(void_map.size, 0);
-
-   StrIntMapArray void_map2 = hypredrv_LinearSystemGetValidValues("matrix_filename");
-   ASSERT_EQ(void_map2.size, 0);
 }
 
 static void
 test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 {
+   TEST_REQUIRE_FILE("data/ps3d10pt7/np1/IJ.out.A.00000");
    TEST_HYPRE_INIT();
 
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJMatrix mat = NULL;
+   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0);
 
    /* Test dirname pattern branch */
    strncpy(args.dirname, "test_dir", sizeof(args.dirname) - 1);
@@ -1557,8 +1489,8 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* Should fail with file not found, but branch was exercised */
-   ASSERT_TRUE(hypredrv_ErrorCodeActive() || mat == NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_NULL(mat);
 
    /* Test basename pattern branch */
    args.dirname[0] = '\0';
@@ -1569,8 +1501,8 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* Should fail with file not found, but branch was exercised */
-   ASSERT_TRUE(hypredrv_ErrorCodeActive() || mat == NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_NULL(mat);
 
    /* Test direct filename branch */
    args.matrix_basename[0] = '\0';
@@ -1579,7 +1511,8 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* May succeed if file exists, or fail - both paths exercise branches */
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(mat);
 
    if (mat)
    {
@@ -1607,79 +1540,6 @@ test_hypredrv_LinearSystemReadMatrix_no_filename_error(void)
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(mat);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
-
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemReadMatrix_type_branches(void)
-{
-   TEST_HYPRE_INIT();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   strncpy(args.matrix_filename, "data/ps3d10pt7/np1/IJ.out.A",
-           sizeof(args.matrix_filename) - 1);
-
-   HYPRE_IJMatrix mat = NULL;
-
-   /* Test type 1 (IJ) branch */
-   args.type = 1;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* May succeed or fail depending on file existence */
-
-   if (mat)
-   {
-      HYPRE_IJMatrixDestroy(mat);
-      mat = NULL;
-   }
-
-   /* Test type 3 (MTX) branch - will fail but exercises the branch */
-   args.type = 3;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* Should fail but branch was exercised */
-
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemReadMatrix_exec_policy_branches(void)
-{
-   TEST_HYPRE_INIT();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJMatrix mat = NULL;
-
-#ifdef HYPRE_USING_GPU
-   /* Test exec_policy = 1 (device) */
-   args.exec_policy = 1;
-   strncpy(args.matrix_filename, "data/ps3d10pt7/np1/IJ.out.A",
-           sizeof(args.matrix_filename) - 1);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* May succeed or fail depending on device availability */
-
-   if (mat)
-   {
-      HYPRE_IJMatrixDestroy(mat);
-      mat = NULL;
-   }
-#endif
-
-   /* Test exec_policy = 0 (host) */
-   args.exec_policy = 0;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* May succeed or fail depending on file availability */
-
-   if (mat)
-   {
-      HYPRE_IJMatrixDestroy(mat);
-   }
 
    TEST_HYPRE_FINALIZE();
 }
@@ -1958,7 +1818,10 @@ test_LinearSystemReadRHS_file_patterns(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* Should fail with file not found, but branch was exercised */
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_NULL(rhs);
+   ASSERT_NULL(refsol);
+   HYPRE_ClearAllErrors();
 
    /* Test basename pattern for RHS */
    args.dirname[0] = '\0';
@@ -1967,7 +1830,10 @@ test_LinearSystemReadRHS_file_patterns(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* Should fail with file not found, but branch was exercised */
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_NULL(rhs);
+   ASSERT_NULL(refsol);
+   HYPRE_ClearAllErrors();
 
    if (rhs)
    {
@@ -1983,117 +1849,51 @@ test_LinearSystemReadRHS_file_patterns(void)
 }
 
 static void
-test_hypredrv_LinearSystemSetRHS_mode_precedence_over_filename(void)
+test_hypredrv_LinearSystemSetRHS_generated_values(void)
 {
    TEST_HYPRE_INIT();
-
+   HYPRE_ClearAllErrors();
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-   args.rhs_mode = 4; /* randsol */
-   strncpy(args.rhs_filename, "/tmp/this_rhs_file_should_be_ignored",
-           sizeof(args.rhs_filename) - 1);
-   args.rhs_filename[sizeof(args.rhs_filename) - 1] = '\0';
-
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJVector rhs = NULL, refsol = NULL;
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
-
-   HYPRE_Int    nrows = 1;
-   HYPRE_Int    ncols[1] = {1};
-   HYPRE_BigInt rows[1] = {0};
-   HYPRE_BigInt cols[1] = {0};
-   double       vals[1] = {1.0};
-   HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, vals);
-   HYPRE_IJMatrixAssemble(mat);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(rhs);
-   ASSERT_NOT_NULL(refsol);
-
+   /* Generated modes must ignore both kinds of RHS file configuration. */
+   strcpy(args.rhs_filename, "/missing/rhs_filename");
+   strcpy(args.rhs_basename, "/missing/rhs_basename");
+   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(MPI_COMM_SELF, 2.0);
+   HYPRE_IJVector rhs = NULL, xref = NULL;
+   HYPRE_BigInt   index   = 0;
+   const int      modes[] = {0, 1, 3, 4, 999};
+   for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); i++)
+   {
+      args.rhs_mode = modes[i];
+      hypredrv_ErrorStateReset();
+      hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(rhs);
+      HYPRE_Complex value = 0.0;
+      ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 1, &index, &value), 0);
+      if (modes[i] == 4)
+      {
+         HYPRE_Complex reference = 0.0;
+         ASSERT_NOT_NULL(xref);
+         ASSERT_EQ(HYPRE_IJVectorGetValues(xref, 1, &index, &reference), 0);
+         ASSERT_EQ_DOUBLE(value, 2.0 * reference, 1e-12);
+      }
+      else
+      {
+         ASSERT_NULL(xref);
+         if (modes[i] == 3)
+         {
+            ASSERT_TRUE(isfinite(value) && fabs(value) <= 1.0);
+            ASSERT_TRUE(value != 0.0);
+         }
+         else
+         {
+            ASSERT_EQ_DOUBLE(value, modes[i] == 0 ? 0.0 : 1.0, 0.0);
+         }
+      }
+   }
    HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(refsol);
    HYPRE_IJMatrixDestroy(mat);
-
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemSetRHS_mode_branches(void)
-{
-   TEST_HYPRE_INIT();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJVector rhs = NULL, refsol = NULL;
-
-   /* Create minimal matrix */
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
-
-   /* Test rhs_mode = 0 (zeros) */
-   args.rhs_mode = 0;
-   args.rhs_filename[0] = '\0';
-   args.rhs_basename[0] = '\0';
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-      rhs = NULL;
-   }
-
-   /* Test rhs_mode = 1 (ones) */
-   args.rhs_mode = 1;
-   args.rhs_filename[0] = '\0';
-   args.rhs_basename[0] = '\0';
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* Should succeed */
-
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-      rhs = NULL;
-   }
-
-   /* Test rhs_mode = 3 (random) */
-   args.rhs_mode = 3;
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* Should succeed */
-
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-      rhs = NULL;
-   }
-
-   /* Test rhs_mode = 4 (randsol - random solution) */
-   args.rhs_mode = 4;
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* Should succeed and create both rhs and refsol */
-
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-   }
-   if (refsol)
-   {
-      HYPRE_IJVectorDestroy(refsol);
-   }
-   HYPRE_IJMatrixDestroy(mat);
-
    TEST_HYPRE_FINALIZE();
 }
 
@@ -2144,27 +1944,27 @@ test_hypredrv_LinearSystemSetReferenceSolution_keeps_randsol_reference(void)
 static void
 test_hypredrv_LinearSystemSetReferenceSolution_file_override(void)
 {
+   TEST_REQUIRE_FILE(HYPREDRIVE_SOURCE_DIR "/data/ps3d10pt7/np1/IJ.out.b.00000");
    TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
-
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-#ifndef HYPREDRIVE_SOURCE_DIR
-#define HYPREDRIVE_SOURCE_DIR "."
-#endif
-   char path[4096];
-   snprintf(path, sizeof(path), "%s/data/ps3d10pt7/np1/IJ.out.b", HYPREDRIVE_SOURCE_DIR);
-   strncpy(args.xref_filename, path, sizeof(args.xref_filename) - 1);
-   args.xref_filename[sizeof(args.xref_filename) - 1] = '\0';
-
-   HYPRE_IJVector xref = NULL;
-   hypredrv_ErrorCodeResetAll();
+   snprintf(args.xref_filename, sizeof(args.xref_filename),
+            "%s/data/ps3d10pt7/np1/IJ.out.b", HYPREDRIVE_SOURCE_DIR);
+   const HYPRE_Complex old_value = 17.0;
+   HYPRE_IJVector      xref      = create_test_ijvector(MPI_COMM_SELF, 0, 0, &old_value);
+   hypredrv_ErrorStateReset();
    hypredrv_LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref, NULL);
-   if (xref)
-   {
-      HYPRE_IJVectorDestroy(xref);
-   }
-
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(xref);
+   HYPRE_BigInt  lower = -1, upper = -1, index = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetLocalRange(xref, &lower, &upper), 0);
+   ASSERT_EQ(lower, 0);
+   ASSERT_EQ(upper, 999);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(xref, 1, &index, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 1.0, 0.0);
+   HYPRE_IJVectorDestroy(xref);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -3807,58 +3607,6 @@ test_hypredrv_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases(void)
 }
 
 static void
-test_LinearSystemReadRHS_error_cases(void)
-{
-   TEST_HYPRE_INIT();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJMatrix mat = NULL;
-   HYPRE_IJVector rhs = NULL, refsol = NULL;
-
-   /* Create minimal matrix */
-   HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-   HYPRE_IJMatrixInitialize(mat);
-
-   /* Test with NULL matrix */
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, NULL, &refsol, &rhs, NULL);
-   /* Expect no crash; implementation may or may not allocate rhs/refsol here. */
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-      rhs = NULL;
-   }
-   if (refsol)
-   {
-      HYPRE_IJVectorDestroy(refsol);
-      refsol = NULL;
-   }
-
-   /* Test with invalid rhs_mode */
-   args.rhs_mode = 999;
-   args.rhs_filename[0] = '\0';
-   args.rhs_basename[0] = '\0';
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* Should use default case (ones) */
-
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-   }
-   if (refsol)
-   {
-      HYPRE_IJVectorDestroy(refsol);
-   }
-   HYPRE_IJMatrixDestroy(mat);
-
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
 test_hypredrv_LinearSystemReadMatrix_mtx_success(void)
 {
    TEST_HYPRE_INIT();
@@ -3883,13 +3631,20 @@ test_hypredrv_LinearSystemReadMatrix_mtx_success(void)
    HYPRE_IJMatrix mat = NULL;
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
-   /* The goal here is to execute the MatrixMarket matrix-read branch. Whether
-    * HYPRE_IJMatrixReadMM succeeds depends on the hypre build/config and parser
-    * expectations, so tolerate failure. */
-   if (mat)
-   {
-      HYPRE_IJMatrixDestroy(mat);
-   }
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(mat);
+   HYPRE_BigInt  index = 0;
+   HYPRE_Int     ncols = 1;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 1, &ncols, &index, &index, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 1.0, 0.0);
+   HYPRE_IJMatrixDestroy(mat);
+#else
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_NULL(mat);
+   HYPRE_ClearAllErrors();
+#endif
    unlink(matfile);
    TEST_HYPRE_FINALIZE();
 }
@@ -3931,18 +3686,14 @@ test_hypredrv_LinearSystemSetRHS_mtx_file_success(void)
    HYPRE_IJVector refsol = NULL, rhs = NULL;
    hypredrv_ErrorCodeResetAll();
    hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
-   /* This path is mainly to exercise the MM vector-reader logic. Depending on the
-    * hypre build/config, the underlying IJVector calls may report errors; tolerate
-    * that as long as we don't crash/leak. */
-
-   if (refsol)
-   {
-      HYPRE_IJVectorDestroy(refsol);
-   }
-   if (rhs)
-   {
-      HYPRE_IJVectorDestroy(rhs);
-   }
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(rhs);
+   ASSERT_NULL(refsol);
+   HYPRE_BigInt  index = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 1, &index, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 2.5, 0.0);
+   HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
 
    unlink(rhsfile);
@@ -4359,81 +4110,38 @@ test_hypredrv_LinearSystemSetInitialGuess_generated_modes(void)
 {
    TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
-
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-   args.x0_filename[0] = '\0';
-   args.exec_policy     = 0;
-
-   const HYPRE_Complex rhs_vals[3] = {1.0, 2.0, 3.0};
-   HYPRE_IJVector      rhs         = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_vals);
-   HYPRE_IJVector      x0          = NULL;
-   HYPRE_IJVector      x           = NULL;
-
-   args.init_guess_mode = 0;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x)
+   const HYPRE_Complex rhs_values[] = {1.0, 2.0, 3.0};
+   HYPRE_BigInt        indices[]    = {0, 1, 2};
+   HYPRE_IJVector      rhs     = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_values);
+   const int           modes[] = {0, 1, 3, 4, 99};
+   for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); i++)
    {
+      HYPRE_IJVector x0 = NULL, x = NULL;
+      HYPRE_Complex  values[3];
+      args.init_guess_mode = modes[i];
+      hypredrv_ErrorStateReset();
+      hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x,
+                                           NULL);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(x0);
+      ASSERT_NOT_NULL(x);
+      ASSERT_EQ(HYPRE_IJVectorGetValues(x0, 3, indices, values), 0);
+      for (int j = 0; j < 3; j++)
+      {
+         if (modes[i] == 3)
+         {
+            ASSERT_TRUE(isfinite(values[j]) && fabs(values[j]) <= 1.0);
+         }
+         else
+         {
+            ASSERT_EQ_DOUBLE(values[j], modes[i] == 1 ? 1.0 : 0.0, 0.0);
+         }
+      }
+      HYPRE_IJVectorDestroy(x0);
       HYPRE_IJVectorDestroy(x);
    }
-   if (x0)
-   {
-      HYPRE_IJVectorDestroy(x0);
-   }
-   x = x0 = NULL;
-
-   args.init_guess_mode = 1;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x)
-   {
-      HYPRE_IJVectorDestroy(x);
-   }
-   if (x0)
-   {
-      HYPRE_IJVectorDestroy(x0);
-   }
-   x = x0 = NULL;
-
-   args.init_guess_mode = 3;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x)
-   {
-      HYPRE_IJVectorDestroy(x);
-   }
-   if (x0)
-   {
-      HYPRE_IJVectorDestroy(x0);
-   }
-   x = x0 = NULL;
-
-   args.init_guess_mode = 4;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x)
-   {
-      HYPRE_IJVectorDestroy(x);
-   }
-   if (x0)
-   {
-      HYPRE_IJVectorDestroy(x0);
-   }
-   x = x0 = NULL;
-
-   args.init_guess_mode = 99;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x)
-   {
-      HYPRE_IJVectorDestroy(x);
-   }
-   if (x0)
-   {
-      HYPRE_IJVectorDestroy(x0);
-   }
-
    HYPRE_IJVectorDestroy(rhs);
    TEST_HYPRE_FINALIZE();
 }
@@ -4713,74 +4421,51 @@ test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
 }
 
 static void
-test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths(void)
+test_hypredrv_LinearSystemSetPrecMatrix_sources(void)
 {
    TEST_HYPRE_INIT();
    HYPRE_ClearAllErrors();
+   HYPRE_IJMatrix mat     = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0);
+   const char    *dirs[]  = {"", "", "/missing_hypredrive_dir"};
+   const char    *files[] = {"/missing_hypredrive_matrix", "", "matrix"};
+   const char    *bases[] = {"", "/missing_hypredrive_base", ""};
+   for (size_t i = 0; i < 3; i++)
+   {
+      LS_args args;
+      hypredrv_LinearSystemSetDefaultArgs(&args);
+      strcpy(args.dirname, dirs[i]);
+      strcpy(args.precmat_filename, files[i]);
+      strcpy(args.precmat_basename, bases[i]);
+      HYPRE_IJMatrix precon = create_test_ijmatrix_1x1(MPI_COMM_SELF, 2.0);
+      hypredrv_ErrorStateReset();
+      hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+      ASSERT_NULL(precon);
+      HYPRE_ClearAllErrors();
+   }
 
+   /* A fallback must release the old preconditioner matrix. Repeated aliases
+    * must keep the main matrix alive, including directory and basename sources. */
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-
-   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(MPI_COMM_SELF, 1.0);
-   HYPRE_IJMatrix mat_M = create_test_ijmatrix_1x1(MPI_COMM_SELF, 2.0); /* pre-existing */
-
-   /* 1) precmat_filename differs from matrix_filename => destroy + read branch */
-   strncpy(args.matrix_filename, "Afile", sizeof(args.matrix_filename) - 1);
-   strncpy(args.precmat_filename, "Mfile", sizeof(args.precmat_filename) - 1);
-   args.matrix_filename[sizeof(args.matrix_filename) - 1]   = '\0';
-   args.precmat_filename[sizeof(args.precmat_filename) - 1] = '\0';
-   args.dirname[0]                                          = '\0';
-   args.precmat_basename[0]                                 = '\0';
-
-   hypredrv_ErrorCodeResetAll();
-   HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
-   hypredrv_ErrorCodeResetAll(); /* tolerate read errors */
-
-   /* If the internal read failed, hypredrv_LinearSystemSetPrecMatrix may have destroyed the
-    * previous matrix without nulling the pointer. Avoid double-free by only
-    * destroying when hypre reports success. */
-   if (HYPRE_GetError() == 0 && mat_M && mat_M != mat_A)
-   {
-      HYPRE_IJMatrixDestroy(mat_M);
-   }
-   HYPRE_ClearAllErrors();
-   mat_M = NULL;
-
-   /* 2) precmat_basename path */
-   args.precmat_filename[0] = '\0';
-   strncpy(args.precmat_basename, "Mbase", sizeof(args.precmat_basename) - 1);
-   args.precmat_basename[sizeof(args.precmat_basename) - 1] = '\0';
-   mat_M                                                      = create_test_ijmatrix_1x1(MPI_COMM_SELF, 3.0);
-   hypredrv_ErrorCodeResetAll();
-   HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
-   hypredrv_ErrorCodeResetAll();
-   if (HYPRE_GetError() == 0 && mat_M && mat_M != mat_A)
-   {
-      HYPRE_IJMatrixDestroy(mat_M);
-   }
-   HYPRE_ClearAllErrors();
-   mat_M = NULL;
-
-   /* 3) dirname + precmat_filename path */
-   strncpy(args.dirname, "hypre-data", sizeof(args.dirname) - 1);
-   args.dirname[sizeof(args.dirname) - 1] = '\0';
-   strncpy(args.precmat_filename, "Mdirfile", sizeof(args.precmat_filename) - 1);
-   args.precmat_filename[sizeof(args.precmat_filename) - 1] = '\0';
-   args.precmat_basename[0]                                  = '\0';
-   mat_M                                                      = create_test_ijmatrix_1x1(MPI_COMM_SELF, 4.0);
-   hypredrv_ErrorCodeResetAll();
-   HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
-   hypredrv_ErrorCodeResetAll();
-   if (HYPRE_GetError() == 0 && mat_M && mat_M != mat_A)
-   {
-      HYPRE_IJMatrixDestroy(mat_M);
-   }
-   HYPRE_ClearAllErrors();
-
-   HYPRE_IJMatrixDestroy(mat_A);
+   HYPRE_IJMatrix precon = create_test_ijmatrix_1x1(MPI_COMM_SELF, 3.0);
+   hypredrv_ErrorStateReset();
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_PTR_EQ(precon, mat);
+   strcpy(args.dirname, "/missing_hypredrive_dir");
+   strcpy(args.matrix_filename, "same_matrix");
+   strcpy(args.precmat_filename, "same_matrix");
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_PTR_EQ(precon, mat);
+   args.matrix_filename[0] = args.precmat_filename[0] = '\0';
+   strcpy(args.matrix_basename, "same_base");
+   strcpy(args.precmat_basename, "same_base");
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_PTR_EQ(precon, mat);
+   HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -6259,8 +5944,6 @@ run_linsys_args_and_validation_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_threshold_invalid_combo);
    RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_mismatch_error);
    RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_success);
-   RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_destroy_previous);
-   RUN_TEST(test_hypredrv_LinearSystemGetValidValues_all_branches);
 }
 
 static void
@@ -6269,16 +5952,13 @@ run_linsys_matrix_and_rhs_io_tests(void)
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_filename_patterns);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_no_filename_error);
-   RUN_TEST(test_hypredrv_LinearSystemReadMatrix_type_branches);
-   RUN_TEST(test_hypredrv_LinearSystemReadMatrix_exec_policy_branches);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_partition_count_errors);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_sequence_ls_id_out_of_range);
    RUN_TEST(test_LinearSystemReadRHS_file_patterns);
    RUN_TEST(test_hypredrv_LinearSystemSetRHS_sequence_ls_id_out_of_range);
 #endif
 
-   RUN_TEST(test_hypredrv_LinearSystemSetRHS_mode_branches);
-   RUN_TEST(test_hypredrv_LinearSystemSetRHS_mode_precedence_over_filename);
+   RUN_TEST(test_hypredrv_LinearSystemSetRHS_generated_values);
    RUN_TEST(test_hypredrv_LinearSystemSetRHS_destroys_existing_xref);
    RUN_TEST(test_hypredrv_LinearSystemSetReferenceSolution_keeps_randsol_reference);
    RUN_TEST(test_hypredrv_LinearSystemSetReferenceSolution_file_override);
@@ -6305,7 +5985,6 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemDumpScheduled_threshold_types_and_selectors);
    RUN_TEST(test_hypredrv_LinearSystemMatrixGetNumRows_GetNumNonzeros_error_cases);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
-   RUN_TEST(test_LinearSystemReadRHS_error_cases);
 #endif
    RUN_TEST(test_hypredrv_LinearSystemComputeVectorNorm_all_modes);
    RUN_TEST(test_hypredrv_LinearSystemComputeVectorNorm_guards);
@@ -6318,7 +5997,7 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemReadDofmap_filename_branches);
    RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_sequence);
-   RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_branchy_paths);
+   RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_sources);
    RUN_TEST(test_hypredrv_linsys_branch_logs);
    RUN_TEST(test_hypredrv_block_residual_rejects_unbounded_labels);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)

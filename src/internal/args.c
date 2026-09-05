@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/args.h"
+#include <float.h>
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
 #include "internal/field.h"
@@ -24,7 +25,15 @@
 static void
 FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
 {
-   double gb          = strtod(node->mapped_val, NULL);
+   double gb = 0.0;
+   if (!hypredrv_ParseDouble(node->mapped_val, &gb) || gb < 0.0 ||
+       gb > DBL_MAX / (double)GB_TO_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid memory pool size '%s' for key '%s'", node->mapped_val,
+                           node->key);
+      return;
+   }
    *((double *)field) = gb * (double)GB_TO_BYTES;
 }
 
@@ -39,6 +48,7 @@ FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
    ADD_FIELD_OFFSET_ENTRY(_prefix, exec_policy, hypredrv_FieldTypeIntSet)            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spgemm, hypredrv_FieldTypeIntSet)      \
    ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_spmv, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, use_vendor_sptrans, hypredrv_FieldTypeIntSet)     \
    ADD_FIELD_OFFSET_ENTRY(_prefix, num_repetitions, hypredrv_FieldTypeIntSet)        \
    ADD_FIELD_OFFSET_ENTRY(_prefix, dev_pool_size, FieldTypePoolGBToBytesSet)         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, uvm_pool_size, FieldTypePoolGBToBytesSet)         \
@@ -56,7 +66,8 @@ hypredrv_GeneralGetValidValues(const char *key)
 {
    if (!strcmp(key, "warmup") || !strcmp(key, "print_config_params") ||
        !strcmp(key, "use_millisec") || !strcmp(key, "device_lazy_init") ||
-       !strcmp(key, "use_vendor_spgemm") || !strcmp(key, "use_vendor_spmv"))
+       !strcmp(key, "use_vendor_spgemm") || !strcmp(key, "use_vendor_spmv") ||
+       !strcmp(key, "use_vendor_sptrans"))
    {
       return STR_INT_MAP_ARRAY_CREATE_ON_OFF();
    }
@@ -91,10 +102,17 @@ hypredrv_GeneralSetDefaultArgs(General_args *args)
    args->exec_policy       = 1;
    args->use_vendor_spgemm = 1;
    args->use_vendor_spmv   = 1;
+#if defined(HYPRE_USING_CUDA) || defined(HYPRE_USING_HIP)
+   /* Preserve HYPRE's CUDA default and the existing HIP compatibility setting. */
+   args->use_vendor_sptrans = 0;
 #else
-   args->exec_policy       = 0;
-   args->use_vendor_spgemm = 0;
-   args->use_vendor_spmv   = 0;
+   args->use_vendor_sptrans = 1;
+#endif
+#else
+   args->exec_policy        = 0;
+   args->use_vendor_spgemm  = 0;
+   args->use_vendor_spmv    = 0;
+   args->use_vendor_sptrans = 0;
 #endif
    args->num_repetitions  = 1;
    args->dev_pool_size    = 2.0 * (double)GB_TO_BYTES;

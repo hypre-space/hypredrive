@@ -164,10 +164,71 @@ test_FieldTypeStackIntArraySet(void)
    hypredrv_YAMLnodeDestroy(node);
 }
 
+static void
+test_FieldTypeIntSet_rejects_invalid_values(void)
+{
+   const char *values[] = {"", "12x", "1.25", "2147483648", "-2147483649"};
+   for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+   {
+      int       value = 17;
+      YAMLnode *node  = make_node(values[i]);
+      hypredrv_ErrorStateReset();
+      hypredrv_FieldTypeIntSet(&value, node);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+      ASSERT_EQ(value, 17);
+      hypredrv_YAMLnodeDestroy(node);
+   }
+   hypredrv_ErrorStateReset();
+}
+
+static void
+test_FieldTypeArraySet_preserves_field_on_error(void)
+{
+   IntArray    *integers = hypredrv_IntArrayCreate(1);
+   DoubleArray *doubles  = hypredrv_DoubleArrayCreate(1);
+   ASSERT_NOT_NULL(integers);
+   ASSERT_NOT_NULL(doubles);
+   integers->data[0]         = 17;
+   doubles->data[0]          = 17.0;
+   IntArray    *old_integers = integers;
+   DoubleArray *old_doubles  = doubles;
+   YAMLnode    *bad          = make_node("1, invalid");
+   hypredrv_ErrorStateReset();
+   hypredrv_FieldTypeIntArraySet(&integers, bad);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+   ASSERT_PTR_EQ(integers, old_integers);
+   ASSERT_EQ_SIZE(integers->size, 1);
+   ASSERT_EQ(integers->data[0], 17);
+   hypredrv_ErrorStateReset();
+   hypredrv_FieldTypeDoubleArraySet(&doubles, bad);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+   ASSERT_PTR_EQ(doubles, old_doubles);
+   ASSERT_EQ_SIZE(doubles->size, 1);
+   ASSERT_EQ_DOUBLE(doubles->data[0], 17.0, 0.0);
+   hypredrv_YAMLnodeDestroy(bad);
+
+   YAMLnode *valid = make_node("2, 3");
+   hypredrv_ErrorStateReset();
+   hypredrv_FieldTypeIntArraySet(&integers, valid);
+   hypredrv_FieldTypeDoubleArraySet(&doubles, valid);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ_SIZE(integers->size, 2);
+   ASSERT_EQ(integers->data[0], 2);
+   ASSERT_EQ(integers->data[1], 3);
+   ASSERT_EQ_SIZE(doubles->size, 2);
+   ASSERT_EQ_DOUBLE(doubles->data[0], 2.0, 0.0);
+   ASSERT_EQ_DOUBLE(doubles->data[1], 3.0, 0.0);
+   hypredrv_IntArrayDestroy(&integers);
+   hypredrv_DoubleArrayDestroy(&doubles);
+   hypredrv_YAMLnodeDestroy(valid);
+}
+
 int
 main(void)
 {
    RUN_TEST(test_FieldTypeIntSet);
+   RUN_TEST(test_FieldTypeIntSet_rejects_invalid_values);
+   RUN_TEST(test_FieldTypeArraySet_preserves_field_on_error);
    RUN_TEST(test_FieldTypeDoubleSet);
    RUN_TEST(test_FieldTypeDoubleSet_rejects_nonfinite_values);
    RUN_TEST(test_FieldTypeCharSet);

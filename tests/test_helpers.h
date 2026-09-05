@@ -8,12 +8,13 @@
 #ifndef TEST_HELPERS_HEADER
 #define TEST_HELPERS_HEADER
 
+#include <inttypes.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <inttypes.h>
 #include <unistd.h>
 
 #include "HYPRE.h"
@@ -150,14 +151,21 @@ hypredrv_TestHypreInit(void)
       } \
    } while (0)
 
-#define ASSERT_EQ_DOUBLE(a, b, tol) \
-   do { \
-      double diff = ((a) > (b)) ? ((a) - (b)) : ((b) - (a)); \
-      if (diff > (tol)) { \
-         fprintf(stderr, "FAIL: %s:%d: %s (%.10g) != %s (%.10g) (diff: %.10g > %.10g)\n", \
-                __FILE__, __LINE__, #a, (a), #b, (b), diff, tol); \
-         exit(1); \
-      } \
+#define ASSERT_EQ_DOUBLE(a, b, tol)                                                      \
+   do                                                                                    \
+   {                                                                                     \
+      double _lhs  = (double)(a);                                                        \
+      double _rhs  = (double)(b);                                                        \
+      double _tol  = (double)(tol);                                                      \
+      double _diff = fabs(_lhs - _rhs);                                                  \
+      if (!(_diff <= _tol))                                                              \
+      {                                                                                  \
+         fprintf(stderr,                                                                 \
+                 "FAIL: %s:%d: %s (%.10g) != %s (%.10g) (difference: %.10g, tolerance: " \
+                 "%.10g)\n",                                                             \
+                 __FILE__, __LINE__, #a, _lhs, #b, _rhs, _diff, _tol);                   \
+         exit(1);                                                                        \
+      }                                                                                  \
    } while (0)
 
 #define ASSERT_GT(a, b) \

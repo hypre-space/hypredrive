@@ -173,66 +173,6 @@ PrintSystemParseOnOff(const char *value, int *out)
 }
 
 static int
-PrintSystemParseInteger(const char *value, int *out)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (!value || !out) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-
-   char *endptr = NULL;
-   long  parsed = strtol(value, &endptr, 10);
-   if (endptr == value)
-   {
-      return 0;
-   }
-   /* GCOVR_EXCL_BR_START */
-   while (*endptr && isspace((unsigned char)*endptr)) /* GCOVR_EXCL_BR_STOP */
-   {
-      endptr++; /* GCOVR_EXCL_LINE */
-   }
-   /* GCOVR_EXCL_BR_START */
-   if (*endptr != '\0' || parsed < INT_MIN || parsed > INT_MAX) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0;
-   }
-
-   *out = (int)parsed;
-   return 1;
-}
-
-static int
-PrintSystemParseDouble(const char *value, double *out)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (!value || !out) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-
-   char  *endptr = NULL;
-   double parsed = strtod(value, &endptr);
-   /* GCOVR_EXCL_BR_START */
-   if (endptr == value) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-   /* GCOVR_EXCL_BR_START */
-   while (*endptr && isspace((unsigned char)*endptr)) /* GCOVR_EXCL_BR_STOP */
-   {
-      endptr++; /* GCOVR_EXCL_LINE */
-   }
-   if (*endptr != '\0')
-   {
-      return 0;
-   }
-
-   *out = parsed;
-   return 1;
-}
-
-static int
 PrintSystemRangeArrayAppend(IntRangeArray *ranges, int begin, int end)
 {
    /* GCOVR_EXCL_BR_START */
@@ -391,7 +331,7 @@ PrintSystemParseIntArrayNode(const YAMLnode *node, IntArray **out)
          /* GCOVR_EXCL_BR_START */
          const char *value = item->mapped_val ? item->mapped_val : item->val;
          /* GCOVR_EXCL_BR_STOP */
-         if (!PrintSystemParseInteger(value, &parsed))
+         if (!hypredrv_ParseInt(value, &parsed))
          {
             hypredrv_IntArrayDestroy(&ids);
             return 0;
@@ -675,14 +615,14 @@ PrintSystemApplySelectorKey(DumpSelector_args *selector_out, const YAMLnode *chi
    if (!strcmp(child->key, "level"))
    {
       /* GCOVR_EXCL_BR_START */
-      return (PrintSystemParseInteger(value, &selector_out->level) &&
+      return (hypredrv_ParseInt(value, &selector_out->level) &&
               /* GCOVR_EXCL_BR_STOP */
               selector_out->level >= 0 && selector_out->level < STATS_MAX_LEVELS);
    }
    if (!strcmp(child->key, "every"))
    {
       /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemParseInteger(value, &selector_out->every) ||
+      if (!hypredrv_ParseInt(value, &selector_out->every) ||
           /* GCOVR_EXCL_BR_STOP */
           selector_out->every <= 0)
       {
@@ -720,7 +660,7 @@ PrintSystemApplySelectorKey(DumpSelector_args *selector_out, const YAMLnode *chi
    if (!strcmp(child->key, "threshold"))
    {
       /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemParseDouble(value, &selector_out->threshold) ||
+      if (!hypredrv_ParseDouble(value, &selector_out->threshold) ||
           /* GCOVR_EXCL_BR_STOP */
           selector_out->threshold < 0.0)
       {
@@ -976,7 +916,7 @@ PrintSystemApplyEvery(PrintSystem_args *args, const YAMLnode *child, const char 
                       PrintSystemSeenKeys *seen)
 {
    (void)child;
-   if (!PrintSystemParseInteger(value, &args->every) || args->every <= 0)
+   if (!hypredrv_ParseInt(value, &args->every) || args->every <= 0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       /* GCOVR_EXCL_BR_START */
@@ -1037,7 +977,7 @@ PrintSystemApplyThreshold(PrintSystem_args *args, const YAMLnode *child,
 {
    (void)child;
    /* GCOVR_EXCL_BR_START */
-   if (!PrintSystemParseDouble(value, &args->threshold) || args->threshold < 0.0)
+   if (!hypredrv_ParseDouble(value, &args->threshold) || args->threshold < 0.0)
    /* GCOVR_EXCL_BR_STOP */
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);

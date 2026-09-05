@@ -236,6 +236,13 @@ target_link_libraries(HYPREDRV
     INTERFACE
         $<INSTALL_INTERFACE:HYPRE::HYPRE>)
 
+if(HYPREDRV_HYPRE_USE_OPENMP)
+    find_package(OpenMP REQUIRED COMPONENTS C)
+    if(TARGET OpenMP::OpenMP_C)
+        target_link_libraries(HYPREDRV PUBLIC OpenMP::OpenMP_C)
+    endif()
+endif()
+
 if(HYPREDRV_INSTRUMENTATION_LINK_FLAGS)
     target_link_options(HYPREDRV PUBLIC ${HYPREDRV_INSTRUMENTATION_LINK_FLAGS})
 endif()
@@ -418,6 +425,13 @@ endif()
 
 # Define the main executable (hypredrive-cli)
 add_executable(hypredrive-cli src/internal/main.c)
+# HYPRE's static dependency graph can contain C++ libraries such as
+# SuperLU_DIST. Select the C++ linker so the C++ runtime is linked as well.
+if(CMAKE_CXX_COMPILER AND
+   (NOT HYPREDRV_ENABLE_COVERAGE OR
+    CMAKE_C_COMPILER_ID STREQUAL CMAKE_CXX_COMPILER_ID))
+    set_property(TARGET hypredrive-cli PROPERTY LINKER_LANGUAGE CXX)
+endif()
 target_link_libraries(hypredrive-cli PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
 hypredrv_add_hypre_build_dependency(hypredrive-cli)
 
