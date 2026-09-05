@@ -63,6 +63,10 @@ char *hypredrv_Mkdtemp(char *);
 bool  hypredrv_IsYAMLFilename(const char *);
 bool  hypredrv_PathIsUnderRoot(const char *, const char *);
 
+/* Parse a complete numeric value. Invalid input leaves the output unchanged. */
+bool hypredrv_ParseInt(const char *text, int *value);
+bool hypredrv_ParseDouble(const char *text, double *value);
+
 /* Assign a contiguous block of stored parts to a runtime rank.  The first
  * remainder ranks receive one extra part. */
 static inline void

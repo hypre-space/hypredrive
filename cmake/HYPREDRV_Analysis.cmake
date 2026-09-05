@@ -304,31 +304,14 @@ HeaderFilterRegex: '^(${CMAKE_SOURCE_DIR}/src|${CMAKE_SOURCE_DIR}/include)/'
             endif()
         endforeach()
         list(REMOVE_DUPLICATES _clang_tidy_extra_args)
-        list(JOIN _clang_tidy_extra_args " " _clang_tidy_extra_args_str)
-
-        # Create a target to run clang-tidy
-        list(JOIN _src_files " " _src_files_str)
-        set(_clang_tidy_cmd "${CLANG_TIDY_EXECUTABLE} -p=${CMAKE_BINARY_DIR} --quiet ${_clang_tidy_extra_args_str} ${_src_files_str}")
-
-        # Create a script to check for warnings
-        set(_clang_tidy_check_script ${CMAKE_BINARY_DIR}/check-clang-tidy.sh)
-        file(WRITE ${_clang_tidy_check_script}
-            "#!/bin/bash\n"
-            "set -e\n"
-            "${_clang_tidy_cmd} > ${CLANG_TIDY_OUTPUT} 2>&1 || true\n"
-            "ERRORS=$(grep -E 'error:' ${CLANG_TIDY_OUTPUT} | wc -l)\n"
-            "WARNINGS=$(grep -E 'warning:' ${CLANG_TIDY_OUTPUT} | grep -v 'clang-diagnostic-error' | wc -l)\n"
-            "if [ \"$ERRORS\" -gt 0 ] || [ \"$WARNINGS\" -gt 0 ]; then\n"
-            "    echo \"ERROR: clang-tidy found $ERRORS error(s) and $WARNINGS warning(s). See ${CLANG_TIDY_OUTPUT} for details.\"\n"
-            "    grep -E 'error:|warning:' ${CLANG_TIDY_OUTPUT} | head -100\n"
-            "    exit 1\n"
-            "fi\n"
-            "echo \"clang-tidy: No warnings found.\"\n"
-        )
+        set(_clang_tidy_args
+            "-p=${CMAKE_BINARY_DIR}" --quiet ${_clang_tidy_extra_args} ${_src_files})
 
         add_custom_target(clang-tidy
-            COMMAND chmod +x ${_clang_tidy_check_script}
-            COMMAND bash ${_clang_tidy_check_script}
+            COMMAND ${CMAKE_COMMAND}
+                "-DCLANG_TIDY_COMMAND=${CLANG_TIDY_EXECUTABLE};${_clang_tidy_args}"
+                "-DCLANG_TIDY_OUTPUT=${CLANG_TIDY_OUTPUT}"
+                -P "${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunClangTidy.cmake"
             WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
             COMMENT "Running clang-tidy static analysis"
             VERBATIM

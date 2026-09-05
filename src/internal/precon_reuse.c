@@ -177,28 +177,6 @@ PreconReuseParseOnOff(const char *value, int *out)
 }
 
 static int
-PreconReuseParseInt(const char *value, int *out)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!value) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
-   return sscanf(value, "%d", out) == 1;
-}
-
-static int
-PreconReuseParseDouble(const char *value, double *out)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!value) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
-   return sscanf(value, "%lf", out) == 1;
-}
-
-static int
 PreconReuseValueIsAlways(const char *value)
 {
    return value && strcmp(value, "always") == 0;
@@ -1689,8 +1667,8 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "power"))
-      {                                                    /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value, &mean->power)) /* GCOVR_EXCL_BR_LINE */
+      {                                                  /* GCOVR_EXCL_BR_LINE */
+         if (!hypredrv_ParseDouble(value, &mean->power)) /* GCOVR_EXCL_BR_LINE */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
             hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
@@ -1770,7 +1748,7 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
       }
       else if (!strcmp(child->key, "amortization_window"))
       { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value, &transform->amortization_window) ||
+         if (!hypredrv_ParseInt(value, &transform->amortization_window) ||
              /* GCOVR_EXCL_BR_LINE */                /* GCOVR_EXCL_BR_LINE */
                 transform->amortization_window <= 0) /* GCOVR_EXCL_BR_LINE */
          {
@@ -1821,8 +1799,8 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "level"))
-      {                                                    /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value, &history->level)) /* GCOVR_EXCL_BR_LINE */
+      {                                                  /* GCOVR_EXCL_BR_LINE */
+         if (!hypredrv_ParseInt(value, &history->level)) /* GCOVR_EXCL_BR_LINE */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
             hypredrv_ErrorMsgAdd(
@@ -1835,8 +1813,8 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
          YAML_NODE_SET_VALID(child);
       }
       else if (!strcmp(child->key, "max_points"))
-      {                                                           /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseInt(value, &history->max_points) || /* GCOVR_EXCL_BR_LINE */
+      {                                                         /* GCOVR_EXCL_BR_LINE */
+         if (!hypredrv_ParseInt(value, &history->max_points) || /* GCOVR_EXCL_BR_LINE */
              history->max_points <= 0)
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
@@ -1960,7 +1938,7 @@ PreconReuseParseComponentScalar(const PreconReuseComponentSpec *spec, const char
          double *slot = (double *)(void *)(base + spec->offset);
 
          /* GCOVR_EXCL_BR_START */
-         if (!PreconReuseParseDouble(value, slot)) /* GCOVR_EXCL_BR_STOP */
+         if (!hypredrv_ParseDouble(value, slot)) /* GCOVR_EXCL_BR_STOP */
          {
             return 0;
          }
@@ -2093,7 +2071,7 @@ PreconReuseParseRebuildOnNewLevel(YAMLnode *child, const char *value,
                   level_node->mapped_val ? level_node->mapped_val
                                          : level_node->val; /* GCOVR_EXCL_BR_LINE */
             }
-            if (!PreconReuseParseInt(item_value, &levels->data[idx]))
+            if (!hypredrv_ParseInt(item_value, &levels->data[idx]))
             {
                hypredrv_IntArrayDestroy(&levels);
                hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -2185,7 +2163,7 @@ PreconReuseParseScalarGuard(const PreconReuseGuardSpec *spec, const char *value,
       double *slot = (double *)(void *)(base + spec->offset);
 
       /* GCOVR_EXCL_BR_START */
-      return (PreconReuseParseDouble(value, slot) &&
+      return (hypredrv_ParseDouble(value, slot) &&
               /* GCOVR_EXCL_BR_STOP */
               (*slot == -1.0 || *slot > 0.0));
    }
@@ -2199,7 +2177,7 @@ PreconReuseParseScalarGuard(const PreconReuseGuardSpec *spec, const char *value,
          return PreconReuseParseOnOff(value, slot); /* GCOVR_EXCL_BR_STOP */
       }
       /* GCOVR_EXCL_BR_START */
-      return (PreconReuseParseInt(value, slot) && /* GCOVR_EXCL_BR_STOP */
+      return (hypredrv_ParseInt(value, slot) && /* GCOVR_EXCL_BR_STOP */
               (!spec->has_min || *slot >= spec->min));
    }
 }
@@ -2268,8 +2246,8 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
          child->mapped_val ? child->mapped_val : child->val; /* GCOVR_EXCL_BR_LINE */
       if (!strcmp(child->key, "rebuild_threshold"))
       { /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(
-                value, &adaptive->rebuild_threshold)) /* GCOVR_EXCL_BR_LINE */
+         if (!hypredrv_ParseDouble(value,
+                                   &adaptive->rebuild_threshold)) /* GCOVR_EXCL_BR_LINE */
          {
             hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
             hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
@@ -2283,7 +2261,7 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
       } /* GCOVR_EXCL_BR_LINE */
       else if (!strcmp(child->key, "positive_floor")) /* GCOVR_EXCL_BR_LINE */
       {                                               /* GCOVR_EXCL_BR_LINE */
-         if (!PreconReuseParseDouble(value, &adaptive->positive_floor) ||
+         if (!hypredrv_ParseDouble(value, &adaptive->positive_floor) ||
              /* GCOVR_EXCL_BR_LINE */            /* GCOVR_EXCL_BR_LINE */
                 adaptive->positive_floor <= 0.0) /* GCOVR_EXCL_BR_LINE */
          {
@@ -2381,7 +2359,7 @@ PreconReuseSetArgsFromScalar(PreconReuse_args *args, YAMLnode *parent)
    if (!parent->children && parent->val &&
        strcmp(parent->val, "") != 0) /* GCOVR_EXCL_BR_LINE */
    {
-      if (PreconReuseParseInt(parent->val, &args->frequency))
+      if (hypredrv_ParseInt(parent->val, &args->frequency))
       {
          args->enabled = 1;
          args->policy  = PRECON_REUSE_POLICY_STATIC;
@@ -2526,7 +2504,7 @@ PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKe
    }
    else if (!strcmp(child->key, "frequency"))
    { /* GCOVR_EXCL_BR_LINE */
-      if (!PreconReuseParseInt(value, &args->frequency) ||
+      if (!hypredrv_ParseInt(value, &args->frequency) ||
           args->frequency < 0) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */

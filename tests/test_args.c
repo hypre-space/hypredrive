@@ -2129,6 +2129,58 @@ test_PreconPreset_user_registered_unknown_type_rejected(void)
    hypredrv_PresetFreeUserPresets();
 }
 
+static void
+test_InputArgsParse_rejects_malformed_numbers(void)
+{
+   const struct
+   {
+      const char *format;
+      const char *invalid;
+   } cases[] = {
+      {"general:\n  host_pool_size: %s\n", "2GB"},
+      {"general:\n  dev_pool_size: %s\n", "-1"},
+      {"general:\n  uvm_pool_size: %s\n", "1e308"},
+      {"general:\n  pinned_pool_size: %s\n", "nan"},
+      {"solver:\n  scaling:\n    custom_values: [1, %s]\n  pcg:\n    max_iter: 10\n",
+       "nan"},
+      {"preconditioner:\n  reuse:\n    frequency: %s\n  amg:\n    max_iter: 1\n", "2x"},
+      {"preconditioner:\n  reuse:\n    frequency: %s\n  amg:\n    max_iter: 1\n",
+       "2147483648"},
+      {"preconditioner:\n  reuse:\n    type: adaptive\n    adaptive:\n      "
+       "positive_floor: %s\n  amg:\n    max_iter: 1\n",
+       "nan"},
+      {"linear_system:\n  print_system:\n    type: iterations_over\n    stage: apply\n   "
+       " threshold: %s\n",
+       "nan"},
+      {"linear_system:\n  dof_labels:\n    p: %s\n", "2x"},
+      {"linear_system:\n  dof_labels: {p: %s}\n", "2147483648"},
+   };
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      for (int invalid = 0; invalid <= 1; invalid++)
+      {
+         char config[512];
+         hypredrv_ErrorStateReset();
+         snprintf(config, sizeof(config), cases[i].format,
+                  invalid ? cases[i].invalid : "2");
+         if (!strstr(config, "preconditioner:")) strcat(config, "preconditioner: amg\n");
+         input_args *args = parse_config(config);
+         if (invalid)
+         {
+            ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+            ASSERT_NULL(args);
+         }
+         else
+         {
+            ASSERT_FALSE(hypredrv_ErrorCodeActive());
+            ASSERT_NOT_NULL(args);
+            hypredrv_InputArgsDestroy(&args);
+         }
+      }
+   }
+   hypredrv_ErrorStateReset();
+}
+
 int
 main(int argc, char **argv)
 {
@@ -2136,6 +2188,7 @@ main(int argc, char **argv)
 
    RUN_TEST(test_InputArgsCreate_general_vendor_defaults);
    RUN_TEST(test_InputArgsParseGeneral_flags);
+   RUN_TEST(test_InputArgsParse_rejects_malformed_numbers);
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);

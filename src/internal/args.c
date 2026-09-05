@@ -6,6 +6,7 @@
  ******************************************************************************/
 
 #include "internal/args.h"
+#include <float.h>
 #include "HYPRE_krylov.h"
 #include "HYPRE_parcsr_ls.h"
 #include "internal/field.h"
@@ -24,7 +25,15 @@
 static void
 FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
 {
-   double gb          = strtod(node->mapped_val, NULL);
+   double gb = 0.0;
+   if (!hypredrv_ParseDouble(node->mapped_val, &gb) || gb < 0.0 ||
+       gb > DBL_MAX / (double)GB_TO_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid memory pool size '%s' for key '%s'", node->mapped_val,
+                           node->key);
+      return;
+   }
    *((double *)field) = gb * (double)GB_TO_BYTES;
 }
 

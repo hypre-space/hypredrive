@@ -54,6 +54,11 @@ hypredrv_IntArrayCreate(size_t size)
 {
    IntArray *int_array = NULL;
 
+   if (size > SIZE_MAX / sizeof(int))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
    int_array = malloc(sizeof(IntArray));
    if (!int_array)
    {
@@ -82,34 +87,6 @@ hypredrv_IntArrayCreate(size_t size)
 }
 
 /*--------------------------------------------------------------------------
- * hypredrv_IntArrayClone
- *--------------------------------------------------------------------------*/
-
-IntArray *
-hypredrv_IntArrayClone(const IntArray *other)
-{
-   IntArray *this = NULL;
-
-   this = hypredrv_IntArrayCreate(other->size);
-   memcpy(this->data, other->data, other->size * sizeof(int));
-
-   if (this->unique_data)
-   {
-      memcpy(this->unique_data, other->unique_data, other->unique_size * sizeof(int));
-      this->unique_size = other->unique_size;
-   }
-
-   if (this->g_unique_data)
-   {
-      memcpy(this->g_unique_data, other->g_unique_data,
-             other->g_unique_size * sizeof(int));
-      this->g_unique_size = other->g_unique_size;
-   }
-
-   return this;
-}
-
-/*--------------------------------------------------------------------------
  * hypredrv_IntArrayDestroy
  *--------------------------------------------------------------------------*/
 
@@ -128,47 +105,70 @@ hypredrv_IntArrayDestroy(IntArray **int_array_ptr)
    }
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_StrToIntArray
- *-----------------------------------------------------------------------------*/
+static const char array_delimiters[] = "[], \t\r\n";
+
+/* Count tokens without copying, then make one writable copy for conversion. */
+static char *
+ArrayTokensCreate(const char *string, size_t *count)
+{
+   *count = 0;
+   if (!string)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      return NULL;
+   }
+
+   const char *cursor = string + strspn(string, array_delimiters);
+   while (*cursor)
+   {
+      (*count)++;
+      cursor += strcspn(cursor, array_delimiters);
+      cursor += strspn(cursor, array_delimiters);
+   }
+
+   char *buffer = strdup(string);
+   if (!buffer)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+   }
+   return buffer;
+}
+
+static bool
+IntArrayParseTokens(char *buffer, int *values)
+{
+   char  *saveptr = NULL;
+   size_t index   = 0;
+   for (const char *token = strtok_r(buffer, array_delimiters, &saveptr); token;
+        token             = strtok_r(NULL, array_delimiters, &saveptr))
+   {
+      if (!hypredrv_ParseInt(token, &values[index++]))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Invalid integer array entry '%s'", token);
+         return false;
+      }
+   }
+   return true;
+}
 
 void
 hypredrv_StrToIntArray(const char *string, IntArray **int_array_ptr)
 {
-   char       *buffer    = NULL;
-   const char *token     = NULL;
-   char       *saveptr   = NULL;
-   int         count     = 0;
-   IntArray   *int_array = NULL;
-
-   /* Find number of elements in array */
-   buffer = strdup(string);
-   token  = strtok_r(buffer, "[], ", &saveptr);
-   count  = 0;
-   while (token)
+   size_t count   = 0;
+   char  *buffer  = ArrayTokensCreate(string, &count);
+   *int_array_ptr = NULL;
+   if (!buffer)
    {
-      count++;
-      token = strtok_r(NULL, "[], ", &saveptr);
+      return;
+   }
+   IntArray *array = hypredrv_IntArrayCreate(count);
+   if (array && !IntArrayParseTokens(buffer, array->data))
+   {
+      hypredrv_IntArrayDestroy(&array);
    }
    free(buffer);
-
-   /* Create IntArray */
-   int_array = hypredrv_IntArrayCreate((size_t)count);
-
-   /* Build array */
-   buffer = strdup(string);
-   token  = strtok_r(buffer, "[], ", &saveptr);
-   count  = 0;
-   while (token)
-   {
-      int_array->data[count] = atoi(token);
-      count++;
-      token = strtok_r(NULL, "[], ", &saveptr);
-   }
-   free(buffer);
-
-   /* Set output pointer */
-   *int_array_ptr = int_array;
+   *int_array_ptr = array;
 }
 
 /*--------------------------------------------------------------------------
@@ -180,8 +180,24 @@ hypredrv_DoubleArrayCreate(size_t size)
 {
    DoubleArray *double_array = NULL;
 
-   double_array       = malloc(sizeof(DoubleArray));
-   double_array->data = malloc(size * sizeof(double));
+   if (size > SIZE_MAX / sizeof(double))
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
+   double_array = malloc(sizeof(DoubleArray));
+   if (!double_array)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      return NULL;
+   }
+   double_array->data = malloc((size > 0 ? size : 1) * sizeof(double));
+   if (!double_array->data)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      free(double_array);
+      return NULL;
+   }
    double_array->size = size;
 
    return double_array;
@@ -211,40 +227,32 @@ hypredrv_DoubleArrayDestroy(DoubleArray **double_array_ptr)
 void
 hypredrv_StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
 {
-   char        *buffer       = NULL;
-   const char  *token        = NULL;
-   char        *saveptr      = NULL;
-   int          count        = 0;
-   DoubleArray *double_array = NULL;
-
-   /* Find number of elements in array */
-   buffer = strdup(string);
-   token  = strtok_r(buffer, "[], ", &saveptr);
-   count  = 0;
-   while (token)
+   size_t count      = 0;
+   char  *buffer     = ArrayTokensCreate(string, &count);
+   char  *saveptr    = NULL;
+   *double_array_ptr = NULL;
+   if (!buffer)
    {
-      count++;
-      token = strtok_r(NULL, "[], ", &saveptr);
+      return;
+   }
+   DoubleArray *array = hypredrv_DoubleArrayCreate(count);
+   if (array)
+   {
+      size_t index = 0;
+      for (const char *token = strtok_r(buffer, array_delimiters, &saveptr); token;
+           token             = strtok_r(NULL, array_delimiters, &saveptr))
+      {
+         if (!hypredrv_ParseDouble(token, &array->data[index++]))
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Invalid floating-point array entry '%s'", token);
+            hypredrv_DoubleArrayDestroy(&array);
+            break;
+         }
+      }
    }
    free(buffer);
-
-   /* Create DoubleArray */
-   double_array = hypredrv_DoubleArrayCreate((size_t)count);
-
-   /* Build array */
-   buffer = strdup(string);
-   token  = strtok_r(buffer, "[], ", &saveptr);
-   count  = 0;
-   while (token)
-   {
-      sscanf(token, "%lf", &double_array->data[count]);
-      count++;
-      token = strtok_r(NULL, "[], ", &saveptr);
-   }
-   free(buffer);
-
-   /* Set output pointer */
-   *double_array_ptr = double_array;
+   *double_array_ptr = array;
 }
 
 /*-----------------------------------------------------------------------------
@@ -254,388 +262,293 @@ hypredrv_StrToDoubleArray(const char *string, DoubleArray **double_array_ptr)
 void
 hypredrv_StrToStackIntArray(const char *string, StackIntArray *int_array)
 {
-   char       *buffer = NULL;
-   const char *token  = NULL;
-   int         count  = 0;
-
-   /* Find number of elements in array */
-   buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
-   count  = 0;
-   while (token)
+   size_t count  = 0;
+   char  *buffer = ArrayTokensCreate(string, &count);
+   if (!buffer)
    {
-      count++;
-      token = strtok(NULL, "[], ");
+      return;
    }
-   free(buffer);
-
-   /* Set StackIntArray size */
-   int_array->size =
-      (count < MAX_STACK_ARRAY_LENGTH) ? (size_t)count : MAX_STACK_ARRAY_LENGTH - 1;
-
-   /* Build array */
-   buffer = strdup(string);
-   token  = strtok(buffer, "[], ");
-   count  = 0;
-   while (token)
+   if (count > MAX_STACK_ARRAY_LENGTH)
    {
-      if (count < MAX_STACK_ARRAY_LENGTH)
-      {
-         int_array->data[count] = atoi(token);
-      }
-      count++;
-      token = strtok(NULL, "[], ");
-   }
-   free(buffer);
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_IntArrayCompare
- *-----------------------------------------------------------------------------*/
-
-int
-hypredrv_IntArrayCompare(const void *a, const void *b)
-{
-   return (*(int *)a - *(int *)b);
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_IntArraySort
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_IntArraySort(IntArray *int_array)
-{
-   qsort(int_array->data, int_array->size, sizeof(int), hypredrv_IntArrayCompare);
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_IntArrayUnique
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_IntArrayUnique(MPI_Comm comm, IntArray *int_array)
-{
-   IntArray *tmp_array         = NULL;
-   int       num_entries_int   = 0;
-   int       total_num_entries = 0;
-   int      *all_num_entries   = NULL;
-   int      *displs            = NULL;
-   int      *all_data          = NULL;
-   int       myid = 0, nprocs = 0;
-
-   MPI_Comm_rank(comm, &myid);
-   MPI_Comm_size(comm, &nprocs);
-
-   /* Sort input array */
-   tmp_array = hypredrv_IntArrayClone((const IntArray *)int_array);
-   if (int_array->size > 0)
-   {
-      hypredrv_IntArraySort(tmp_array);
-
-      /* Find number of unique entries locally */
-      int_array->unique_size = 1;
-      for (size_t i = 1; i < int_array->size; i++)
-      {
-         if (tmp_array->data[i] != tmp_array->data[i - 1])
-         {
-            int_array->unique_size++;
-         }
-      }
-
-      /* Compute local unique array */
-      int_array->unique_data    = (int *)calloc(int_array->unique_size, sizeof(int));
-      int_array->unique_data[0] = tmp_array->data[0];
-      for (size_t i = 1, k = 0; i < int_array->size; i++)
-      {
-         if (tmp_array->data[i] != tmp_array->data[i - 1])
-         {
-            int_array->unique_data[++k] = tmp_array->data[i];
-         }
-      }
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Integer array exceeds %d entries", MAX_STACK_ARRAY_LENGTH);
    }
    else
    {
-      int_array->unique_size = 0;
-      int_array->unique_data = NULL;
-   }
-   hypredrv_IntArrayDestroy(&tmp_array);
-
-   /* Gather sizes of local unique arrays */
-   if (!myid)
-   {
-      all_num_entries = (int *)malloc((size_t)nprocs * sizeof(int));
-   }
-   num_entries_int = (int)int_array->unique_size;
-   MPI_Gather(&num_entries_int, 1, MPI_INT, all_num_entries, 1, MPI_INT, 0, comm);
-
-   /* Gather local unique arrays */
-   if (!myid)
-   {
-      displs            = (int *)calloc((size_t)nprocs, sizeof(int));
-      total_num_entries = all_num_entries[0];
-      for (int i = 1; i < nprocs; i++)
+      StackIntArray parsed = STACK_INTARRAY_CREATE();
+      if (IntArrayParseTokens(buffer, parsed.data))
       {
-         displs[i] = displs[i - 1] + all_num_entries[i - 1];
-         total_num_entries += all_num_entries[i];
+         parsed.size = count;
+         *int_array  = parsed;
       }
-      all_data = (total_num_entries > 0)
-                    ? (int *)malloc((size_t)total_num_entries * sizeof(int))
-                    : NULL;
    }
-   MPI_Gatherv(int_array->unique_data, (int)int_array->unique_size, MPI_INT, all_data,
-               all_num_entries, displs, MPI_INT, 0, comm);
+   free(buffer);
+}
 
-   /* Compute global number of unique entries */
-   if (!myid)
+/* Sort and compact a scratch array, returning its number of distinct values. */
+static int
+IntArrayCompare(const void *a, const void *b)
+{
+   int lhs = *(const int *)a;
+   int rhs = *(const int *)b;
+   return (lhs > rhs) - (lhs < rhs);
+}
+
+static size_t
+IntArrayCompact(int *data, size_t size)
+{
+   size_t count = 0;
+   qsort(data, size, sizeof(int), IntArrayCompare);
+   for (size_t i = 0; i < size; i++)
    {
-      if (total_num_entries > 0)
+      if (count == 0 || data[i] != data[count - 1])
       {
-         /* Sort input array */
-         qsort(all_data, (size_t)total_num_entries, sizeof(int),
-               hypredrv_IntArrayCompare);
+         data[count++] = data[i];
+      }
+   }
+   return count;
+}
 
-         /* Find number of unique entries */
-         int_array->g_unique_size = 1;
-         for (int i = 1; i < total_num_entries; i++)
-         {
-            if (all_data[i] != all_data[i - 1])
-            {
-               int_array->g_unique_size++;
-            }
-         }
+/* Keep every rank on the same path when validation or allocation fails. */
+static bool
+IntArrayCollectiveCheck(MPI_Comm comm, uint32_t local_error)
+{
+   const uint32_t send_error   = local_error;
+   uint32_t       global_error = ERROR_NONE;
+   MPI_Allreduce(&send_error, &global_error, 1, MPI_UINT32_T, MPI_BOR, comm);
+   global_error |= local_error;
+   if (global_error)
+   {
+      hypredrv_ErrorCodeSet(global_error);
+   }
+   return global_error == ERROR_NONE;
+}
+
+/* Compute root's Gatherv layout and allocate its concatenated label buffer. */
+static uint32_t
+IntArrayGatherBuffer(int nprocs, const int *counts, int *displs, int **gathered,
+                     int *total)
+{
+   *total = 0;
+   for (int i = 0; i < nprocs; i++)
+   {
+      if (counts[i] > INT_MAX - *total)
+      {
+         return ERROR_OUT_OF_BOUNDS;
+      }
+      displs[i] = *total;
+      *total += counts[i];
+   }
+   if ((size_t)*total > SIZE_MAX / sizeof(int))
+   {
+      return ERROR_ALLOCATION;
+   }
+   *gathered = malloc((size_t)(*total ? *total : 1) * sizeof(int));
+   return *gathered ? ERROR_NONE : ERROR_ALLOCATION;
+}
+
+static bool
+IntArrayUnique(MPI_Comm comm, IntArray *array)
+{
+   int       rank = 0, nprocs = 0;
+   int       local_count = 0, global_count = 0, total = 0;
+   int      *counts = NULL, *displs = NULL, *gathered = NULL;
+   IntArray *scratch = hypredrv_IntArrayCreate(array->size);
+   bool      success = false;
+   uint32_t  error   = ERROR_NONE;
+
+   MPI_Comm_rank(comm, &rank);
+   MPI_Comm_size(comm, &nprocs);
+   if (!IntArrayCollectiveCheck(comm, scratch ? ERROR_NONE : ERROR_ALLOCATION))
+   {
+      goto cleanup;
+   }
+   memcpy(scratch->data, array->data, array->size * sizeof(int));
+   array->unique_size = IntArrayCompact(scratch->data, array->size);
+   array->unique_data =
+      malloc((array->unique_size ? array->unique_size : 1) * sizeof(int));
+   if (rank == 0)
+   {
+      counts = malloc((size_t)nprocs * sizeof(int));
+      displs = malloc((size_t)nprocs * sizeof(int));
+   }
+   if (!IntArrayCollectiveCheck(
+          comm, (!array->unique_data || (rank == 0 && (!counts || !displs)))
+                   ? ERROR_ALLOCATION
+                   : ERROR_NONE))
+   {
+      goto cleanup;
+   }
+   memcpy(array->unique_data, scratch->data, array->unique_size * sizeof(int));
+   hypredrv_IntArrayDestroy(&scratch);
+   if (!IntArrayCollectiveCheck(comm, array->unique_size > INT_MAX ? ERROR_OUT_OF_BOUNDS
+                                                                   : ERROR_NONE))
+   {
+      goto cleanup;
+   }
+   local_count = (int)array->unique_size;
+   MPI_Gather(&local_count, 1, MPI_INT, counts, 1, MPI_INT, 0, comm);
+
+   if (rank == 0)
+   {
+      error = IntArrayGatherBuffer(nprocs, counts, displs, &gathered, &total);
+   }
+   if (!IntArrayCollectiveCheck(comm, error))
+   {
+      goto cleanup;
+   }
+   MPI_Gatherv(array->unique_data, local_count, MPI_INT, gathered, counts, displs,
+               MPI_INT, 0, comm);
+   if (rank == 0)
+   {
+      global_count = (int)IntArrayCompact(gathered, (size_t)total);
+   }
+   MPI_Bcast(&global_count, 1, MPI_INT, 0, comm);
+   array->g_unique_size = (size_t)global_count;
+   array->g_unique_data = malloc((size_t)(global_count ? global_count : 1) * sizeof(int));
+   if (!IntArrayCollectiveCheck(comm,
+                                array->g_unique_data ? ERROR_NONE : ERROR_ALLOCATION))
+   {
+      goto cleanup;
+   }
+   if (rank == 0)
+   {
+      memcpy(array->g_unique_data, gathered, (size_t)global_count * sizeof(int));
+   }
+   MPI_Bcast(array->g_unique_data, global_count, MPI_INT, 0, comm);
+   success = true;
+
+cleanup:
+   hypredrv_IntArrayDestroy(&scratch);
+   free(counts);
+   free(displs);
+   free(gathered);
+   return success;
+}
+
+/* Read one part, either its size alone or its entries into the remaining buffer. */
+static bool
+IntArrayReadPart(const char *prefix, int part, bool binary, int *data, size_t capacity,
+                 size_t *size)
+{
+   char filename[MAX_FILENAME_LENGTH];
+   int  written = snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, part,
+                          binary ? ".bin" : "");
+   if (written < 0 || (size_t)written >= sizeof(filename))
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Dofmap filename is too long");
+      return false;
+   }
+   FILE *fp = fopen(filename, binary ? "rb" : "r");
+   if (!fp)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(filename);
+      return false;
+   }
+
+   bool   success = false;
+   size_t count =
+      binary ? fread(size, sizeof(size_t), 1, fp) : (size_t)fscanf(fp, "%zu", size);
+   if (count != 1 || *size > capacity)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid or oversized dofmap header in '%s'", filename);
+      goto cleanup;
+   }
+   if (data)
+   {
+      if (binary)
+      {
+         count = fread(data, sizeof(int), *size, fp);
       }
       else
       {
-         int_array->g_unique_size = 0;
-      }
-   }
-   MPI_Bcast(&int_array->g_unique_size, 1, MPI_UNSIGNED_LONG, 0, comm);
-   int_array->g_unique_data = (int_array->g_unique_size > 0)
-                                 ? (int *)calloc(int_array->g_unique_size, sizeof(int))
-                                 : NULL;
-
-   /* Compute global unique data */
-   if (!myid && int_array->g_unique_size > 0)
-   {
-      int_array->g_unique_data[0] = all_data[0];
-      for (size_t i = 1, k = 0; i < (size_t)total_num_entries; i++)
-      {
-         if (all_data[i] != all_data[i - 1])
+         count = 0;
+         while (count < *size && fscanf(fp, "%d", &data[count]) == 1)
          {
-            int_array->g_unique_data[++k] = all_data[i];
+            count++;
          }
       }
-   }
-   if (!myid)
-   {
-      free(all_data);
-      free(all_num_entries);
-      free(displs);
-   }
-   MPI_Bcast(int_array->g_unique_data, (int)int_array->g_unique_size, MPI_INT, 0, comm);
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_IntArrayParRead
- *-----------------------------------------------------------------------------*/
-
-/* Sums the header entry counts across this rank's parts, which sizes the
- * concatenated array. Returns 0 with the error state set on a bad part file. */
-static int
-IntArrayScanPartHeaders(const char *prefix, const int *partids, int nparts,
-                        const char *suffix, const char *code, bool is_binary,
-                        size_t *num_entries_all_out)
-{
-   char   filename[MAX_FILENAME_LENGTH];
-   size_t num_entries_all = 0;
-   size_t num_entries     = 0;
-   size_t count           = 0;
-   FILE  *fp              = NULL;
-
-   /* Compute total number of entries considering all parts */
-   num_entries_all = 0;
-   for (int part = 0; part < nparts; part++)
-   {
-      snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
-      if ((fp = fopen(filename, code)) == NULL)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(filename);
-         return 0;
-      }
-
-      count = ((int)is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                               : (size_t)fscanf(fp, "%zu", &num_entries);
-      if (count != 1)
+      if (count != *size)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid number of header entries!");
-         fclose(fp);
-         return 0;
+         hypredrv_ErrorMsgAdd("Expected %zu, but found %zu coefficients in '%s'", *size,
+                              count, filename);
+         goto cleanup;
       }
-      fclose(fp);
-      num_entries_all += num_entries;
    }
-
-   *num_entries_all_out = num_entries_all;
-
-   return 1;
+   success = true;
+cleanup:
+   fclose(fp);
+   return success;
 }
 
 void
 hypredrv_IntArrayParRead(MPI_Comm comm, const char *prefix, IntArray **int_array_ptr)
 {
-   char      filename[MAX_FILENAME_LENGTH];
-   char      suffix[5], code[3];
-   size_t    num_entries = 0, num_entries_all = 0;
-   size_t    count;
-   IntArray *int_array = NULL;
-   FILE     *fp        = NULL;
-   int       myid = 0, nprocs = 0, nparts = 0, g_nparts = 0, offset = 0;
-   uint64_t  local_nparts = 0, first_part = 0;
-   int      *partids   = NULL;
-   bool      is_binary = false;
+   int      rank = 0, nprocs = 0;
+   uint64_t first = 0, nparts = 0;
+   size_t   total = 0, size = 0, offset = 0;
+   bool     success = true;
+   *int_array_ptr   = NULL;
 
-   *int_array_ptr = NULL;
-
-   if (!prefix || !hypredrv_BinaryPathPrefixIsSafe(prefix))
+   if (!IntArrayCollectiveCheck(comm, hypredrv_BinaryPathPrefixIsSafe(prefix)
+                                         ? ERROR_NONE
+                                         : ERROR_FILE_UNEXPECTED_ENTRY))
    {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid dofmap path prefix");
       return;
    }
-
-   /* 1a) Find number of parts per processor */
+   MPI_Comm_rank(comm, &rank);
    MPI_Comm_size(comm, &nprocs);
-   MPI_Comm_rank(comm, &myid);
-   g_nparts = hypredrv_CountNumberOfPartitions(prefix);
-   hypredrv_MultipartRange((uint64_t)g_nparts, nprocs, myid, &first_part, &local_nparts);
-   nparts = (int)local_nparts;
-   if (g_nparts < nprocs)
+   int num_parts = hypredrv_CountNumberOfPartitions(prefix);
+   if (!IntArrayCollectiveCheck(comm, num_parts < nprocs ? ERROR_FILE_UNEXPECTED_ENTRY
+                                                         : ERROR_NONE))
    {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Invalid dofmap filename \"%s\" or invalid number of parts!",
                            prefix);
       return;
    }
+   hypredrv_MultipartRange((uint64_t)num_parts, nprocs, rank, &first, &nparts);
+   bool binary = hypredrv_CheckBinaryDataExists(prefix) != 0;
 
-   /* 1b) Compute partids array */
-   partids = malloc((size_t)nparts * sizeof(int));
-   offset  = (int)first_part;
-   for (int part = 0; part < nparts; part++)
+   for (uint64_t part = first; part < first + nparts; part++)
    {
-      partids[part] = offset + part;
+      success = IntArrayReadPart(prefix, (int)part, binary, NULL,
+                                 SIZE_MAX / sizeof(int) - total, &size);
+      if (!success) break;
+      total += size;
    }
-
-   /* Set file suffix */
-   if (hypredrv_CheckBinaryDataExists(prefix))
+   if (!IntArrayCollectiveCheck(comm, success ? ERROR_NONE : hypredrv_ErrorCodeGet()))
    {
-      is_binary = true;
-      strcpy(suffix, ".bin");
-      strcpy(code, "rb");
-   }
-   else
-   {
-      is_binary = false;
-      strcpy(code, "r");
-      suffix[0] = '\0';
-   }
-
-   /* Compute total number of entries considering all parts */
-   if (!IntArrayScanPartHeaders(prefix, partids, nparts, suffix, code, is_binary,
-                                &num_entries_all))
-   {
-      free(partids);
       return;
    }
-
-   int_array = hypredrv_IntArrayCreate(num_entries_all);
-   if (!int_array || (num_entries_all > 0 && !int_array->data))
+   IntArray *array = hypredrv_IntArrayCreate(total);
+   if (!IntArrayCollectiveCheck(comm, array ? ERROR_NONE : ERROR_ALLOCATION))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate dofmap array (%zu entries)",
-                           num_entries_all);
-      hypredrv_IntArrayDestroy(&int_array);
-      free(partids);
+      hypredrv_IntArrayDestroy(&array);
       return;
    }
-
-   /* Fill entries */
-   for (size_t part = 0, idx = 0; part < (size_t)nparts; part++)
+   for (uint64_t part = first; part < first + nparts; part++)
    {
-      snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[part], suffix);
-      if ((fp = fopen(filename, code)) == NULL)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(filename);
-         free(partids);
-         hypredrv_IntArrayDestroy(&int_array);
-         return;
-      }
-
-      count = ((int)is_binary) ? fread(&num_entries, sizeof(size_t), 1, fp)
-                               : (size_t)fscanf(fp, "%zu", &num_entries);
-      if (count != 1)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid number of header entries!");
-         fclose(fp);
-         free(partids);
-         hypredrv_IntArrayDestroy(&int_array);
-         return;
-      }
-      if (idx + num_entries > num_entries_all)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Dofmap part grew between sizing and read passes");
-         fclose(fp);
-         free(partids);
-         hypredrv_IntArrayDestroy(&int_array);
-         return;
-      }
-
-      if (is_binary)
-      {
-         /* On-disk dofmap entries are stored as fixed-width int (see the writer in
-          * utils/lsseq_driver.c, which reads/writes int32_t values). Reading with
-          * sizeof(int) matches the IntArray element size; using sizeof(size_t) here
-          * would read 8-byte elements into a 4-byte-per-element buffer and overflow
-          * the heap allocation. */
-         count = fread(&int_array->data[idx], sizeof(int), num_entries, fp);
-      }
-      else
-      {
-         count = 0;
-         while (count < num_entries)
-         {
-            if (fscanf(fp, "%d", &int_array->data[idx + count]) != 1)
-            {
-               break;
-            }
-            count++;
-         }
-      }
-      if (count != num_entries)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Expected %zu, but found %zu coefficients!", num_entries,
-                              count);
-         fclose(fp);
-         free(partids);
-         hypredrv_IntArrayDestroy(&int_array);
-         return;
-      }
-
-      fclose(fp);
-      idx += num_entries;
+      success = IntArrayReadPart(prefix, (int)part, binary, array->data + offset,
+                                 total - offset, &size);
+      if (!success) break;
+      offset += size;
    }
-   free(partids);
-
-   /* Compute unique varibales */
-   hypredrv_IntArrayUnique(comm, int_array);
-
-   *int_array_ptr = int_array;
+   if (success && offset != total)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Dofmap size changed between sizing and read passes");
+      success = false;
+   }
+   if (!IntArrayCollectiveCheck(comm, success ? ERROR_NONE : hypredrv_ErrorCodeGet()) ||
+       !IntArrayUnique(comm, array))
+   {
+      hypredrv_IntArrayDestroy(&array);
+   }
+   *int_array_ptr = array;
 }
 
 /*-----------------------------------------------------------------------------
@@ -646,67 +559,78 @@ void
 hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap,
                        IntArray **int_array_ptr)
 {
-   IntArray *int_array = NULL;
-
-   int_array = hypredrv_IntArrayCreate((size_t)size);
-   /* A rank may legitimately own no rows, in which case the caller passes an empty
-    * (possibly NULL) dofmap. Still take part in the collective below so the global
-    * label set is built consistently across all ranks. */
-   if (size > 0 && dofmap)
+   *int_array_ptr = NULL;
+   if (!IntArrayCollectiveCheck(
+          comm, size < 0 || (size > 0 && !dofmap) ? ERROR_INVALID_VAL : ERROR_NONE))
    {
-      memcpy(int_array->data, dofmap, (size_t)size * sizeof(int));
+      return;
    }
-   hypredrv_IntArrayUnique(comm, int_array);
-
-   *int_array_ptr = int_array;
+   IntArray *array = hypredrv_IntArrayCreate((size_t)size);
+   if (!IntArrayCollectiveCheck(comm, array ? ERROR_NONE : ERROR_ALLOCATION))
+   {
+      hypredrv_IntArrayDestroy(&array);
+      return;
+   }
+   /* Empty ranks still participate in building the global label set. */
+   if (size > 0)
+   {
+      memcpy(array->data, dofmap, (size_t)size * sizeof(int));
+   }
+   if (!IntArrayUnique(comm, array))
+   {
+      hypredrv_IntArrayDestroy(&array);
+   }
+   *int_array_ptr = array;
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_IntArrayBuildInterleaved
- *-----------------------------------------------------------------------------*/
+static void
+IntArrayBuildPattern(MPI_Comm comm, int num_local_blocks, int num_dof_types,
+                     bool interleaved, IntArray **int_array_ptr)
+{
+   *int_array_ptr = NULL;
+   uint32_t error = ERROR_NONE;
+   if (num_local_blocks < 0 || num_dof_types < 0)
+   {
+      error = ERROR_INVALID_VAL;
+   }
+   else if (num_dof_types > 0 && num_local_blocks > INT_MAX / num_dof_types)
+   {
+      error = ERROR_OUT_OF_BOUNDS;
+   }
+   if (!IntArrayCollectiveCheck(comm, error))
+   {
+      return;
+   }
+   int       size  = num_local_blocks * num_dof_types;
+   IntArray *array = hypredrv_IntArrayCreate((size_t)size);
+   if (!IntArrayCollectiveCheck(comm, array ? ERROR_NONE : ERROR_ALLOCATION))
+   {
+      hypredrv_IntArrayDestroy(&array);
+      return;
+   }
+   for (int i = 0; i < size; i++)
+   {
+      array->data[i] = interleaved ? i % num_dof_types : i / num_local_blocks;
+   }
+   if (!IntArrayUnique(comm, array))
+   {
+      hypredrv_IntArrayDestroy(&array);
+   }
+   *int_array_ptr = array;
+}
 
 void
 hypredrv_IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
                                   IntArray **int_array_ptr)
 {
-   IntArray *int_array = NULL;
-   int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
-
-   int_array = hypredrv_IntArrayCreate((size_t)size);
-   for (int i = 0; i < num_local_blocks; i++)
-   {
-      for (int j = 0; j < num_dof_types; j++)
-      {
-         int_array->data[(i * num_dof_types) + j] = j;
-      }
-   }
-   hypredrv_IntArrayUnique(comm, int_array);
-
-   *int_array_ptr = int_array;
+   IntArrayBuildPattern(comm, num_local_blocks, num_dof_types, true, int_array_ptr);
 }
-
-/*-----------------------------------------------------------------------------
- * hypredrv_IntArrayBuildContiguous
- *-----------------------------------------------------------------------------*/
 
 void
 hypredrv_IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
                                  IntArray **int_array_ptr)
 {
-   IntArray *int_array = NULL;
-   int       size      = num_dof_types * num_local_blocks; // TODO: check overflow
-
-   int_array = hypredrv_IntArrayCreate((size_t)size);
-   for (int i = 0; i < num_dof_types; i++)
-   {
-      for (int j = 0; j < num_local_blocks; j++)
-      {
-         int_array->data[(i * num_local_blocks) + j] = i;
-      }
-   }
-   hypredrv_IntArrayUnique(comm, int_array);
-
-   *int_array_ptr = int_array;
+   IntArrayBuildPattern(comm, num_local_blocks, num_dof_types, false, int_array_ptr);
 }
 
 /*--------------------------------------------------------------------------
@@ -776,45 +700,19 @@ hypredrv_StrArrayEntryExists(const StrArray valid, const char *string)
 int
 hypredrv_StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
 {
-   char    *end_ptr    = NULL;
-   long int string_num = 0;
-   size_t   i          = 0;
-   bool     is_integer = false;
-
+   int number = 0;
    if (!string)
    {
       return INT_MIN;
    }
-
-   string_num = strtol(string, &end_ptr, 10);
-
-   /* Empty strings are valid YAML scalars in some schemas (for example nested MGR
-    * relaxation blocks). Treat them as strings, not as the number 0. */
-   is_integer = ((string[0] != '\0' && end_ptr != string && *end_ptr == '\0') != 0);
-
-   if (is_integer)
+   bool is_integer = hypredrv_ParseInt(string, &number);
+   for (size_t i = 0; i < valid.size; i++)
    {
-      /* valid number string */
-      for (i = 0; i < valid.size; i++)
+      if (is_integer ? valid.data[i].num == number : !strcmp(valid.data[i].str, string))
       {
-         if (valid.data[i].num == string_num)
-         {
-            return valid.data[i].num;
-         }
+         return valid.data[i].num;
       }
    }
-   else
-   {
-      /* not a number string */
-      for (i = 0; i < valid.size; i++)
-      {
-         if (!strcmp(valid.data[i].str, string))
-         {
-            return valid.data[i].num;
-         }
-      }
-   }
-
    return INT_MIN;
 }
 

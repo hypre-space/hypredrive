@@ -108,26 +108,6 @@ test_HypreConsumeErrors_classifies_soft_and_hard_flags(void)
  *-----------------------------------------------------------------------------*/
 
 static void
-test_ErrorMsgAdd(void)
-{
-   hypredrv_ErrorMsgClear();
-   hypredrv_ErrorMsgAdd("Test message %d", 42);
-   hypredrv_ErrorMsgAdd("Another message");
-
-   /* Messages should be stored - we can't easily verify without printing */
-   /* But we can verify no crash */
-}
-
-static void
-test_ErrorMsgClear(void)
-{
-   hypredrv_ErrorMsgAdd("Test message");
-   hypredrv_ErrorMsgClear();
-
-   /* Clear should not crash */
-}
-
-static void
 test_ErrorStateReset(void)
 {
    hypredrv_ErrorCodeResetAll();
@@ -673,8 +653,6 @@ main(int argc, char **argv)
    RUN_TEST(test_ErrorCodeMultiple);
    RUN_TEST(test_HypreConsumeErrors_classifies_soft_and_hard_flags);
 
-   RUN_TEST(test_ErrorMsgAdd);
-   RUN_TEST(test_ErrorMsgClear);
    RUN_TEST(test_ErrorStateReset);
    RUN_TEST(test_ErrorReportCollectiveFlag_resets);
    RUN_TEST(test_ErrorMsgAdd_null_format);

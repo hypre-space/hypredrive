@@ -854,7 +854,7 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    }
 
    resolved[0] = '\0';
-   if (args->dirname[0] != '\0')
+   if (args->dirname[0] != '\0' && filename[0] != '\0')
    {
       int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
       snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s", (int)strlen(args->dirname),
@@ -1089,7 +1089,7 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
             {
                int  val = 0;
                char lower_key[64];
-               if (sscanf(entry->val, "%d", &val) != 1)
+               if (!hypredrv_ParseInt(entry->val, &val))
                {
                   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
                   hypredrv_ErrorMsgAdd("dof_labels: expected integer value for "
@@ -1132,7 +1132,7 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
                   hypredrv_StrTrim(pair_key);
                   while (*pair_val == ' ') pair_val++;
                   int val_int = 0;
-                  if (sscanf(pair_val, "%d", &val_int) != 1)
+                  if (!hypredrv_ParseInt(pair_val, &val_int))
                   {
                      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
                      hypredrv_ErrorMsgAdd("dof_labels: expected integer value for "
@@ -1178,6 +1178,7 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
    if (*matrix_ptr)
    {
       HYPRE_IJMatrixDestroy(*matrix_ptr);
+      *matrix_ptr = NULL;
    }
 
    if (args->sequence_filename[0] != '\0')
@@ -2853,28 +2854,20 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
       return;
    }
 
-   /* Set matrix filename */
-   if (args->dirname[0] != '\0' && args->precmat_filename[0] != '\0')
-   {
-      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d/%.*s",
-               (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-               hypredrv_LinearSystemGetSuffix(args, ls_id),
-               (int)strlen(args->precmat_filename), args->precmat_filename);
-   }
-   else if (args->precmat_filename[0] != '\0')
-   {
-      snprintf(matrix_filename, sizeof(matrix_filename), "%s", args->precmat_filename);
-   }
-   else if (args->precmat_basename[0] != '\0')
-   {
-      snprintf(matrix_filename, sizeof(matrix_filename), "%.*s_%0*d",
-               (int)strlen(args->precmat_basename), args->precmat_basename,
-               (int)args->digits_suffix, hypredrv_LinearSystemGetSuffix(args, ls_id));
-   }
+   LinearSystemDataFilenameResolve(args, ls_id, args->precmat_filename,
+                                   args->precmat_basename, matrix_filename,
+                                   sizeof(matrix_filename));
+   char main_filename[MAX_FILENAME_LENGTH] = {0};
+   LinearSystemDataFilenameResolve(args, ls_id, args->matrix_filename,
+                                   args->matrix_basename, main_filename,
+                                   sizeof(main_filename));
 
-   /* GCOVR_EXCL_BR_START */
-   if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, args->matrix_filename))
-   /* GCOVR_EXCL_BR_STOP */
+   if (*precmat_ptr && *precmat_ptr != mat)
+   {
+      HYPRE_IJMatrixDestroy(*precmat_ptr);
+   }
+   *precmat_ptr = NULL;
+   if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, main_filename))
    {
       *precmat_ptr = mat;
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
@@ -2884,13 +2877,6 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    {
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: '%s'", matrix_filename);
-      /* Destroy matrix */
-      if (*precmat_ptr && *precmat_ptr != mat)
-      {
-         HYPRE_IJMatrixDestroy(*precmat_ptr);
-      }
-      *precmat_ptr = NULL;
-
       HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, precmat_ptr);
       /* GCOVR_EXCL_BR_START */
       if (HYPRE_GetError()) /* GCOVR_EXCL_BR_STOP */
@@ -2956,24 +2942,9 @@ hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **d
    {
       char dofmap_filename[MAX_FILENAME_LENGTH] = {0};
 
-      /* Set dofmap filename */
-      if (args->dirname[0] != '\0')
-      {
-         snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d/%.*s",
-                  (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-                  hypredrv_LinearSystemGetSuffix(args, ls_id),
-                  (int)strlen(args->dofmap_filename), args->dofmap_filename);
-      }
-      else if (args->dofmap_filename[0] != '\0')
-      {
-         snprintf(dofmap_filename, sizeof(dofmap_filename), "%s", args->dofmap_filename);
-      }
-      else
-      {
-         snprintf(dofmap_filename, sizeof(dofmap_filename), "%.*s_%0*d",
-                  (int)strlen(args->dofmap_basename), args->dofmap_basename,
-                  (int)args->digits_suffix, hypredrv_LinearSystemGetSuffix(args, ls_id));
-      }
+      LinearSystemDataFilenameResolve(args, ls_id, args->dofmap_filename,
+                                      args->dofmap_basename, dofmap_filename,
+                                      sizeof(dofmap_filename));
 
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap source: '%s'",
                          dofmap_filename);
