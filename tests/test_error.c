@@ -17,7 +17,7 @@
 #include "test_helpers.h"
 
 /* Generated MGR parsing functions used by the available-values test (these are
- * defined in mgr.c but not exposed in mgr.h; see tests/test_parser.c) */
+ * defined in mgr_config.c but not exposed in mgr.h; see tests/test_parser.c) */
 void hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
 void hypredrv_MGRfrlxSetArgsFromYAML(void *, YAMLnode *);
 

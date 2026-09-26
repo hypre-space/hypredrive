@@ -169,7 +169,10 @@ set(SOURCE_FILES
     src/internal/fsai.c
     src/internal/ilu.c
     src/internal/schwarz.c
-    src/internal/mgr.c
+    src/internal/mgr_config.c
+    src/internal/mgr_wrappers.c
+    src/internal/mgr_reuse.c
+    src/internal/mgr_construct.c
     src/internal/precon.c
     src/internal/precon_reuse.c
     src/internal/presets.c
