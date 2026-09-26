@@ -274,8 +274,7 @@ hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
       mypid = hypredrv->mypid;
       if (hypredrv->stats)
       {
-         object_name = hypredrv->stats->object_name;
-         ls_id       = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
+         ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
       }
 
       object_name = hypredrv_ResolveLogObjectName(hypredrv, default_object_name,
