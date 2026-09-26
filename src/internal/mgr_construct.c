@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "internal/mgr_internal.h"
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
+#include "internal/mgr_internal.h"
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
@@ -116,7 +116,8 @@ MGRPlanEliminateLevelFDofs(const MGR_args *args, MGRCreatePlan *plan, HYPRE_Int 
          {
             continue;
          }
-         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats),
+                            next_ls_id,
                             "MGR invalid f_dofs label: level=%d label=%d valid=[0,%d]",
                             (int)lvl, (int)dof_label, (int)plan->num_dofs - 1);
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -133,7 +134,8 @@ MGRPlanEliminateLevelFDofs(const MGR_args *args, MGRCreatePlan *plan, HYPRE_Int 
       }
       if (plan->inactive_dofs[dof_label])
       {
-         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats),
+                            next_ls_id,
                             "MGR duplicate/pruned f_dofs label: level=%d label=%d",
                             (int)lvl, (int)dof_label);
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -211,8 +213,8 @@ MGRPlanCoarsening(MGR_args *args, MGRCreatePlan *plan, const Stats *stats, int n
    {
       size_t label_space_size = 0;
       size_t present_labels   = 0;
-      if (!hypredrv_MGRBuildDofLabelPresenceMask(dofmap, &label_space_size, &present_labels,
-                                        &plan->label_present))
+      if (!hypredrv_MGRBuildDofLabelPresenceMask(dofmap, &label_space_size,
+                                                 &present_labels, &plan->label_present))
       {
          return 0;
       }
@@ -252,7 +254,8 @@ MGRPlanCoarsening(MGR_args *args, MGRCreatePlan *plan, const Stats *stats, int n
 
       if (num_level_f_dofs == 0)
       {
-         HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+         HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats),
+                            next_ls_id,
                             "MGR collapsing empty level: level=%d configured=%d",
                             (int)lvl, (int)args->level[lvl].f_dofs.size);
          free(plan->c_dofs[lvl]);
@@ -374,13 +377,13 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
             /* GCOVR_EXCL_START */
             if (raw < 0 || raw >= plan->num_dofs || plan->label_to_dense[raw] < 0)
             {
-               HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
-                                  "MGR invalid dof label during dense remap: raw=%d "
-                                  "num_dofs=%d mapped=%d",
-                                  (int)raw, (int)plan->num_dofs,
-                                  (raw >= 0 && raw < plan->num_dofs)
-                                     ? (int)plan->label_to_dense[raw]
-                                     : -1);
+               HYPREDRV_LOG_COMMF(
+                  2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+                  "MGR invalid dof label during dense remap: raw=%d "
+                  "num_dofs=%d mapped=%d",
+                  (int)raw, (int)plan->num_dofs,
+                  (raw >= 0 && raw < plan->num_dofs) ? (int)plan->label_to_dense[raw]
+                                                     : -1);
                hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
                hypredrv_ErrorMsgAdd("Invalid dof label %d during MGR dense remap",
                                     (int)raw);
@@ -521,8 +524,8 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
       }
 #endif
       level_grelax_sweeps[i] = level_args->g_relaxation.num_sweeps;
-      level_interp_type[i]   = hypredrv_MGRLevelInterpTypeCompat(level_args->prolongation_type,
-                                                        stats, next_ls_id, orig_lvl);
+      level_interp_type[i]   = hypredrv_MGRLevelInterpTypeCompat(
+         level_args->prolongation_type, stats, next_ls_id, orig_lvl);
       level_restrict_type[i] = level_args->restriction_type;
       level_coarse_type[i]   = level_args->coarse_level_type;
       level_matched_q[i]     = level_args->matched_q;
@@ -617,7 +620,7 @@ MGRConfigManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int active_lvl
    if (!frelax)
    {
       frelax = hypredrv_MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
-                                           &level_args->f_dofs, active_lvl);
+                                                    &level_args->f_dofs, active_lvl);
       if (hypredrv_ErrorCodeActive() || !frelax)
       {
          return 0;
@@ -681,7 +684,8 @@ MGRConfigNestedKrylovFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *le
        * rotation modes. Without this, PreconCreate would attach full-system
        * modes that overrun the extracted A_FF during interpolation setup. */
       if (!hypredrv_MGRProjectNestedRBMs(level_args->f_relaxation.krylov, args,
-                                level_args->f_dofs.data, level_args->f_dofs.size))
+                                         level_args->f_dofs.data,
+                                         level_args->f_dofs.size))
       {
          return 0;
       }
@@ -703,7 +707,8 @@ MGRConfigNestedKrylovFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *le
    }
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
    hypredrv_MGRSetFSolverAtLevel(precon, (HYPRE_Solver)level_args->f_relaxation.krylov, i,
-                                 level_args->f_relaxation.type, hypredrv_MGRBaseParSolverSolve,
+                                 level_args->f_relaxation.type,
+                                 hypredrv_MGRBaseParSolverSolve,
                                  hypredrv_MGRBaseParSolverSetup);
 #else
    hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -743,7 +748,8 @@ MGRConfigNestedMGRFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *level
       return 0;
    }
 
-   nested_dofmap = hypredrv_MGRBuildProjectedFRelaxDofmap(args->dofmap, &level_args->f_dofs);
+   nested_dofmap =
+      hypredrv_MGRBuildProjectedFRelaxDofmap(args->dofmap, &level_args->f_dofs);
    if (hypredrv_ErrorCodeActive() || !nested_dofmap)
    {
       hypredrv_IntArrayDestroy(&nested_dofmap);
@@ -769,7 +775,8 @@ MGRConfigNestedMGRFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *level
       return 0;
    }
 
-   frelax_wrapper = hypredrv_MGRNestedFRelaxWrapperCreate(frelax, nested_args, nested_dofmap);
+   frelax_wrapper =
+      hypredrv_MGRNestedFRelaxWrapperCreate(frelax, nested_args, nested_dofmap);
    if (hypredrv_ErrorCodeActive() || !frelax_wrapper)
    {
       HYPRE_MGRDestroy(frelax);
@@ -972,7 +979,8 @@ MGRConfigGRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
          int krylov_was_cached = (level_args->g_relaxation.krylov->base_solver != NULL);
          if (!krylov_was_cached)
          {
-            if (!hypredrv_MGRProjectNestedRemainingRBMs(level_args->g_relaxation.krylov, args, i))
+            if (!hypredrv_MGRProjectNestedRemainingRBMs(level_args->g_relaxation.krylov,
+                                                        args, i))
             {
                return 0;
             }
@@ -1152,7 +1160,7 @@ MGRConfigCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
       if (!krylov_was_cached)
       {
          if (!hypredrv_MGRProjectNestedRemainingRBMs(args->coarsest_level.krylov, args,
-                                            args->num_active_levels))
+                                                     args->num_active_levels))
          {
             return 0;
          }
@@ -1168,11 +1176,13 @@ MGRConfigCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
       }
       else
       {
-         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+         HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats),
+                            next_ls_id,
                             "reusing cached MGR coarsest nested Krylov handle");
       }
 #if HYPRE_CHECK_MIN_VERSION(30100, 5)
-      HYPRE_MGRSetCoarseSolver(precon, hypredrv_MGRBaseParSolverSolve, hypredrv_MGRBaseParSolverSetup,
+      HYPRE_MGRSetCoarseSolver(precon, hypredrv_MGRBaseParSolverSolve,
+                               hypredrv_MGRBaseParSolverSetup,
                                (HYPRE_Solver)args->coarsest_level.krylov);
 #else
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
