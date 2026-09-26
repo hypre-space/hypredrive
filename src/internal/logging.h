@@ -9,6 +9,7 @@
 #define HYPREDRV_LOGGING_HEADER
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "HYPREDRV.h"
 
 #if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
@@ -39,6 +40,15 @@ void hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
    HYPREDRV_PRINTF_FORMAT(3, 4);
 void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
                            const char *header, const char *text);
+
+/* The supplied name buffer must outlive use of the returned name or a pushed scope. */
+const char *hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                                          size_t default_object_name_size);
+bool hypredrv_PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                                       size_t default_object_name_size);
+void hypredrv_PopDefaultLogObjectName(HYPREDRV_t  hypredrv,
+                                      const char *default_object_name,
+                                      bool        pushed_default_name);
 
 #define HYPREDRV_LOGF(_level, _mypid, _object_name, _ls_id, _fmt, ...)       \
    do                                                                        \
