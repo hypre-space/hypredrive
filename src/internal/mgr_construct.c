@@ -341,7 +341,7 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
                     int next_ls_id)
 {
    IntArray *dofmap = args->dofmap;
-   HYPRE_Int lvl, i, j;
+   HYPRE_Int i;
 
    if (plan->num_active_dofs > 0 && plan->num_active_dofs < plan->num_dofs &&
        !MGRPlanRemapSparseLabels(plan, stats, next_ls_id))
@@ -1133,11 +1133,14 @@ MGRConfigManagedCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats 
    int csolver_was_cached = (args->csolver && args->csolver_type == type);
    if (!csolver_was_cached)
    {
-      args->csolver = hypredrv_MGRCoarseSolverCreateByType(&args->coarsest_level, type);
-      if (hypredrv_ErrorCodeActive() || !args->csolver)
+      HYPRE_Solver new_solver =
+         hypredrv_MGRCoarseSolverCreateByType(&args->coarsest_level, type);
+      if (hypredrv_ErrorCodeActive() || !new_solver)
       {
          return 0;
       }
+      hypredrv_MGRCoarseSolverDestroyByType(args->csolver_type, &args->csolver);
+      args->csolver = new_solver;
    }
    else
    {
@@ -1622,6 +1625,14 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    if (!args->dofmap)
    {
       hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
+      return;
+   }
+
+   if (args->num_levels < 1 || args->num_levels > MAX_MGR_LEVELS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR num_levels must be between 1 and %d (got %d)",
+                           MAX_MGR_LEVELS, (int)args->num_levels);
       return;
    }
 

@@ -1672,9 +1672,8 @@ HYPREDRV_LinearSystemSetCoordinates(HYPREDRV_t hypredrv, HYPRE_Vector x, HYPRE_V
                                     HYPRE_Vector z)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
-   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)x, 0);
-   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)y, 0);
-   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)z, 0);
+   void *coords[3] = {(HYPRE_IJVector)x, (HYPRE_IJVector)y, (HYPRE_IJVector)z};
+   hypredrv_PrepareExplicitObjectsForConfiguredExecution(hypredrv, coords, 3, 0);
 
    HYPRE_IJVector newv[3] = {(HYPRE_IJVector)x, (HYPRE_IJVector)y, (HYPRE_IJVector)z};
 

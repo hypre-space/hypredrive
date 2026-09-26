@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 #include "HYPREDRV.h"
-#include "internal/compatibility.h"
+#include "internal/bridge_row_bounds.h"
 
 #include <mpi.h>
 

@@ -12,7 +12,7 @@
 #include <stdlib.h>
 
 #include "HYPREDRV.h"
-#include "internal/compatibility.h"
+#include "internal/bridge_row_bounds.h"
 
 _Static_assert(((HYPRE_BigInt)-1) < (HYPRE_BigInt)0,
                "HYPREDRV Fortran bridge requires signed HYPRE_BigInt");

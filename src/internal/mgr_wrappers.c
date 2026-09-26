@@ -846,7 +846,7 @@ hypredrv_MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper_v)
    return 0;
 }
 
-HYPRE_Int
+static HYPRE_Int
 hypredrv_MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
                                    HYPRE_ParVector b, HYPRE_ParVector x)
 {
@@ -854,7 +854,7 @@ hypredrv_MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
                                  (HYPRE_Vector)x);
 }
 
-HYPRE_Int
+static HYPRE_Int
 hypredrv_MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
                                    HYPRE_ParVector b, HYPRE_ParVector x)
 {
@@ -888,6 +888,37 @@ hypredrv_MGRSchwarzWrapperCreate(const Schwarz_args *args)
    return (HYPRE_Solver)wrapper;
 }
 #endif
+
+void
+hypredrv_MGRFRelaxInstall(HYPRE_Solver precon, const MGRfrlx_args *f_relaxation,
+                          HYPRE_Solver frelax, int active_lvl)
+{
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      hypredrv_MGRSetFSolverAtLevel(
+         precon, frelax, active_lvl, MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
+         hypredrv_MGRSchwarzWrapperParSolve, hypredrv_MGRSchwarzWrapperParSetup);
+      return;
+   }
+#endif
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+   hypredrv_MGRSetFSolverAtLevel(precon, frelax, active_lvl, f_relaxation->type, NULL,
+                                 NULL);
+#elif HYPRE_CHECK_MIN_VERSION(21900, 0)
+   /* Only the level-0 AMG F-solver slot is available on this hypre version. */
+   if (f_relaxation->type == 2)
+   {
+      HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
+   }
+   (void)active_lvl;
+#else
+   (void)precon;
+   (void)f_relaxation;
+   (void)frelax;
+   (void)active_lvl;
+#endif
+}
 /* GCOVR_EXCL_STOP */
 
 HYPRE_Int

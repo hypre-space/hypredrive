@@ -327,20 +327,33 @@ hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
  *-----------------------------------------------------------------------------*/
 
 const char *
+hypredrv_FormatLogObjectId(int object_id, char *buffer, size_t buffer_size)
+{
+   if (object_id <= 0 || !buffer || buffer_size == 0)
+   {
+      return NULL;
+   }
+   snprintf(buffer, buffer_size, "obj-%d", object_id);
+   return buffer;
+}
+
+const char *
 hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                               size_t default_object_name_size)
 {
    const char *object_name = NULL;
+   if (!hypredrv)
+   {
+      return NULL;
+   }
    if (hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
       object_name = hypredrv->stats->object_name;
    }
-   if ((!object_name || object_name[0] == '\0') && /* GCOVR_EXCL_BR_LINE */
-       hypredrv->runtime_object_id > 0)
+   if (!object_name || object_name[0] == '\0') /* GCOVR_EXCL_BR_LINE */
    {
-      snprintf(default_object_name, default_object_name_size, "obj-%d",
-               hypredrv->runtime_object_id);
-      object_name = default_object_name;
+      object_name = hypredrv_FormatLogObjectId(
+         hypredrv->runtime_object_id, default_object_name, default_object_name_size);
    }
 
    return object_name;
@@ -354,7 +367,8 @@ bool
 hypredrv_PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                                   size_t default_object_name_size)
 {
-   if (!hypredrv->stats ||
+   if (!hypredrv || !hypredrv->stats || !default_object_name ||
+       default_object_name_size == 0 ||
        hypredrv->stats->object_name[0] != '\0') /* GCOVR_EXCL_BR_LINE */
    {
       return false;
@@ -380,7 +394,7 @@ void
 hypredrv_PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
                                  bool pushed_default_name)
 {
-   if (!pushed_default_name)
+   if (!pushed_default_name || !hypredrv || !hypredrv->stats || !default_object_name)
    {
       return;
    }

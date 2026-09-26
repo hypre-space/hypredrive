@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <errno.h>
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
@@ -853,22 +854,12 @@ MGRgrlxApplyTypeDefaults(void *vargs, HYPRE_Int old_type)
 const char *
 hypredrv_MGRLogObjectName(const Stats *stats)
 {
-   if (!stats)
-   {
-      return NULL;
-   }
-   if (stats->object_name[0] != '\0')
-   {
-      return stats->object_name;
-   }
-   if (stats->runtime_object_id > 0)
-   {
-      static char buf[32];
-
-      snprintf(buf, sizeof(buf), "obj-%d", stats->runtime_object_id);
-      return buf;
-   }
-   return NULL;
+#if defined(_MSC_VER)
+   static __declspec(thread) char buf[32];
+#else
+   static __thread char buf[32];
+#endif
+   return hypredrv_StatsGetLogObjectName(stats, buf, sizeof(buf));
 }
 
 HYPRE_Int
@@ -1444,7 +1435,9 @@ MGRHasMatchedSchurGMRES1AtDepth(const MGR_args *args, int depth)
       return 0;
    }
 
-   HYPRE_Int fine_levels = args->num_levels > 0 ? args->num_levels - 1 : 0;
+   HYPRE_Int fine_levels = args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS
+                              ? args->num_levels - 1
+                              : 0;
    for (HYPRE_Int level = 0; level < fine_levels; level++)
    {
       if (args->level[level].matched_f_backsolve == 2)
@@ -1580,16 +1573,21 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
    YAML_NODE_ITERATE(child, grandchild)
    {
       char *lvl_end = NULL;
-      long  lvl_l   = strtol(grandchild->key, &lvl_end, 10);
-      int   lvl     = (int)lvl_l;
+      errno         = 0;
+      long lvl_l    = strtol(grandchild->key, &lvl_end, 10);
 
       /* Reject non-numeric level keys (e.g. "lvl0"): strtol would otherwise
        * silently map them to 0 and overwrite a real level's configuration. */
-      if (grandchild->key[0] == '\0' || !lvl_end || *lvl_end != '\0')
+      if (grandchild->key[0] == '\0' || !lvl_end || *lvl_end != '\0' || errno == ERANGE ||
+          lvl_l < 0 || lvl_l >= MAX_MGR_LEVELS - 1)
       {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd("MGR level index '%s' must be an integer from 0 to %d",
+                              grandchild->key, MAX_MGR_LEVELS - 2);
          YAML_NODE_SET_INVALID_KEY(grandchild);
          continue;
       }
+      int lvl = (int)lvl_l;
       /* A level must be a mapping.  In particular, never accept an
        * unsupported or malformed inline mapping as a scalar and then
        * silently retain the level defaults. */
@@ -1668,6 +1666,12 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
          YAML_NODE_VALIDATE(child, hypredrv_MGRGetValidKeys, hypredrv_MGRGetValidValues);
          YAML_NODE_SET_FIELD(child, args, hypredrv_MGRSetFieldByName);
       }
+   }
+   if (args->num_levels < 0 || args->num_levels > MAX_MGR_LEVELS)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("MGR num_levels must be between 1 and %d (got %d)",
+                           MAX_MGR_LEVELS, (int)args->num_levels);
    }
 }
 

@@ -37,10 +37,6 @@ HYPRE_Int    hypredrv_MGRFRelaxEquilWrapperDestroy(void *wrapper);
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 HYPRE_Solver hypredrv_MGRSchwarzWrapperCreate(const Schwarz_args *args);
 HYPRE_Int    hypredrv_MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper);
-HYPRE_Int hypredrv_MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
-                                             HYPRE_ParVector b, HYPRE_ParVector x);
-HYPRE_Int hypredrv_MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
-                                             HYPRE_ParVector b, HYPRE_ParVector x);
 #endif
 
 int hypredrv_MGRGRelaxUsesUserSmoother(const MGRgrlx_args *args);
@@ -59,12 +55,13 @@ HYPRE_Solver hypredrv_MGRCoarseSolverCreateByType(MGRcls_args *coarsest_level,
                                                   HYPRE_Int    type);
 void         hypredrv_MGRCoarseSolverInstall(HYPRE_Solver mgr_solver, HYPRE_Int type,
                                              HYPRE_Solver coarse_solver);
-const char  *hypredrv_MGRCoarseSolverTypeName(const MGRcls_args *args);
-int          hypredrv_MGRBuildDofLabelPresenceMask(const IntArray *dofmap,
-                                                   size_t         *label_space_size_out,
-                                                   size_t         *num_present_labels_out,
-                                                   HYPRE_Int     **label_present_out);
-IntArray    *hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
-                                                    const StackIntArray *parent_f_dofs);
+void hypredrv_MGRCoarseSolverDestroyByType(HYPRE_Int type, HYPRE_Solver *solver_ptr);
+const char *hypredrv_MGRCoarseSolverTypeName(const MGRcls_args *args);
+int         hypredrv_MGRBuildDofLabelPresenceMask(const IntArray *dofmap,
+                                                  size_t         *label_space_size_out,
+                                                  size_t         *num_present_labels_out,
+                                                  HYPRE_Int     **label_present_out);
+IntArray   *hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
+                                                   const StackIntArray *parent_f_dofs);
 
 #endif /* MGR_INTERNAL_HEADER */

@@ -22,7 +22,7 @@
 #include <stdio.h>
 
 #include "HYPREDRV_python.h"
-#include "internal/compatibility.h"
+#include "internal/bridge_row_bounds.h"
 
 static int HYPREDRV_python_mpi_owned = 0;
 

@@ -90,30 +90,6 @@ hypredrv_BigIntFromI64(int64_t value, HYPRE_BigInt *out)
 }
 
 /**
- * @brief Convert the pair of 64-bit row bounds used by language bridges.
- *
- * The bridge-specific conversion callback keeps each language's diagnostic
- * text intact while this helper centralizes the common start-then-end
- * conversion order.
- */
-typedef uint32_t (*hypredrv_BridgeBigIntFromI64Fn)(int64_t value, const char *name,
-                                                   HYPRE_BigInt *converted);
-
-static inline uint32_t
-hypredrv_BridgeRowBoundsFromI64(int64_t row_start_i64, int64_t row_end_i64,
-                                HYPRE_BigInt *row_start, HYPRE_BigInt *row_end,
-                                hypredrv_BridgeBigIntFromI64Fn convert)
-{
-   uint32_t code = convert(row_start_i64, "row_start", row_start);
-   if (code != 0u)
-   {
-      return code;
-   }
-
-   return convert(row_end_i64, "row_end", row_end);
-}
-
-/**
  * @brief Narrow an unsigned 64-bit value into a non-negative HYPRE_BigInt.
  *
  * Rejects values that do not round-trip through HYPRE_BigInt, including any

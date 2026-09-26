@@ -129,14 +129,33 @@ void
 hypredrv_PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj,
                                                      int is_matrix)
 {
+   hypredrv_PrepareExplicitObjectsForConfiguredExecution(hypredrv, &obj, 1, is_matrix);
+}
+
+void
+hypredrv_PrepareExplicitObjectsForConfiguredExecution(HYPREDRV_t   hypredrv,
+                                                      void *const *objects,
+                                                      size_t num_objects, int is_matrix)
+{
 #if !defined(HYPRE_USING_GPU) || !HYPRE_CHECK_MIN_VERSION(22000, 0)
    (void)hypredrv;
-   (void)obj;
+   (void)objects;
+   (void)num_objects;
    (void)is_matrix;
 #else
    HYPRE_MemoryLocation target_memory = HYPRE_MEMORY_HOST;
 
-   if (!hypredrv || !hypredrv->iargs || !obj)
+   if (!hypredrv || !hypredrv->iargs || !objects || num_objects == 0)
+   {
+      return;
+   }
+
+   size_t i = 0;
+   while (i < num_objects && !objects[i])
+   {
+      i++;
+   }
+   if (i == num_objects)
    {
       return;
    }
@@ -148,13 +167,20 @@ hypredrv_PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *
       target_memory = HYPRE_MEMORY_DEVICE;
    }
 
-   if (is_matrix)
+   for (; i < num_objects; i++)
    {
-      HYPRE_IJMatrixMigrate((HYPRE_IJMatrix)obj, target_memory);
-   }
-   else
-   {
-      HYPRE_IJVectorMigrate((HYPRE_IJVector)obj, target_memory);
+      if (!objects[i])
+      {
+         continue;
+      }
+      if (is_matrix)
+      {
+         HYPRE_IJMatrixMigrate((HYPRE_IJMatrix)objects[i], target_memory);
+      }
+      else
+      {
+         HYPRE_IJVectorMigrate((HYPRE_IJVector)objects[i], target_memory);
+      }
    }
 #endif
 }

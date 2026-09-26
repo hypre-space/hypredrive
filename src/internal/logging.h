@@ -40,6 +40,7 @@ void hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
    HYPREDRV_PRINTF_FORMAT(3, 4);
 void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
                            const char *header, const char *text);
+const char *hypredrv_FormatLogObjectId(int object_id, char *buffer, size_t buffer_size);
 
 /* The supplied name buffer must outlive use of the returned name or a pushed scope. */
 const char *hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
