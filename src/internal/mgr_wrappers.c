@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "internal/mgr_internal.h"
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
+#include "internal/mgr_internal.h"
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
@@ -717,7 +717,7 @@ hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_I
 
 HYPRE_Solver
 hypredrv_MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, MGR_args *nested_args,
-                             IntArray *owned_dofmap)
+                                      IntArray *owned_dofmap)
 {
    MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)calloc(1, sizeof(*wrapper));
    if (!wrapper)
@@ -890,19 +890,17 @@ hypredrv_MGRSchwarzWrapperCreate(const Schwarz_args *args)
 #endif
 /* GCOVR_EXCL_STOP */
 
-
 HYPRE_Int
-hypredrv_MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-                      HYPRE_ParVector x)
+hypredrv_MGRBaseParSolverSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A,
+                               HYPRE_ParVector b, HYPRE_ParVector x)
 {
    return hypredrv_NestedKrylovSetup(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b,
                                      (HYPRE_Vector)x);
 }
 
-
 HYPRE_Int
-hypredrv_MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-                      HYPRE_ParVector x)
+hypredrv_MGRBaseParSolverSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A,
+                               HYPRE_ParVector b, HYPRE_ParVector x)
 {
    return hypredrv_NestedKrylovSolve(solver, (HYPRE_Matrix)A, (HYPRE_Vector)b,
                                      (HYPRE_Vector)x);

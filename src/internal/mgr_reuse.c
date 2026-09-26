@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "internal/mgr_internal.h"
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
+#include "internal/mgr_internal.h"
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
@@ -24,7 +24,6 @@
 #include "internal/stats.h"
 #include "logging.h"
 
-
 /* GCOVR_EXCL_BR_START */
 
 void
@@ -33,7 +32,6 @@ hypredrv_MGRComponentReuseSetDefaultArgs(MGRComponentReuse_args *reuse)
    memset(reuse, 0, sizeof(*reuse));
    hypredrv_PreconReuseSetDefaultArgs(&reuse->args);
 }
-
 
 void
 hypredrv_MGRComponentReuseDestroyArgs(MGRComponentReuse_args *reuse)
@@ -45,7 +43,6 @@ hypredrv_MGRComponentReuseDestroyArgs(MGRComponentReuse_args *reuse)
    reuse->warned_type_unsupported    = 0;
 }
 
-
 static void
 MGRComponentReuseLogWarning(int *warned_flag, const Stats *stats, int next_ls_id,
                             const char *label, const char *detail)
@@ -56,8 +53,8 @@ MGRComponentReuseLogWarning(int *warned_flag, const Stats *stats, int next_ls_id
    }
 
    *warned_flag = 1;
-   HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id, "%s %s",
-                      label, detail);
+   HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+                      "%s %s", label, detail);
 }
 
 /* GCOVR_EXCL_BR_STOP */
@@ -624,7 +621,7 @@ MGRDestroyDetachedGSolver(const MGRgrlx_args *g_relaxation, HYPRE_Solver *solver
 
 int
 hypredrv_MGRProjectNestedRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
-                     const int *selected_dofs, size_t num_selected_dofs)
+                              const int *selected_dofs, size_t num_selected_dofs)
 {
    if (!krylov->has_precon || krylov->precon_method != PRECON_BOOMERAMG)
    {
@@ -639,7 +636,7 @@ hypredrv_MGRProjectNestedRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
 
 int
 hypredrv_MGRProjectNestedRemainingRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
-                              int num_eliminated_levels)
+                                       int num_eliminated_levels)
 {
    if (!krylov->has_precon || krylov->precon_method != PRECON_BOOMERAMG ||
        num_eliminated_levels <= 0)
@@ -730,7 +727,8 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args,
          amg->rbms[i] = cached_rbms[i];
       }
    }
-   if ((f_dofs && !hypredrv_MGRProjectNestedRBMs(krylov, mgr_args, f_dofs->data, f_dofs->size)) ||
+   if ((f_dofs &&
+        !hypredrv_MGRProjectNestedRBMs(krylov, mgr_args, f_dofs->data, f_dofs->size)) ||
        (!f_dofs &&
         !hypredrv_MGRProjectNestedRemainingRBMs(krylov, mgr_args, num_eliminated_levels)))
    {
@@ -752,7 +750,7 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args,
 
 HYPRE_Solver
 hypredrv_MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
-                            const StackIntArray *f_dofs, int active_lvl)
+                                     const StackIntArray *f_dofs, int active_lvl)
 {
    HYPRE_Solver solver = NULL;
 
@@ -827,15 +825,14 @@ hypredrv_MGRFRelaxSolverCreateByType(MGR_args *args, MGRfrlx_args *f_relaxation,
 
 void
 hypredrv_MGRFRelaxInstall(HYPRE_Solver precon, const MGRfrlx_args *f_relaxation,
-                 HYPRE_Solver frelax, int active_lvl)
+                          HYPRE_Solver frelax, int active_lvl)
 {
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
    {
-      hypredrv_MGRSetFSolverAtLevel(precon, frelax, active_lvl,
-                                    MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
-                                    hypredrv_MGRSchwarzWrapperParSolve,
-                                    hypredrv_MGRSchwarzWrapperParSetup);
+      hypredrv_MGRSetFSolverAtLevel(
+         precon, frelax, active_lvl, MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
+         hypredrv_MGRSchwarzWrapperParSolve, hypredrv_MGRSchwarzWrapperParSetup);
       return;
    }
 #endif
@@ -949,7 +946,7 @@ hypredrv_MGRCoarseSolverCreateByType(MGRcls_args *coarsest_level, HYPRE_Int type
 
 void
 hypredrv_MGRCoarseSolverInstall(HYPRE_Solver mgr_solver, HYPRE_Int type,
-                       HYPRE_Solver coarse_solver)
+                                HYPRE_Solver coarse_solver)
 {
    if (type == 0)
    {
@@ -1047,15 +1044,16 @@ MGRRefreshFRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
       hypredrv_MGRSetFSolverAtLevel(
          mgr_solver, (HYPRE_Solver)level_args->f_relaxation.krylov, active_lvl,
-         level_args->f_relaxation.type, hypredrv_MGRBaseParSolverSolve, hypredrv_MGRBaseParSolverSetup);
+         level_args->f_relaxation.type, hypredrv_MGRBaseParSolverSolve,
+         hypredrv_MGRBaseParSolverSetup);
       MGRSetComponentSetupReuse((HYPRE_Solver)level_args->f_relaxation.krylov, 0);
 #endif
       return;
    }
 
    HYPRE_Solver old_fsolver = args->frelax[orig_lvl];
-   HYPRE_Solver fsolver     = hypredrv_MGRFRelaxSolverCreateByType(args, &level_args->f_relaxation,
-                                                          &level_args->f_dofs, active_lvl);
+   HYPRE_Solver fsolver     = hypredrv_MGRFRelaxSolverCreateByType(
+      args, &level_args->f_relaxation, &level_args->f_dofs, active_lvl);
 
    if (hypredrv_ErrorCodeActive() || !fsolver)
    {
@@ -1091,7 +1089,8 @@ MGRRefreshGRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
    }
 
    HYPRE_Solver old_smoother = args->grelax[orig_lvl];
-   HYPRE_Solver smoother     = hypredrv_MGRGRelaxSolverCreateByType(&level_args->g_relaxation);
+   HYPRE_Solver smoother =
+      hypredrv_MGRGRelaxSolverCreateByType(&level_args->g_relaxation);
 
    if (hypredrv_ErrorCodeActive() || !smoother)
    {
@@ -1118,7 +1117,8 @@ MGRRefreshCoarseSolver(MGR_args *args, HYPRE_Solver mgr_solver)
       }
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 5)
-      HYPRE_MGRSetCoarseSolver(mgr_solver, hypredrv_MGRBaseParSolverSolve, hypredrv_MGRBaseParSolverSetup,
+      HYPRE_MGRSetCoarseSolver(mgr_solver, hypredrv_MGRBaseParSolverSolve,
+                               hypredrv_MGRBaseParSolverSetup,
                                (HYPRE_Solver)args->coarsest_level.krylov);
       MGRSetComponentSetupReuse((HYPRE_Solver)args->coarsest_level.krylov, 0);
 #endif
@@ -1128,7 +1128,8 @@ MGRRefreshCoarseSolver(MGR_args *args, HYPRE_Solver mgr_solver)
    HYPRE_Solver old_coarse_solver = args->csolver;
    HYPRE_Int    old_type          = args->csolver_type;
    HYPRE_Int    type              = MGRResolveCoarseSolverType(&args->coarsest_level);
-   HYPRE_Solver coarse_solver = hypredrv_MGRCoarseSolverCreateByType(&args->coarsest_level, type);
+   HYPRE_Solver coarse_solver =
+      hypredrv_MGRCoarseSolverCreateByType(&args->coarsest_level, type);
 
    if (hypredrv_ErrorCodeActive() || !coarse_solver)
    {
@@ -1361,13 +1362,14 @@ hypredrv_MGRRefreshComponentsForSetup(MGR_args *args, HYPRE_Solver precon,
       }
       if (ref->kind == MGR_COMPONENT_COARSE)
       {
-         HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
-                            "MGR coarsest setup reuse: reuse=%d", reuse_accepted);
+         HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats),
+                            next_ls_id, "MGR coarsest setup reuse: reuse=%d",
+                            reuse_accepted);
       }
       else
       {
-         HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
-                            "MGR %s setup reuse at level %d: reuse=%d",
+         HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats),
+                            next_ls_id, "MGR %s setup reuse at level %d: reuse=%d",
                             (ref->kind == MGR_COMPONENT_FRELAX) ? "F-relax" : "G-relax",
                             ref->orig_lvl, reuse_accepted);
       }

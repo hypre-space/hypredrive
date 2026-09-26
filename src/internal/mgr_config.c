@@ -5,10 +5,10 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "internal/mgr_internal.h"
 #include <math.h>
 #include <mpi.h>
 #include <stddef.h>
+#include "internal/mgr_internal.h"
 /* gcovr: branch-exclusion regions below narrow branch-count noise from YAML
  * helpers and MGR validation/dispatch; single-line exclusions flag allocator
  * and defensive branches that are impractical to fault-inject here. */
@@ -509,9 +509,10 @@ MGRDofmapMaxLabel(const int *labels, size_t num_labels, int *max_label_out)
 }
 
 int
-hypredrv_MGRBuildDofLabelPresenceMask(const IntArray *dofmap, size_t *label_space_size_out,
-                             size_t     *num_present_labels_out,
-                             HYPRE_Int **label_present_out)
+hypredrv_MGRBuildDofLabelPresenceMask(const IntArray *dofmap,
+                                      size_t         *label_space_size_out,
+                                      size_t         *num_present_labels_out,
+                                      HYPRE_Int     **label_present_out)
 {
    const int *labels      = NULL;
    size_t     num_labels  = 0;
@@ -676,7 +677,7 @@ MGRFillProjectedUniqueLabels(IntArray *nested_dofmap, const HYPRE_Int *keep_labe
 
 IntArray *
 hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
-                              const StackIntArray *parent_f_dofs)
+                                       const StackIntArray *parent_f_dofs)
 {
    /* GCOVR_EXCL_START */
    if (!parent_dofmap || !parent_f_dofs)
@@ -703,7 +704,7 @@ hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    int        ok                 = 0;
 
    if (!hypredrv_MGRBuildDofLabelPresenceMask(parent_dofmap, &parent_label_space, NULL,
-                                     &parent_present))
+                                              &parent_present))
    {
       /* GCOVR_EXCL_START */
       goto cleanup;
@@ -727,7 +728,8 @@ hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    }
 
    /* Count filtered entries. Labels in parent_dofmap are bounded by parent_label_space
-    * (guaranteed by hypredrv_MGRBuildDofLabelPresenceMask), so no range check is needed here. */
+    * (guaranteed by hypredrv_MGRBuildDofLabelPresenceMask), so no range check is needed
+    * here. */
    for (size_t i = 0; i < parent_dofmap->size; i++)
    {
       if (keep_label[parent_dofmap->data[i]])
@@ -870,8 +872,8 @@ hypredrv_MGRLogObjectName(const Stats *stats)
 }
 
 HYPRE_Int
-hypredrv_MGRLevelInterpTypeCompat(HYPRE_Int interp_type, const Stats *stats, int next_ls_id,
-                         HYPRE_Int level)
+hypredrv_MGRLevelInterpTypeCompat(HYPRE_Int interp_type, const Stats *stats,
+                                  int next_ls_id, HYPRE_Int level)
 {
 #if HYPREDRV_HYPRE_RELEASE_NUMBER == 30100 && HYPREDRV_HYPRE_DEVELOP_NUMBER == 0
    if (interp_type == 13 || interp_type == 14)

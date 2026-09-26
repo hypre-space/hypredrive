@@ -37,14 +37,10 @@ HYPRE_Int    hypredrv_MGRFRelaxEquilWrapperDestroy(void *wrapper);
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 HYPRE_Solver hypredrv_MGRSchwarzWrapperCreate(const Schwarz_args *args);
 HYPRE_Int    hypredrv_MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper);
-HYPRE_Int    hypredrv_MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper,
-                                                HYPRE_ParCSRMatrix A,
-                                                HYPRE_ParVector b,
-                                                HYPRE_ParVector x);
-HYPRE_Int    hypredrv_MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper,
-                                                HYPRE_ParCSRMatrix A,
-                                                HYPRE_ParVector b,
-                                                HYPRE_ParVector x);
+HYPRE_Int hypredrv_MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
+                                             HYPRE_ParVector b, HYPRE_ParVector x);
+HYPRE_Int hypredrv_MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
+                                             HYPRE_ParVector b, HYPRE_ParVector x);
 #endif
 
 int hypredrv_MGRGRelaxUsesUserSmoother(const MGRgrlx_args *args);
