@@ -834,7 +834,8 @@ hypredrv_MGRFRelaxInstall(HYPRE_Solver precon, const MGRfrlx_args *f_relaxation,
    {
       hypredrv_MGRSetFSolverAtLevel(precon, frelax, active_lvl,
                                     MGR_FRLX_TYPE_CUSTOM_SOLVER_CB,
-                                    MGRSchwarzWrapperParSolve, MGRSchwarzWrapperParSetup);
+                                    hypredrv_MGRSchwarzWrapperParSolve,
+                                    hypredrv_MGRSchwarzWrapperParSetup);
       return;
    }
 #endif

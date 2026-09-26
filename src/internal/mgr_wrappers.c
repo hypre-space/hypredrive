@@ -846,17 +846,17 @@ hypredrv_MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper_v)
    return 0;
 }
 
-static HYPRE_Int
-MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-                          HYPRE_ParVector x)
+HYPRE_Int
+hypredrv_MGRSchwarzWrapperParSetup(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
+                                   HYPRE_ParVector b, HYPRE_ParVector x)
 {
    return MGRSchwarzWrapperSetup(wrapper, (HYPRE_Matrix)A, (HYPRE_Vector)b,
                                  (HYPRE_Vector)x);
 }
 
-static HYPRE_Int
-MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-                          HYPRE_ParVector x)
+HYPRE_Int
+hypredrv_MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
+                                   HYPRE_ParVector b, HYPRE_ParVector x)
 {
    return MGRSchwarzWrapperSolve(wrapper, (HYPRE_Matrix)A, (HYPRE_Vector)b,
                                  (HYPRE_Vector)x);
