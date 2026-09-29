@@ -274,16 +274,11 @@ hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
       mypid = hypredrv->mypid;
       if (hypredrv->stats)
       {
-         object_name = hypredrv->stats->object_name;
-         ls_id       = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
+         ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats);
       }
 
-      if ((!object_name || object_name[0] == '\0') && hypredrv->runtime_object_id > 0)
-      {
-         snprintf(default_object_name, sizeof(default_object_name), "obj-%d",
-                  hypredrv->runtime_object_id);
-         object_name = default_object_name;
-      }
+      object_name = hypredrv_ResolveLogObjectName(hypredrv, default_object_name,
+                                                  sizeof(default_object_name));
    }
 
    va_list args;
@@ -325,4 +320,88 @@ hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
       line = eol + 1;
    }
    (void)fflush(stream);
+}
+
+/*-----------------------------------------------------------------------------
+ * Resolve the object name used in log prefixes, generating obj-<id> when unset
+ *-----------------------------------------------------------------------------*/
+
+const char *
+hypredrv_FormatLogObjectId(int object_id, char *buffer, size_t buffer_size)
+{
+   if (object_id <= 0 || !buffer || buffer_size == 0)
+   {
+      return NULL;
+   }
+   snprintf(buffer, buffer_size, "obj-%d", object_id);
+   return buffer;
+}
+
+const char *
+hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                              size_t default_object_name_size)
+{
+   const char *object_name = NULL;
+   if (!hypredrv)
+   {
+      return NULL;
+   }
+   if (hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
+   {
+      object_name = hypredrv->stats->object_name;
+   }
+   if (!object_name || object_name[0] == '\0') /* GCOVR_EXCL_BR_LINE */
+   {
+      object_name = hypredrv_FormatLogObjectId(
+         hypredrv->runtime_object_id, default_object_name, default_object_name_size);
+   }
+
+   return object_name;
+}
+
+/*-----------------------------------------------------------------------------
+ * Temporarily install a generated log object name; true when one was pushed
+ *-----------------------------------------------------------------------------*/
+
+bool
+hypredrv_PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+                                  size_t default_object_name_size)
+{
+   if (!hypredrv || !hypredrv->stats || !default_object_name ||
+       default_object_name_size == 0 ||
+       hypredrv->stats->object_name[0] != '\0') /* GCOVR_EXCL_BR_LINE */
+   {
+      return false;
+   }
+
+   default_object_name[0]    = '\0';
+   const char *resolved_name = hypredrv_ResolveLogObjectName(
+      hypredrv, default_object_name, default_object_name_size); /* GCOVR_EXCL_BR_LINE */
+   if (!resolved_name || resolved_name[0] == '\0')              /* GCOVR_EXCL_BR_LINE */
+   {
+      return false;
+   }
+
+   hypredrv_StatsSetObjectName(hypredrv->stats, resolved_name);
+   return true;
+}
+
+/*-----------------------------------------------------------------------------
+ * Undo hypredrv_PushDefaultLogObjectName, restoring an empty log object name
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
+                                 bool pushed_default_name)
+{
+   if (!pushed_default_name || !hypredrv || !hypredrv->stats || !default_object_name)
+   {
+      return;
+   }
+
+   if (!strcmp(hypredrv->stats->object_name,
+               default_object_name)) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_StatsSetObjectName(hypredrv->stats, "");
+   }
 }

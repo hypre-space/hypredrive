@@ -22,7 +22,7 @@
 #include <stdio.h>
 
 #include "HYPREDRV_python.h"
-#include "internal/compatibility.h"
+#include "internal/bridge_row_bounds.h"
 
 static int HYPREDRV_python_mpi_owned = 0;
 
@@ -174,14 +174,9 @@ HYPREDRV_PythonSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start, int64_t 
 {
    HYPRE_BigInt hypre_row_start = 0;
    HYPRE_BigInt hypre_row_end   = 0;
-   uint32_t     code            = 0;
-
-   code = HYPREDRV_PythonBigIntFromInt64(row_start, "row_start", &hypre_row_start);
-   if (code != 0)
-   {
-      return code;
-   }
-   code = HYPREDRV_PythonBigIntFromInt64(row_end, "row_end", &hypre_row_end);
+   uint32_t     code =
+      hypredrv_BridgeRowBoundsFromI64(row_start, row_end, &hypre_row_start,
+                                      &hypre_row_end, HYPREDRV_PythonBigIntFromInt64);
    if (code != 0)
    {
       return code;
@@ -201,14 +196,9 @@ HYPREDRV_PythonSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start, int64_t r
 {
    HYPRE_BigInt hypre_row_start = 0;
    HYPRE_BigInt hypre_row_end   = 0;
-   uint32_t     code            = 0;
-
-   code = HYPREDRV_PythonBigIntFromInt64(row_start, "row_start", &hypre_row_start);
-   if (code != 0)
-   {
-      return code;
-   }
-   code = HYPREDRV_PythonBigIntFromInt64(row_end, "row_end", &hypre_row_end);
+   uint32_t     code =
+      hypredrv_BridgeRowBoundsFromI64(row_start, row_end, &hypre_row_start,
+                                      &hypre_row_end, HYPREDRV_PythonBigIntFromInt64);
    if (code != 0)
    {
       return code;

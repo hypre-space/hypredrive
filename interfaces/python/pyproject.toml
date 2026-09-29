@@ -88,6 +88,7 @@ sdist.exclude = [
 
 [tool.scikit-build.sdist.force-include]
 "../../include/internal/compatibility.h" = "src/internal/compatibility.h"
+"../../include/internal/bridge_row_bounds.h" = "src/internal/bridge_row_bounds.h"
 
 [tool.pytest.ini_options]
 minversion = "7.0"

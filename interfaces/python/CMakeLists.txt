@@ -241,6 +241,10 @@ if(NOT EXISTS
    "${_hypredrive_python_compatibility_include}/internal/compatibility.h")
     message(FATAL_ERROR "Python binding requires internal/compatibility.h")
 endif()
+if(NOT EXISTS
+   "${_hypredrive_python_compatibility_include}/internal/bridge_row_bounds.h")
+    message(FATAL_ERROR "Python binding requires internal/bridge_row_bounds.h")
+endif()
 
 target_include_directories(_core PRIVATE
     "${_numpy_include}"

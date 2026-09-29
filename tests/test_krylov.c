@@ -16,6 +16,7 @@
 #include "internal/solver.h"
 #include "internal/yaml.h"
 #include "test_helpers.h"
+#include "test_ij_helpers.h"
 
 static YAMLnode *
 add_yaml_child(YAMLnode *parent, const char *key, const char *val, int level)
@@ -23,37 +24,6 @@ add_yaml_child(YAMLnode *parent, const char *key, const char *val, int level)
    YAMLnode *child = hypredrv_YAMLnodeCreate(key, val, level);
    hypredrv_YAMLnodeAddChild(parent, child);
    return child;
-}
-
-static HYPRE_IJMatrix
-create_ijmatrix_1x1(double diag)
-{
-   HYPRE_IJMatrix mat = NULL;
-   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat), 0);
-   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
-   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
-   HYPRE_Int    nrows    = 1;
-   HYPRE_Int    ncols[1] = {1};
-   HYPRE_BigInt rows[1]  = {0};
-   HYPRE_BigInt cols[1]  = {0};
-   double       values[1] = {diag};
-   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, values), 0);
-   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
-   return mat;
-}
-
-static HYPRE_IJVector
-create_ijvector_1x1(double value)
-{
-   HYPRE_IJVector vec = NULL;
-   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec), 0);
-   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
-   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
-   HYPRE_BigInt idx[1] = {0};
-   double       val[1] = {value};
-   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 1, idx, val), 0);
-   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
-   return vec;
 }
 
 static void
@@ -138,9 +108,9 @@ run_nested_lifecycle(solver_t method, int use_precon_amg)
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(inner);
 
-   HYPRE_IJMatrix ij_A = create_ijmatrix_1x1(4.0);
-   HYPRE_IJVector ij_b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector ij_x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector ij_x = create_test_ijvector_1x1(0.0);
 
    void *par_A = NULL, *par_b = NULL, *par_x = NULL;
    ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &par_A), 0);
@@ -243,9 +213,9 @@ run_nested_lifecycle_precon_ilu(solver_t method)
    }
    ASSERT_NOT_NULL(inner);
 
-   HYPRE_IJMatrix ij_A = create_ijmatrix_1x1(4.0);
-   HYPRE_IJVector ij_b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector ij_x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector ij_x = create_test_ijvector_1x1(0.0);
 
    void *par_A = NULL, *par_b = NULL, *par_x = NULL;
    ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &par_A), 0);
@@ -293,9 +263,9 @@ run_nested_lifecycle_precon_fsai(solver_t method)
    }
    ASSERT_NOT_NULL(inner);
 
-   HYPRE_IJMatrix ij_A = create_ijmatrix_1x1(4.0);
-   HYPRE_IJVector ij_b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector ij_x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector ij_x = create_test_ijvector_1x1(0.0);
 
    void *par_A = NULL, *par_b = NULL, *par_x = NULL;
    ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &par_A), 0);
@@ -334,9 +304,9 @@ run_nested_lifecycle_precon_schwarz(solver_t method)
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(inner);
 
-   HYPRE_IJMatrix ij_A = create_ijmatrix_1x1(4.0);
-   HYPRE_IJVector ij_b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector ij_x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector ij_x = create_test_ijvector_1x1(0.0);
 
    void *par_A = NULL, *par_b = NULL, *par_x = NULL;
    ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &par_A), 0);

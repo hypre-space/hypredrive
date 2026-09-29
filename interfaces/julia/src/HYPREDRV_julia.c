@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 #include "HYPREDRV.h"
-#include "internal/compatibility.h"
+#include "internal/bridge_row_bounds.h"
 
 #include <mpi.h>
 
@@ -29,7 +29,7 @@ _Static_assert(sizeof(HYPRE_Complex) == sizeof(double),
                "Julia bridge does not support complex HYPRE builds");
 
 static uint32_t
-HYPREDRV_JuliaBigIntFromI64(const char *name, int64_t value, HYPRE_BigInt *out)
+HYPREDRV_JuliaBigIntFromI64(int64_t value, const char *name, HYPRE_BigInt *out)
 {
    if (!hypredrv_BigIntFromI64(value, out))
    {
@@ -322,12 +322,8 @@ HYPREDRV_JuliaSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start_i64,
 
    HYPRE_BigInt row_start = 0;
    HYPRE_BigInt row_end   = 0;
-   uint32_t code = HYPREDRV_JuliaBigIntFromI64("row_start", row_start_i64, &row_start);
-   if (code != 0u)
-   {
-      return code;
-   }
-   code = HYPREDRV_JuliaBigIntFromI64("row_end", row_end_i64, &row_end);
+   uint32_t code = hypredrv_BridgeRowBoundsFromI64(row_start_i64, row_end_i64, &row_start,
+                                                   &row_end, HYPREDRV_JuliaBigIntFromI64);
    if (code != 0u)
    {
       return code;
@@ -356,12 +352,8 @@ HYPREDRV_JuliaSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start_i64,
 
    HYPRE_BigInt row_start = 0;
    HYPRE_BigInt row_end   = 0;
-   uint32_t code = HYPREDRV_JuliaBigIntFromI64("row_start", row_start_i64, &row_start);
-   if (code != 0u)
-   {
-      return code;
-   }
-   code = HYPREDRV_JuliaBigIntFromI64("row_end", row_end_i64, &row_end);
+   uint32_t code = hypredrv_BridgeRowBoundsFromI64(row_start_i64, row_end_i64, &row_start,
+                                                   &row_end, HYPREDRV_JuliaBigIntFromI64);
    if (code != 0u)
    {
       return code;

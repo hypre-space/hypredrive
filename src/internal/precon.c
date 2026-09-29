@@ -968,7 +968,16 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_s
       return;
    }
 
-   if (!precon_was_setup)
+   int destroy_parent_first = precon_was_setup;
+#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5) && \
+   !HYPRE_CHECK_MIN_VERSION(30100, 28)
+   /* These development builds destroy installed level solvers even when MGR
+    * setup has not run. Reclaiming cached handles first leaves dangling solver
+    * pointers in the parent, which then destroys them a second time. */
+   destroy_parent_first = 1;
+#endif
+
+   if (!destroy_parent_first)
    {
       /* Setup was never called, so refreshed handles may still be owned by
        * hypredrive only. Reclaim them before destroying the outer MGR object. */
@@ -1008,21 +1017,9 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
    }
 
    /* Resolve object name the same way hypredrv_LogObjectf does */
-   const char *obj_name = NULL;
    char        obj_name_buf[32];
-   obj_name_buf[0] = '\0';
-   if (stats)
-   {
-      if (stats->object_name[0] != '\0')
-      {
-         obj_name = stats->object_name;
-      }
-      else if (stats->runtime_object_id > 0)
-      {
-         snprintf(obj_name_buf, sizeof(obj_name_buf), "obj-%d", stats->runtime_object_id);
-         obj_name = obj_name_buf;
-      }
-   }
+   const char *obj_name =
+      hypredrv_StatsGetLogObjectName(stats, obj_name_buf, sizeof(obj_name_buf));
 
    HYPRE_Precon precon = *precon_ptr;
    /* GCOVR_EXCL_BR_LINE */

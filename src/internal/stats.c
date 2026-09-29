@@ -11,6 +11,7 @@
 #include <mpi.h>
 #include <stdarg.h>
 #include <string.h>
+#include "logging.h"
 #ifndef _MSC_VER
 #include <unistd.h>
 #endif
@@ -1456,8 +1457,7 @@ hypredrv_StatsGetLogObjectName(const Stats *stats, char *buffer, size_t buffer_s
    if (stats && stats->runtime_object_id > 0 && buffer && buffer_size > 0)
    /* GCOVR_EXCL_BR_STOP */
    {
-      snprintf(buffer, buffer_size, "obj-%d", stats->runtime_object_id);
-      return buffer;
+      return hypredrv_FormatLogObjectId(stats->runtime_object_id, buffer, buffer_size);
    }
    return NULL;
 }
