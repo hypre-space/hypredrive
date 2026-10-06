@@ -12,19 +12,19 @@
  * Define Field/Offset/Setter mapping
  *-----------------------------------------------------------------------------*/
 
-#define ILU_FIELDS(_X, _p)                                   \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)             \
-   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)          \
-   _X(_p, type, hypredrv_FieldTypeIntSet, 0)                 \
-   _X(_p, fill_level, hypredrv_FieldTypeIntSet, 0)           \
-   _X(_p, reordering, hypredrv_FieldTypeIntSet, 0)           \
-   _X(_p, tri_solve, hypredrv_FieldTypeIntSet, 1)            \
-   _X(_p, lower_jac_iters, hypredrv_FieldTypeIntSet, 5)      \
-   _X(_p, upper_jac_iters, hypredrv_FieldTypeIntSet, 5)      \
-   _X(_p, max_row_nnz, hypredrv_FieldTypeIntSet, 200)        \
-   _X(_p, schur_max_iter, hypredrv_FieldTypeIntSet, 3)       \
-   _X(_p, droptol, hypredrv_FieldTypeDoubleSet, 1.0e-02)     \
-   _X(_p, nsh_droptol, hypredrv_FieldTypeDoubleSet, 1.0e-02) \
+#define ILU_FIELDS(_X, _p)                                      \
+   _X(_p, max_iter, hypredrv_FieldTypePositiveIntSet, 1)        \
+   _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)             \
+   _X(_p, type, hypredrv_FieldTypeIntSet, 0)                    \
+   _X(_p, fill_level, hypredrv_FieldTypeIntSet, 0)              \
+   _X(_p, reordering, hypredrv_FieldTypeIntSet, 0)              \
+   _X(_p, tri_solve, hypredrv_FieldTypeIntSet, 1)               \
+   _X(_p, lower_jac_iters, hypredrv_FieldTypePositiveIntSet, 5) \
+   _X(_p, upper_jac_iters, hypredrv_FieldTypePositiveIntSet, 5) \
+   _X(_p, max_row_nnz, hypredrv_FieldTypeNonNegIntSet, 200)     \
+   _X(_p, schur_max_iter, hypredrv_FieldTypeIntSet, 3)          \
+   _X(_p, droptol, hypredrv_FieldTypeDoubleSet, 1.0e-02)        \
+   _X(_p, nsh_droptol, hypredrv_FieldTypeDoubleSet, 1.0e-02)    \
    _X(_p, tolerance, hypredrv_FieldTypeDoubleSet, 0.0)
 
 /* Define num_fields macro */

@@ -26,7 +26,7 @@
    _X(_p, local_solver_type, hypredrv_FieldTypeIntSet, 0)    \
    _X(_p, iluk_level_of_fill, hypredrv_FieldTypeIntSet, 0)   \
    _X(_p, ilut_max_nnz_row, hypredrv_FieldTypeIntSet, 1000)  \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 1)             \
+   _X(_p, max_iter, hypredrv_FieldTypePositiveIntSet, 1)     \
    _X(_p, print_level, hypredrv_FieldTypeIntSet, 0)          \
    _X(_p, logging, hypredrv_FieldTypeIntSet, 0)              \
    _X(_p, relax_weight, hypredrv_FieldTypeDoubleSet, 1.0)    \

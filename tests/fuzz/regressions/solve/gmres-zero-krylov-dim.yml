@@ -1,0 +1,5 @@
+solver:
+  gmres:
+    max_iter: 10
+    krylov_dim: 0
+preconditioner: amg

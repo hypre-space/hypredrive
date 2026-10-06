@@ -1,0 +1,5 @@
+solver: gmres
+preconditioner:
+  ilu:
+    type: 1
+    max_row_nnz: -1

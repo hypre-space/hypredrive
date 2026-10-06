@@ -14,8 +14,8 @@
 
 #define FGMRES_FIELDS(_X, _p)                                \
    _X(_p, min_iter, hypredrv_FieldTypeIntSet, 0)             \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 300)           \
-   _X(_p, krylov_dim, hypredrv_FieldTypeIntSet, 30)          \
+   _X(_p, max_iter, hypredrv_FieldTypeNonNegIntSet, 300)     \
+   _X(_p, krylov_dim, hypredrv_FieldTypePositiveIntSet, 30)  \
    _X(_p, logging, hypredrv_FieldTypeIntSet, 1)              \
    _X(_p, print_level, hypredrv_FieldTypeIntSet, 1)          \
    _X(_p, relative_tol, hypredrv_FieldTypeDoubleSet, 1.0e-6) \

@@ -35,6 +35,8 @@ typedef struct FieldOffsetMap_struct
  *-----------------------------------------------------------------------------*/
 
 void hypredrv_FieldTypeIntSet(void *, const YAMLnode *);
+void hypredrv_FieldTypeNonNegIntSet(void *, const YAMLnode *);
+void hypredrv_FieldTypePositiveIntSet(void *, const YAMLnode *);
 void hypredrv_FieldTypeIntArraySet(void *, const YAMLnode *);
 void hypredrv_FieldTypeStackIntArraySet(void *, const YAMLnode *);
 void hypredrv_FieldTypeDoubleSet(void *, const YAMLnode *);

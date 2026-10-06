@@ -26,6 +26,56 @@ hypredrv_FieldTypeIntSet(void *field, const YAMLnode *node)
 }
 
 /*-----------------------------------------------------------------------------
+ * FieldTypeIntSetMin
+ *
+ * Parse an integer and reject values below @p min_value. Hypre does not
+ * range-check iteration counts or Krylov dimensions before sizing allocations
+ * with them (e.g. max_iter + 1), so these must be validated at parse time.
+ *-----------------------------------------------------------------------------*/
+
+static void
+FieldTypeIntSetMin(void *field, const YAMLnode *node, int min_value)
+{
+   const char *src   = (node && node->mapped_val) ? node->mapped_val : "";
+   int         value = 0;
+   if (!hypredrv_ParseInt(src, &value))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid integer value '%s' for key '%s'", src,
+                           node ? node->key : "<unknown>");
+      return;
+   }
+   if (value < min_value)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Value %d for key '%s' must be >= %d", value,
+                           node ? node->key : "<unknown>", min_value);
+      return;
+   }
+   *(int *)field = value;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_FieldTypeNonNegIntSet
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_FieldTypeNonNegIntSet(void *field, const YAMLnode *node)
+{
+   FieldTypeIntSetMin(field, node, 0);
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_FieldTypePositiveIntSet
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_FieldTypePositiveIntSet(void *field, const YAMLnode *node)
+{
+   FieldTypeIntSetMin(field, node, 1);
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntArraySet
  *-----------------------------------------------------------------------------*/
 

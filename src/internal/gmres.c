@@ -15,10 +15,10 @@
 
 #define GMRES_FIELDS(_X, _p)                                 \
    _X(_p, min_iter, hypredrv_FieldTypeIntSet, 0)             \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 300)           \
+   _X(_p, max_iter, hypredrv_FieldTypeNonNegIntSet, 300)     \
    _X(_p, stop_crit, hypredrv_FieldTypeIntSet, 0)            \
    _X(_p, skip_real_res_check, hypredrv_FieldTypeIntSet, 0)  \
-   _X(_p, krylov_dim, hypredrv_FieldTypeIntSet, 30)          \
+   _X(_p, krylov_dim, hypredrv_FieldTypePositiveIntSet, 30)  \
    _X(_p, rel_change, hypredrv_FieldTypeIntSet, 0)           \
    _X(_p, logging, hypredrv_FieldTypeIntSet, 1)              \
    _X(_p, print_level, hypredrv_FieldTypeIntSet, 1)          \

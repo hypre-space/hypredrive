@@ -14,7 +14,7 @@
 
 #define BiCGSTAB_FIELDS(_X, _p)                              \
    _X(_p, min_iter, hypredrv_FieldTypeIntSet, 0)             \
-   _X(_p, max_iter, hypredrv_FieldTypeIntSet, 100)           \
+   _X(_p, max_iter, hypredrv_FieldTypeNonNegIntSet, 100)     \
    _X(_p, stop_crit, hypredrv_FieldTypeIntSet, 0)            \
    _X(_p, logging, hypredrv_FieldTypeIntSet, 1)              \
    _X(_p, print_level, hypredrv_FieldTypeIntSet, 1)          \
