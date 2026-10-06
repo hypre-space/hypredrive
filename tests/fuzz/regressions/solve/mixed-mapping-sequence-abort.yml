@@ -1,0 +1,5 @@
+linear_system:
+  matrix_filename: data/ps3d10pt7/np1/IJ.out.A
+  - foo: bar
+solver: pcg
+preconditioner: amg
