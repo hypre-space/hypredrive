@@ -178,6 +178,11 @@ One-shot solve
 
    print("solution norm:", result.solution_norm)
    print("first entries:", result.x[:5])
+   print("iterations:", result.iterations, "converged:", result.converged)
+
+``hd.solve`` does not raise when the solver stops before reaching its tolerance; check
+``result.converged``. ``SolveResult`` also carries ``final_res_norm``, ``setup_time`` and
+``solve_time``.
 
 Reusable driver
 ~~~~~~~~~~~~~~~

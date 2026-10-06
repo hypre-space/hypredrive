@@ -27,12 +27,11 @@ from libc.string cimport memcpy
 cimport cython
 import numpy as np
 cimport numpy as cnp
+import weakref
+
 from hypredrive.errors import HypreDriveError
 
-# The source package is intentionally flattened under interfaces/python/src,
-# so _core.pxd is a sibling file at Cython time rather than under a physical
-# hypredrive/ package directory.
-cimport _core as _c
+from hypredrive cimport _chypredrv as _c
 
 cnp.import_array()
 
@@ -81,6 +80,11 @@ cdef inline void _check(uint32_t code, str what):
 # Module-wide initialize / finalize
 # ---------------------------------------------------------------------------
 
+# Handles that have not been closed yet; _finalize() releases them before
+# tearing down the runtime.
+_live_cores = weakref.WeakSet()
+
+
 def _initialize():
     """Call ``HYPREDRV_Initialize``. Idempotent at the C level."""
     _check(_c.HYPREDRV_PythonMPIInitialize(), "HYPREDRV_PythonMPIInitialize")
@@ -90,9 +94,17 @@ def _initialize():
 def _finalize():
     """Call ``HYPREDRV_Finalize``. Idempotent at the C level.
 
+    Any ``HypreDriveCore`` still alive is closed first: destroying a handle
+    after ``HYPREDRV_Finalize``/``MPI_Finalize`` (e.g. a module-level driver
+    collected during interpreter teardown) is undefined behavior.
+
     Errors here are swallowed: by the time we reach finalize the interpreter
     is shutting down and there is no useful action a caller could take.
     """
+    cdef HypreDriveCore core
+    for core in list(_live_cores):
+        _live_cores.discard(core)
+        core._release()
     cdef uint32_t code = _c.HYPREDRV_Finalize()
     if code != 0:
         # Best effort: still describe to stderr without raising.
@@ -139,39 +151,45 @@ cdef class HypreDriveCore:
 
     cdef _c.HYPREDRV_t _handle
     cdef bint _solver_created
+    cdef object __weakref__
 
     def __cinit__(self, object comm=None, bint library_mode=True):
         self._handle = NULL
         self._solver_created = False
 
         _check(_create_driver(comm, &self._handle), "HYPREDRV_Create")
+        _live_cores.add(self)
         if library_mode:
             _check(_c.HYPREDRV_SetLibraryMode(self._handle),
                    "HYPREDRV_SetLibraryMode")
 
     def __dealloc__(self):
-        if self._handle != NULL:
-            if self._solver_created:
-                _c.HYPREDRV_LinearSolverDestroy(self._handle)
-                self._solver_created = False
-            _c.HYPREDRV_Destroy(&self._handle)
-            self._handle = NULL
+        self._release()
+
+    cdef uint32_t _release(self):
+        """Destroy the solver and handle; return the first nonzero error code."""
+        cdef uint32_t first_code = 0
+        cdef uint32_t code = 0
+        if self._handle == NULL:
+            return 0
+        if self._solver_created:
+            first_code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
+            self._solver_created = False
+        code = _c.HYPREDRV_Destroy(&self._handle)
+        self._handle = NULL
+        if first_code == 0:
+            first_code = code
+        return first_code
+
+    cdef int _require_open(self) except -1:
+        if self._handle == NULL:
+            raise RuntimeError("HypreDriveCore is closed")
+        return 0
 
     cpdef close(self):
         """Tear down the underlying handle. Safe to call multiple times."""
-        cdef uint32_t first_code = 0
-        cdef uint32_t code = 0
-        if self._handle != NULL:
-            if self._solver_created:
-                code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
-                self._solver_created = False
-                if first_code == 0:
-                    first_code = code
-            code = _c.HYPREDRV_Destroy(&self._handle)
-            self._handle = NULL
-            if first_code == 0:
-                first_code = code
-            _check(first_code, "HypreDriveCore.close")
+        _live_cores.discard(self)
+        _check(self._release(), "HypreDriveCore.close")
 
     # ------------------------------------------------------------------
     # Configuration: YAML in-memory
@@ -191,8 +209,7 @@ cdef class HypreDriveCore:
         dropped so the C side always receives an unambiguous
         ``--path:to:key value`` pair list).
         """
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef bytes payload = yaml_text  # keep a reference alive for the duration
         cdef const char *payload_data = payload
         # keep encoded byte strings alive across the C call
@@ -242,8 +259,7 @@ cdef class HypreDriveCore:
         Python-level ``HypreDrive.set_matrix_from_csr`` performs that
         normalization before calling here.
         """
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         # These checks intentionally duplicate the high-level driver:
         # HypreDriveCore is the trust boundary for direct _core callers.
         if not cnp.PyArray_IS_C_CONTIGUOUS(indptr):
@@ -277,8 +293,7 @@ cdef class HypreDriveCore:
         cnp.npy_int64 row_end,
         cnp.ndarray values,
     ):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         if not cnp.PyArray_IS_C_CONTIGUOUS(values):
             raise ValueError("values must be C-contiguous")
         if <size_t>cnp.PyArray_ITEMSIZE(values) != _HYPREDRIVE_PYTHON_REAL_SIZE:
@@ -303,8 +318,7 @@ cdef class HypreDriveCore:
         enforce contiguity and dtype, since this layer is the trust
         boundary for direct ``_core`` callers.
         """
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         if not cnp.PyArray_IS_C_CONTIGUOUS(labels):
             raise ValueError("labels must be C-contiguous")
         if <size_t>cnp.PyArray_ITEMSIZE(labels) != <size_t>sizeof(int):
@@ -326,8 +340,7 @@ cdef class HypreDriveCore:
 
         Passing NULL delegates the actual initial-guess policy to the C layer.
         """
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(
             _c.HYPREDRV_LinearSystemSetInitialGuess(self._handle, NULL),
             "HYPREDRV_LinearSystemSetInitialGuess",
@@ -335,8 +348,7 @@ cdef class HypreDriveCore:
 
     def reset_initial_guess(self):
         """Copy x0 into the working solution (annotates "reset_x0" internally)."""
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(
             _c.HYPREDRV_LinearSystemResetInitialGuess(self._handle),
             "HYPREDRV_LinearSystemResetInitialGuess",
@@ -348,8 +360,7 @@ cdef class HypreDriveCore:
 
     def annotate_begin(self, bytes name, int id=-1):
         """Begin a stats/Caliper annotation region (see HYPREDRV_AnnotateBegin)."""
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(
             _c.HYPREDRV_AnnotateBegin(self._handle, <const char *>name, id),
             "HYPREDRV_AnnotateBegin",
@@ -357,8 +368,7 @@ cdef class HypreDriveCore:
 
     def annotate_end(self, bytes name, int id=-1):
         """End a stats/Caliper annotation region (see HYPREDRV_AnnotateEnd)."""
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(
             _c.HYPREDRV_AnnotateEnd(self._handle, <const char *>name, id),
             "HYPREDRV_AnnotateEnd",
@@ -369,43 +379,37 @@ cdef class HypreDriveCore:
     # ------------------------------------------------------------------
 
     def solver_create(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(_c.HYPREDRV_LinearSolverCreate(self._handle),
                "HYPREDRV_LinearSolverCreate")
         self._solver_created = True
 
     def solver_setup(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(_c.HYPREDRV_LinearSolverSetup(self._handle),
                "HYPREDRV_LinearSolverSetup")
 
     def solver_apply(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         _check(_c.HYPREDRV_LinearSolverApply(self._handle),
                "HYPREDRV_LinearSolverApply")
 
     def solver_iterations(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef int iters = 0
         _check(_c.HYPREDRV_LinearSolverGetNumIter(self._handle, &iters),
                "HYPREDRV_LinearSolverGetNumIter")
         return int(iters)
 
     def solver_converged(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef int converged = 0
         _check(_c.HYPREDRV_LinearSolverGetConverged(self._handle, &converged),
                "HYPREDRV_LinearSolverGetConverged")
         return bool(converged)
 
     def solver_final_res_norm(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef double norm = 0.0
         _check(_c.HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(
                    self._handle, &norm),
@@ -413,24 +417,21 @@ cdef class HypreDriveCore:
         return float(norm)
 
     def solver_setup_time(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef double seconds = 0.0
         _check(_c.HYPREDRV_LinearSolverGetSetupTime(self._handle, &seconds),
                "HYPREDRV_LinearSolverGetSetupTime")
         return float(seconds)
 
     def solver_solve_time(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef double seconds = 0.0
         _check(_c.HYPREDRV_LinearSolverGetSolveTime(self._handle, &seconds),
                "HYPREDRV_LinearSolverGetSolveTime")
         return float(seconds)
 
     def solver_destroy(self):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         if self._solver_created:
             _check(_c.HYPREDRV_LinearSolverDestroy(self._handle),
                    "HYPREDRV_LinearSolverDestroy")
@@ -447,8 +448,7 @@ cdef class HypreDriveCore:
         may (e.g. on GPU builds) keep it in device memory; surfacing a
         device pointer to NumPy would be a footgun for v1.
         """
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef const void *src = NULL
         cdef size_t src_length = 0
         _check(
@@ -469,8 +469,7 @@ cdef class HypreDriveCore:
                <size_t>n * scalar_size)
 
     def solution_norm(self, str norm_type):
-        if self._handle == NULL:
-            raise RuntimeError("HypreDriveCore is closed")
+        self._require_open()
         cdef bytes norm_bytes = norm_type.encode("ascii")
         cdef double value = 0.0
         _check(

@@ -9,6 +9,8 @@ arrays, not a scalar truth value.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
+
 import numpy as np
 
 
@@ -26,8 +28,24 @@ class SolveResult:
         Convenience l2 norm of ``x``, computed inside the C library so the
         value is consistent with what the CLI prints. Useful for cheap
         smoke checks ("did anything happen?") without inspecting ``x``.
+    iterations:
+        Number of solver iterations.
+    converged:
+        Whether the solver reached its tolerance. ``False`` means it stopped
+        early, e.g. at the maximum iteration count; :func:`hypredrive.solve`
+        does not raise in that case, so check this flag.
+    final_res_norm:
+        Final relative residual norm reported by the solver.
+    setup_time, solve_time:
+        Preconditioner/solver setup and apply times, in seconds (milliseconds
+        when ``general.use_millisec`` is enabled).
     """
 
     x: np.ndarray
     solution_norm: float
+    iterations: Optional[int] = None
+    converged: Optional[bool] = None
+    final_res_norm: Optional[float] = None
+    setup_time: Optional[float] = None
+    solve_time: Optional[float] = None
     __hash__ = None

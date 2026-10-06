@@ -34,6 +34,11 @@ def test_one_shot_solve(laplacian_1d, base_options):
     assert result.solution_norm == pytest.approx(
         float(np.linalg.norm(result.x)), rel=1e-6
     )
+    assert result.converged is True
+    assert 0 < result.iterations <= base_options["solver"]["pcg"]["max_iter"]
+    assert result.final_res_norm < base_options["solver"]["pcg"]["relative_tol"]
+    assert result.setup_time >= 0.0
+    assert result.solve_time >= 0.0
     same_values = hd.SolveResult(x=result.x.copy(), solution_norm=result.solution_norm)
     np.testing.assert_allclose(same_values.x, result.x)
     assert same_values.solution_norm == result.solution_norm

@@ -167,10 +167,11 @@ endif()
 set(_cython_exe "${Python_EXECUTABLE};-m;cython")
 
 # ---- Cython -> C compilation ----------------------------------------------
-set(_pyx_in  "${CMAKE_CURRENT_SOURCE_DIR}/src/_core.pyx")
+set(_package_src "${CMAKE_CURRENT_SOURCE_DIR}/src/hypredrive")
+set(_pyx_in  "${_package_src}/_core.pyx")
 set(_pyx_out "${CMAKE_CURRENT_BINARY_DIR}/_core.c")
-set(_bridge_c "${CMAKE_CURRENT_SOURCE_DIR}/src/HYPREDRV_python.c")
-set(_bridge_h "${CMAKE_CURRENT_SOURCE_DIR}/src/HYPREDRV_python.h")
+set(_bridge_c "${_package_src}/HYPREDRV_python.c")
+set(_bridge_h "${_package_src}/HYPREDRV_python.h")
 
 add_custom_command(
     OUTPUT  "${_pyx_out}"
@@ -180,7 +181,7 @@ add_custom_command(
             -o "${_pyx_out}"
             "${_pyx_in}"
     DEPENDS "${_pyx_in}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/src/_core.pxd"
+            "${_package_src}/_chypredrv.pxd"
             "${_bridge_h}"
     COMMENT "Cythonizing _core.pyx -> _core.c"
     VERBATIM
@@ -248,7 +249,7 @@ endif()
 
 target_include_directories(_core PRIVATE
     "${_numpy_include}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${_package_src}"
     "${_hypredrive_python_compatibility_include}"
 )
 
@@ -261,16 +262,17 @@ target_compile_definitions(_core PRIVATE
 )
 
 set(_python_package_sources
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/__init__.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/driver.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/errors.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/options.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/result.py"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/session.py"
+    "${_package_src}/__init__.py"
+    "${_package_src}/driver.py"
+    "${_package_src}/errors.py"
+    "${_package_src}/options.py"
+    "${_package_src}/py.typed"
+    "${_package_src}/result.py"
+    "${_package_src}/session.py"
 )
 
 configure_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/_build_info.py.in"
+    "${_package_src}/_build_info.py.in"
     "${CMAKE_CURRENT_BINARY_DIR}/_build_info.py"
     @ONLY
 )
@@ -424,6 +426,8 @@ set(_python_test_commands
             --tb=short
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_options.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_solve_serial.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_initial_guess_serial.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_session_serial.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dofmap_serial.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/darcy/test_mixed_validation.py"
 )
