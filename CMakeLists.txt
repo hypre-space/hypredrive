@@ -241,6 +241,11 @@ target_link_libraries(HYPREDRV
     INTERFACE
         $<INSTALL_INTERFACE:HYPRE::HYPRE>)
 
+# HYPRE's static library uses the platform dynamic-loader API.
+if(CMAKE_DL_LIBS)
+    target_link_libraries(HYPREDRV PUBLIC ${CMAKE_DL_LIBS})
+endif()
+
 if(HYPREDRV_HYPRE_USE_OPENMP)
     find_package(OpenMP REQUIRED COMPONENTS C)
     if(TARGET OpenMP::OpenMP_C)
