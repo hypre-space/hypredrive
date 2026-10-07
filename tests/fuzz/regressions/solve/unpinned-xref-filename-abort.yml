@@ -1,0 +1,4 @@
+linear_system:
+  xref_filename: 0
+solver: pcg
+preconditioner: amg

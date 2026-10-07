@@ -370,10 +370,6 @@ class HypreDrive:
             self._core.set_dofmap(labels_arr)
 
     # ------------------------------------------------------------------
-    # Solve cycle
-    # ------------------------------------------------------------------
-
-    # ------------------------------------------------------------------
     # Stats / Caliper annotations
     # ------------------------------------------------------------------
 
@@ -403,6 +399,10 @@ class HypreDrive:
             yield
         finally:
             self._core.annotate_end(encoded, -1)
+
+    # ------------------------------------------------------------------
+    # Solve cycle
+    # ------------------------------------------------------------------
 
     def solve(self) -> None:
         """Run setup + apply on the configured solver/preconditioner."""
@@ -576,6 +576,12 @@ def solve(
             drv.set_matrix_from_csr(A, row_start=row_start, row_end=row_end)
         drv.set_rhs(b, row_start=row_start, row_end=row_end)
         drv.solve()
-        x = drv.get_solution()
-        norm = drv.solution_norm("l2")
-    return SolveResult(x=x, solution_norm=norm)
+        return SolveResult(
+            x=drv.get_solution(),
+            solution_norm=drv.solution_norm("l2"),
+            iterations=drv.last_iterations,
+            converged=drv.last_converged,
+            final_res_norm=drv.last_final_res_norm,
+            setup_time=drv.last_setup_time,
+            solve_time=drv.last_solve_time,
+        )

@@ -169,7 +169,10 @@ set(SOURCE_FILES
     src/internal/fsai.c
     src/internal/ilu.c
     src/internal/schwarz.c
-    src/internal/mgr.c
+    src/internal/mgr_config.c
+    src/internal/mgr_wrappers.c
+    src/internal/mgr_reuse.c
+    src/internal/mgr_construct.c
     src/internal/precon.c
     src/internal/precon_reuse.c
     src/internal/presets.c
@@ -185,6 +188,8 @@ set(SOURCE_FILES
     src/internal/scaling.c
     src/internal/runtime.c
     src/internal/logging.c
+    src/internal/execution.c
+    src/internal/diagnostics.c
     src/internal/help.c
     src/HYPREDRV.c
 )
@@ -235,6 +240,11 @@ target_link_libraries(HYPREDRV
         $<BUILD_INTERFACE:HYPRE::HYPRE>
     INTERFACE
         $<INSTALL_INTERFACE:HYPRE::HYPRE>)
+
+# HYPRE's static library uses the platform dynamic-loader API.
+if(CMAKE_DL_LIBS)
+    target_link_libraries(HYPREDRV PUBLIC ${CMAKE_DL_LIBS})
+endif()
 
 if(HYPREDRV_HYPRE_USE_OPENMP)
     find_package(OpenMP REQUIRED COMPONENTS C)

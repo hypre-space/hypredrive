@@ -182,6 +182,56 @@ test_FieldTypeIntSet_rejects_invalid_values(void)
 }
 
 static void
+test_FieldTypeNonNegIntSet_bounds(void)
+{
+   int       value = 17;
+   YAMLnode *node  = make_node("0");
+   hypredrv_ErrorStateReset();
+   hypredrv_FieldTypeNonNegIntSet(&value, node);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(value, 0);
+   hypredrv_YAMLnodeDestroy(node);
+
+   const char *values[] = {"-1", "-4", "abc"};
+   for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+   {
+      value = 17;
+      node  = make_node(values[i]);
+      hypredrv_ErrorStateReset();
+      hypredrv_FieldTypeNonNegIntSet(&value, node);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+      ASSERT_EQ(value, 17);
+      hypredrv_YAMLnodeDestroy(node);
+   }
+   hypredrv_ErrorStateReset();
+}
+
+static void
+test_FieldTypePositiveIntSet_bounds(void)
+{
+   int       value = 17;
+   YAMLnode *node  = make_node("1");
+   hypredrv_ErrorStateReset();
+   hypredrv_FieldTypePositiveIntSet(&value, node);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(value, 1);
+   hypredrv_YAMLnodeDestroy(node);
+
+   const char *values[] = {"0", "-3", ""};
+   for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+   {
+      value = 17;
+      node  = make_node(values[i]);
+      hypredrv_ErrorStateReset();
+      hypredrv_FieldTypePositiveIntSet(&value, node);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+      ASSERT_EQ(value, 17);
+      hypredrv_YAMLnodeDestroy(node);
+   }
+   hypredrv_ErrorStateReset();
+}
+
+static void
 test_FieldTypeArraySet_preserves_field_on_error(void)
 {
    IntArray    *integers = hypredrv_IntArrayCreate(1);
@@ -228,6 +278,8 @@ main(void)
 {
    RUN_TEST(test_FieldTypeIntSet);
    RUN_TEST(test_FieldTypeIntSet_rejects_invalid_values);
+   RUN_TEST(test_FieldTypeNonNegIntSet_bounds);
+   RUN_TEST(test_FieldTypePositiveIntSet_bounds);
    RUN_TEST(test_FieldTypeArraySet_preserves_field_on_error);
    RUN_TEST(test_FieldTypeDoubleSet);
    RUN_TEST(test_FieldTypeDoubleSet_rejects_nonfinite_values);

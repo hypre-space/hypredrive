@@ -135,7 +135,7 @@ options = hd.configure(
 )
 
 result = hd.solve(A, b, options=options)
-print(result.solution_norm)
+print(result.solution_norm, result.iterations, result.converged)
 ```
 
 ## MPI

@@ -1,0 +1,4 @@
+solver: gmres
+preconditioner:
+  ilu:
+    max_iter: 0

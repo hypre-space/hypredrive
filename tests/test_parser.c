@@ -460,7 +460,7 @@ test_exhaustive_mgr_parser(void)
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_MGRSetArgsFromYAML(&args, mgr);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_EQ((int)args.interp_sweeps, 3);
    ASSERT_EQ_DOUBLE((double)args.interp_weight, 0.63, 1.0e-15);
    ASSERT_EQ((int)args.injection_upcycle, 1);
@@ -484,6 +484,7 @@ test_exhaustive_mgr_parser(void)
 
    ASSERT_EQ(lvl_bad->valid, YAML_NODE_INVALID_KEY);
 
+   hypredrv_ErrorCodeResetAll();
    hypredrv_YAMLnodeDestroy(mgr);
    hypredrv_MGRDestroyNestedSolverArgs(&args);
 }

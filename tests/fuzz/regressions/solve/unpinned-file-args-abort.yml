@@ -1,0 +1,9 @@
+linear_system:
+  x0_filename: 0
+  xref_filename: 0
+  xref_basename: 0
+  precmat_filename: 0
+  precmat_basename: 0
+  dofmap_basename: 0
+solver: pcg
+preconditioner: amg

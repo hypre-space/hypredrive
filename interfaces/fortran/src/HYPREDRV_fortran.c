@@ -12,7 +12,7 @@
 #include <stdlib.h>
 
 #include "HYPREDRV.h"
-#include "internal/compatibility.h"
+#include "internal/bridge_row_bounds.h"
 
 _Static_assert(((HYPRE_BigInt)-1) < (HYPRE_BigInt)0,
                "HYPREDRV Fortran bridge requires signed HYPRE_BigInt");
@@ -78,14 +78,8 @@ HYPREDRV_FortranLinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_st
 {
    HYPRE_BigInt row_start;
    HYPRE_BigInt row_end;
-   uint32_t     ierr;
-
-   ierr = hypredrv_fortran_bigint_from_i64(row_start_in, "row_start", &row_start);
-   if (ierr)
-   {
-      return ierr;
-   }
-   ierr = hypredrv_fortran_bigint_from_i64(row_end_in, "row_end", &row_end);
+   uint32_t     ierr = hypredrv_BridgeRowBoundsFromI64(
+      row_start_in, row_end_in, &row_start, &row_end, hypredrv_fortran_bigint_from_i64);
    if (ierr)
    {
       return ierr;
@@ -177,14 +171,8 @@ HYPREDRV_FortranLinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_sta
 {
    HYPRE_BigInt row_start;
    HYPRE_BigInt row_end;
-   uint32_t     ierr;
-
-   ierr = hypredrv_fortran_bigint_from_i64(row_start_in, "row_start", &row_start);
-   if (ierr)
-   {
-      return ierr;
-   }
-   ierr = hypredrv_fortran_bigint_from_i64(row_end_in, "row_end", &row_end);
+   uint32_t     ierr = hypredrv_BridgeRowBoundsFromI64(
+      row_start_in, row_end_in, &row_start, &row_end, hypredrv_fortran_bigint_from_i64);
    if (ierr)
    {
       return ierr;

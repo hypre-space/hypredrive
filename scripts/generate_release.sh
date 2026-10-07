@@ -66,7 +66,7 @@ CONF_PY="${REPO_ROOT}/docs/usrman-src/conf.py"
 JULIA_PROJECT_FILE="${REPO_ROOT}/interfaces/julia/Project.toml"
 JULIA_BINARY_FILE="${REPO_ROOT}/interfaces/julia/binary/build_tarballs.jl"
 PYTHON_PROJECT_FILE="${REPO_ROOT}/interfaces/python/pyproject.toml"
-PYTHON_INIT_FILE="${REPO_ROOT}/interfaces/python/src/__init__.py"
+PYTHON_INIT_FILE="${REPO_ROOT}/interfaces/python/src/hypredrive/__init__.py"
 CHANGELOG="${REPO_ROOT}/CHANGELOG"
 
 for f in "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" \

@@ -18,6 +18,7 @@
 #include "internal/solver.h"
 #include "internal/stats.h"
 #include "logging.h"
+#include "test_ij_helpers.h"
 #include "test_helpers.h"
 #include "internal/yaml.h"
 
@@ -941,49 +942,14 @@ test_hypredrv_solver_failure_paths_emit_logs(void)
    TEST_HYPRE_FINALIZE();
 }
 
-/*-----------------------------------------------------------------------------
- * Small IJ helpers (1x1) for solver branch coverage
- *-----------------------------------------------------------------------------*/
-
-static HYPRE_IJMatrix
-create_ijmatrix_1x1(double diag)
-{
-   HYPRE_IJMatrix mat = NULL;
-   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat), 0);
-   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
-   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
-   HYPRE_Int    nrows    = 1;
-   HYPRE_Int    ncols[1] = {1};
-   HYPRE_BigInt rows[1]  = {0};
-   HYPRE_BigInt cols[1]  = {0};
-   double       values[1] = {diag};
-   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, nrows, ncols, rows, cols, values), 0);
-   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
-   return mat;
-}
-
-static HYPRE_IJVector
-create_ijvector_1x1(double value)
-{
-   HYPRE_IJVector vec = NULL;
-   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec), 0);
-   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
-   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
-   HYPRE_BigInt idx[1] = {0};
-   double       val[1] = {value};
-   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 1, idx, val), 0);
-   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
-   return vec;
-}
-
 static void
 test_hypredrv_SolverApply_zero_rhs_and_runtime_object_name(void)
 {
    TEST_HYPRE_INIT();
 
-   HYPRE_IJMatrix A = create_ijmatrix_1x1(1.0);
-   HYPRE_IJVector b = create_ijvector_1x1(0.0);
-   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(1.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(0.0);
+   HYPRE_IJVector x = create_test_ijvector_1x1(0.0);
 
    Stats *st = hypredrv_StatsCreate();
    ASSERT_NOT_NULL(st);
@@ -1022,9 +988,9 @@ test_hypredrv_SolverSetupWithReuse_skip_precon_setup_detaches_stats(void)
 {
    TEST_HYPRE_INIT();
 
-   HYPRE_IJMatrix A = create_ijmatrix_1x1(2.0);
-   HYPRE_IJVector b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(2.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector x = create_test_ijvector_1x1(0.0);
 
    HYPRE_Solver amg = NULL;
    ASSERT_EQ(HYPRE_BoomerAMGCreate(&amg), 0);
@@ -1089,9 +1055,9 @@ test_hypredrv_SolverApply_invalid_method_negative_iters_branch(void)
 {
    TEST_HYPRE_INIT();
 
-   HYPRE_IJMatrix A = create_ijmatrix_1x1(1.0);
-   HYPRE_IJVector b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(1.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector x = create_test_ijvector_1x1(0.0);
    solver_args  args;
    hypredrv_PCGSetDefaultArgs(&args.pcg);
    HYPRE_Solver solver = NULL;
@@ -1117,8 +1083,8 @@ test_hypredrv_SolverApply_comm_resolve_uses_vector_when_matrix_null(void)
 {
    TEST_HYPRE_INIT();
 
-   HYPRE_IJVector b = create_ijvector_1x1(1.0);
-   HYPRE_IJVector x = create_ijvector_1x1(0.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector x = create_test_ijvector_1x1(0.0);
    solver_args  args;
    hypredrv_PCGSetDefaultArgs(&args.pcg);
    HYPRE_Solver solver = NULL;

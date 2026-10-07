@@ -1,0 +1,14 @@
+general:
+  use_millisec: on
+  num_repetitions: 1
+
+solver:
+  bicgstab:
+    max_iter:  -4
+
+preconditioner:
+  ilu:
+    type: bj-iluk
+    max_iter: 1
+    print_level: 0
+
