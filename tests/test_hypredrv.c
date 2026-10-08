@@ -2927,16 +2927,20 @@ set_precon_preset_for_capture(void *context)
 static void
 test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
 {
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+/* Managed MGR component refresh requires hypre >= 3.1.0 develop 50. */
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return;
 #else
    reset_state();
-   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   /* The per-component setup-reuse lines asserted below are logged at level 4. */
+   setenv("HYPREDRV_LOG_LEVEL", "4", 1);
    hypredrv_LogInitializeFromEnv();
 
    HYPREDRV_t obj = create_initialized_obj();
    ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
 
+   /* Rebuild everything at system 0 and reuse at system 1, so the second setup
+    * keeps the outer MGR and reruns setup on the cached component handles. */
    char yaml_config[] =
       "general:\n"
       "  statistics: off\n"
@@ -2948,7 +2952,7 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "    max_iter: 5\n"
       "preconditioner:\n"
       "  reuse:\n"
-      "    linear_system_ids: [1]\n"
+      "    linear_system_ids: [0]\n"
       "  mgr:\n"
       "    max_iter: 1\n"
       "    print_level: 0\n"
@@ -2959,12 +2963,12 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "          amg:\n"
       "            max_iter: 1\n"
       "          reuse:\n"
-      "            linear_system_ids: [1]\n"
+      "            linear_system_ids: [0]\n"
       "        g_relaxation:\n"
       "          ilu:\n"
       "            max_iter: 1\n"
       "          reuse:\n"
-      "            linear_system_ids: [1]\n"
+      "            linear_system_ids: [0]\n"
       "        restriction_type: injection\n"
       "        prolongation_type: injection\n"
       "        coarse_level_type: rap\n"
@@ -2972,7 +2976,7 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "      amg:\n"
       "        max_iter: 1\n"
       "      reuse:\n"
-      "        linear_system_ids: [1]\n";
+      "        linear_system_ids: [0]\n";
 
    parse_yaml_into_obj(obj, yaml_config);
    ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
@@ -3001,7 +3005,7 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
    HYPRE_Solver c0     = state->iargs->precon.mgr.csolver;
 
    struct LinearSetupCaptureContext setup_context = {obj};
-   char                             output[4096];
+   char                             output[65536];
    capture_stderr_output(run_linear_setup_for_capture, &setup_context, output,
                          sizeof(output));
 
@@ -3041,7 +3045,8 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
 static void
 test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles(void)
 {
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+/* Managed MGR component refresh requires hypre >= 3.1.0 develop 50. */
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return;
 #else
    reset_state();
@@ -3124,7 +3129,8 @@ test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles(void)
 static void
 test_HYPREDRV_InputArgsSetPreconPreset_discards_cached_mgr_handles(void)
 {
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+/* Managed MGR component refresh requires hypre >= 3.1.0 develop 50. */
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return;
 #else
    reset_state();
