@@ -430,67 +430,102 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
 }
 
 /*-----------------------------------------------------------------------------
+ * Wrap a type's children as "<parent_key>: {<type_key>: ...}" so they can be
+ * fed to the typed SetArgsFromYAML parsers. The type node owns copies of its
+ * key/value: hypredrv_YAMLSetArgsGeneric may free/replace a flat-value node's
+ * key, so never point into another YAML tree's storage here.
  *-----------------------------------------------------------------------------*/
+
+typedef struct
+{
+   YAMLnode type;
+   YAMLnode parent;
+} WrappedTypeNode;
+
+static YAMLnode *
+WrappedTypeNodeInit(WrappedTypeNode *w, const char *parent_key,
+                    const YAMLnode *parent_node, const char *type_key, int type_level,
+                    YAMLnode *type_children)
+{
+   memset(w, 0, sizeof(*w));
+   w->type.key      = strdup(type_key ? type_key : "");
+   w->type.val      = strdup("");
+   w->type.level    = type_level;
+   w->type.valid    = YAML_NODE_VALID;
+   w->type.children = type_children;
+
+   w->parent.key      = (char *)parent_key;
+   w->parent.val      = "";
+   w->parent.level    = parent_node ? parent_node->level : 0;
+   w->parent.valid    = YAML_NODE_VALID;
+   w->parent.children = &w->type;
+
+   return &w->parent;
+}
+
+/* Release what the parsers and WrappedTypeNodeInit allocated on the fake nodes. */
+static void
+WrappedTypeNodeFree(WrappedTypeNode *w)
+{
+   free(w->type.mapped_val);
+   free(w->type.key);
+   free(w->type.val);
+   free(w->parent.mapped_val);
+   memset(w, 0, sizeof(*w));
+}
 
 static void
 PreconParseVariantWrapped(precon_args *dst, precon_t method,
                           const YAMLnode *precon_parent, const char *type_key,
                           int type_level, YAMLnode *type_children)
 {
+   WrappedTypeNode w;
+
    hypredrv_PreconArgsSetDefaultsForMethod(method, dst);
+   hypredrv_PreconSetArgsFromYAML(dst, WrappedTypeNodeInit(&w, "preconditioner",
+                                                           precon_parent, type_key,
+                                                           type_level, type_children));
+   WrappedTypeNodeFree(&w);
+}
 
-   YAMLnode fake_type = {0};
-   /* IMPORTANT: hypredrv_YAMLSetArgsGeneric may free/replace parent->key for flat-value
-    * nodes. Never point into another YAML tree's storage here. */
-   fake_type.key      = strdup(type_key ? type_key : "");
-   fake_type.val      = strdup("");
-   fake_type.level    = type_level;
-   fake_type.valid    = YAML_NODE_VALID;
-   fake_type.children = type_children;
-   fake_type.next     = NULL;
+static void
+SolverParseWrapped(solver_args *dst, solver_t method, const YAMLnode *solver_parent,
+                   const char *type_key, int type_level, YAMLnode *type_children)
+{
+   WrappedTypeNode w;
 
-   YAMLnode fake_parent = {0};
-   fake_parent.key      = "preconditioner";
-   fake_parent.val      = "";
-   fake_parent.level    = precon_parent ? precon_parent->level : 0;
-   fake_parent.valid    = YAML_NODE_VALID;
-   fake_parent.children = &fake_type;
-   fake_parent.next     = NULL;
-
-   hypredrv_PreconSetArgsFromYAML(dst, &fake_parent);
-
-   /* Clean up mapped_val allocated during validation on fake nodes */
-   free(fake_type.mapped_val);
-   fake_type.mapped_val = NULL;
-   free(fake_type.key);
-   fake_type.key = NULL;
-   free(fake_type.val);
-   fake_type.val = NULL;
-   free(fake_parent.mapped_val);
-   fake_parent.mapped_val = NULL;
+   hypredrv_SolverArgsSetDefaultsForMethod(method, dst);
+   hypredrv_SolverSetArgsFromYAML(dst, WrappedTypeNodeInit(&w, "solver", solver_parent,
+                                                           type_key, type_level,
+                                                           type_children));
+   WrappedTypeNodeFree(&w);
 }
 
 /*-----------------------------------------------------------------------------
+ * Expand a typed preset into a YAML tree with exactly one known type node.
+ * Returns the type node (owned by *tree_out) and its method id, or NULL with
+ * an error set and *tree_out destroyed. `label` is "preconditioner"/"solver".
  *-----------------------------------------------------------------------------*/
 
-static void
-PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
-                      precon_args *args_out)
+static YAMLnode *
+PresetLoadTypeNode(const char *preset_name, hypredrv_PresetKind kind, const char *label,
+                   StrIntMapArray valid_types, YAMLtree **tree_out, int *method_out)
 {
-   const hypredrv_Preset *preset =
-      hypredrv_PresetFindTyped(preset_name, HYPREDRV_PRESET_PRECON);
+   *tree_out = NULL;
+
+   const hypredrv_Preset *preset = hypredrv_PresetFindTyped(preset_name, kind);
    if (!preset)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Unknown preconditioner preset: '%s'",
+      hypredrv_ErrorMsgAdd("Unknown %s preset: '%s'", label,
                            preset_name ? preset_name : "");
-      char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
+      char *help = hypredrv_PresetHelpTyped(kind);
       if (help)
       {
          hypredrv_ErrorMsgAdd("%s", help);
          free(help);
       }
-      return;
+      return NULL;
    }
 
    char *text = strdup(preset->text);
@@ -499,75 +534,54 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    {
       hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       hypredrv_ErrorMsgAdd("Failed to allocate preset YAML text");
-      return;
+      return NULL;
    }
    /* GCOVR_EXCL_STOP */
 
-   YAMLtree *preset_tree = NULL;
-   hypredrv_YAMLtreeBuild(2, text, &preset_tree);
+   hypredrv_YAMLtreeBuild(2, text, tree_out);
    free(text);
 
-   if (!preset_tree || !preset_tree->root || !preset_tree->root->children ||
-       preset_tree->root->children->next)
+   YAMLtree *tree = *tree_out;
+   if (!tree || !tree->root || !tree->root->children || tree->root->children->next)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Preset '%s' must expand to a single preconditioner type",
-                           preset->name);
-      hypredrv_YAMLtreeDestroy(&preset_tree);
-      return;
+      hypredrv_ErrorMsgAdd("Preset '%s' must expand to a single %s type", preset->name,
+                           label);
+      hypredrv_YAMLtreeDestroy(tree_out);
+      return NULL;
    }
 
-   YAMLnode *type_node = preset_tree->root->children;
-   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_PreconGetValidTypeIntMap(),
-                                                 type_node->key))
+   YAMLnode *type_node = tree->root->children;
+   if (!hypredrv_StrIntMapArrayDomainEntryExists(valid_types, type_node->key))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-      hypredrv_ErrorMsgAdd("Unknown preconditioner type: '%s'", type_node->key);
-      hypredrv_YAMLtreeDestroy(&preset_tree);
-      return;
+      hypredrv_ErrorMsgAdd("Unknown %s type: '%s'", label, type_node->key);
+      hypredrv_YAMLtreeDestroy(tree_out);
+      return NULL;
    }
 
-   *method_out = (precon_t)hypredrv_StrIntMapArrayGetImage(
-      hypredrv_PreconGetValidTypeIntMap(), type_node->key);
-   PreconParseVariantWrapped(args_out, *method_out, preset_tree->root, type_node->key,
-                             type_node->level, type_node->children);
-
-   hypredrv_YAMLtreeDestroy(&preset_tree);
-   return;
+   *method_out = hypredrv_StrIntMapArrayGetImage(valid_types, type_node->key);
+   return type_node;
 }
 
 static void
-SolverParseWrapped(solver_args *dst, solver_t method, const YAMLnode *solver_parent,
-                   const char *type_key, int type_level, YAMLnode *type_children)
+PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
+                      precon_args *args_out)
 {
-   hypredrv_SolverArgsSetDefaultsForMethod(method, dst);
+   YAMLtree *tree   = NULL;
+   int       method = 0;
+   YAMLnode *type_node =
+      PresetLoadTypeNode(preset_name, HYPREDRV_PRESET_PRECON, "preconditioner",
+                         hypredrv_PreconGetValidTypeIntMap(), &tree, &method);
+   if (!type_node)
+   {
+      return;
+   }
 
-   YAMLnode fake_type = {0};
-   fake_type.key      = strdup(type_key ? type_key : "");
-   fake_type.val      = strdup("");
-   fake_type.level    = type_level;
-   fake_type.valid    = YAML_NODE_VALID;
-   fake_type.children = type_children;
-   fake_type.next     = NULL;
-
-   YAMLnode fake_parent = {0};
-   fake_parent.key      = "solver";
-   fake_parent.val      = "";
-   fake_parent.level    = solver_parent ? solver_parent->level : 0;
-   fake_parent.valid    = YAML_NODE_VALID;
-   fake_parent.children = &fake_type;
-   fake_parent.next     = NULL;
-
-   hypredrv_SolverSetArgsFromYAML(dst, &fake_parent);
-
-   free(fake_type.mapped_val);
-   fake_type.mapped_val = NULL;
-   free(fake_type.key);
-   fake_type.key = NULL;
-   free(fake_type.val);
-   fake_type.val = NULL;
-   free(fake_parent.mapped_val);
-   fake_parent.mapped_val = NULL;
+   *method_out = (precon_t)method;
+   PreconParseVariantWrapped(args_out, *method_out, tree->root, type_node->key,
+                             type_node->level, type_node->children);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 static void
@@ -581,59 +595,20 @@ SolverPresetBuildArgs(const char *preset_name, solver_t *method_out,
       return;
    }
 
-   const hypredrv_Preset *preset =
-      hypredrv_PresetFindTyped(preset_name, HYPREDRV_PRESET_SOLVER);
-   if (!preset)
+   YAMLtree *tree   = NULL;
+   int       method = 0;
+   YAMLnode *type_node =
+      PresetLoadTypeNode(preset_name, HYPREDRV_PRESET_SOLVER, "solver",
+                         hypredrv_SolverGetValidTypeIntMap(), &tree, &method);
+   if (!type_node)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Unknown solver preset: '%s'", preset_name ? preset_name : "");
-      char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_SOLVER);
-      if (help)
-      {
-         hypredrv_ErrorMsgAdd("%s", help);
-         free(help);
-      }
       return;
    }
 
-   char *text = strdup(preset->text);
-   if (!text)
-   {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate preset YAML text");
-      return;
-   }
-
-   YAMLtree *preset_tree = NULL;
-   hypredrv_YAMLtreeBuild(2, text, &preset_tree);
-   free(text);
-
-   if (!preset_tree || !preset_tree->root || !preset_tree->root->children ||
-       preset_tree->root->children->next)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Preset '%s' must expand to a single solver type",
-                           preset->name);
-      hypredrv_YAMLtreeDestroy(&preset_tree);
-      return;
-   }
-
-   YAMLnode *type_node = preset_tree->root->children;
-   if (!hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(),
-                                                 type_node->key))
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-      hypredrv_ErrorMsgAdd("Unknown solver type: '%s'", type_node->key);
-      hypredrv_YAMLtreeDestroy(&preset_tree);
-      return;
-   }
-
-   *method_out = (solver_t)hypredrv_StrIntMapArrayGetImage(
-      hypredrv_SolverGetValidTypeIntMap(), type_node->key);
-   SolverParseWrapped(args_out, *method_out, preset_tree->root, type_node->key,
-                      type_node->level, type_node->children);
-
-   hypredrv_YAMLtreeDestroy(&preset_tree);
+   *method_out = (solver_t)method;
+   SolverParseWrapped(args_out, *method_out, tree->root, type_node->key, type_node->level,
+                      type_node->children);
+   hypredrv_YAMLtreeDestroy(&tree);
 }
 
 typedef enum

@@ -371,7 +371,8 @@ hypredrv_AMGaggGetValidValues(const char *key)
 StrIntMapArray
 hypredrv_AMGrlxGetValidValues(const char *key)
 {
-   if (!strcmp(key, "down_type"))
+   /* Pre- and post-smoothers accept the same relaxation types. */
+   if (!strcmp(key, "down_type") || !strcmp(key, "up_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",  0},
                                 {"forward-hgs",    3},
@@ -389,27 +390,6 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"chebyshev",     16},
                                 {"l1-jacobi",     18},
                                 {"l1sym-hgs",     89},};
-
-      return STR_INT_MAP_ARRAY_CREATE(map);
-   }
-   if (!strcmp(key, "up_type"))
-   {
-      static StrIntMap map[] = {{"jacobi_non_mv",   0},
-                                {"forward-hgs",     3},
-                                {"backward-hgs",    4},
-                                {"chaotic-hgs",     5},
-                                {"hsgs",            6},
-                                {"jacobi",          7},
-                                {"l1-hsgs",         8},
-                                {"forward-solve",  10},
-                                {"2gs-it1",        11},
-                                {"2gs-it2",        12},
-                                {"forward-hl1gs",  13},
-                                {"backward-hl1gs", 14},
-                                {"cg",             15},
-                                {"chebyshev",      16},
-                                {"l1-jacobi",      18},
-                                {"l1sym-hgs",      89},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }

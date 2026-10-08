@@ -16,46 +16,14 @@
 #include <string.h>
 #include <time.h>
 
-void
-hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
+/* Format the current local time; returns 1 on success. */
+static int
+FormatLocalTime(char *buffer, size_t len)
 {
-   int myid = 0;
+   time_t     now    = time(NULL);
+   struct tm *tm_now = localtime(&now);
 
-   MPI_Comm_rank(comm, &myid);
-   if (!myid)
-   {
-      if (print_datetime)
-      {
-         time_t     now    = time(NULL);
-         struct tm *tm_now = localtime(&now);
-         char       buffer[100];
-
-         if (tm_now && strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_now))
-         {
-            printf("Date and time: %s\n", buffer);
-         }
-      }
-
-#if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
-      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s (%s)\n", HYPREDRV_DEVELOP_STRING,
-             HYPREDRV_BRANCH_NAME);
-#elif defined(HYPREDRV_DEVELOP_STRING)
-      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s\n", HYPREDRV_DEVELOP_STRING);
-#elif defined(HYPREDRV_GIT_SHA)
-      printf("\nUsing HYPREDRV_GIT_SHA: %s\n", HYPREDRV_GIT_SHA);
-#elif defined(HYPREDRV_RELEASE_VERSION)
-      printf("\nUsing HYPREDRV_RELEASE_VERSION: %s\n", HYPREDRV_RELEASE_VERSION);
-#endif
-
-#if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
-      printf("Using HYPRE_DEVELOP_STRING: %s (%s)\n", HYPRE_DEVELOP_STRING,
-             HYPRE_BRANCH_NAME);
-#elif defined(HYPRE_DEVELOP_STRING)
-      printf("Using HYPRE_DEVELOP_STRING: %s\n", HYPRE_DEVELOP_STRING);
-#elif defined(HYPRE_RELEASE_VERSION)
-      printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
-#endif
-   }
+   return tm_now && strftime(buffer, len, "%Y-%m-%d %H:%M:%S", tm_now);
 }
 
 void
@@ -72,37 +40,6 @@ hypredrv_PrintSystemInfo(MPI_Comm comm)
    }
 }
 
-const char *
-hypredrv_ExecutionPolicyName(int exec_policy)
-{
-   HYPRE_ExecutionPolicy hypre_exec_policy =
-      exec_policy ? HYPRE_EXEC_DEVICE : HYPRE_EXEC_HOST;
-
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   return HYPRE_GetExecutionPolicyName(hypre_exec_policy);
-#else
-   return hypre_exec_policy == HYPRE_EXEC_DEVICE ? "Device" : "Host";
-#endif
-}
-
-void
-hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
-{
-   int myid = 0;
-
-   if (!stream)
-   {
-      return;
-   }
-
-   MPI_Comm_rank(comm, &myid);
-   if (!myid)
-   {
-      fprintf(stream, "HYPRE execution policy: %s\n\n",
-              hypredrv_ExecutionPolicyName(exec_policy));
-   }
-}
-
 void
 hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
@@ -111,19 +48,14 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
    MPI_Comm_rank(comm, &myid);
    if (!myid)
    {
-      time_t      now    = time(NULL);
-      struct tm  *tm_now = localtime(&now);
       char        buffer[100];
       const char *driver_name = (argv0 && argv0[0]) ? argv0 : "Driver";
 
-      if (tm_now && strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_now))
+      if (!FormatLocalTime(buffer, sizeof(buffer)))
       {
-         printf("Date and time: %s\n%s done!\n", buffer, driver_name);
+         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
       }
-      else
-      {
-         printf("Date and time: (time unavailable)\n%s done!\n", driver_name);
-      }
+      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
    }
 }
 
@@ -4896,6 +4828,44 @@ QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *used)
 
 #endif /* __APPLE__ */
 
+/* Format the current local time; returns 1 on success. */
+static int
+FormatLocalTime(char *buffer, size_t len)
+{
+   time_t    t = time(NULL);
+   struct tm tm_buf;
+
+   return localtime_r(&t, &tm_buf) && strftime(buffer, len, "%Y-%m-%d %H:%M:%S", &tm_buf);
+}
+
+/*--------------------------------------------------------------------------
+ * PrintExitInfo
+ *--------------------------------------------------------------------------*/
+
+void
+hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
+{
+   int myid = 0;
+
+   MPI_Comm_rank(comm, &myid);
+
+   if (!myid)
+   {
+      char buffer[100];
+      char driver_name[PATH_MAX];
+
+      if (!FormatLocalTime(buffer, sizeof(buffer)))
+      {
+         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
+      }
+
+      ResolveDriverName(argv0, driver_name, sizeof(driver_name));
+      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
+   }
+}
+
+#endif /* _WIN32 */
+
 /*--------------------------------------------------------------------------
  * PrintLibInfo
  *--------------------------------------------------------------------------*/
@@ -4909,19 +4879,11 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 
    if (!myid)
    {
-      if (print_datetime)
-      {
-         time_t    t = 0;
-         struct tm tm_buf;
-         char      buffer[100];
+      char buffer[100];
 
-         /* Get current time */
-         time(&t);
-         if (localtime_r(&t, &tm_buf))
-         {
-            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
-            printf("Date and time: %s\n", buffer);
-         }
+      if (print_datetime && FormatLocalTime(buffer, sizeof(buffer)))
+      {
+         printf("Date and time: %s\n", buffer);
       }
 
 #if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
@@ -4938,7 +4900,7 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 #if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
       printf("Using HYPRE_DEVELOP_STRING: %s (%s)\n", HYPRE_DEVELOP_STRING,
              HYPRE_BRANCH_NAME);
-#elif defined(HYPRE_DEVELOP_STRING) && !defined(HYPRE_BRANCH_NAME)
+#elif defined(HYPRE_DEVELOP_STRING)
       printf("Using HYPRE_DEVELOP_STRING: %s\n", HYPRE_DEVELOP_STRING);
 #elif defined(HYPRE_RELEASE_VERSION)
       printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
@@ -4985,39 +4947,3 @@ hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
               hypredrv_ExecutionPolicyName(exec_policy));
    }
 }
-
-/*--------------------------------------------------------------------------
- * PrintExitInfo
- *--------------------------------------------------------------------------*/
-
-void
-hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
-{
-   int myid = 0;
-
-   MPI_Comm_rank(comm, &myid);
-
-   if (!myid)
-   {
-      char      buffer[100];
-      char      driver_name[PATH_MAX];
-      time_t    t = 0;
-      struct tm tm_buf;
-
-      /* Get current time */
-      time(&t);
-      if (localtime_r(&t, &tm_buf))
-      {
-         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
-      }
-      else
-      {
-         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
-      }
-
-      ResolveDriverName(argv0, driver_name, sizeof(driver_name));
-      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
-   }
-}
-
-#endif /* _WIN32 */
