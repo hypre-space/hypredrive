@@ -12,12 +12,7 @@
 #include <stddef.h>
 #include "HYPREDRV.h"
 
-#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
-#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index) \
-   __attribute__((format(printf, _format_index, _argument_index)))
-#else
-#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index)
-#endif
+#include "internal/error.h" /* HYPREDRV_PRINTF_FORMAT */
 
 enum
 {
