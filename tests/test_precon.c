@@ -5473,7 +5473,7 @@ test_MGRComponentReuseSetupMode_nested_shape_unsupported(void)
 }
 
 static void
-test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
+test_MGRSelectCachedSolversToKeep_static_schedule(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(21900, 0)
    return;
@@ -5492,16 +5492,12 @@ test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
    precon_test_set_static_mgr_component_reuse(&mgr.coarsest_level.reuse, 1);
 
 #if !HYPRE_CHECK_MIN_VERSION(30100, 50)
-   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 0);
    hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
    ASSERT_EQ(mgr.keep_frelax[0], 0);
    ASSERT_EQ(mgr.keep_grelax[0], 0);
    ASSERT_EQ(mgr.keep_csolver, 0);
    return;
 #endif
-
-   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 1);
-   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 2), 0);
 
    hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
    ASSERT_EQ(mgr.keep_frelax[0], 1);
@@ -7711,7 +7707,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
    RUN_TEST(test_MGRComponentReuseSetupMode_policy_shape_and_selector_paths);
    RUN_TEST(test_MGRComponentReuseSetupMode_nested_shape_unsupported);
-   RUN_TEST(test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags);
+   RUN_TEST(test_MGRSelectCachedSolversToKeep_static_schedule);
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
    RUN_TEST(test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles);
 #endif

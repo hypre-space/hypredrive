@@ -212,8 +212,6 @@ int  hypredrv_MGRValidateOuterSolver(const MGR_args *, int, const char *);
 void hypredrv_MGRSetCoarseSchur(MGR_args *, const HYPRE_IJMatrix *);
 void hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
-int  hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *, const IntArray *,
-                                               const struct Stats_struct *, int);
 void hypredrv_MGRRefreshComponentsForSetup(MGR_args *, HYPRE_Solver, const IntArray *,
                                            const struct Stats_struct *, int);
 void hypredrv_MGRSelectCachedSolversToKeep(MGR_args *, const IntArray *,

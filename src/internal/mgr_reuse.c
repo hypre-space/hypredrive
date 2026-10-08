@@ -1132,35 +1132,6 @@ MGRComponentRefresh(MGR_args *args, HYPRE_Solver precon, const MGRComponentRef *
    }
 }
 
-int
-hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
-                                          const IntArray *timestep_starts,
-                                          const Stats *stats, int next_ls_id)
-{
-   if (!args || !MGRManagedRefreshShapeSupported(args))
-   {
-      return 0;
-   }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
-   return 0;
-#endif
-
-   MGRComponentRef refs[MGR_MAX_COMPONENT_REFS];
-   int             num_refs = MGRListComponents(args, refs);
-
-   for (int n = 0; n < num_refs; n++)
-   {
-      if (MGRComponentUsesManagedHandle(args, &refs[n]) &&
-          MGRComponentReuseShouldKeep(MGRComponentReuseArgsConst(args, &refs[n]),
-                                      timestep_starts, stats, next_ls_id))
-      {
-         return 1;
-      }
-   }
-
-   return 0;
-}
-
 /*--------------------------------------------------------------------------
  * Decide how MGR component reuse should be configured for the next solve.
  *
