@@ -518,7 +518,8 @@ static const HelpChild MGRLevelChildren[] = {
    {"g_relaxation", &NodeMGRGRelax},
 };
 
-static const HelpChild MGRCoarsestChildren[] = {
+/* Solvers accepted for both the coarsest level and global (G) relaxation. */
+static const HelpChild MGRSolverChildren[] = {
    {"amg", &NodeAMG},           {"ilu", &NodeILU},     {"fsai", &NodeFSAI},
    {"pcg", &NodePCG},           {"gmres", &NodeGMRES}, {"fgmres", &NodeFGMRES},
    {"bicgstab", &NodeBiCGSTAB},
@@ -532,16 +533,6 @@ static const HelpChild MGRFRelaxChildren[] = {
    {"mgr", &NodeMGR},         {"amg", &NodeAMG},           {"ilu", &NodeILU},
    {"fsai", &NodeFSAI},       {"pcg", &NodePCG},           {"gmres", &NodeGMRES},
    {"fgmres", &NodeFGMRES},   {"bicgstab", &NodeBiCGSTAB},
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-   {"schwarz", &NodeSchwarz},
-#endif
-   {"reuse", &NodeReuse},
-};
-
-static const HelpChild MGRGRelaxChildren[] = {
-   {"amg", &NodeAMG},           {"ilu", &NodeILU},     {"fsai", &NodeFSAI},
-   {"pcg", &NodePCG},           {"gmres", &NodeGMRES}, {"fgmres", &NodeFGMRES},
-   {"bicgstab", &NodeBiCGSTAB},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    {"schwarz", &NodeSchwarz},
 #endif
@@ -774,8 +765,8 @@ static const HelpNode NodeMGRCoarsest      = {"coarsest_level",
                                               "<value>",
                                               hypredrv_MGRclsGetValidKeys,
                                               hypredrv_MGRclsGetValidValues,
-                                              MGRCoarsestChildren,
-                                              ARRAY_SIZE(MGRCoarsestChildren),
+                                              MGRSolverChildren,
+                                              ARRAY_SIZE(MGRSolverChildren),
                                               0};
 static const HelpNode NodeMGRFRelax        = {"f_relaxation",
                                               "MGR f_relaxation section",
@@ -790,8 +781,8 @@ static const HelpNode NodeMGRGRelax        = {"g_relaxation",
                                               "<value>",
                                               hypredrv_MGRgrlxGetValidKeys,
                                               hypredrv_MGRgrlxGetValidValues,
-                                              MGRGRelaxChildren,
-                                              ARRAY_SIZE(MGRGRelaxChildren),
+                                              MGRSolverChildren,
+                                              ARRAY_SIZE(MGRSolverChildren),
                                               0};
 static const HelpNode NodeReuse            = {"reuse",
                                               "preconditioner reuse section",

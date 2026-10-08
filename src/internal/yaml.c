@@ -1139,21 +1139,10 @@ YAMLtokenParseSequenceItem(char *content, YAMLtoken *token_out)
       return 1; /* GCOVR_EXCL_LINE */
    }
 
-   /* Preserve flow mappings for the tree builder.  Treating this as the
-    * existing "- key: value" shorthand would incorrectly make "{ key" the
-    * key and leave the closing brace in the value. */
-   if (*inline_content == '{')
-   {
-      free(token_out->val);
-      token_out->val = NULL;
-      if (!YAMLtokenSetString(&token_out->val, inline_content))
-      {
-         return -1; /* GCOVR_EXCL_LINE */
-      }
-      return 1;
-   }
-
-   if (!strchr(inline_content, ':'))
+   /* Plain values and flow mappings are kept verbatim for the tree builder.
+    * Treating a flow mapping as the "- key: value" shorthand would make "{ key"
+    * the key and leave the closing brace in the value. */
+   if (*inline_content == '{' || !strchr(inline_content, ':'))
    {
       free(token_out->val);
       token_out->val = NULL;
@@ -3168,23 +3157,9 @@ hypredrv_YAMLnodeFindChildByKey(YAMLnode *parent, const char *key)
 char *
 hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
 {
-   YAMLnode *child = NULL;
+   YAMLnode *child = hypredrv_YAMLnodeFindChildByKey(parent, key);
 
-   /* GCOVR_EXCL_BR_START */
-   if (parent) /* GCOVR_EXCL_BR_STOP */
-   {
-      child = parent->children;
-      while (child)
-      {
-         if (!strcmp(child->key, key))
-         {
-            return child->val;
-         }
-         child = child->next;
-      }
-   }
-
-   return NULL;
+   return child ? child->val : NULL;
 }
 
 /*-----------------------------------------------------------------------------
