@@ -605,6 +605,41 @@ hypredrv_PreconReuseLogDecision(HYPREDRV_t hypredrv, int next_ls_id,
    }
 }
 
+/* Before an MGR preconditioner is destroyed (or recreated) for next_ls_id, mark
+ * the cached component solvers that should survive for reuse and log them.
+ * `phase` names the operation in the log ("destroy", "recreate"). */
+void
+hypredrv_PreconReuseKeepMGRHandles(HYPREDRV_t hypredrv, int next_ls_id, const char *phase)
+{
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
+   if (!hypredrv || !hypredrv->iargs ||
+       hypredrv->iargs->precon_method != PRECON_MGR) /* GCOVR_EXCL_BR_LINE */
+   {
+      return;
+   }
+
+   MGR_args *mgr        = &hypredrv->iargs->precon.mgr;
+   int       num_frelax = 0;
+   int       num_grelax = 0;
+   int       num_coarse = 0;
+
+   hypredrv_MGRSelectCachedSolversToKeep(mgr, hypredrv->precon_reuse_timesteps.starts,
+                                         hypredrv->stats, next_ls_id);
+   hypredrv_MGRCountKeepFlags(mgr, &num_frelax, &num_grelax, &num_coarse);
+   if (num_frelax || num_grelax || num_coarse) /* GCOVR_EXCL_BR_LINE */
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "preserving cached MGR handles across %s: coarse=%d frelax=%d "
+                           "grelax=%d",
+                           phase, num_coarse, num_frelax, num_grelax);
+   }
+#else
+   (void)hypredrv;
+   (void)next_ls_id;
+   (void)phase;
+#endif
+}
+
 static void
 hypredrv_PreconReuseDecisionInit(PreconReuseDecision *decision)
 {                 /* GCOVR_EXCL_BR_LINE */

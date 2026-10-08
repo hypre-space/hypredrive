@@ -2557,27 +2557,7 @@ HYPREDRV_PreconCreate(HYPREDRV_t hypredrv)
       /* If we're recreating, destroy the existing preconditioner first to avoid leaks. */
       if (hypredrv->precon)
       {
-#if HYPRE_CHECK_MIN_VERSION(30100, 28)
-         if (hypredrv->iargs->precon_method == PRECON_MGR)
-         {
-            hypredrv_MGRSelectCachedSolversToKeep(&hypredrv->iargs->precon.mgr,
-                                                  hypredrv->precon_reuse_timesteps.starts,
-                                                  hypredrv->stats, next_ls_id);
-            int num_frelax = 0;
-            int num_grelax = 0;
-            int num_coarse = 0;
-            hypredrv_MGRCountKeepFlags(&hypredrv->iargs->precon.mgr, &num_frelax,
-                                       &num_grelax, &num_coarse);
-            if (num_frelax || num_grelax || num_coarse) /* GCOVR_EXCL_BR_LINE */
-            {
-               HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                                    "preserving cached MGR handles across recreate: "
-                                    "coarse=%d frelax=%d "
-                                    "grelax=%d",
-                                    num_coarse, num_frelax, num_grelax);
-            }
-         }
-#endif
+         hypredrv_PreconReuseKeepMGRHandles(hypredrv, next_ls_id, "recreate");
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon, hypredrv->stats,
                                 hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
@@ -3167,27 +3147,7 @@ HYPREDRV_PreconDestroy(HYPREDRV_t hypredrv)
    {
       if (hypredrv->precon)
       {
-#if HYPRE_CHECK_MIN_VERSION(30100, 28)
-         if (hypredrv->iargs->precon_method == PRECON_MGR)
-         {
-            hypredrv_MGRSelectCachedSolversToKeep(&hypredrv->iargs->precon.mgr,
-                                                  hypredrv->precon_reuse_timesteps.starts,
-                                                  hypredrv->stats, next_ls_id);
-            int num_frelax = 0;
-            int num_grelax = 0;
-            int num_coarse = 0;
-            hypredrv_MGRCountKeepFlags(&hypredrv->iargs->precon.mgr, &num_frelax,
-                                       &num_grelax, &num_coarse);
-            if (num_frelax || num_grelax || num_coarse)
-            {
-               HYPREDRV_LOG_OBJECTF(
-                  2, hypredrv,
-                  "preserving cached MGR handles across destroy: coarse=%d frelax=%d "
-                  "grelax=%d",
-                  num_coarse, num_frelax, num_grelax);
-            }
-         }
-#endif
+         hypredrv_PreconReuseKeepMGRHandles(hypredrv, next_ls_id, "destroy");
          HYPREDRV_LOG_OBJECTF(2, hypredrv, "destroying preconditioner object");
          hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
                                 &hypredrv->precon, hypredrv->stats,
