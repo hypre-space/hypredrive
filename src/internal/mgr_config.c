@@ -854,11 +854,8 @@ MGRgrlxApplyTypeDefaults(void *vargs, HYPRE_Int old_type)
 const char *
 hypredrv_MGRLogObjectName(const Stats *stats)
 {
-#if defined(_MSC_VER)
-   static __declspec(thread) char buf[32];
-#else
-   static __thread char buf[32];
-#endif
+   /* Shared buffer: the library keeps global state and is not thread-safe. */
+   static char buf[32];
    return hypredrv_StatsGetLogObjectName(stats, buf, sizeof(buf));
 }
 
@@ -1601,7 +1598,7 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
          continue;
       }
       /* Reject duplicate level indices, which would double-count levels. */
-      if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 && (seen_levels & (1u << (unsigned)lvl)))
+      if (seen_levels & (1u << (unsigned)lvl))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
          hypredrv_ErrorMsgAdd("Duplicate MGR level index %d", lvl);
@@ -1609,32 +1606,25 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
          continue;
       }
 
-      if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
+      seen_levels |= (1u << (unsigned)lvl);
+      if (lvl > max_lvl)
       {
-         seen_levels |= (1u << (unsigned)lvl);
-         if (lvl > max_lvl)
-         {
-            max_lvl = lvl;
-         }
-         MGRMarkLevelComponentNodes(args, grandchild, lvl);
+         max_lvl = lvl;
+      }
+      MGRMarkLevelComponentNodes(args, grandchild, lvl);
 
-         num_fine++;
-         YAML_NODE_SET_VALID(grandchild);
-      }
-      else
-      {
-         YAML_NODE_SET_INVALID_KEY(grandchild);
-      }
+      num_fine++;
+      YAML_NODE_SET_VALID(grandchild);
    }
 
    /* Consumption iterates fine levels densely over [0, num_levels-1), so the
     * configured level indices must be contiguous starting at 0. Reject gaps
     * (e.g. "0:" and "5:") which would otherwise silently process
-    * default-initialized levels in place of the intended configuration. */
+    * default-initialized levels in place of the intended configuration.
+    * Indices are at most MAX_MGR_LEVELS - 2, so the shift below fits. */
    if (max_lvl >= 0)
    {
-      uint32_t expected =
-         (max_lvl >= 31) ? 0xFFFFFFFFu : ((1u << (unsigned)(max_lvl + 1)) - 1u);
+      uint32_t expected = (1u << (unsigned)(max_lvl + 1)) - 1u;
       if (seen_levels != expected)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);

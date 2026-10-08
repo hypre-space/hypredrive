@@ -1672,10 +1672,11 @@ HYPREDRV_LinearSystemSetCoordinates(HYPREDRV_t hypredrv, HYPRE_Vector x, HYPRE_V
                                     HYPRE_Vector z)
 {
    HYPREDRV_CHECK_INIT_AND_OBJ();
-   void *coords[3] = {(HYPRE_IJVector)x, (HYPRE_IJVector)y, (HYPRE_IJVector)z};
-   hypredrv_PrepareExplicitObjectsForConfiguredExecution(hypredrv, coords, 3, 0);
-
    HYPRE_IJVector newv[3] = {(HYPRE_IJVector)x, (HYPRE_IJVector)y, (HYPRE_IJVector)z};
+   for (int i = 0; i < 3; i++)
+   {
+      hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, newv[i], 0);
+   }
 
    if (hypredrv->owns_vec_coord)
    {
@@ -2156,12 +2157,8 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
       return hypredrv_ErrorCodeGet();
    }
 
-   char default_object_name[32];
-   bool pushed_default_name = hypredrv_PushDefaultLogObjectName(
-      hypredrv, default_object_name, sizeof(default_object_name));
    hypredrv_LinearSystemResetInitialGuess(hypredrv->vec_x0, hypredrv->vec_x,
                                           hypredrv->stats);
-   hypredrv_PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2837,14 +2834,10 @@ HYPREDRV_LinearSolverSetup(HYPREDRV_t hypredrv)
       }
    }
 
-   char default_object_name[32];
-   bool pushed_default_name = hypredrv_PushDefaultLogObjectName(
-      hypredrv, default_object_name, sizeof(default_object_name));
    hypredrv_SolverSetupWithReuse(hypredrv->iargs->precon_method,
                                  hypredrv->iargs->solver_method, hypredrv->precon,
                                  hypredrv->solver, hypredrv->mat_M, hypredrv->vec_b,
                                  hypredrv->vec_x, hypredrv->stats, skip_precon_setup);
-   hypredrv_PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
 
    hypredrv_HypreConsumeErrors();
    if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
@@ -2995,12 +2988,8 @@ SolveUnscaledSystem(HYPREDRV_t hypredrv, int *solve_succeeded_out)
    /* No scaling - use standard hypredrv_SolverApply which handles everything including
     * stats */
    uint32_t error_before_solve = hypredrv_ErrorCodeGet();
-   char     default_object_name[32];
-   bool     pushed_default_name = hypredrv_PushDefaultLogObjectName(
-      hypredrv, default_object_name, sizeof(default_object_name));
    hypredrv_SolverApply(hypredrv->iargs->solver_method, hypredrv->solver, hypredrv->mat_A,
                         hypredrv->vec_b, hypredrv->vec_x, hypredrv->stats);
-   hypredrv_PopDefaultLogObjectName(hypredrv, default_object_name, pushed_default_name);
    succeeded = (hypredrv_ErrorCodeGet() == error_before_solve);
    /* hypredrv_SolverApply already computed and set all stats */
 

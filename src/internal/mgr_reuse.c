@@ -1378,16 +1378,6 @@ MGRLegacyPostDestroyNeedsFRelaxReclaim(void)
 #endif
 }
 
-static int
-MGRPostDestroyNeedsUserSolverReclaim(void)
-{
-#if HYPRE_RELEASE_NUMBER_GT(30100)
-   return 1;
-#else
-   return 0;
-#endif
-}
-
 static void
 MGRResetCachedSolverKeepFlags(MGR_args *args)
 {
@@ -1575,7 +1565,6 @@ hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_s
 typedef struct
 {
    int destroy_handles;
-   int destroy_managed_detached;
    int first_active_level;
    int legacy_grelax_reclaim;
    int hypre_destroyed;
@@ -1585,9 +1574,8 @@ typedef struct
 static int
 MGRDetachedReclaimAllowed(const MGRDestroyPolicy *policy, int level, int legacy_gate)
 {
-   return (
-      policy->destroy_managed_detached || policy->destroy_handles ||
-      (policy->hypre_destroyed && legacy_gate && level == policy->first_active_level));
+   return (!policy->hypre_destroyed || policy->destroy_handles ||
+           (legacy_gate && level == policy->first_active_level));
 }
 
 static void
@@ -1679,8 +1667,6 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
    }
 
    policy.destroy_handles = MGRDestroyCachedSolversExplicitly();
-   policy.destroy_managed_detached =
-      !hypre_destroyed || MGRPostDestroyNeedsUserSolverReclaim();
    policy.first_active_level =
       (args->num_active_levels > 0) ? (int)args->active_level_map[0] : -1;
    policy.legacy_grelax_reclaim = MGRLegacyPostDestroyNeedsGRelaxReclaim();
