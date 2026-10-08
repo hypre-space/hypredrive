@@ -131,7 +131,7 @@ extern void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda, double *
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
 {
    void              *obj_A = NULL;
@@ -250,7 +250,7 @@ hypredrv_WriteValuesASCII(const char *prefix, int n, const double *wr, const dou
  * Write vectors in row major format
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_WriteRealVectorsBin(const char *prefix, int n, const double *vecs_cm)
 {
    char  path[MAX_FILENAME_LENGTH];
@@ -282,7 +282,7 @@ hypredrv_WriteRealVectorsBin(const char *prefix, int n, const double *vecs_cm)
  * Write vectors in row major format
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_WriteComplexVectorsBin(const char *prefix, int n, const double *VR_cm,
                                 const double *wi)
 {
@@ -351,7 +351,7 @@ hypredrv_WriteComplexVectorsBin(const char *prefix, int n, const double *VR_cm,
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_EigSpecComputeGeneral(int n, double *A_cm, int want_vectors, double **wr_out,
                                double **wi_out, double **vecs_cm_out)
 {

@@ -967,7 +967,7 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-void
+static void
 hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
 {
    hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
@@ -1253,8 +1253,6 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
    {
       text[text_size] = '\0';
    }
-
-   // printf("text_size: %ld | strlen(text): %ld\n", text_size, strlen(text));
 
    /* Set output pointers */
    *base_indent_ptr = base_indent;

@@ -935,8 +935,6 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    }
 
    ops->solve(prec, par_A, par_b, par_x);
-
-   // StatsTimerStop("prec_apply");
 }
 
 static void

@@ -1396,7 +1396,9 @@ run_eigspec_trace_capture(void *context)
       "  statistics: off\n"
       "linear_system:\n"
       "  eigspec:\n"
-      "    enable: off\n";
+      "    enable: off\n"
+      "solver: pcg\n"
+      "preconditioner: amg\n";
    parse_yaml_into_obj(obj, yaml_config);
 #endif
 
