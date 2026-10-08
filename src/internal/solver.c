@@ -659,11 +659,12 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
       return;
    }
 
-   HYPRE_Int     iters  = 0;
-   HYPRE_Complex b_norm = NAN, r_norm = NAN, r0_norm = NAN;
+   HYPRE_Int      iters  = 0;
+   HYPRE_Complex  b_norm = NAN, r_norm = NAN, r0_norm = NAN;
+   HYPRE_IJVector vec_r = NULL; /* residual work vector shared by both norms */
 
    /* Compute initial residual norm (absolute L2) before timing the solve */
-   hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
+   hypredrv_LinearSystemComputeResidualNormWork(A, b, x, "L2", &vec_r, &r0_norm);
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
    hypredrv_StatsInitialResNormSet(stats, r0_norm);
@@ -672,6 +673,10 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 
    if (iters < 0)
    {
+      if (vec_r)
+      {
+         HYPRE_IJVectorDestroy(vec_r);
+      }
       hypredrv_StatsIterSet(stats, 0);
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
       HYPREDRV_LOGF(2, log_rank, log_object_name, ls_id,
@@ -684,7 +689,11 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 
    /* Compute the real relative residual norm. Note this is not timed */
    hypredrv_LinearSystemComputeVectorNorm(b, "L2", &b_norm);
-   hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
+   hypredrv_LinearSystemComputeResidualNormWork(A, b, x, "L2", &vec_r, &r_norm);
+   if (vec_r)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+   }
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
    hypredrv_StatsRelativeResNormSet(stats, r_norm / b_norm);

@@ -225,6 +225,9 @@ void hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const
                                            double *);
 void hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector,
                                               HYPRE_IJVector, const char *, double *);
+void hypredrv_LinearSystemComputeResidualNormWork(HYPRE_IJMatrix, HYPRE_IJVector,
+                                                  HYPRE_IJVector, const char *,
+                                                  HYPRE_IJVector *, double *);
 void hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm, HYPRE_IJMatrix, HYPRE_IJVector,
                                                 HYPRE_IJVector, const IntArray *,
                                                 const DofLabelMap *, const char *, int);

@@ -3266,19 +3266,55 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
                                          HYPRE_IJVector vec_x, const char *norm_type,
                                          double *res_norm)
 {
-   HYPRE_IJVector vec_r = LinearSystemBuildResidual(mat_A, vec_b, vec_x, NULL, NULL);
-   if (!vec_r)
+   HYPRE_IJVector vec_r = NULL;
+
+   hypredrv_LinearSystemComputeResidualNormWork(mat_A, vec_b, vec_x, norm_type, &vec_r,
+                                                res_norm);
+   if (vec_r)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemComputeResidualNormWork
+ *
+ * Same as hypredrv_LinearSystemComputeResidualNorm, but keeps the residual in
+ * *work_ptr (created on first use, laid out like vec_b) so repeated norms of
+ * the same system skip the vector allocation and its validity reductions.
+ * The caller destroys *work_ptr.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemComputeResidualNormWork(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
+                                             HYPRE_IJVector vec_x, const char *norm_type,
+                                             HYPRE_IJVector *work_ptr, double *res_norm)
+{
+   if (!*work_ptr)
+   {
+      *work_ptr = LinearSystemBuildResidual(mat_A, vec_b, vec_x, NULL, NULL);
+   }
+   else
+   {
+      void *obj_A = NULL, *obj_b = NULL, *obj_x = NULL, *obj_r = NULL;
+
+      HYPRE_IJMatrixGetObject(mat_A, &obj_A);
+      HYPRE_IJVectorGetObject(vec_b, &obj_b);
+      HYPRE_IJVectorGetObject(vec_x, &obj_x);
+      HYPRE_IJVectorGetObject(*work_ptr, &obj_r);
+      HYPRE_ParVectorCopy((HYPRE_ParVector)obj_b, (HYPRE_ParVector)obj_r);
+      HYPRE_ParCSRMatrixMatvec(-1.0, (HYPRE_ParCSRMatrix)obj_A, (HYPRE_ParVector)obj_x,
+                               1.0, (HYPRE_ParVector)obj_r);
+   }
+
+   if (!*work_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *res_norm = -1.0;
       return;
    }
 
-   /* Compute residual norm */
-   hypredrv_LinearSystemComputeVectorNorm(vec_r, norm_type, res_norm);
-
-   /* Free memory */
-   HYPRE_IJVectorDestroy(vec_r);
+   hypredrv_LinearSystemComputeVectorNorm(*work_ptr, norm_type, res_norm);
 }
 
 /*-----------------------------------------------------------------------------
