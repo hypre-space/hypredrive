@@ -13,6 +13,7 @@
 #include <string.h>
 #include "HYPREDRV_config.h"
 #include "internal/error.h"
+#include "internal/utils.h"
 
 #ifdef HYPREDRV_USING_ZLIB
 #include <zlib.h>
@@ -149,24 +150,35 @@ hypredrv_compression_from_filename(const char *filename)
  * Compression backends (per-algorithm; keep hypredrv_compress switch small)
  *-----------------------------------------------------------------------------*/
 
+/* Allocates a compressed blob of header_size + bound bytes and records the
+ * uncompressed size in its leading uint64_t. Returns 0 on allocation failure. */
+static HYPREDRV_MAYBE_UNUSED int
+CompressAllocOutput(size_t isize, size_t header_size, size_t bound, void **output_ptr)
+{
+   *output_ptr = malloc(header_size + bound);
+   /* GCOVR_EXCL_BR_START */
+   if (*output_ptr == NULL) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
+                           __LINE__, header_size + bound);
+      return 0;
+   }
+
+   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
+   return 1;
+}
+
 static int
 compress_zlib(size_t isize, const void *input, size_t header_size, void **output_ptr,
               size_t *comp_size)
 {
 #ifdef HYPREDRV_USING_ZLIB
    *comp_size = (size_t)compressBound((uLong)isize);
-   /* GCOVR_EXCL_BR_START */
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-   /* GCOVR_EXCL_BR_STOP */
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    uLongf zcomp_size = (uLongf)*comp_size;
    int ierr = compress((unsigned char *)(*output_ptr) + header_size, &zcomp_size, input,
@@ -203,18 +215,10 @@ compress_zstd(size_t isize, const void *input, size_t header_size, void **output
 {
 #ifdef HYPREDRV_USING_ZSTD
    *comp_size = ZSTD_compressBound(isize);
-   /* GCOVR_EXCL_BR_START */
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-   /* GCOVR_EXCL_BR_STOP */
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int level = (compression_level < 0) ? 5 : compression_level;
@@ -268,17 +272,11 @@ compress_lz4(size_t isize, const void *input, size_t header_size, void **output_
       return 0;
    }
    /* GCOVR_EXCL_STOP */
-   *comp_size  = (size_t)LZ4_compressBound((int)isize);
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   *comp_size = (size_t)LZ4_compressBound((int)isize);
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int lz4_ret = LZ4_compress_default(input, (char *)(*output_ptr) + header_size,
@@ -310,17 +308,11 @@ compress_lz4hc(size_t isize, const void *input, size_t header_size, void **outpu
       return 0;
    }
    /* GCOVR_EXCL_STOP */
-   *comp_size  = (size_t)LZ4_compressBound((int)isize);
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   *comp_size = (size_t)LZ4_compressBound((int)isize);
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int lz4hc_ret =
@@ -350,18 +342,12 @@ compress_blosc(size_t isize, const void *input, size_t header_size, void **outpu
    blosc_init();
    blosc_set_compressor("blosclz");
 
-   *comp_size  = isize + BLOSC_MAX_OVERHEAD;
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   *comp_size = isize + BLOSC_MAX_OVERHEAD;
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       blosc_destroy();
       return 0;
    }
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int blosc_ret = blosc_compress(
