@@ -1824,8 +1824,13 @@ cleanup:
    return ok;
 }
 
+/* The staged dofmap parts store the int32 payload as IntArray's int entries. */
+_Static_assert(sizeof(int) == sizeof(int32_t),
+               "LSSeq dofmap staging requires 32-bit int");
+
 /* Stages one part's dofmap slice into the shared temporary file that
- * hypredrv_IntArrayParRead() consumes. Returns zero on any local failure. */
+ * hypredrv_IntArrayParRead() consumes, using its binary part format (size_t
+ * entry count followed by the int entries). Returns zero on any local failure. */
 static int
 LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
                      const uint32_t *part_order, const char *prefix, char *part_filename,
@@ -1841,11 +1846,11 @@ LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_par
    /* GCOVR_EXCL_BR_START */
    if (!LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
                                 /* GCOVR_EXCL_BR_STOP */
-                                tmp_part_id, NULL))
+                                tmp_part_id, ".bin"))
    {
       return 0;
    }
-   out = hypredrv_FopenCreateRestricted(part_filename, 0, 0);
+   out = hypredrv_FopenCreateRestricted(part_filename, 0, 1);
    if (!out) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -1881,18 +1886,21 @@ LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_par
       }
    }
 
-   fprintf(out, "%llu\n", (unsigned long long)sys->dof_num_entries);
-   for (uint64_t j = 0; j < sys->dof_num_entries; j++)
-   {
-      /* GCOVR_EXCL_BR_START */
-      int value = dof_data ? (int)dof_data[j] : 0;
-      /* GCOVR_EXCL_BR_STOP */
-      fprintf(out, "%d\n", value);
-   }
-   fclose(out);
+   size_t count = (size_t)sys->dof_num_entries;
+   /* GCOVR_EXCL_BR_START */
+   int ok = fwrite(&count, sizeof(count), 1, out) == 1 &&
+            (count == 0 ||
+             (dof_data && fwrite(dof_data, sizeof(int32_t), count, out) == count));
+   /* GCOVR_EXCL_BR_STOP */
+   ok = (fclose(out) == 0) && ok;
    free(dof_data);
+   if (!ok) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Could not write dofmap temporary part '%s'", part_filename);
+   }
 
-   return 1;
+   return ok;
 }
 
 int
@@ -1993,7 +2001,7 @@ cleanup:
    /* GCOVR_EXCL_BR_START */
    if (prefix[0] != '\0') /* GCOVR_EXCL_BR_STOP */
    {
-      LSSeqCleanupPartFiles(prefix, partids, nparts, "");
+      LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
    }
    free(part_order);
    free(partids);
