@@ -337,6 +337,27 @@ hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
    }
 }
 
+/* Whether partition `partition` of `prefix` exists (binary: with ".bin"). */
+static int
+PartitionFileExists(const char *prefix, int partition, int binary)
+{
+   char  filename[MAX_FILENAME_LENGTH] = {0};
+   FILE *fp                            = NULL;
+
+   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, partition, binary))
+   {
+      return 0;
+   }
+   fp = fopen(filename, "r");
+   if (!fp)
+   {
+      return 0;
+   }
+   fclose(fp);
+
+   return 1;
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
@@ -344,28 +365,7 @@ hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
 int
 hypredrv_CheckBinaryDataExists(const char *prefix)
 {
-   char filename[MAX_FILENAME_LENGTH] = {0};
-
-   int   file_exists = 0;
-   FILE *fp          = NULL;
-
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
-   {
-      return 0;
-   }
-
-   /* Check if binary data exist */
-   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 1))
-   {
-      return 0;
-   }
-   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp)
-   {
-      fclose(fp);
-   }
-
-   return file_exists;
+   return hypredrv_BinaryPathPrefixIsSafe(prefix) && PartitionFileExists(prefix, 0, 1);
 }
 
 /*-----------------------------------------------------------------------------
@@ -375,28 +375,7 @@ hypredrv_CheckBinaryDataExists(const char *prefix)
 int
 hypredrv_CheckASCIIDataExists(const char *prefix)
 {
-   char filename[MAX_FILENAME_LENGTH] = {0};
-
-   int   file_exists = 0;
-   FILE *fp          = NULL;
-
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
-   {
-      return 0;
-   }
-
-   /* Check if ASCII data exist */
-   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 0))
-   {
-      return 0;
-   }
-   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp)
-   {
-      fclose(fp);
-   }
-
-   return file_exists;
+   return hypredrv_BinaryPathPrefixIsSafe(prefix) && PartitionFileExists(prefix, 0, 0);
 }
 
 /*-----------------------------------------------------------------------------
@@ -406,52 +385,16 @@ hypredrv_CheckASCIIDataExists(const char *prefix)
 int
 hypredrv_CountNumberOfPartitions(const char *prefix)
 {
-   char filename[MAX_FILENAME_LENGTH];
-   int  num_files = 0;
+   int num_files = 0;
 
-   if (prefix == NULL)
-   {
-      return 0;
-   }
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
+   if (prefix == NULL || !hypredrv_BinaryPathPrefixIsSafe(prefix))
    {
       return 0;
    }
 
-   while (1)
+   while (PartitionFileExists(prefix, num_files, 1) ||
+          PartitionFileExists(prefix, num_files, 0))
    {
-      FILE *fp = NULL;
-      int   file_exists;
-
-      if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 1))
-      {
-         break;
-      }
-      fp          = fopen(filename, "r");
-      file_exists = (fp == NULL) ? 0 : 1;
-      if (fp)
-      {
-         fclose(fp);
-      }
-      if (!file_exists)
-      {
-         if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 0))
-         {
-            break;
-         }
-         fp          = fopen(filename, "r");
-         file_exists = (fp == NULL) ? 0 : 1;
-         if (fp)
-         {
-            fclose(fp);
-         }
-      }
-
-      if (!file_exists)
-      {
-         break;
-      }
-
       num_files++;
    }
 
