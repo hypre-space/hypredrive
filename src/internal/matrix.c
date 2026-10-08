@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <limits.h>
 #include <stdint.h>
 #include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
@@ -560,10 +561,13 @@ IJMatrixStageEntriesToDevice(IJMatrixEntryBuffers *buf, uint64_t nnz)
 }
 /* GCOVR_EXCL_STOP */
 
-/* Third pass: reads one part's indices and coefficients and hands them to hypre. */
+/* Third pass: reads one part's indices and coefficients and hands them to hypre.
+ * With `indices_cached`, buf->h_rows/h_cols already hold this part's validated
+ * indices (left by the host sparsity pass), so they are skipped on disk. */
 static int
 IJMatrixSetPartValues(HYPRE_IJMatrix mat, const char *prefixname, uint32_t partid,
-                      size_t nnzs_max, uint64_t nrows, IJMatrixEntryBuffers *buf)
+                      size_t nnzs_max, uint64_t nrows, IJMatrixEntryBuffers *buf,
+                      int indices_cached)
 {
    char      filename[1024];
    uint64_t  header[11];
@@ -576,22 +580,40 @@ IJMatrixSetPartValues(HYPRE_IJMatrix mat, const char *prefixname, uint32_t parti
       return 0;
    }
 
-   /* Read row and column indices */
-   if (!IJMatrixReadIndexPair(fp, header, nnzs_max, buf->h_rows, buf->h_cols, filename))
+   /* Header and dtype were validated by the sparsity pass on this same part; the
+    * skip must also fit fseek's long offset (32-bit on some platforms). */
+   const uint64_t index_bytes = 2u * header[6] * header[1];
+   if (indices_cached && index_bytes <= (uint64_t)LONG_MAX)
    {
-      fclose(fp);
-      return 0;
+      if (fseek(fp, (long)index_bytes, SEEK_CUR) != 0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Could not skip indices in %s", filename);
+         fclose(fp);
+         return 0;
+      }
    }
-
-   /* Validate entries before reading values or passing indices to hypre.
-    * This reader currently constructs square IJ matrices, so the global
-    * row count is also the valid global column count. */
-   for (size_t i = 0; i < header[6]; i++)
+   else
    {
-      if (!IJMatrixValidateEntry(buf->h_rows[i], buf->h_cols[i], nrows, nrows, filename))
+      /* Read row and column indices */
+      if (!IJMatrixReadIndexPair(fp, header, nnzs_max, buf->h_rows, buf->h_cols,
+                                 filename))
       {
          fclose(fp);
          return 0;
+      }
+
+      /* Validate entries before reading values or passing indices to hypre.
+       * This reader currently constructs square IJ matrices, so the global
+       * row count is also the valid global column count. */
+      for (size_t i = 0; i < header[6]; i++)
+      {
+         if (!IJMatrixValidateEntry(buf->h_rows[i], buf->h_cols[i], nrows, nrows,
+                                    filename))
+         {
+            fclose(fp);
+            return 0;
+         }
       }
    }
 
@@ -643,7 +665,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
 
    HYPRE_IJMatrix       mat    = NULL;
    HYPRE_BigInt         ilower = 0, iupper = 0;
-   IJMatrixEntryBuffers buf = {NULL, NULL, NULL, NULL, NULL, NULL};
+   IJMatrixEntryBuffers buf            = {NULL, NULL, NULL, NULL, NULL, NULL};
+   int                  indices_cached = 0;
 
    *mat_ptr = NULL;
 
@@ -693,9 +716,12 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
     * the collective agreement afterwards keeps all ranks on the same path. */
    if (IJMatrixAllocEntryBuffers(nnzs_max, &buf) && memory_location == HYPRE_MEMORY_HOST)
    {
-      /* 4a) Pre-compute the sparsity pattern when storing on host memory */
-      (void)IJMatrixPrecomputeHostSparsity(mat, prefixname, partids, nparts, nnzs_max,
-                                           &buf, nrows_sum, nrows, ilower, iupper);
+      /* 4a) Pre-compute the sparsity pattern when storing on host memory. With a
+       * single local part its validated indices stay in the buffers for 4b. */
+      indices_cached =
+         IJMatrixPrecomputeHostSparsity(mat, prefixname, partids, nparts, nnzs_max, &buf,
+                                        nrows_sum, nrows, ilower, iupper) &&
+         nparts == 1;
    }
    if (!IJMatrixAllRanksOk(comm))
    {
@@ -726,7 +752,8 @@ hypredrv_IJMatrixReadMultipartBinary(const char *prefixname, MPI_Comm comm,
    /* Set matrix values */
    for (uint32_t part = 0; part < nparts; part++)
    {
-      if (!IJMatrixSetPartValues(mat, prefixname, partids[part], nnzs_max, nrows, &buf))
+      if (!IJMatrixSetPartValues(mat, prefixname, partids[part], nnzs_max, nrows, &buf,
+                                 indices_cached))
       {
          break;
       }
