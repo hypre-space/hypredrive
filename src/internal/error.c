@@ -998,23 +998,19 @@ hypredrv_ErrorStateReset(void)
 }
 
 /*-----------------------------------------------------------------------------
- * hypredrv_ErrorMsgAdd
+ * Format a message into a new, not yet queued node. Falls back to a fixed text
+ * when formatting fails; returns NULL (recording the drop) if allocation fails.
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_ErrorMsgAdd(const char *format, ...)
+static ErrorMsgNode *
+ErrorMsgNodeFormatV(ErrorState *state, const char *format, va_list args)
 {
-   ErrorState   *state        = ErrorStateGet();
-   ErrorMsgNode *node         = NULL;
    const char   *fmt          = format ? format : "(null format)";
    const char   *fallback_msg = "(error formatting message)";
-   va_list       args;
+   ErrorMsgNode *node         = NULL;
    va_list       args_copy;
-   int           length     = 0;
-   int           written    = 0;
-   size_t        alloc_size = 0;
+   int           length = 0;
 
-   va_start(args, format);
    va_copy(args_copy, args);
    length = vsnprintf(NULL, 0, fmt, args_copy);
    va_end(args_copy);
@@ -1022,44 +1018,53 @@ hypredrv_ErrorMsgAdd(const char *format, ...)
    /* GCOVR_EXCL_START */
    if (length < 0)
    {
-      va_end(args);
+      fmt    = NULL;
       length = (int)strlen(fallback_msg);
-
-      node = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode) + (size_t)length + 1);
-      if (!node)
-      {
-         ErrorStateRecordMessageDrop(state);
-         return;
-      }
-
-      memcpy(node->message, fallback_msg, (size_t)length + 1);
-      node->next      = state->msg_head;
-      state->msg_head = node;
-      return;
    }
-
    /* GCOVR_EXCL_STOP */
 
-   alloc_size = sizeof(ErrorMsgNode) + (size_t)length + 1;
-   node       = (ErrorMsgNode *)malloc(alloc_size);
+   node = (ErrorMsgNode *)malloc(sizeof(ErrorMsgNode) + (size_t)length + 1);
    if (!node)
    {
-      va_end(args);                       /* GCOVR_EXCL_LINE */
       ErrorStateRecordMessageDrop(state); /* GCOVR_EXCL_LINE */
-      return;                             /* GCOVR_EXCL_LINE */
+      return NULL;                        /* GCOVR_EXCL_LINE */
    }
 
-   written = vsnprintf(node->message, (size_t)length + 1, fmt, args);
-   va_end(args);
-
-   if (written < 0)
+   if (!fmt || vsnprintf(node->message, (size_t)length + 1, fmt, args) < 0)
    {
       snprintf(node->message, (size_t)length + 1, "%s",
                fallback_msg); /* GCOVR_EXCL_LINE */
    }
 
+   return node;
+}
+
+static void
+ErrorMsgNodePush(ErrorState *state, ErrorMsgNode *node)
+{
    node->next      = state->msg_head;
    state->msg_head = node;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_ErrorMsgAdd
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_ErrorMsgAdd(const char *format, ...)
+{
+   ErrorState   *state = ErrorStateGet();
+   ErrorMsgNode *node  = NULL;
+   va_list       args;
+
+   va_start(args, format);
+   node = ErrorMsgNodeFormatV(state, format, args);
+   va_end(args);
+
+   if (node)
+   {
+      ErrorMsgNodePush(state, node);
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -1072,54 +1077,29 @@ hypredrv_ErrorMsgAdd(const char *format, ...)
 void
 hypredrv_ErrorMsgAddUnique(const char *format, ...)
 {
-   ErrorState *state = ErrorStateGet();
-   const char *fmt   = format ? format : "(null format)";
-   char       *msg   = NULL;
-   va_list     args;
-   va_list     args_copy;
-   int         length = 0;
+   ErrorState   *state = ErrorStateGet();
+   ErrorMsgNode *node  = NULL;
+   va_list       args;
 
    va_start(args, format);
-   va_copy(args_copy, args);
-   length = vsnprintf(NULL, 0, fmt, args_copy);
-   va_end(args_copy);
+   node = ErrorMsgNodeFormatV(state, format, args);
+   va_end(args);
 
-   /* GCOVR_EXCL_START */
-   if (length < 0)
+   if (!node)
    {
-      va_end(args);
-      hypredrv_ErrorMsgAdd("%s", "(error formatting message)");
       return;
    }
 
-   /* GCOVR_EXCL_STOP */
-
-   msg = (char *)malloc((size_t)length + 1);
-   if (!msg)
+   for (const ErrorMsgNode *queued = state->msg_head; queued; queued = queued->next)
    {
-      va_end(args);                       /* GCOVR_EXCL_LINE */
-      ErrorStateRecordMessageDrop(state); /* GCOVR_EXCL_LINE */
-      return;                             /* GCOVR_EXCL_LINE */
-   }
-
-   if (vsnprintf(msg, (size_t)length + 1, fmt, args) < 0)
-   {
-      snprintf(msg, (size_t)length + 1, "%s",
-               "(error formatting message)"); /* GCOVR_EXCL_LINE */
-   }
-   va_end(args);
-
-   for (const ErrorMsgNode *node = state->msg_head; node; node = node->next)
-   {
-      if (!strcmp(node->message, msg))
+      if (!strcmp(queued->message, node->message))
       {
-         free(msg);
+         free(node);
          return;
       }
    }
 
-   hypredrv_ErrorMsgAdd("%s", msg);
-   free(msg);
+   ErrorMsgNodePush(state, node);
 }
 
 static void
