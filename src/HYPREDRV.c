@@ -124,6 +124,39 @@ DestroyActiveSolver(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
+ * Drop the active preconditioner before its configuration changes: destroy the
+ * object when one exists, otherwise discard cached runtime state (for example
+ * MGR component handles) left over from the previous configuration.
+ *-----------------------------------------------------------------------------*/
+
+static void
+DropActivePrecon(HYPREDRV_t hypredrv, const char *discard_reason)
+{
+   precon_t method = hypredrv->iargs->precon_method;
+
+   if (hypredrv->precon) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_PreconDestroy(method, &hypredrv->iargs->precon, &hypredrv->precon,
+                             hypredrv->stats,
+                             hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+   }
+   else
+   {
+#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
+      if (method == PRECON_MGR)
+      {
+         hypredrv_LogMGRCachedHandles(hypredrv, &hypredrv->iargs->precon.mgr,
+                                      discard_reason);
+      }
+#else
+      (void)discard_reason;
+#endif
+      hypredrv_PreconArgsDestroyRuntimeState(method, &hypredrv->iargs->precon);
+   }
+   hypredrv->precon_is_setup = false;
+}
+
+/*-----------------------------------------------------------------------------
  * Pass the reference solution to the active solver when the method supports it
  *-----------------------------------------------------------------------------*/
 
@@ -1037,9 +1070,8 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    }
    /* GCOVR_EXCL_BR_STOP */
 
-   int      current_variant = hypredrv->iargs->active_precon_variant;
-   int      variant_changed = (variant_idx != current_variant);
-   precon_t current_method  = hypredrv->iargs->precon_method;
+   int current_variant = hypredrv->iargs->active_precon_variant;
+   int variant_changed = (variant_idx != current_variant);
 
 #ifdef HYPRE_USING_GPU
    if (!hypredrv_ValidateDevicePreconditioner(
@@ -1058,8 +1090,6 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
    /* Only rebuild solver/preconditioner when switching variants. */
    if (variant_changed)
    {
-      bool had_precon = (hypredrv->precon != NULL);
-
       /* GCOVR_EXCL_BR_LINE */
       if (hypredrv->solver)
       {
@@ -1075,25 +1105,10 @@ HYPREDRV_InputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
          HYPREDRV_LOG_OBJECTF(2, hypredrv,
                               "switching preconditioner variant: destroying active "
                               "preconditioner");
-         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon, hypredrv->stats,
-                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
-         hypredrv->precon_is_setup = false;
       }
-
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
-      if (!had_precon && current_method == PRECON_MGR)
-      {
-         hypredrv_LogMGRCachedHandles(
-            hypredrv, &hypredrv->iargs->precon.mgr,
-            "discarding cached MGR handles before switching preconditioner variant");
-      }
-#endif
-      if (!had_precon)
-      {
-         hypredrv_PreconArgsDestroyRuntimeState(current_method, &hypredrv->iargs->precon);
-      }
-      hypredrv->precon_is_setup = false;
+      DropActivePrecon(
+         hypredrv,
+         "discarding cached MGR handles before switching preconditioner variant");
    }
    else
    {
@@ -1142,34 +1157,15 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
       created_input_args = true;
    }
 
-   int      variant_idx    = hypredrv->iargs->active_precon_variant;
-   precon_t current_method = hypredrv->iargs->precon_method;
+   int variant_idx = hypredrv->iargs->active_precon_variant;
    if (variant_idx < 0) /* GCOVR_EXCL_BR_LINE */
    {
       variant_idx                            = 0;
       hypredrv->iargs->active_precon_variant = 0;
    }
 
-   /* Destroy existing preconditioner object if any */
-   if (hypredrv->precon) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                             &hypredrv->precon, hypredrv->stats,
-                             hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
-      hypredrv->precon_is_setup = false;
-   }
-   else
-   {
-#if defined(HYPREDRV_ENABLE_EXPERIMENTAL)
-      if (current_method == PRECON_MGR)
-      {
-         hypredrv_LogMGRCachedHandles(
-            hypredrv, &hypredrv->iargs->precon.mgr,
-            "discarding cached MGR handles before applying preconditioner preset");
-      }
-#endif
-      hypredrv_PreconArgsDestroyRuntimeState(current_method, &hypredrv->iargs->precon);
-   }
+   DropActivePrecon(
+      hypredrv, "discarding cached MGR handles before applying preconditioner preset");
    if (hypredrv->iargs->num_precon_variants <= 0) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->iargs->num_precon_variants   = 1;
@@ -3316,32 +3312,30 @@ HYPREDRV_LinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
       fflush(stdout);
    }
 
-   /* pass preconditioner apply callback directly */
+   /* The preconditioned operator passes the preconditioner apply callback */
+   void                  *precon_ctx   = NULL;
+   hypredrv_PreconApplyFn precon_apply = NULL;
    if (hypredrv->iargs->ls.eigspec.preconditioned)
    {
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "eigenspectrum computation path: preconditioned operator");
       HYPREDRV_PreconCreate(hypredrv);
       HYPREDRV_PreconSetup(hypredrv);
-
-      uint32_t code =
-         hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec, (void *)hypredrv->mat_A,
-                                 (void *)hypredrv, PreconApplyWrapper, hypredrv->stats);
-      HYPREDRV_LOG_OBJECTF(
-         1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)", code);
-      return code;
+      precon_ctx   = (void *)hypredrv;
+      precon_apply = PreconApplyWrapper;
    }
    else
    {
       HYPREDRV_LOG_OBJECTF(2, hypredrv,
                            "eigenspectrum computation path: unpreconditioned operator");
-      uint32_t code =
-         hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec, (void *)hypredrv->mat_A,
-                                 NULL, NULL, hypredrv->stats);
-      HYPREDRV_LOG_OBJECTF(
-         1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)", code);
-      return code;
    }
+
+   uint32_t code =
+      hypredrv_EigSpecCompute(&hypredrv->iargs->ls.eigspec, (void *)hypredrv->mat_A,
+                              precon_ctx, precon_apply, hypredrv->stats);
+   HYPREDRV_LOG_OBJECTF(
+      1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)", code);
+   return code;
 #else
    static bool warned_eigspec_disabled = false;
 
