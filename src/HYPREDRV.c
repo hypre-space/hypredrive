@@ -2016,14 +2016,35 @@ HYPREDRV_LinearSystemSetInitialGuess(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    }
    else
    {
-      hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec,
-                                                           0);
-      LinearSystemDropOwnedInitialGuess(hypredrv);
-      hypredrv->vec_x0 = (HYPRE_IJVector)vec;
-      hypredrv->owns_vec_x0 =
-         (bool)(!hypredrv->lib_mode && hypredrv->vec_x0 != hypredrv->vec_x &&
-                hypredrv->vec_x0 != hypredrv->vec_b); /* GCOVR_EXCL_BR_LINE */
-      if (hypredrv->vec_x && !hypredrv->owns_vec_x)   /* GCOVR_EXCL_BR_LINE */
+      HYPRE_IJVector new_x0 = (HYPRE_IJVector)vec;
+      bool           owns_new_x0;
+
+      hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, new_x0, 0);
+      if (new_x0 == hypredrv->vec_x0)
+      {
+         /* Re-setting the current guess: keep its ownership. */
+         owns_new_x0 = hypredrv->owns_vec_x0;
+      }
+      else
+      {
+         LinearSystemDropOwnedInitialGuess(hypredrv);
+         if (new_x0 == hypredrv->vec_x && hypredrv->owns_vec_x)
+         {
+            /* Reusing the owned working solution (e.g. from GetSolution) as the
+             * guess: transfer ownership so it is not destroyed below. */
+            owns_new_x0          = true;
+            hypredrv->vec_x      = NULL;
+            hypredrv->owns_vec_x = false;
+         }
+         else
+         {
+            owns_new_x0 = (bool)(!hypredrv->lib_mode && new_x0 != hypredrv->vec_x &&
+                                 new_x0 != hypredrv->vec_b); /* GCOVR_EXCL_BR_LINE */
+         }
+      }
+      hypredrv->vec_x0      = new_x0;
+      hypredrv->owns_vec_x0 = owns_new_x0;
+      if (hypredrv->vec_x && !hypredrv->owns_vec_x) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv->vec_x = NULL;
       }
@@ -2065,13 +2086,17 @@ HYPREDRV_LinearSystemSetSolution(HYPREDRV_t hypredrv, HYPRE_Vector vec)
    {
       hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, (HYPRE_IJVector)vec,
                                                            0);
-      /* Destroy existing owned solution before replacing. */
-      if (hypredrv->vec_x && hypredrv->owns_vec_x) /* GCOVR_EXCL_BR_LINE */
+      /* Passing back the current handle (e.g. from GetSolution) is a no-op. */
+      if (hypredrv->vec_x != (HYPRE_IJVector)vec)
       {
-         HYPRE_IJVectorDestroy(hypredrv->vec_x);
+         /* Destroy existing owned solution before replacing. */
+         if (hypredrv->vec_x && hypredrv->owns_vec_x) /* GCOVR_EXCL_BR_LINE */
+         {
+            HYPRE_IJVectorDestroy(hypredrv->vec_x);
+         }
+         hypredrv->vec_x      = (HYPRE_IJVector)vec;
+         hypredrv->owns_vec_x = false; /* always borrow: caller manages lifetime */
       }
-      hypredrv->vec_x      = (HYPRE_IJVector)vec;
-      hypredrv->owns_vec_x = false; /* always borrow: caller manages lifetime */
    }
 
    return hypredrv_ErrorCodeGet();

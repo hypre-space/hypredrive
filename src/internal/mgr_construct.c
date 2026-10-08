@@ -1684,7 +1684,9 @@ cleanup:
    MGRCreatePlanDispose(&plan);
    if (precon)
    {
-      HYPRE_MGRDestroy(precon);
+      /* Component solvers installed before the failure are cached in args;
+       * destroy them together with the parent so no handle is freed twice. */
+      hypredrv_MGRDestroyWithCachedSolvers(args, precon, 0);
    }
    /* Soft hypre convergence leftovers should not poison later calls. */
    hypredrv_HypreConsumeErrors();

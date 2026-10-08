@@ -1411,9 +1411,7 @@ hypredrv_MGRCountCachedSolvers(const MGR_args *args, int *num_frelax, int *num_g
 
    if (args)
    {
-      int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                          ? (args->num_levels - 1)
-                          : 0;
+      int max_levels = hypredrv_MGRNumFineLevels(args);
       for (int i = 0; i < max_levels; i++)
       {
          frelax += (args->frelax[i] != NULL);
@@ -1446,9 +1444,7 @@ hypredrv_MGRCountKeepFlags(const MGR_args *args, int *num_frelax, int *num_grela
 
    if (args)
    {
-      int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                          ? (args->num_levels - 1)
-                          : 0;
+      int max_levels = hypredrv_MGRNumFineLevels(args);
       for (int i = 0; i < max_levels; i++)
       {
          frelax += (args->keep_frelax[i] != 0);
@@ -1692,9 +1688,7 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
 
    MGRDestroyCachedCoarsestSolver(args, &policy);
 
-   max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                   ? (args->num_levels - 1)
-                   : 0;
+   max_levels = hypredrv_MGRNumFineLevels(args);
    for (int i = 0; i < max_levels; i++)
    {
       MGRDestroyCachedFRelax(args, i, &policy);
@@ -1702,6 +1696,46 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
    }
 
    MGRResetCachedSolverKeepFlags(args);
+}
+
+/*-----------------------------------------------------------------------------
+ * Destroy an MGR handle together with the component solvers cached in args,
+ * in the order required by the linked hypre. Without setup, cached handles may
+ * be owned by hypredrive only and are reclaimed before the parent; after setup
+ * (or on hypre builds that always destroy installed level solvers) the parent
+ * goes first and only the cached-handle state is cleared afterwards.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_MGRDestroyWithCachedSolvers(MGR_args *args, HYPRE_Solver solver, int was_setup)
+{
+   int destroy_parent_first = was_setup;
+#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5) && \
+   !HYPRE_CHECK_MIN_VERSION(30100, 28)
+   /* These development builds destroy installed level solvers even when MGR
+    * setup has not run. Reclaiming cached handles first leaves dangling solver
+    * pointers in the parent, which then destroys them a second time. */
+   destroy_parent_first = 1;
+#endif
+
+   if (!destroy_parent_first)
+   {
+      hypredrv_MGRDestroyCachedSolvers(args, 0);
+      if (solver)
+      {
+         HYPRE_MGRDestroy(solver);
+      }
+   }
+   else
+   {
+      if (solver)
+      {
+         HYPRE_MGRDestroy(solver);
+      }
+      /* Parent MGR is gone; clear any preserved cached-handle state without
+       * destroying parent-owned internals a second time. */
+      hypredrv_MGRDestroyCachedSolvers(args, 1);
+   }
 }
 
 void
@@ -1712,9 +1746,7 @@ hypredrv_MGRForgetCachedSolvers(MGR_args *args)
       return;
    }
 
-   int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                       ? (int)args->num_levels - 1
-                       : 0;
+   int max_levels = hypredrv_MGRNumFineLevels(args);
    for (int i = 0; i < max_levels; i++)
    {
       if (args->level[i].f_relaxation.type == 2)

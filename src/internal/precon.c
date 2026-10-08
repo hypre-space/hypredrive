@@ -377,7 +377,7 @@ MGRHasConfiguredComponentReuse(const MGR_args *args)
       return 1;
    }
 
-   int max_levels = (args->num_levels > 0) ? (args->num_levels - 1) : 0;
+   int max_levels = hypredrv_MGRNumFineLevels(args);
    for (int i = 0; i < max_levels; i++)
    {
       const MGRlvl_args *level_args = &args->level[i];
@@ -628,7 +628,7 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
       return 0;
    }
 
-   int fine_levels = args->num_levels > 0 ? args->num_levels - 1 : 0;
+   int fine_levels = hypredrv_MGRNumFineLevels(args);
    for (int level = 0; level < fine_levels; level++)
    {
       const MGRfrlx_args *frelax = &args->level[level].f_relaxation;
@@ -968,31 +968,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_s
       return;
    }
 
-   int destroy_parent_first = precon_was_setup;
-#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5) && \
-   !HYPRE_CHECK_MIN_VERSION(30100, 28)
-   /* These development builds destroy installed level solvers even when MGR
-    * setup has not run. Reclaiming cached handles first leaves dangling solver
-    * pointers in the parent, which then destroys them a second time. */
-   destroy_parent_first = 1;
-#endif
-
-   if (!destroy_parent_first)
-   {
-      /* Setup was never called, so refreshed handles may still be owned by
-       * hypredrive only. Reclaim them before destroying the outer MGR object. */
-      hypredrv_MGRDestroyCachedSolvers(mgr, 0);
-      HYPRE_MGRDestroy(*solver_ptr);
-      *solver_ptr = NULL;
-   }
-   else
-   {
-      HYPRE_MGRDestroy(*solver_ptr);
-      *solver_ptr = NULL;
-      /* Parent MGR is gone; clear any preserved cached-handle state without
-       * destroying parent-owned internals a second time. */
-      hypredrv_MGRDestroyCachedSolvers(mgr, 1);
-   }
+   hypredrv_MGRDestroyWithCachedSolvers(mgr, *solver_ptr, precon_was_setup);
+   *solver_ptr = NULL;
 
    if (mgr->point_marker_data)
    {

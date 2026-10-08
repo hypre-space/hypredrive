@@ -1435,9 +1435,7 @@ MGRHasMatchedSchurGMRES1AtDepth(const MGR_args *args, int depth)
       return 0;
    }
 
-   HYPRE_Int fine_levels = args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS
-                              ? args->num_levels - 1
-                              : 0;
+   HYPRE_Int fine_levels = hypredrv_MGRNumFineLevels(args);
    for (HYPRE_Int level = 0; level < fine_levels; level++)
    {
       if (args->level[level].matched_f_backsolve == 2)
@@ -1564,11 +1562,13 @@ MGRMarkLevelComponentNodes(MGR_args *args, YAMLnode *grandchild, int lvl)
    }
 }
 
-static void
+/* Parses the `level` mapping and returns the number of fine levels defined. */
+static HYPRE_Int
 MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
 {
-   uint32_t seen_levels = 0;
-   int      max_lvl     = -1;
+   HYPRE_Int num_fine    = 0;
+   uint32_t  seen_levels = 0;
+   int       max_lvl     = -1;
    YAML_NODE_SET_VALID(child);
    YAML_NODE_ITERATE(child, grandchild)
    {
@@ -1600,7 +1600,7 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
          grandchild->valid = YAML_NODE_UNEXPECTED_VAL;
          continue;
       }
-      /* Reject duplicate level indices, which would double-count num_levels. */
+      /* Reject duplicate level indices, which would double-count levels. */
       if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 && (seen_levels & (1u << (unsigned)lvl)))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
@@ -1618,7 +1618,7 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
          }
          MGRMarkLevelComponentNodes(args, grandchild, lvl);
 
-         args->num_levels++;
+         num_fine++;
          YAML_NODE_SET_VALID(grandchild);
       }
       else
@@ -1643,34 +1643,53 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
                               max_lvl);
       }
    }
+
+   return num_fine;
 }
 
 void
 hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
-   MGR_args *args = (MGR_args *)vargs;
+   MGR_args *args            = (MGR_args *)vargs;
+   HYPRE_Int derived_levels  = 0; /* from `level` and `coarsest_level` entries */
+   int       explicit_levels = 0; /* `num_levels` key present */
    YAML_NODE_ITERATE(parent, child)
    {
       if (!strcmp(child->key, "level"))
       {
-         MGRSetLevelArgsFromYAML(args, child);
+         derived_levels += MGRSetLevelArgsFromYAML(args, child);
       }
       else if (!strcmp(child->key, "coarsest_level"))
       {
-         args->num_levels++;
+         derived_levels++;
          YAML_NODE_SET_VALID(child);
          hypredrv_MGRclsSetArgsFromYAML(&args->coarsest_level, child);
       }
       else
       {
+         explicit_levels |= !strcmp(child->key, "num_levels");
          YAML_NODE_VALIDATE(child, hypredrv_MGRGetValidKeys, hypredrv_MGRGetValidValues);
          YAML_NODE_SET_FIELD(child, args, hypredrv_MGRSetFieldByName);
       }
    }
+
+   /* Level entries define the hierarchy; an explicit num_levels may only
+    * restate that count, regardless of where it appears in the mapping. */
+   if (derived_levels > 0)
+   {
+      if (explicit_levels && args->num_levels != derived_levels)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("MGR num_levels (%d) conflicts with the %d levels defined "
+                              "by level/coarsest_level; omit num_levels",
+                              (int)args->num_levels, (int)derived_levels);
+      }
+      args->num_levels = derived_levels;
+   }
    if (args->num_levels < 0 || args->num_levels > MAX_MGR_LEVELS)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("MGR num_levels must be between 1 and %d (got %d)",
+      hypredrv_ErrorMsgAdd("MGR num_levels must be between 0 and %d (got %d)",
                            MAX_MGR_LEVELS, (int)args->num_levels);
    }
 }

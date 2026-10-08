@@ -4721,6 +4721,41 @@ test_MGRSetArgsFromYAML_rejects_wrapped_level_index(void)
    hypredrv_YAMLnodeDestroy(root);
 }
 
+/* num_levels derives from level/coarsest_level entries regardless of key
+ * order; an explicit num_levels may only restate that count. */
+static void
+test_MGRSetArgsFromYAML_num_levels_independent_of_key_order(void)
+{
+   for (int before = 0; before < 2; before++)
+   {
+      for (int consistent = 0; consistent < 2; consistent++)
+      {
+         MGR_args mgr;
+         hypredrv_MGRSetDefaultArgs(&mgr);
+         YAMLnode   *root    = hypredrv_YAMLnodeCreate("mgr", "", 0);
+         const char *nlevels = consistent ? "2" : "3";
+         if (before)
+         {
+            add_child(root, "num_levels", nlevels, 1);
+         }
+         YAMLnode *levels = add_child(root, "level", "", 1);
+         add_child(levels, "0", "", 2);
+         add_child(root, "coarsest_level", "amg", 1);
+         if (!before)
+         {
+            add_child(root, "num_levels", nlevels, 1);
+         }
+
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_MGRSetArgsFromYAML(&mgr, root);
+         ASSERT_EQ(hypredrv_ErrorCodeActive() ? 1 : 0, consistent ? 0 : 1);
+         ASSERT_EQ(mgr.num_levels, 2);
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_YAMLnodeDestroy(root);
+      }
+   }
+}
+
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
 static void
 test_MGRCreate_replaces_cached_coarse_solver_type(void)
@@ -7654,6 +7689,7 @@ main(int argc, char **argv)
    RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
    RUN_TEST(test_MGRCreate_rejects_out_of_range_level_count);
    RUN_TEST(test_MGRSetArgsFromYAML_rejects_wrapped_level_index);
+   RUN_TEST(test_MGRSetArgsFromYAML_num_levels_independent_of_key_order);
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
    RUN_TEST(test_MGRCreate_replaces_cached_coarse_solver_type);
 #endif
