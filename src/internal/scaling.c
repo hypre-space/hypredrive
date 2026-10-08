@@ -262,6 +262,60 @@ ScalingComputeRHSL2(MPI_Comm comm, Scaling_context *ctx, HYPRE_IJVector vec_b)
    /* GCOVR_EXCL_BR_STOP */
 }
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+/* Shared dofmap-scaling setup: validates the dofmap against the local rows of
+ * mat_A and computes the global tag count (max tag + 1, collective over comm).
+ * `label` prefixes the missing-dofmap message. Returns zero with the error
+ * state set when the request cannot be honoured. */
+static int
+ScalingDofmapResolve(MPI_Comm comm, const char *label, HYPRE_IJMatrix mat_A,
+                     const IntArray *dofmap, HYPRE_ParCSRMatrix *par_A_out,
+                     HYPRE_BigInt *ilower_out, HYPRE_BigInt *iupper_out,
+                     HYPRE_Int *num_local_rows_out, HYPRE_Int *num_tags_out)
+{
+   void        *obj_A     = NULL;
+   HYPRE_BigInt row_start = 0, row_end = 0, col_start = 0, col_end = 0;
+
+   if (!dofmap || !dofmap->data)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
+      hypredrv_ErrorMsgAdd("%s scaling requires a dofmap to be set", label);
+      return 0;
+   }
+
+   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
+   *par_A_out = (HYPRE_ParCSRMatrix)obj_A;
+
+   /* Get local range from ParCSRMatrix directly instead of IJMatrix */
+   hypre_ParCSRMatrixGetLocalRange((hypre_ParCSRMatrix *)*par_A_out, &row_start, &row_end,
+                                   &col_start, &col_end);
+   *ilower_out         = row_start;
+   *iupper_out         = row_end;
+   *num_local_rows_out = (HYPRE_Int)(row_end - row_start + 1);
+
+   if (*num_local_rows_out < 0 || dofmap->size != (size_t)*num_local_rows_out)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("dofmap size (%zu) does not match local matrix rows (%d)",
+                           dofmap->size, *num_local_rows_out);
+      return 0;
+   }
+
+   HYPRE_Int max_tag = -1, global_max_tag = 0;
+   for (HYPRE_Int i = 0; i < *num_local_rows_out; i++)
+   {
+      if (dofmap->data[i] > max_tag)
+      {
+         max_tag = dofmap->data[i];
+      }
+   }
+   MPI_Allreduce(&max_tag, &global_max_tag, 1, MPI_INT, MPI_MAX, comm);
+   *num_tags_out = global_max_tag + 1;
+
+   return 1;
+}
+#endif
+
 /*-----------------------------------------------------------------------------
  * hypredrv_ScalingCompute (dofmap_mag strategy)
  *-----------------------------------------------------------------------------*/
@@ -277,64 +331,29 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 #if defined(HYPRE_USING_GPU)
    HYPRE_MemoryLocation orig_mat_memloc = HYPRE_MEMORY_HOST;
 #endif
-   void              *obj_A  = NULL;
    HYPRE_ParCSRMatrix par_A  = NULL;
    HYPRE_BigInt       ilower = 0, iupper = 0;
    HYPRE_Int          num_local_rows = 0;
    HYPRE_Int         *tags           = NULL;
    HYPRE_Int          num_tags       = 0;
-   HYPRE_Int          max_tag        = -1;
-   int                myid           = 0;
 
-   MPI_Comm_rank(comm, &myid);
-
-   if (!dofmap || !dofmap->data)
+   if (!ScalingDofmapResolve(comm, "dofmap", mat_A, dofmap, &par_A, &ilower, &iupper,
+                             &num_local_rows, &num_tags))
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
-      hypredrv_ErrorMsgAdd("dofmap scaling requires a dofmap to be set");
       return;
    }
-
-   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
-   par_A = (HYPRE_ParCSRMatrix)obj_A;
 #if defined(HYPRE_USING_GPU)
    /* GCOVR_EXCL_BR_START */
    orig_mat_memloc = hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
    /* GCOVR_EXCL_BR_STOP */
 #endif
 
-   /* Get local range from ParCSRMatrix directly instead of IJMatrix to avoid potential
-    * issues */
-   HYPRE_BigInt row_start = 0, row_end = 0, col_start = 0, col_end = 0;
-   hypre_ParCSRMatrixGetLocalRange((hypre_ParCSRMatrix *)par_A, &row_start, &row_end,
-                                   &col_start, &col_end);
-   ilower         = row_start;
-   iupper         = row_end;
-   num_local_rows = (HYPRE_Int)(iupper - ilower + 1);
-
-   if (num_local_rows < 0 || dofmap->size != (size_t)num_local_rows)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap size (%zu) does not match local matrix rows (%d)",
-                           dofmap->size, num_local_rows);
-      return;
-   }
-
-   /* Allocate and fill tags array from dofmap */
+   /* Tags array from dofmap (HYPRE_Int copy for hypre) */
    tags = (HYPRE_Int *)malloc((size_t)num_local_rows * sizeof(HYPRE_Int));
    for (HYPRE_Int i = 0; i < num_local_rows; i++)
    {
       tags[i] = (HYPRE_Int)dofmap->data[i];
-      if (tags[i] > max_tag)
-      {
-         max_tag = tags[i];
-      }
    }
-
-   /* Compute global max tag */
-   HYPRE_Int global_max_tag = 0;
-   MPI_Allreduce(&max_tag, &global_max_tag, 1, MPI_INT, MPI_MAX, comm);
-   num_tags = global_max_tag + 1;
 
    /* Destroy previous scaling vector if it exists (from previous system) */
    ScalingContextFreeVector(ctx);
@@ -393,18 +412,11 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
                            HYPRE_Int *num_local_rows_out)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A  = NULL;
-   HYPRE_ParCSRMatrix par_A  = NULL;
-   HYPRE_BigInt       ilower = 0, iupper = 0;
-   HYPRE_Int          num_local_rows = 0;
-   int                myid           = 0;
+   HYPRE_Int num_tags = 0;
 
-   MPI_Comm_rank(comm, &myid);
-
-   if (!dofmap || !dofmap->data)
+   if (!ScalingDofmapResolve(comm, "custom dofmap", mat_A, dofmap, par_A_out, ilower_out,
+                             iupper_out, num_local_rows_out, &num_tags))
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
-      hypredrv_ErrorMsgAdd("custom dofmap scaling requires a dofmap to be set");
       return 0;
    }
 
@@ -427,40 +439,6 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
       }
    }
 
-   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
-   par_A = (HYPRE_ParCSRMatrix)obj_A;
-
-   /* Get local range from ParCSRMatrix directly */
-   HYPRE_BigInt row_start = 0, row_end = 0, col_start = 0, col_end = 0;
-   hypre_ParCSRMatrixGetLocalRange((hypre_ParCSRMatrix *)par_A, &row_start, &row_end,
-                                   &col_start, &col_end);
-   ilower         = row_start;
-   iupper         = row_end;
-   num_local_rows = (HYPRE_Int)(iupper - ilower + 1);
-
-   if (num_local_rows < 0 || dofmap->size != (size_t)num_local_rows)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap size (%zu) does not match local matrix rows (%d)",
-                           dofmap->size, num_local_rows);
-      return 0;
-   }
-
-   /* Find the maximum tag value in the dofmap */
-   HYPRE_Int max_tag = -1;
-   for (HYPRE_Int i = 0; i < num_local_rows; i++)
-   {
-      if (dofmap->data[i] > max_tag)
-      {
-         max_tag = dofmap->data[i];
-      }
-   }
-
-   /* Compute global max tag */
-   HYPRE_Int global_max_tag = 0;
-   MPI_Allreduce(&max_tag, &global_max_tag, 1, MPI_INT, MPI_MAX, comm);
-   HYPRE_Int num_tags = global_max_tag + 1;
-
    /* Verify that the number of custom values matches the number of unique tags */
    if ((size_t)num_tags != args->custom_values->size)
    {
@@ -471,11 +449,6 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
          args->custom_values->size, num_tags);
       return 0;
    }
-
-   *par_A_out          = par_A;
-   *ilower_out         = ilower;
-   *iupper_out         = iupper;
-   *num_local_rows_out = num_local_rows;
 
    return 1;
 #else
