@@ -1612,6 +1612,74 @@ LSSeqStageMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_par
    return 1;
 }
 
+/* Prepares the rank-local staging state for reading system ls_id: validates the
+ * id, collects this rank's part ids and the stored-to-runtime part order, and
+ * opens the sequence file. Purely local (no collectives); returns 0 on any
+ * local failure. */
+static int
+LSSeqPrepareStaging(MPI_Comm comm, const LSSeqData *seq, int ls_id, const char *filename,
+                    int **partids, int *nparts, uint32_t **part_order, FILE **fp)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (ls_id < 0 || ls_id >= (int)seq->header.num_systems) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid sequence linear-system id %d (max: %u)", ls_id,
+                           seq->header.num_systems);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqLocalPartIDs(comm, seq->header.num_parts, partids, nparts))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      return 0;
+   }
+   if (!LSSeqBuildPartOrder(seq, part_order)) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+
+   *fp = fopen(filename, "rb");
+   if (!*fp) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
+      return 0;
+   }
+
+   return 1;
+}
+
+/* Stages one part's RHS slice into the temporary files that
+ * hypredrv_IJVectorReadMultipartBinary() consumes. Returns zero on failure. */
+static int
+LSSeqStageRHSPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
+                  const uint32_t *part_order, const char *prefix, char *part_filename,
+                  size_t part_filename_size)
+{
+   uint32_t                   part_id = part_order[tmp_part_id];
+   const LSSeqPartMeta       *part    = &seq->parts[part_id];
+   const LSSeqSystemPartMeta *sys =
+      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
+   void  *vals      = NULL;
+   size_t vals_size = 0;
+   int    ok        = 0;
+
+   /* GCOVR_EXCL_BR_START */
+   ok = LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
+                               seq->header.offset_blob_data, seq->part_blob_table,
+                               part_id, 1, sys->rhs_blob_offset, sys->rhs_blob_size,
+                               &vals, &vals_size) &&
+        LSSeqFormatPartFilename(part_filename, part_filename_size, prefix, tmp_part_id,
+                                ".bin") &&
+        LSSeqWriteRHSPartFile(part_filename, part, vals);
+   /* GCOVR_EXCL_BR_STOP */
+   free(vals);
+
+   return ok;
+}
+
 int
 hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                          HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
@@ -1634,58 +1702,18 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    }
    *matrix_ptr = NULL;
 
-   if (!LSSeqDataLoad(filename, &seq))
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
    /* GCOVR_EXCL_BR_START */
-   if (ls_id < 0 || ls_id >= (int)seq.header.num_systems) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid sequence linear-system id %d (max: %u)", ls_id,
-                           seq.header.num_systems);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqLocalPartIDs(comm, seq.header.num_parts, &partids, &nparts))
+   local_ok = LSSeqDataLoad(filename, &seq) &&
+              LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
+                                  &part_order, &fp) &&
+              LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix));
    /* GCOVR_EXCL_BR_STOP */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-   if (!LSSeqBuildPartOrder(&seq, &part_order)) /* GCOVR_EXCL_BR_LINE */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   fp = fopen(filename, "rb");
-   if (!fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix)))
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
    for (int i = 0; i < nparts && local_ok; i++)
    {
       local_ok = LSSeqStageMatrixPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
                                       prefix, part_filename, sizeof(part_filename));
    }
 
-stage_sync:
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq matrix local staging failed"))
    {
@@ -1746,93 +1774,18 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    }
    *rhs_ptr = NULL;
 
-   if (!LSSeqDataLoad(filename, &seq))
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
    /* GCOVR_EXCL_BR_START */
-   if (ls_id < 0 || ls_id >= (int)seq.header.num_systems) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid sequence linear-system id %d (max: %u)", ls_id,
-                           seq.header.num_systems);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqLocalPartIDs(comm, seq.header.num_parts, &partids, &nparts))
+   local_ok = LSSeqDataLoad(filename, &seq) &&
+              LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
+                                  &part_order, &fp) &&
+              LSSeqTempPrefixBuild(comm, ls_id, "b", prefix, sizeof(prefix));
    /* GCOVR_EXCL_BR_STOP */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-   if (!LSSeqBuildPartOrder(&seq, &part_order)) /* GCOVR_EXCL_BR_LINE */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   fp = fopen(filename, "rb");
-   if (!fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqTempPrefixBuild(comm, ls_id, "b", prefix, sizeof(prefix)))
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
    for (int i = 0; i < nparts && local_ok; i++)
    {
-      uint32_t                   tmp_part_id = (uint32_t)partids[i];
-      uint32_t                   part_id     = part_order[tmp_part_id];
-      const LSSeqPartMeta       *part        = &seq.parts[part_id];
-      const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[((size_t)ls_id * (size_t)seq.header.num_parts) + (size_t)part_id];
-      void  *vals      = NULL;
-      size_t vals_size = 0;
-
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq.header.codec,
-                                  /* GCOVR_EXCL_BR_STOP */
-                                  seq.header.offset_blob_data, seq.part_blob_table,
-                                  part_id, 1, sys->rhs_blob_offset, sys->rhs_blob_size,
-                                  &vals, &vals_size))
-      {
-         free(vals);
-         local_ok = 0;
-         break;
-      }
-
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqFormatPartFilename(part_filename, sizeof(part_filename), prefix,
-                                   /* GCOVR_EXCL_BR_STOP */
-                                   tmp_part_id, ".bin"))
-      {
-         free(vals);
-         local_ok = 0;
-         break;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqWriteRHSPartFile(part_filename, part, vals)) /* GCOVR_EXCL_BR_STOP */
-      {
-         free(vals);
-         local_ok = 0;
-         break;
-      }
-      free(vals);
+      local_ok = LSSeqStageRHSPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
+                                   prefix, part_filename, sizeof(part_filename));
    }
 
-stage_sync:
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq RHS local staging failed"))
    {
@@ -1942,48 +1895,6 @@ LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_par
    return 1;
 }
 
-/* Prepares the per-rank staging state for a dofmap read: this rank's part ids,
- * the stored-to-runtime part order, the open sequence file and the shared
- * temporary prefix. Returns 0 on any local failure. */
-static int
-LSSeqPrepareDofmapStaging(MPI_Comm comm, const LSSeqData *seq, int ls_id,
-                          const char *filename, int **partids, int *nparts,
-                          uint32_t **part_order, FILE **fp, char *prefix,
-                          size_t prefix_size)
-{
-   int myid = 0;
-
-   if (!LSSeqLocalPartIDs(comm, seq->header.num_parts, partids, nparts))
-   /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-   if (!LSSeqBuildPartOrder(seq, part_order)) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 0;
-   }
-
-   *fp = fopen(filename, "rb");
-   if (!*fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open sequence file '%s'", filename);
-
-      return 0;
-   }
-
-   prefix[0] = '\0';
-   MPI_Comm_rank(comm, &myid);
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, prefix_size))
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0;
-   }
-
-   return 1;
-}
-
 int
 hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                          IntArray **dofmap_ptr)
@@ -2012,10 +1923,20 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    *dofmap_ptr = NULL;
 
    /* GCOVR_EXCL_BR_START */
-   if (!LSSeqDataLoad(filename, &seq)) /* GCOVR_EXCL_BR_STOP */
+   local_ok = LSSeqDataLoad(filename, &seq);
+   if (local_ok && (seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP)) /* GCOVR_EXCL_BR_STOP */
    {
-      local_ok = 0;
-      goto stage_sync;
+      local_ok = LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
+                                     &part_order, &fp);
+   }
+
+   /* Agree on the local status before the collective shared-prefix build (and
+    * before the no-dofmap early return), so no rank is left waiting in a
+    * collective that a failed rank skipped. */
+   if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
+                                  "LSSeq dofmap local staging failed"))
+   {
+      goto cleanup;
    }
 
    if (!(seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP))
@@ -2026,29 +1947,14 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    }
 
    /* GCOVR_EXCL_BR_START */
-   if (ls_id < 0 || ls_id >= (int)seq.header.num_systems) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid sequence linear-system id %d (max: %u)", ls_id,
-                           seq.header.num_systems);
-      local_ok = 0;
-      goto stage_sync;
-   }
-
-   if (!LSSeqPrepareDofmapStaging(comm, &seq, ls_id, filename, &partids, &nparts,
-                                  &part_order, &fp, prefix, sizeof(prefix)))
-   {
-      local_ok = 0;
-      goto stage_sync;
-   }
-
+   local_ok = LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, sizeof(prefix));
+   /* GCOVR_EXCL_BR_STOP */
    for (int i = 0; i < nparts && local_ok; i++)
    {
       local_ok = LSSeqStageDofmapPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
                                       prefix, part_filename, sizeof(part_filename));
    }
 
-stage_sync:
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq dofmap local staging failed"))
    {
