@@ -103,6 +103,8 @@ void hypredrv_HypreConsumeErrors(void);
  * Harder hypre failures are left intact. Prefer hypredrv_HypreConsumeErrors() at
  * public API boundaries. */
 void hypredrv_HypreClearConvergenceErrors(void);
+int  hypredrv_ReadCoefficients(FILE *fp, uint64_t vsize, uint64_t count,
+                               HYPRE_Complex *out, const char *kind, const char *filename);
 
 static inline int
 hypredrv_FloatIsFinite(float value)

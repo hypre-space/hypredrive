@@ -688,3 +688,81 @@ hypredrv_PathIsUnderRoot(const char *path, const char *root)
 #endif
            ) != 0;
 }
+
+/*-----------------------------------------------------------------------------
+ * Read `count` float or double coefficients (on-disk width `vsize`) from `fp`
+ * into `out`, widening to HYPRE_Complex and rejecting non-finite entries.
+ * When the on-disk width already matches HYPRE_Complex the data is read in
+ * place, avoiding a staging buffer. `kind` ("matrix"/"vector") and `filename`
+ * only label error messages. Returns 1 on success, 0 with the error state set.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_ReadCoefficients(FILE *fp, uint64_t vsize, uint64_t count, HYPRE_Complex *out,
+                          const char *kind, const char *filename)
+{
+   void *buffer   = NULL;
+   int   in_place = 0;
+   int   status   = 1;
+
+   /* GCOVR_EXCL_BR_START */
+   if (vsize != sizeof(float) && vsize != sizeof(double)) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s",
+                           (long long)vsize, filename);
+      return 0;
+   }
+
+   /* GCOVR_EXCL_BR_START */
+   if (count == 0 || !out) /* GCOVR_EXCL_BR_STOP */
+   {
+      return 1;
+   }
+
+#if !defined(HYPRE_COMPLEX)
+   in_place = (vsize == sizeof(HYPRE_Complex));
+#endif
+   buffer = in_place ? (void *)out : malloc((size_t)count * (size_t)vsize);
+   /* GCOVR_EXCL_BR_START */
+   if (!buffer || fread(buffer, (size_t)vsize, (size_t)count, fp) != count)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
+      if (!in_place)
+      {
+         free(buffer);
+      }
+      return 0;
+   }
+
+   for (size_t i = 0; i < (size_t)count; i++)
+   {
+      /* GCOVR_EXCL_BR_START */
+      int finite = (vsize == sizeof(float))
+                      ? hypredrv_FloatIsFinite(((const float *)buffer)[i])
+                      : hypredrv_DoubleIsFinite(((const double *)buffer)[i]);
+      /* GCOVR_EXCL_BR_STOP */
+      if (!finite)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Detected non-finite %s coefficient while reading %s", kind,
+                              filename ? filename : "(unknown)");
+         status = 0;
+         break;
+      }
+      if (!in_place)
+      {
+         out[i] = (vsize == sizeof(float)) ? (HYPRE_Complex)((const float *)buffer)[i]
+                                           : (HYPRE_Complex)((const double *)buffer)[i];
+      }
+   }
+
+   if (!in_place)
+   {
+      free(buffer);
+   }
+
+   return status;
+}

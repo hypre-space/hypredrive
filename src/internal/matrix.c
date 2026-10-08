@@ -141,15 +141,6 @@ IJMatrixValidateEntry(HYPRE_BigInt row, HYPRE_BigInt col, uint64_t nrows, uint64
    return 1;
 }
 
-static int
-IJMatrixRejectNonfiniteCoefficient(const char *filename)
-{
-   hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-   hypredrv_ErrorMsgAdd("Detected non-finite matrix coefficient while reading %s",
-                        filename ? filename : "(unknown)");
-   return 0;
-}
-
 /* Data-type widths accepted for on-disk row/column index arrays. */
 static int
 IJMatrixIndexDtypeIsValid(uint64_t isize)
@@ -310,72 +301,10 @@ IJMatrixReadIndexPair(FILE *fp, const uint64_t *header, size_t nnzs_max,
 /* Reads the coefficient array of one part into `h_vals`, widening from the
  * on-disk float/double representation and rejecting non-finite entries. */
 static int
-IJMatrixReadCoefficients(FILE *fp, const uint64_t *header, size_t nnzs_max,
-                         HYPRE_Complex *h_vals, const char *filename)
+IJMatrixReadCoefficients(FILE *fp, const uint64_t *header, HYPRE_Complex *h_vals,
+                         const char *filename)
 {
-   const uint64_t vsize  = header[2];
-   const uint64_t nnz    = header[6];
-   void          *buffer = NULL;
-   int            status = 1;
-
-   /* GCOVR_EXCL_BR_START */
-   if (vsize != sizeof(float) && vsize != sizeof(double)) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s",
-                           (long long)vsize, filename);
-      return 0;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (nnz == 0 || !h_vals) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 1;
-   }
-
-   buffer = malloc((size_t)nnzs_max * (size_t)vsize);
-   /* GCOVR_EXCL_BR_START */
-   if (!buffer || fread(buffer, (size_t)vsize, nnz, fp) != nnz) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
-      free(buffer);
-      return 0;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (vsize == sizeof(float)) /* GCOVR_EXCL_BR_STOP */
-   {
-      const float *src = (const float *)buffer;
-
-      for (size_t i = 0; i < nnz; i++)
-      {
-         if (!hypredrv_FloatIsFinite(src[i]))
-         {
-            status = IJMatrixRejectNonfiniteCoefficient(filename);
-            break;
-         }
-         h_vals[i] = (HYPRE_Complex)src[i];
-      }
-   }
-   else
-   {
-      const double *src = (const double *)buffer;
-
-      for (size_t i = 0; i < nnz; i++)
-      {
-         if (!hypredrv_DoubleIsFinite(src[i]))
-         {
-            status = IJMatrixRejectNonfiniteCoefficient(filename);
-            break;
-         }
-         h_vals[i] = (HYPRE_Complex)src[i];
-      }
-   }
-
-   free(buffer);
-
-   return status;
+   return hypredrv_ReadCoefficients(fp, header[2], header[6], h_vals, "matrix", filename);
 }
 
 /* First pass: reads every part header to accumulate this rank's local row count
@@ -667,7 +596,7 @@ IJMatrixSetPartValues(HYPRE_IJMatrix mat, const char *prefixname, uint32_t parti
    }
 
    /* Read matrix coefficients */
-   if (!IJMatrixReadCoefficients(fp, header, nnzs_max, buf->h_vals, filename))
+   if (!IJMatrixReadCoefficients(fp, header, buf->h_vals, filename))
    {
       fclose(fp);
       return 0;

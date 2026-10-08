@@ -79,15 +79,6 @@ IJVectorPartRowsMatchesPrepass(uint64_t nrows_max, uint64_t part_rows,
    return 1;
 }
 
-static int
-IJVectorRejectNonfiniteCoefficient(const char *filename)
-{
-   hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-   hypredrv_ErrorMsgAdd("Detected non-finite vector coefficient while reading %s",
-                        filename ? filename : "(unknown)");
-   return 0;
-}
-
 /* Host staging buffers for one part, plus the arrays handed to hypre (identical
  * to the host buffers unless the vector is device-resident). */
 typedef struct
@@ -214,68 +205,10 @@ IJVectorBuildPartIds(uint64_t first_part, uint32_t nparts, uint32_t **partids_ou
 /* Reads one part's coefficients into `h_vals`, widening from the on-disk
  * float/double representation and rejecting non-finite entries. */
 static int
-IJVectorReadCoefficients(FILE *fp, const uint64_t *header, uint64_t nrows_max,
-                         HYPRE_Complex *h_vals, const char *filename)
+IJVectorReadCoefficients(FILE *fp, const uint64_t *header, HYPRE_Complex *h_vals,
+                         const char *filename)
 {
-   const uint64_t vsize  = header[1];
-   const uint64_t nrows  = header[5];
-   void          *buffer = NULL;
-   int            status = 1;
-
-   if (vsize != sizeof(float) && vsize != sizeof(double))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid coefficient data type size %lld at %s",
-                           (long long)vsize, filename);
-      return 0;
-   }
-
-   if (nrows == 0 || !h_vals)
-   {
-      return 1;
-   }
-
-   buffer = malloc((size_t)nrows_max * (size_t)vsize);
-   if (!buffer || fread(buffer, (size_t)vsize, nrows, fp) != nrows)
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Could not read coeficients from %s", filename);
-      free(buffer);
-      return 0;
-   }
-
-   if (vsize == sizeof(float))
-   {
-      const float *src = (const float *)buffer;
-
-      for (size_t i = 0; i < nrows; i++)
-      {
-         if (!hypredrv_FloatIsFinite(src[i]))
-         {
-            status = IJVectorRejectNonfiniteCoefficient(filename);
-            break;
-         }
-         h_vals[i] = (HYPRE_Complex)src[i];
-      }
-   }
-   else
-   {
-      const double *src = (const double *)buffer;
-
-      for (size_t i = 0; i < nrows; i++)
-      {
-         if (!hypredrv_DoubleIsFinite(src[i]))
-         {
-            status = IJVectorRejectNonfiniteCoefficient(filename);
-            break;
-         }
-         h_vals[i] = (HYPRE_Complex)src[i];
-      }
-   }
-
-   free(buffer);
-
-   return status;
+   return hypredrv_ReadCoefficients(fp, header[1], header[5], h_vals, "vector", filename);
 }
 
 /* Copies one part's staged entries to device memory when the vector lives there. */
@@ -319,7 +252,7 @@ IJVectorSetPartValues(HYPRE_IJVector vec, const char *prefixname, uint32_t parti
    }
 
    /* Read vector coefficients */
-   if (!IJVectorReadCoefficients(fp, header, nrows_max, buf->h_vals, filename))
+   if (!IJVectorReadCoefficients(fp, header, buf->h_vals, filename))
    {
       fclose(fp);
       return 0;
