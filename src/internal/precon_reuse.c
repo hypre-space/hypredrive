@@ -1663,6 +1663,20 @@ hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
    return should_rebuild;
 }
 
+/* Reports an invalid value for `what` (e.g. "preconditioner.reuse transform"),
+ * marks `node` invalid when given, and returns 0 for the caller to propagate. */
+static int
+PreconReuseRejectValue(YAMLnode *node, const char *what, const char *value)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd("Invalid %s: '%s'", what, value ? value : "");
+   if (node)
+   {
+      YAML_NODE_SET_INVALID_VAL(node);
+   }
+   return 0;
+}
+
 static int
 PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
 {
@@ -1672,12 +1686,8 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
       /* GCOVR_EXCL_BR_LINE */                           /* GCOVR_EXCL_BR_LINE */
       if (!PreconReuseParseMeanKind(value, &mean->kind)) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Invalid preconditioner.reuse.adaptive.score mean: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                       */
-            value ? value : "");
-         return 0;
+         return PreconReuseRejectValue(NULL, "preconditioner.reuse.adaptive.score mean",
+                                       value);
       }
       YAML_NODE_SET_VALID(node);
       return 1;
@@ -1691,13 +1701,8 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
       {                                                     /* GCOVR_EXCL_BR_LINE */
          if (!PreconReuseParseMeanKind(value, &mean->kind)) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse.adaptive.score mean: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                          */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(
+               child, "preconditioner.reuse.adaptive.score mean", value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1705,13 +1710,8 @@ PreconReuseParseMeanNode(YAMLnode *node, PreconReuseMean_args *mean)
       {                                                  /* GCOVR_EXCL_BR_LINE */
          if (!hypredrv_ParseDouble(value, &mean->power)) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */
-                                 "Invalid preconditioner.reuse.adaptive.score power: "
-                                 "'%s'",
-                                 value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(
+               child, "preconditioner.reuse.adaptive.score power", value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1740,11 +1740,7 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
       if (!PreconReuseParseTransformKind(value,
                                          &transform->kind)) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Invalid preconditioner.reuse transform: '%s'", /* GCOVR_EXCL_BR_LINE */
-            value ? value : "");
-         return 0;
+         return PreconReuseRejectValue(NULL, "preconditioner.reuse transform", value);
       }
       YAML_NODE_SET_VALID(node);
       return 1;
@@ -1759,12 +1755,7 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
          if (!PreconReuseParseTransformKind(value,
                                             &transform->kind)) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse transform: '%s'", /* GCOVR_EXCL_BR_LINE */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(child, "preconditioner.reuse transform", value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1772,12 +1763,7 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
       {
          if (!PreconReuseParseBaselineKind(value, &transform->baseline))
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse baseline: '%s'", /* GCOVR_EXCL_BR_LINE */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(child, "preconditioner.reuse baseline", value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1787,13 +1773,8 @@ PreconReuseParseTransformNode(YAMLnode *node, PreconReuseTransform_args *transfo
              /* GCOVR_EXCL_BR_LINE */                /* GCOVR_EXCL_BR_LINE */
                 transform->amortization_window <= 0) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse amortization_window: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                          */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(
+               child, "preconditioner.reuse amortization_window", value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1823,13 +1804,8 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
       {
          if (!PreconReuseParseHistorySource(value, &history->source))
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse history source: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                     */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(child, "preconditioner.reuse history source",
+                                          value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1837,13 +1813,8 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
       {                                                  /* GCOVR_EXCL_BR_LINE */
          if (!hypredrv_ParseInt(value, &history->level)) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse history level: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                    */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(child, "preconditioner.reuse history level",
+                                          value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1852,13 +1823,8 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
          if (!hypredrv_ParseInt(value, &history->max_points) || /* GCOVR_EXCL_BR_LINE */
              history->max_points <= 0)
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse history max_points: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                         */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(
+               child, "preconditioner.reuse history max_points", value);
          }
          YAML_NODE_SET_VALID(child);
       }
@@ -1867,13 +1833,8 @@ PreconReuseParseHistoryNode(YAMLnode *node, PreconReuseHistory_args *history)
          if (!PreconReuseParseReduction(value,
                                         &history->reduction)) /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Invalid preconditioner.reuse history reduction: '%s'", /* GCOVR_EXCL_BR_LINE
-                                                                        */
-               value ? value : "");
-            YAML_NODE_SET_INVALID_VAL(child);
-            return 0;
+            return PreconReuseRejectValue(child, "preconditioner.reuse history reduction",
+                                          value);
          }
          YAML_NODE_SET_VALID(child);
       }
