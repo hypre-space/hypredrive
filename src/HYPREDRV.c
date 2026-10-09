@@ -124,6 +124,27 @@ DestroyActiveSolver(HYPREDRV_t hypredrv)
 }
 
 /*-----------------------------------------------------------------------------
+ * Destroy the active solver and preconditioner objects, if any
+ *-----------------------------------------------------------------------------*/
+
+static void
+DestroyActiveSolverAndPrecon(HYPREDRV_t hypredrv)
+{
+   if (!hypredrv->iargs)
+   {
+      return;
+   }
+   DestroyActiveSolver(hypredrv);
+   if (hypredrv->precon)
+   {
+      hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
+                             &hypredrv->precon, hypredrv->stats,
+                             hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
+      hypredrv->precon_is_setup = false;
+   }
+}
+
+/*-----------------------------------------------------------------------------
  * Drop the active preconditioner before its configuration changes: destroy the
  * object when one exists, otherwise discard cached runtime state (for example
  * MGR component handles) left over from the previous configuration.
@@ -479,20 +500,7 @@ DestroyObjectInternal(HYPREDRV_t hypredrv)
    }
 
    /* Destroy solver/preconditioner objects before tearing down dependent state. */
-   if (hypredrv->iargs)
-   {
-      if (hypredrv->solver)
-      {
-         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-      }
-      if (hypredrv->precon)
-      {
-         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon, hypredrv->stats,
-                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
-         hypredrv->precon_is_setup = false;
-      }
-   }
+   DestroyActiveSolverAndPrecon(hypredrv);
 
    DestroyOwnedMatrices(hypredrv);
    DestroyOwnedVectors(hypredrv);
@@ -848,20 +856,7 @@ HYPREDRV_InputArgsParse(int argc, char **argv, HYPREDRV_t hypredrv)
    /* If preset/defaults were configured before parsing, clear old args first.
     * Tear down active solver/preconditioner objects so HYPRE handles are not
     * orphaned when iargs (and any variant storage) is freed. */
-   if (hypredrv->iargs)
-   {
-      if (hypredrv->solver)
-      {
-         hypredrv_SolverDestroy(hypredrv->iargs->solver_method, &hypredrv->solver);
-      }
-      if (hypredrv->precon)
-      {
-         hypredrv_PreconDestroy(hypredrv->iargs->precon_method, &hypredrv->iargs->precon,
-                                &hypredrv->precon, hypredrv->stats,
-                                hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1);
-         hypredrv->precon_is_setup = false;
-      }
-   }
+   DestroyActiveSolverAndPrecon(hypredrv);
    hypredrv_InputArgsDestroy(&hypredrv->iargs);
 
    log_object_name[0] = '\0';
