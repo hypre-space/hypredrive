@@ -2300,8 +2300,7 @@ DetectCpuModels(int *numPhysicalCPUs_out, int *numCPUs_out, char cpuModels[8][25
       sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
    }
 #else
-   int physicalCPUSeen = 0;
-   fp                  = fopen("/proc/cpuinfo", "r");
+   fp = fopen("/proc/cpuinfo", "r");
    if (fp != NULL)
    {
       DetectCpuModelsFromProcInfo(fp, buffer, sizeof(buffer), &numPhysicalCPUs, &numCPUs,
