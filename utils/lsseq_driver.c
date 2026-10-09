@@ -3320,11 +3320,20 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    hypredrv_SliceStream **streams =
       (hypredrv_SliceStream **)calloc((size_t)(local_nparts > 0 ? local_nparts : 1) * 3u,
                                       sizeof(*streams));
-   if (!streams)
+   /* Last decoded pattern (row/column blobs) per local part. */
+   size_t    nlocal   = (size_t)(local_nparts > 0 ? local_nparts : 1);
+   void    **pat_rows = (void **)calloc(nlocal, sizeof(void *));
+   void    **pat_cols = (void **)calloc(nlocal, sizeof(void *));
+   uint32_t *pat_id   = (uint32_t *)malloc(nlocal * sizeof(uint32_t));
+   if (!streams || !pat_rows || !pat_cols || !pat_id)
    {
       fclose(fp);
       SeqPackedDataDestroy(&seq);
       MPI_Abort(comm, EXIT_FAILURE);
+   }
+   for (size_t i = 0; i < nlocal; i++)
+   {
+      pat_id[i] = UINT32_MAX;
    }
 
    for (uint32_t s = 0; s < seq.header.num_systems; s++)
@@ -3363,11 +3372,31 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
             MPI_Abort(comm, EXIT_FAILURE);
          }
 
-         if (!DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->rows_blob_offset, pat->rows_blob_size,
-                         (size_t)pat->nnz * (size_t)part->row_index_size, &rows, &rows_sz) ||
-             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->cols_blob_offset, pat->cols_blob_size,
-                         (size_t)pat->nnz * (size_t)part->row_index_size, &cols, &cols_sz) ||
-             !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
+         /* Consecutive systems usually share a part's pattern: decode its row/column
+          * blobs only when the pattern changes. */
+         if (pat_id[lp] != sp->pattern_id)
+         {
+            free(pat_rows[lp]);
+            free(pat_cols[lp]);
+            pat_rows[lp] = pat_cols[lp] = NULL;
+            pat_id[lp]                  = UINT32_MAX;
+            if (!DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->rows_blob_offset,
+                            pat->rows_blob_size, (size_t)pat->nnz * (size_t)part->row_index_size,
+                            &pat_rows[lp], &rows_sz) ||
+                !DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->cols_blob_offset,
+                            pat->cols_blob_size, (size_t)pat->nnz * (size_t)part->row_index_size,
+                            &pat_cols[lp], &cols_sz))
+            {
+               fclose(fp);
+               SeqPackedDataDestroy(&seq);
+               MPI_Abort(comm, EXIT_FAILURE);
+            }
+            pat_id[lp] = sp->pattern_id;
+         }
+         rows = pat_rows[lp];
+         cols = pat_cols[lp];
+
+         if (!DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
                                   seq.part_blob_table, part_id, 0, sp->values_blob_offset,
                                   sp->values_blob_size, &vals, &vals_sz,
                                   &streams[(size_t)lp * 3u + 0u]) ||
@@ -3376,7 +3405,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                                   sp->rhs_blob_size, &rhs, &rhs_sz,
                                   &streams[(size_t)lp * 3u + 1u]))
          {
-            free(rows); free(cols); free(vals); free(rhs); free(dof);
+            free(vals); free(rhs); free(dof);
             fclose(fp);
             SeqPackedDataDestroy(&seq);
             MPI_Abort(comm, EXIT_FAILURE);
@@ -3388,7 +3417,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                 !FormatOutputPartFilename(rfile, sizeof(rfile), system_dir, rhs_filename, part_id,
                                           part_mode_suffix, part_extension))
             {
-               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
                MPI_Abort(comm, EXIT_FAILURE);
@@ -3402,7 +3431,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
               (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
                !WriteRHSPartBinary(rfile, part, rhs))))
          {
-            free(rows); free(cols); free(vals); free(rhs); free(dof);
+            free(vals); free(rhs); free(dof);
             fclose(fp);
             SeqPackedDataDestroy(&seq);
             MPI_Abort(comm, EXIT_FAILURE);
@@ -3416,7 +3445,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                                      sp->dof_blob_offset, sp->dof_blob_size, &dof, &dof_sz,
                                      &streams[(size_t)lp * 3u + 2u]))
             {
-               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
                MPI_Abort(comm, EXIT_FAILURE);
@@ -3425,7 +3454,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                if (!FormatOutputPartFilename(dfile, sizeof(dfile), system_dir, dofmap_filename,
                                              part_id, "", part_extension))
                {
-                  free(rows); free(cols); free(vals); free(rhs); free(dof);
+                  free(vals); free(rhs); free(dof);
                   fclose(fp);
                   SeqPackedDataDestroy(&seq);
                   MPI_Abort(comm, EXIT_FAILURE);
@@ -3437,15 +3466,13 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                 (args->format == UNPACK_FORMAT_HYPRE &&
                  !WriteDofPartASCII(dfile, (const int32_t *)dof, sp->dof_num_entries)))
             {
-               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
                MPI_Abort(comm, EXIT_FAILURE);
             }
          }
 
-         free(rows);
-         free(cols);
          free(vals);
          free(rhs);
          free(dof);
@@ -3458,11 +3485,19 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       }
    }
 
-   for (size_t i = 0; i < (size_t)(local_nparts > 0 ? local_nparts : 1) * 3u; i++)
+   for (size_t i = 0; i < nlocal * 3u; i++)
    {
       hypredrv_SliceStreamDestroy(&streams[i]);
    }
+   for (size_t i = 0; i < nlocal; i++)
+   {
+      free(pat_rows[i]);
+      free(pat_cols[i]);
+   }
    free(streams);
+   free(pat_rows);
+   free(pat_cols);
+   free(pat_id);
    fclose(fp);
    MPI_Barrier(comm);
    if (!myid)
