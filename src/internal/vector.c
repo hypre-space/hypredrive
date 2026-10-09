@@ -452,22 +452,30 @@ cleanup:
 }
 
 /*-----------------------------------------------------------------------------
- * Build a host IJ vector directly from rank-local parts held in memory (the
+ * Build an IJ vector directly from rank-local parts held in memory (the
  * in-memory counterpart of hypredrv_IJVectorReadMultipartBinary). Collective
- * over `comm`; values already in HYPRE_Complex width are used in place.
+ * over `comm`; values already in HYPRE_Complex width are used in place, and
+ * device vectors receive each part through device staging buffers.
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_IJVectorBuildFromHostParts(MPI_Comm comm, hypredrv_IJVectorMemPart *parts,
-                                    uint32_t nparts, HYPRE_IJVector *vec_ptr)
+hypredrv_IJVectorBuildFromParts(MPI_Comm comm, hypredrv_IJVectorMemPart *parts,
+                                uint32_t nparts, HYPRE_MemoryLocation memory_location,
+                                HYPRE_IJVector *vec_ptr)
 {
    uint64_t       nrows_sum = 0, nrows_max = 0, nrows_offset = 0, row = 0;
    HYPRE_BigInt   ilower = 0, iupper = 0;
-   HYPRE_IJVector vec     = NULL;
-   HYPRE_BigInt  *indices = NULL;
-   HYPRE_Complex *wide    = NULL;
+   HYPRE_IJVector vec       = NULL;
+   HYPRE_BigInt  *indices   = NULL;
+   HYPRE_Complex *wide      = NULL;
+   HYPRE_BigInt  *d_indices = NULL;
+   HYPRE_Complex *d_vals    = NULL;
 
    *vec_ptr = NULL;
+#ifndef HYPRE_USING_GPU
+   (void)d_indices;
+   (void)d_vals;
+#endif
    for (uint32_t p = 0; p < nparts; p++)
    {
       if ((parts[p].value_size != sizeof(float) &&
@@ -492,6 +500,13 @@ hypredrv_IJVectorBuildFromHostParts(MPI_Comm comm, hypredrv_IJVectorMemPart *par
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                   /* GCOVR_EXCL_LINE */
          hypredrv_ErrorMsgAdd("Failed to allocate vector buffers"); /* GCOVR_EXCL_LINE */
       }
+#ifdef HYPRE_USING_GPU
+      if (memory_location == HYPRE_MEMORY_DEVICE)
+      {
+         d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
+         d_vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+      }
+#endif
    }
    if (!IJVectorAllRanksOk(comm))
    {
@@ -503,7 +518,7 @@ hypredrv_IJVectorBuildFromHostParts(MPI_Comm comm, hypredrv_IJVectorMemPart *par
    iupper = (HYPRE_BigInt)(ilower + (HYPRE_BigInt)nrows_sum - 1);
    HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
    HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(vec, HYPRE_MEMORY_HOST);
+   HYPRE_IJVectorInitialize_v2(vec, memory_location);
 
    /* Explicit indices keep each part at its concatenation offset. */
    for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
@@ -530,7 +545,22 @@ hypredrv_IJVectorBuildFromHostParts(MPI_Comm comm, hypredrv_IJVectorMemPart *par
       {
          indices[i] = ilower + (HYPRE_BigInt)(row + i);
       }
-      HYPRE_IJVectorSetValues(vec, (HYPRE_Int)part->nrows, indices, vals);
+      HYPRE_BigInt  *set_indices = indices;
+      HYPRE_Complex *set_vals    = vals;
+#ifdef HYPRE_USING_GPU
+      /* GCOVR_EXCL_START */
+      if (memory_location == HYPRE_MEMORY_DEVICE)
+      {
+         hypre_TMemcpy(d_indices, indices, HYPRE_BigInt, part->nrows, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_vals, vals, HYPRE_Complex, part->nrows, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+         set_indices = d_indices;
+         set_vals    = d_vals;
+      }
+      /* GCOVR_EXCL_STOP */
+#endif
+      HYPRE_IJVectorSetValues(vec, (HYPRE_Int)part->nrows, set_indices, set_vals);
       row += part->nrows;
    }
    if (!IJVectorAllRanksOk(comm))
@@ -543,6 +573,10 @@ hypredrv_IJVectorBuildFromHostParts(MPI_Comm comm, hypredrv_IJVectorMemPart *par
    vec      = NULL;
 
 cleanup:
+#ifdef HYPRE_USING_GPU
+   hypre_TFree(d_indices, memory_location);
+   hypre_TFree(d_vals, memory_location);
+#endif
    if (vec)
    {
       HYPRE_IJVectorDestroy(vec);

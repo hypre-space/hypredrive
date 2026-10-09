@@ -268,8 +268,8 @@ typedef struct
    const char *label;
 } hypredrv_IJMatrixMemPart;
 
-void hypredrv_IJMatrixBuildFromHostParts(MPI_Comm, hypredrv_IJMatrixMemPart *, uint32_t,
-                                         HYPRE_IJMatrix *);
+void hypredrv_IJMatrixBuildFromParts(MPI_Comm, hypredrv_IJMatrixMemPart *, uint32_t,
+                                     HYPRE_MemoryLocation, HYPRE_IJMatrix *);
 
 /* One rank-local vector part already in memory: `nrows` values of `value_size`
  * (4 or 8) bytes, convertible in place; `label` names it in error messages. */
@@ -281,7 +281,7 @@ typedef struct
    const char *label;
 } hypredrv_IJVectorMemPart;
 
-void hypredrv_IJVectorBuildFromHostParts(MPI_Comm, hypredrv_IJVectorMemPart *, uint32_t,
-                                         HYPRE_IJVector *);
+void hypredrv_IJVectorBuildFromParts(MPI_Comm, hypredrv_IJVectorMemPart *, uint32_t,
+                                     HYPRE_MemoryLocation, HYPRE_IJVector *);
 
 #endif /* LINSYS_HEADER */

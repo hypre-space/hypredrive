@@ -183,72 +183,6 @@ LSSeqFNV1a64(const void *data, size_t nbytes, uint64_t hash)
 }
 
 static int
-LSSeqFormatPartFilename(char *filename, size_t filename_size, const char *prefix,
-                        uint32_t part_id, const char *suffix)
-{
-   char   id_buf[16];
-   int    id_len     = 0;
-   size_t prefix_len = 0;
-   size_t suffix_len = 0;
-   size_t total_len  = 0;
-
-   /* GCOVR_EXCL_BR_START */
-   if (!filename || filename_size == 0 || !prefix) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid arguments for LSSeqFormatPartFilename");
-      return 0;
-   }
-   if (!suffix)
-   {
-      suffix = "";
-   }
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid sequence staging path prefix");
-      return 0;
-   }
-
-   id_len = snprintf(id_buf, sizeof(id_buf), "%05u", part_id);
-   /* GCOVR_EXCL_BR_START */
-   if (id_len < 0 || (size_t)id_len >= sizeof(id_buf)) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Could not format part id %u", part_id);
-      return 0;
-   }
-
-   prefix_len = strlen(prefix);
-   suffix_len = strlen(suffix);
-   total_len  = prefix_len + 1u + (size_t)id_len + suffix_len;
-   /* GCOVR_EXCL_BR_START */
-   if (total_len + 1u > filename_size) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("LSSeq temporary part filename is too long for buffer (%zu "
-                           "bytes)",
-                           filename_size);
-      return 0;
-   }
-
-   memcpy(filename, prefix, prefix_len);
-   filename[prefix_len] = '.';
-   memcpy(filename + prefix_len + 1u, id_buf, (size_t)id_len);
-   memcpy(filename + prefix_len + 1u + (size_t)id_len, suffix, suffix_len);
-   filename[total_len] = '\0';
-
-   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid sequence part filename");
-      return 0;
-   }
-
-   return 1;
-}
-
-static int
 LSSeqReadAt(FILE *fp, uint64_t offset, void *buffer, size_t nbytes, const char *what)
 {
    /* GCOVR_EXCL_BR_START */
@@ -1305,93 +1239,6 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    return 1;
 }
 
-/* Copy TMPDIR into a local buffer after validation; do not thread raw getenv into paths.
- */
-static void
-LSSeqSanitizedTmpRoot(char *out, size_t out_len)
-{
-#ifdef _WIN32
-   const char *raw = getenv("TEMP");
-   if (!raw || raw[0] == '\0')
-   {
-      raw = getenv("TMP");
-   }
-#else
-   const char *raw = getenv("TMPDIR");
-#endif
-
-   if (!out || out_len == 0)
-   {
-      return;
-   }
-   if (!raw || raw[0] == '\0' || strstr(raw, "..") != NULL || strlen(raw) >= out_len ||
-       !hypredrv_BinaryPathPrefixIsSafe(raw))
-   {
-#ifdef _WIN32
-      (void)snprintf(out, out_len, ".");
-#else
-      (void)snprintf(out, out_len, "/tmp");
-#endif
-   }
-   else
-   {
-      (void)snprintf(out, out_len, "%s", raw);
-   }
-}
-
-static int
-LSSeqTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
-                     size_t prefix_size)
-{
-   char        tmp_root_buf[MAX_FILENAME_LENGTH];
-   const char *tmp_root = tmp_root_buf;
-   char        tmpdir_template[MAX_FILENAME_LENGTH];
-   int         written = 0;
-   int         myid    = 0;
-
-   if (!prefix || prefix_size == 0) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid temporary prefix output");
-      return 0;
-   }
-
-   LSSeqSanitizedTmpRoot(tmp_root_buf, sizeof(tmp_root_buf));
-
-   MPI_Comm_rank(comm, &myid);
-   /* GCOVR_EXCL_BR_START */
-   written = snprintf(tmpdir_template, sizeof(tmpdir_template),
-                      /* GCOVR_EXCL_BR_STOP */
-                      "%s/hypredrv_lsseq_%s_%d_%d_%d_XXXXXX", tmp_root, tag ? tag : "tmp",
-                      (int)getpid(), myid, ls_id);
-   if (written < 0 || (size_t)written >= sizeof(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Failed to format LSSeq temporary directory template");
-      return 0;
-   }
-
-   if (!hypredrv_Mkdtemp(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not create LSSeq temporary directory under '%s'",
-                           tmp_root);
-      return 0;
-   }
-
-   written = snprintf(prefix, prefix_size, "%s/part", tmpdir_template);
-   if (written < 0 || (size_t)written >= prefix_size) /* GCOVR_EXCL_BR_LINE */
-   {
-      (void)rmdir(tmpdir_template);
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("LSSeq temporary prefix exceeds buffer size (%zu bytes)",
-                           prefix_size);
-      return 0;
-   }
-
-   return 1;
-}
-
 static int
 LSSeqSynchronizeMPIStatus(MPI_Comm comm, int local_ok, hypredrv_error_t fallback_code,
                           const char *fallback_msg)
@@ -1411,169 +1258,6 @@ LSSeqSynchronizeMPIStatus(MPI_Comm comm, int local_ok, hypredrv_error_t fallback
       return 0;
    }
 
-   return 1;
-}
-
-static void
-LSSeqCleanupPartFiles(const char *prefix, const int *partids, int nparts,
-                      const char *suffix)
-{
-   /* Buffer sized for prefix + ".%05d" + suffix; avoids -Wformat-truncation */
-   char filename[MAX_FILENAME_LENGTH + 32];
-   if (!prefix || prefix[0] == '\0') /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   for (int i = 0; i < nparts; i++)
-   {
-      /* GCOVR_EXCL_BR_START */
-      snprintf(filename, sizeof(filename), "%s.%05d%s", prefix, partids[i],
-               /* GCOVR_EXCL_BR_STOP */
-               suffix ? suffix : "");
-      remove(filename);
-   }
-
-   {
-      char        dirname[MAX_FILENAME_LENGTH];
-      const char *slash = strrchr(prefix, '/');
-      if (!slash || slash == prefix) /* GCOVR_EXCL_BR_LINE */
-      {
-         return;
-      }
-      if ((size_t)(slash - prefix) >= sizeof(dirname)) /* GCOVR_EXCL_BR_LINE */
-      {
-         return;
-      }
-      memcpy(dirname, prefix, (size_t)(slash - prefix));
-      dirname[(size_t)(slash - prefix)] = '\0';
-      (void)rmdir(dirname);
-   }
-}
-
-static int
-LSSeqWriteMatrixPartFile(const char *filename, const LSSeqPartMeta *part,
-                         const LSSeqPatternMeta *pattern, const void *rows,
-                         const void *cols, const void *vals)
-{
-   FILE    *fp         = NULL;
-   uint64_t header[11] = {0};
-
-   if (!filename || !part || !pattern) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid matrix part-file write arguments");
-      return 0;
-   }
-   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid matrix temporary part path");
-      return 0;
-   }
-
-   fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
-   if (!fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not create matrix temporary part '%s'", filename);
-      return 0;
-   }
-
-   header[1] = part->row_index_size;
-   header[2] = part->value_size;
-   header[5] = part->row_upper - part->row_lower + 1;
-   header[6] = pattern->nnz;
-   header[7] = part->row_lower;
-   header[8] = part->row_upper;
-
-   if (fwrite(header, sizeof(uint64_t), 11, fp) != 11) /* GCOVR_EXCL_BR_LINE */
-   {
-      fclose(fp);
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Could not write matrix header to '%s'", filename);
-      return 0;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (pattern->nnz > 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      size_t nnz = (size_t)pattern->nnz;
-      /* GCOVR_EXCL_BR_START */
-      if ((rows && fwrite(rows, (size_t)part->row_index_size, nnz, fp) != nnz) ||
-          /* GCOVR_EXCL_BR_STOP */
-          /* GCOVR_EXCL_BR_START */
-          (cols && fwrite(cols, (size_t)part->row_index_size, nnz, fp) != nnz) ||
-          /* GCOVR_EXCL_BR_STOP */
-          /* GCOVR_EXCL_BR_START */
-          (vals && fwrite(vals, (size_t)part->value_size, nnz, fp) != nnz))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Could not write matrix data to '%s'", filename);
-         return 0;
-      }
-   }
-
-   fclose(fp);
-   return 1;
-}
-
-static int
-LSSeqWriteRHSPartFile(const char *filename, const LSSeqPartMeta *part, const void *vals)
-{
-   FILE    *fp        = NULL;
-   uint64_t header[8] = {0};
-
-   if (!filename || !part) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid RHS part-file write arguments");
-      return 0;
-   }
-   if (!hypredrv_BinaryPathPrefixIsSafe(filename))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Invalid RHS temporary part path");
-      return 0;
-   }
-
-   fp = hypredrv_FopenCreateRestricted(filename, 0, 1);
-   if (!fp) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not create RHS temporary part '%s'", filename);
-      return 0;
-   }
-
-   header[1] = part->value_size;
-   header[5] = part->nrows;
-
-   if (fwrite(header, sizeof(uint64_t), 8, fp) != 8) /* GCOVR_EXCL_BR_LINE */
-   {
-      fclose(fp);
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Could not write RHS header to '%s'", filename);
-      return 0;
-   }
-
-   /* GCOVR_EXCL_BR_START */
-   if (part->nrows > 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      size_t nrows = (size_t)part->nrows;
-      /* GCOVR_EXCL_BR_START */
-      if (vals && fwrite(vals, (size_t)part->value_size, nrows, fp) != nrows)
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Could not write RHS values to '%s'", filename);
-         return 0;
-      }
-   }
-
-   fclose(fp);
    return 1;
 }
 
@@ -1694,32 +1378,6 @@ LSSeqMatrixMemPartFree(hypredrv_IJMatrixMemPart *part)
    memset(part, 0, sizeof(*part));
 }
 
-/* Stages one part's matrix slice into the temporary files that
- * hypredrv_IJMatrixReadMultipartBinary() consumes (device reads only).
- * Returns zero on failure. */
-static int
-LSSeqStageMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
-                     const uint32_t *part_order, const char *prefix, char *part_filename,
-                     size_t part_filename_size)
-{
-   uint32_t                   part_id = part_order[tmp_part_id];
-   const LSSeqSystemPartMeta *sys =
-      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
-   hypredrv_IJMatrixMemPart mem;
-
-   /* GCOVR_EXCL_BR_START */
-   int ok = LSSeqDecodeMatrixPart(fp, seq, ls_id, part_id, &mem) &&
-            LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
-                                    tmp_part_id, ".bin") &&
-            LSSeqWriteMatrixPartFile(part_filename, &seq->parts[part_id],
-                                     &seq->patterns[sys->pattern_id], mem.rows, mem.cols,
-                                     mem.vals);
-   /* GCOVR_EXCL_BR_STOP */
-   LSSeqMatrixMemPartFree(&mem);
-
-   return ok;
-}
-
 /* Prepares the rank-local staging state for reading system ls_id: validates the
  * id, collects this rank's part ids and the stored-to-runtime part order, and
  * opens the sequence file. Purely local (no collectives); returns 0 on any
@@ -1780,42 +1438,18 @@ LSSeqDecodeRHSPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_id,
                                  &out->vals, &vals_size);
 }
 
-/* Stages one part's RHS slice into the temporary files that
- * hypredrv_IJVectorReadMultipartBinary() consumes (device reads only).
- * Returns zero on failure. */
-static int
-LSSeqStageRHSPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
-                  const uint32_t *part_order, const char *prefix, char *part_filename,
-                  size_t part_filename_size)
-{
-   uint32_t                 part_id = part_order[tmp_part_id];
-   hypredrv_IJVectorMemPart mem;
-
-   /* GCOVR_EXCL_BR_START */
-   int ok = LSSeqDecodeRHSPart(fp, seq, ls_id, part_id, &mem) &&
-            LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
-                                    tmp_part_id, ".bin") &&
-            LSSeqWriteRHSPartFile(part_filename, &seq->parts[part_id], mem.vals);
-   /* GCOVR_EXCL_BR_STOP */
-   free(mem.vals);
-
-   return ok;
-}
-
 int
 hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                          HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
 {
-   LSSeqData                 seq                         = {0};
-   FILE                     *fp                          = NULL;
-   int                      *partids                     = NULL;
-   uint32_t                 *part_order                  = NULL;
-   int                       nparts                      = 0;
-   char                      prefix[MAX_FILENAME_LENGTH] = {0};
-   char                      part_filename[MAX_FILENAME_LENGTH];
-   int                       local_ok  = 1;
-   int                       ok        = 0;
-   hypredrv_IJMatrixMemPart *mem_parts = NULL;
+   LSSeqData                 seq        = {0};
+   FILE                     *fp         = NULL;
+   int                      *partids    = NULL;
+   uint32_t                 *part_order = NULL;
+   int                       nparts     = 0;
+   int                       local_ok   = 1;
+   int                       ok         = 0;
+   hypredrv_IJMatrixMemPart *mem_parts  = NULL;
 
    if (!matrix_ptr)
    {
@@ -1825,16 +1459,11 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    }
    *matrix_ptr = NULL;
 
-   /* Host reads build the matrix straight from the decoded parts; device reads
-    * still stage part files for the multipart reader's device path. */
-   const int direct = (memory_location == HYPRE_MEMORY_HOST);
-
    /* GCOVR_EXCL_BR_START */
    local_ok = LSSeqDataLoad(filename, &seq) &&
               LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
-                                  &part_order, &fp) &&
-              (direct || LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix)));
-   if (local_ok && direct)
+                                  &part_order, &fp);
+   if (local_ok)
    {
       mem_parts = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u,
                                                      sizeof(*mem_parts));
@@ -1844,10 +1473,7 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    for (int i = 0; i < nparts && local_ok; i++)
    {
       local_ok =
-         direct ? LSSeqDecodeMatrixPart(fp, &seq, ls_id, part_order[partids[i]],
-                                        &mem_parts[i])
-                : LSSeqStageMatrixPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
-                                       prefix, part_filename, sizeof(part_filename));
+         LSSeqDecodeMatrixPart(fp, &seq, ls_id, part_order[partids[i]], &mem_parts[i]);
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
@@ -1856,15 +1482,8 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
       goto cleanup;
    }
 
-   if (direct)
-   {
-      hypredrv_IJMatrixBuildFromHostParts(comm, mem_parts, (uint32_t)nparts, matrix_ptr);
-   }
-   else
-   {
-      hypredrv_IJMatrixReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
-                                           memory_location, matrix_ptr);
-   }
+   hypredrv_IJMatrixBuildFromParts(comm, mem_parts, (uint32_t)nparts, memory_location,
+                                   matrix_ptr);
    local_ok = (!hypredrv_ErrorCodeActive() && *matrix_ptr != NULL);
 
    /* GCOVR_EXCL_BR_START */
@@ -1888,7 +1507,6 @@ cleanup:
    {
       fclose(fp);
    }
-   LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
    for (int i = 0; mem_parts && i < nparts; i++)
    {
       LSSeqMatrixMemPartFree(&mem_parts[i]);
@@ -1904,16 +1522,14 @@ int
 hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
                       HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
 {
-   LSSeqData                 seq                         = {0};
-   FILE                     *fp                          = NULL;
-   int                      *partids                     = NULL;
-   uint32_t                 *part_order                  = NULL;
-   int                       nparts                      = 0;
-   char                      prefix[MAX_FILENAME_LENGTH] = {0};
-   char                      part_filename[MAX_FILENAME_LENGTH];
-   int                       local_ok  = 1;
-   int                       ok        = 0;
-   hypredrv_IJVectorMemPart *mem_parts = NULL;
+   LSSeqData                 seq        = {0};
+   FILE                     *fp         = NULL;
+   int                      *partids    = NULL;
+   uint32_t                 *part_order = NULL;
+   int                       nparts     = 0;
+   int                       local_ok   = 1;
+   int                       ok         = 0;
+   hypredrv_IJVectorMemPart *mem_parts  = NULL;
 
    if (!rhs_ptr)
    {
@@ -1923,16 +1539,11 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    }
    *rhs_ptr = NULL;
 
-   /* Host reads build the vector from the decoded parts; device reads stage
-    * part files for the multipart reader's device path. */
-   const int direct = (memory_location == HYPRE_MEMORY_HOST);
-
    /* GCOVR_EXCL_BR_START */
    local_ok = LSSeqDataLoad(filename, &seq) &&
               LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
-                                  &part_order, &fp) &&
-              (direct || LSSeqTempPrefixBuild(comm, ls_id, "b", prefix, sizeof(prefix)));
-   if (local_ok && direct)
+                                  &part_order, &fp);
+   if (local_ok)
    {
       mem_parts = (hypredrv_IJVectorMemPart *)calloc(nparts ? (size_t)nparts : 1u,
                                                      sizeof(*mem_parts));
@@ -1942,10 +1553,7 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    for (int i = 0; i < nparts && local_ok; i++)
    {
       local_ok =
-         direct
-            ? LSSeqDecodeRHSPart(fp, &seq, ls_id, part_order[partids[i]], &mem_parts[i])
-            : LSSeqStageRHSPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order, prefix,
-                                part_filename, sizeof(part_filename));
+         LSSeqDecodeRHSPart(fp, &seq, ls_id, part_order[partids[i]], &mem_parts[i]);
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
@@ -1954,15 +1562,8 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
       goto cleanup;
    }
 
-   if (direct)
-   {
-      hypredrv_IJVectorBuildFromHostParts(comm, mem_parts, (uint32_t)nparts, rhs_ptr);
-   }
-   else
-   {
-      hypredrv_IJVectorReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
-                                           memory_location, rhs_ptr);
-   }
+   hypredrv_IJVectorBuildFromParts(comm, mem_parts, (uint32_t)nparts, memory_location,
+                                   rhs_ptr);
    local_ok = (!hypredrv_ErrorCodeActive() && *rhs_ptr != NULL);
 
    /* GCOVR_EXCL_BR_START */
@@ -1986,7 +1587,6 @@ cleanup:
    {
       fclose(fp);
    }
-   LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
    for (int i = 0; mem_parts && i < nparts; i++)
    {
       free(mem_parts[i].vals);

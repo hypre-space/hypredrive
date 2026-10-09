@@ -796,10 +796,12 @@ cleanup:
 }
 
 /*-----------------------------------------------------------------------------
- * Build a host IJ matrix directly from rank-local parts held in memory (the
- * same layout and validation as hypredrv_IJMatrixReadMultipartBinary, without
- * a round trip through part files). Collective over `comm`; index and value
- * arrays already in HYPRE_BigInt/HYPRE_Complex width are used in place.
+ * Build an IJ matrix directly from rank-local parts held in memory (the same
+ * layout and validation as hypredrv_IJMatrixReadMultipartBinary, without a
+ * round trip through part files). Collective over `comm`; index and value
+ * arrays already in HYPRE_BigInt/HYPRE_Complex width are used in place. Like
+ * the file reader, host matrices are pre-sized from the sparsity pattern and
+ * device matrices receive each part through device staging buffers.
  *-----------------------------------------------------------------------------*/
 
 /* Returns `src` viewed as HYPRE_BigInt, converting into a new array (stored in
@@ -831,20 +833,30 @@ IJMatrixIndexView(void *src, uint64_t nnz, uint64_t isize, HYPRE_BigInt **owned)
 }
 
 void
-hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *parts,
-                                    uint32_t nparts, HYPRE_IJMatrix *mat_ptr)
+hypredrv_IJMatrixBuildFromParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *parts,
+                                uint32_t nparts, HYPRE_MemoryLocation memory_location,
+                                HYPRE_IJMatrix *mat_ptr)
 {
    uint64_t       nrows_sum = 0, nrows = 0, nrows_offset = 0;
    HYPRE_BigInt   ilower = 0, iupper = 0;
-   HYPRE_IJMatrix mat    = NULL;
-   size_t         nalloc = nparts ? (size_t)nparts : 1u;
-   HYPRE_BigInt **rows   = (HYPRE_BigInt **)calloc(nalloc, sizeof(HYPRE_BigInt *));
-   HYPRE_BigInt **cols   = (HYPRE_BigInt **)calloc(nalloc, sizeof(HYPRE_BigInt *));
-   HYPRE_BigInt **owned  = (HYPRE_BigInt **)calloc(2 * nalloc, sizeof(HYPRE_BigInt *));
-   HYPRE_Int     *dsizes = NULL;
-   HYPRE_Int     *osizes = NULL;
+   HYPRE_IJMatrix mat     = NULL;
+   size_t         nalloc  = nparts ? (size_t)nparts : 1u;
+   HYPRE_BigInt **rows    = (HYPRE_BigInt **)calloc(nalloc, sizeof(HYPRE_BigInt *));
+   HYPRE_BigInt **cols    = (HYPRE_BigInt **)calloc(nalloc, sizeof(HYPRE_BigInt *));
+   HYPRE_BigInt **owned   = (HYPRE_BigInt **)calloc(2 * nalloc, sizeof(HYPRE_BigInt *));
+   HYPRE_Int     *dsizes  = NULL;
+   HYPRE_Int     *osizes  = NULL;
+   uint64_t       nnz_max = 0;
+   /* Arrays handed to hypre: host views, or device copies of them. */
+   HYPRE_BigInt  *d_rows = NULL, *d_cols = NULL;
+   HYPRE_Complex *d_vals = NULL;
 
    *mat_ptr = NULL;
+#ifndef HYPRE_USING_GPU
+   (void)d_rows;
+   (void)d_cols;
+   (void)d_vals;
+#endif
    /* GCOVR_EXCL_BR_START */
    if (!rows || !cols || !owned) /* GCOVR_EXCL_BR_STOP */
    {
@@ -867,6 +879,7 @@ hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *par
          break;
       }
       nrows_sum += part->nrows;
+      nnz_max = (part->nnz > nnz_max) ? part->nnz : nnz_max;
       rows[p] = IJMatrixIndexView(part->rows, part->nnz, part->index_size,
                                   &owned[(size_t)2 * p]);
       cols[p] = IJMatrixIndexView(part->cols, part->nnz, part->index_size,
@@ -885,23 +898,47 @@ hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *par
    HYPRE_IJMatrixCreate(comm, ilower, iupper, ilower, iupper, &mat);
    HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
 
-   dsizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
-   osizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
-   /* GCOVR_EXCL_BR_START */
-   if (!dsizes || !osizes) /* GCOVR_EXCL_BR_STOP */
+   /* Entries are always validated; the host matrix is also pre-sized. */
+   if (memory_location == HYPRE_MEMORY_HOST)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd(
-         "Failed to allocate matrix host sparsity buffers"); /* GCOVR_EXCL_LINE */
+      dsizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
+      osizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
+      /* GCOVR_EXCL_BR_START */
+      if (!dsizes || !osizes) /* GCOVR_EXCL_BR_STOP */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Failed to allocate matrix host sparsity buffers"); /* GCOVR_EXCL_LINE */
+      }
+      for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+      {
+         (void)IJMatrixCountPartSparsity(rows[p], cols[p], parts[p].nnz, nrows, ilower,
+                                         iupper, nrows_sum, dsizes, osizes,
+                                         parts[p].label);
+      }
+      if (!hypredrv_ErrorCodeActive())
+      {
+         HYPRE_IJMatrixSetDiagOffdSizes(mat, dsizes, osizes);
+      }
    }
-   for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+   else
    {
-      (void)IJMatrixCountPartSparsity(rows[p], cols[p], parts[p].nnz, nrows, ilower,
-                                      iupper, nrows_sum, dsizes, osizes, parts[p].label);
-   }
-   if (!hypredrv_ErrorCodeActive())
-   {
-      HYPRE_IJMatrixSetDiagOffdSizes(mat, dsizes, osizes);
+      for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+      {
+         for (size_t k = 0; k < (size_t)parts[p].nnz; k++)
+         {
+            if (!IJMatrixValidateEntry(rows[p][k], cols[p][k], nrows, nrows,
+                                       parts[p].label))
+            {
+               break;
+            }
+         }
+      }
+#ifdef HYPRE_USING_GPU
+      d_rows = hypre_TAlloc(HYPRE_BigInt, nnz_max, memory_location);
+      d_cols = hypre_TAlloc(HYPRE_BigInt, nnz_max, memory_location);
+      d_vals = hypre_TAlloc(HYPRE_Complex, nnz_max, memory_location);
+#endif
    }
    if (!IJMatrixAllRanksOk(comm))
    {
@@ -909,7 +946,7 @@ hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *par
    }
 
    /* 3) Values: validate/widen (in place when widths match), then insert. */
-   HYPRE_IJMatrixInitialize_v2(mat, HYPRE_MEMORY_HOST);
+   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
    for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
    {
       hypredrv_IJMatrixMemPart *part = &parts[p];
@@ -932,7 +969,26 @@ hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *par
                                                vals, "matrix", part->label))
       /* GCOVR_EXCL_BR_STOP */
       {
-         HYPRE_IJMatrixSetValues(mat, (HYPRE_Int)part->nnz, NULL, rows[p], cols[p], vals);
+         HYPRE_BigInt  *set_rows = rows[p], *set_cols = cols[p];
+         HYPRE_Complex *set_vals = vals;
+#ifdef HYPRE_USING_GPU
+         /* GCOVR_EXCL_START */
+         if (memory_location == HYPRE_MEMORY_DEVICE)
+         {
+            hypre_TMemcpy(d_rows, rows[p], HYPRE_BigInt, part->nnz, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_cols, cols[p], HYPRE_BigInt, part->nnz, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_vals, vals, HYPRE_Complex, part->nnz, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            set_rows = d_rows;
+            set_cols = d_cols;
+            set_vals = d_vals;
+         }
+         /* GCOVR_EXCL_STOP */
+#endif
+         HYPRE_IJMatrixSetValues(mat, (HYPRE_Int)part->nnz, NULL, set_rows, set_cols,
+                                 set_vals);
       }
       else if (!vals) /* GCOVR_EXCL_BR_LINE */
       {
@@ -952,6 +1008,11 @@ hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *par
    mat      = NULL;
 
 cleanup:
+#ifdef HYPRE_USING_GPU
+   hypre_TFree(d_rows, memory_location);
+   hypre_TFree(d_cols, memory_location);
+   hypre_TFree(d_vals, memory_location);
+#endif
    if (mat)
    {
       HYPRE_IJMatrixDestroy(mat);
