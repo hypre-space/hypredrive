@@ -105,8 +105,6 @@ void hypredrv_HypreConsumeErrors(void);
 void hypredrv_HypreClearConvergenceErrors(void);
 int  hypredrv_ConvertCoefficients(const void *src, uint64_t vsize, uint64_t count,
                                   HYPRE_Complex *out, const char *kind, const char *label);
-int  hypredrv_ReadCoefficients(FILE *fp, uint64_t vsize, uint64_t count,
-                               HYPRE_Complex *out, const char *kind, const char *filename);
 
 static inline int
 hypredrv_FloatIsFinite(float value)
