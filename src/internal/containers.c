@@ -764,6 +764,9 @@ hypredrv_StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char 
  * StrBufferAppend
  *--------------------------------------------------------------------------*/
 
+static void StrBufferAppend(char **pos, size_t *remaining, const char *format, ...)
+   HYPREDRV_PRINTF_FORMAT(3, 4);
+
 static void
 StrBufferAppend(char **pos, size_t *remaining, const char *format, ...)
 {

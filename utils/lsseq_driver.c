@@ -1898,6 +1898,9 @@ BufAppendRaw(void **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const void *data,
    return 1;
 }
 
+static int BufAppendf(char **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const char *fmt,
+                      ...) HYPREDRV_PRINTF_FORMAT(4, 5);
+
 static int
 BufAppendf(char **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const char *fmt, ...)
 {
