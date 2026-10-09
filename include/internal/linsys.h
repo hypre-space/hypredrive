@@ -289,8 +289,8 @@ typedef struct
 void hypredrv_IJMatrixBuildFromSource(MPI_Comm, const hypredrv_IJMatrixPartSource *,
                                       HYPRE_MemoryLocation, HYPRE_IJMatrix *);
 
-/* One rank-local vector part already in memory: `nrows` values of `value_size`
- * (4 or 8) bytes, convertible in place; `label` names it in error messages. */
+/* One rank-local vector part: `nrows` values of `value_size` (4 or 8) bytes,
+ * convertible in place; `label` names it in error messages. */
 typedef struct
 {
    uint64_t    nrows;
@@ -299,7 +299,17 @@ typedef struct
    const char *label;
 } hypredrv_IJVectorMemPart;
 
-void hypredrv_IJVectorBuildFromParts(MPI_Comm, hypredrv_IJVectorMemPart *, uint32_t,
-                                     HYPRE_MemoryLocation, HYPRE_IJVector *);
+/* Supplies rank-local vector part p to hypredrv_IJVectorBuildFromSource: `load`
+ * always fills nrows, value_size and label, and allocates (malloc) the values
+ * when `want_values` is set; the builder frees them. Returns 0 on failure. */
+typedef struct
+{
+   void    *ctx;
+   uint32_t nparts;
+   int (*load)(void *ctx, uint32_t p, int want_values, hypredrv_IJVectorMemPart *part);
+} hypredrv_IJVectorPartSource;
+
+void hypredrv_IJVectorBuildFromSource(MPI_Comm, const hypredrv_IJVectorPartSource *,
+                                      HYPRE_MemoryLocation, HYPRE_IJVector *);
 
 #endif /* LINSYS_HEADER */

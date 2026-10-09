@@ -1317,9 +1317,9 @@ hypredrv_LSSeqReadSummary(const char *filename, int *num_systems, int *num_patte
    return 1;
 }
 
-/* hypredrv_IJMatrixPartSource over this rank's parts of one LSSeq system:
- * metadata comes from the sequence headers; indices and values are decoded
- * only when requested. */
+/* Context for the part sources below: this rank's parts of one LSSeq system.
+ * Metadata comes from the sequence headers; payloads are decoded only when
+ * the builder requests them. */
 typedef struct
 {
    FILE            *fp;
@@ -1327,12 +1327,12 @@ typedef struct
    int              ls_id;
    const int       *partids;
    const uint32_t  *part_order;
-} LSSeqMatrixSource;
+} LSSeqPartSource;
 
 static int
-LSSeqMatrixSourceLoad(void *ctx, uint32_t p, int want, hypredrv_IJMatrixMemPart *out)
+LSSeqPartSourceLoad(void *ctx, uint32_t p, int want, hypredrv_IJMatrixMemPart *out)
 {
-   const LSSeqMatrixSource   *src     = (const LSSeqMatrixSource *)ctx;
+   const LSSeqPartSource     *src     = (const LSSeqPartSource *)ctx;
    const LSSeqData           *seq     = src->seq;
    uint32_t                   part_id = src->part_order[src->partids[p]];
    const LSSeqPartMeta       *part    = &seq->parts[part_id];
@@ -1429,22 +1429,25 @@ LSSeqPrepareRead(MPI_Comm comm, const LSSeqData *seq, int ls_id, const char *fil
    return 1;
 }
 
-/* Decodes one part's RHS slice for system ls_id into `out` (vals owned by the
- * caller). Returns zero on failure. */
+/* hypredrv_IJVectorPartSource over this rank's RHS parts of one LSSeq system;
+ * values are decoded only when requested. */
 static int
-LSSeqDecodeRHSPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_id,
-                   hypredrv_IJVectorMemPart *out)
+LSSeqRHSSourceLoad(void *ctx, uint32_t p, int want_values, hypredrv_IJVectorMemPart *out)
 {
+   const LSSeqPartSource     *src     = (const LSSeqPartSource *)ctx;
+   const LSSeqData           *seq     = src->seq;
+   uint32_t                   part_id = src->part_order[src->partids[p]];
    const LSSeqSystemPartMeta *sys =
-      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
+      &seq->sys_parts[((size_t)src->ls_id * (size_t)seq->header.num_parts) +
+                      (size_t)part_id];
    size_t vals_size = 0;
 
-   memset(out, 0, sizeof(*out));
    out->nrows      = seq->parts[part_id].nrows;
    out->value_size = seq->parts[part_id].value_size;
    out->label      = "LSSeq RHS part";
 
-   return LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
+   return !want_values ||
+          LSSeqReadPartBlobSlice(src->fp, (comp_alg_t)seq->header.codec,
                                  seq->header.offset_blob_data, seq->part_blob_table,
                                  part_id, 1, sys->rhs_blob_offset, sys->rhs_blob_size,
                                  &out->vals, &vals_size);
@@ -1482,8 +1485,8 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    }
 
    {
-      LSSeqMatrixSource           ctx = {fp, &seq, ls_id, partids, part_order};
-      hypredrv_IJMatrixPartSource src = {&ctx, (uint32_t)nparts, LSSeqMatrixSourceLoad};
+      LSSeqPartSource             ctx = {fp, &seq, ls_id, partids, part_order};
+      hypredrv_IJMatrixPartSource src = {&ctx, (uint32_t)nparts, LSSeqPartSourceLoad};
       hypredrv_IJMatrixBuildFromSource(comm, &src, memory_location, matrix_ptr);
    }
    local_ok = (!hypredrv_ErrorCodeActive() && *matrix_ptr != NULL);
@@ -1519,14 +1522,13 @@ int
 hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
                       HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
 {
-   LSSeqData                 seq        = {0};
-   FILE                     *fp         = NULL;
-   int                      *partids    = NULL;
-   uint32_t                 *part_order = NULL;
-   int                       nparts     = 0;
-   int                       local_ok   = 1;
-   int                       ok         = 0;
-   hypredrv_IJVectorMemPart *mem_parts  = NULL;
+   LSSeqData seq        = {0};
+   FILE     *fp         = NULL;
+   int      *partids    = NULL;
+   uint32_t *part_order = NULL;
+   int       nparts     = 0;
+   int       local_ok   = 1;
+   int       ok         = 0;
 
    if (!rhs_ptr)
    {
@@ -1540,27 +1542,18 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    local_ok =
       LSSeqDataLoad(filename, &seq) &&
       LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts, &part_order, &fp);
-   if (local_ok)
-   {
-      mem_parts = (hypredrv_IJVectorMemPart *)calloc(nparts ? (size_t)nparts : 1u,
-                                                     sizeof(*mem_parts));
-      local_ok = (mem_parts != NULL);
-   }
    /* GCOVR_EXCL_BR_STOP */
-   for (int i = 0; i < nparts && local_ok; i++)
-   {
-      local_ok =
-         LSSeqDecodeRHSPart(fp, &seq, ls_id, part_order[partids[i]], &mem_parts[i]);
-   }
-
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq RHS local decode failed"))
    {
       goto cleanup;
    }
 
-   hypredrv_IJVectorBuildFromParts(comm, mem_parts, (uint32_t)nparts, memory_location,
-                                   rhs_ptr);
+   {
+      LSSeqPartSource             ctx = {fp, &seq, ls_id, partids, part_order};
+      hypredrv_IJVectorPartSource src = {&ctx, (uint32_t)nparts, LSSeqRHSSourceLoad};
+      hypredrv_IJVectorBuildFromSource(comm, &src, memory_location, rhs_ptr);
+   }
    local_ok = (!hypredrv_ErrorCodeActive() && *rhs_ptr != NULL);
 
    /* GCOVR_EXCL_BR_START */
@@ -1584,11 +1577,6 @@ cleanup:
    {
       fclose(fp);
    }
-   for (int i = 0; mem_parts && i < nparts; i++)
-   {
-      free(mem_parts[i].vals);
-   }
-   free(mem_parts);
    free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);
