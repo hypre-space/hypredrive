@@ -851,6 +851,7 @@ SliceStreamStart(hypredrv_SliceStream *st)
 {
    const size_t header_size = sizeof(uint64_t);
 
+   (void)header_size; /* unused when no streaming codec is enabled */
    SliceStreamEnd(st);
 #ifdef HYPREDRV_USING_ZSTD
    if (st->algo == COMP_ZSTD)

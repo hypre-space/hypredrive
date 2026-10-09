@@ -601,9 +601,6 @@ AMGCreateRBMsFromHost(AMG_args *args, MPI_Comm comm, HYPRE_BigInt global_size,
 void
 hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
-   HYPRE_BigInt jlower = 0, jupper = 0;
-   HYPRE_Int    num_entries = 0;
-
    if (!args)
    {
       return;
@@ -629,8 +626,9 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    }
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   HYPRE_BigInt jlower = 0, jupper = 0;
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
-   num_entries                  = (HYPRE_Int)(jupper - jlower + 1);
+   HYPRE_Int      num_entries   = (HYPRE_Int)(jupper - jlower + 1);
    HYPRE_Int      vector_stride = 0, index_stride = 0;
    HYPRE_Complex *host_values =
       AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
@@ -677,7 +675,7 @@ AMGSelectedDofsHash(const int *selected_dofs, size_t num_selected_dofs)
 
 /* Rejects unusable inputs and short-circuits when the cached projection is still
  * valid on every rank. Returns 0 to stop, 1 to rebuild the modes. */
-static int
+static HYPREDRV_MAYBE_UNUSED int
 AMGProjectedRBMsShouldRebuild(AMG_args *args, HYPRE_IJVector vec_nn,
                               const IntArray *dofmap, uint64_t input_generation,
                               const int *selected_dofs, size_t num_selected_dofs,
@@ -1113,6 +1111,8 @@ AMGApplyNodalInterpolation(HYPRE_Solver precon, const AMG_args *args)
    HYPRE_BoomerAMGSetInterpVecAbsQTrunc(precon, args->coarsening.interp_vec_abs_q_trunc);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    HYPRE_BoomerAMGSetSmoothInterpVectors(precon, smooth);
+#else
+   (void)smooth;
 #endif
    HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, (HYPRE_ParVector *)args->rbms);
 }

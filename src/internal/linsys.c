@@ -3269,6 +3269,7 @@ hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector ve
 #if HYPRE_CHECK_MIN_VERSION(22800, 0)
    hypre_ParVectorAxpyz(one, par_x, neg_one, par_xref, par_e);
 #else
+   (void)one;
    hypre_ParVectorCopy(par_x, par_e);
    hypre_ParVectorAxpy(neg_one, par_xref, par_e);
 #endif

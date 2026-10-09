@@ -1056,6 +1056,8 @@ MGRRefreshGRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
       HYPRE_MGRSetGlobalSmootherAtLevel(
          mgr_solver, (HYPRE_Solver)level_args->g_relaxation.krylov, active_lvl);
       MGRSetComponentSetupReuse((HYPRE_Solver)level_args->g_relaxation.krylov, 0);
+#else
+      (void)mgr_solver;
 #endif
       return;
    }

@@ -649,6 +649,7 @@ MGRValidateFRelaxDiagScaling(const MGR_args *args, const MGRlvl_args *level_args
    if (level_args->f_relaxation.symmetric_diagonal_scaling)
    {
 #if !HYPRE_CHECK_MIN_VERSION(30100, 0)
+      (void)args;
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("MGR symmetric_diagonal_scaling requires hypre >= 3.1.0");
       return 0;
@@ -711,6 +712,8 @@ MGRConfigNestedKrylovFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *le
                                  hypredrv_MGRBaseParSolverSolve,
                                  hypredrv_MGRBaseParSolverSetup);
 #else
+   (void)precon;
+   (void)i;
    hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
    hypredrv_ErrorMsgAdd("Nested Krylov F-relaxation requires hypre >= 2.31.0");
    return 0;
@@ -789,6 +792,13 @@ MGRConfigNestedMGRFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *level
                                  NULL, NULL);
    args->frelax[orig_lvl] = frelax_wrapper;
 #else
+   (void)args;
+   (void)precon;
+   (void)level_args;
+   (void)i;
+   (void)orig_lvl;
+   (void)stats;
+   (void)next_ls_id;
    hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
    hypredrv_ErrorMsgAdd("Nested MGR F-relaxation requires hypre >= 3.1.0 (develop >= 5)");
    return 0;
@@ -805,6 +815,15 @@ MGRConfigGatedManagedFRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int i,
                             HYPRE_Int orig_lvl, const MGRlvl_args *level_args,
                             const Stats *stats, int next_ls_id)
 {
+#if !HYPRE_CHECK_MIN_VERSION(23100, 9)
+   /* No managed F-relaxation type is available on these hypre versions. */
+   (void)args;
+   (void)precon;
+   (void)i;
+   (void)orig_lvl;
+   (void)stats;
+   (void)next_ls_id;
+#endif
    if (level_args->f_relaxation.type == 29)
    {
 #if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)

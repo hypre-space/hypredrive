@@ -129,10 +129,12 @@ ScalingContextFreeVector(Scaling_context *ctx)
       ctx->scaling_vector = NULL;
    }
    /* GCOVR_EXCL_BR_STOP */
+#else
+   (void)ctx;
 #endif
 }
 
-static int
+static HYPREDRV_MAYBE_UNUSED int
 ScalingContextCacheInverse(Scaling_context *ctx)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
@@ -242,7 +244,7 @@ ScalingSystemCommResolve(HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M, HYPRE_IJVec
  * hypredrv_ScalingCompute (rhs_l2 strategy)
  *-----------------------------------------------------------------------------*/
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 ScalingComputeRHSL2(MPI_Comm comm, Scaling_context *ctx, HYPRE_IJVector vec_b)
 {
    /* GCOVR_EXCL_BR_START */
@@ -320,7 +322,7 @@ ScalingDofmapResolve(MPI_Comm comm, const char *label, HYPRE_IJMatrix mat_A,
  * hypredrv_ScalingCompute (dofmap_mag strategy)
  *-----------------------------------------------------------------------------*/
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                         HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
@@ -405,7 +407,7 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
 
 /* Validates the dofmap/custom-value pairing and resolves this rank's row range.
  * Returns zero with the error state set when the request cannot be honoured. */
-static int
+static HYPREDRV_MAYBE_UNUSED int
 ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatrix mat_A,
                            const IntArray *dofmap, HYPRE_ParCSRMatrix *par_A_out,
                            HYPRE_BigInt *ilower_out, HYPRE_BigInt *iupper_out,
@@ -467,7 +469,7 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
 #endif
 }
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 ScalingComputeDofmapCustom(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
                            HYPRE_IJMatrix mat_A, IntArray *dofmap)
 {
@@ -678,7 +680,7 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
  * Vector scaling helpers
  *-----------------------------------------------------------------------------*/
 
-static int
+static HYPREDRV_MAYBE_UNUSED int
 ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
                             scaling_vector_kind_t kind, int apply)
 {
@@ -726,7 +728,7 @@ ScalingTransformVectorRHSL2(const Scaling_context *ctx, HYPRE_IJVector vec,
    /* GCOVR_EXCL_BR_STOP */
 }
 
-static int
+static HYPREDRV_MAYBE_UNUSED int
 ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
                              scaling_vector_kind_t kind, int apply)
 {
@@ -788,6 +790,8 @@ ScalingTransformVectorDofmap(const Scaling_context *ctx, HYPRE_IJVector vec,
 #else
    (void)kind;
    (void)apply;
+   (void)par_vec;
+   (void)par_scaling;
    hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
    hypredrv_ErrorMsgAdd("ScalingTransformVectorDofmap: requires Hypre >= v3.0.0");
    HYPREDRV_LOG_COMMF(2, log_comm, NULL, 0,
@@ -1223,7 +1227,9 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
    }
 #endif
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
 done:
+#endif
    ScalingUpdateAppliedState(ctx);
    if (!apply)
    {
