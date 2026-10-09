@@ -298,6 +298,40 @@ static size_t
 IntArrayCompact(int *data, size_t size)
 {
    size_t count = 0;
+
+   /* Labels usually span a small range (a few dof types): mark them in a
+    * presence table and emit the set in ascending order in O(size + range)
+    * instead of sorting the whole array. */
+   if (size > 0)
+   {
+      int lo = data[0], hi = data[0];
+      for (size_t i = 1; i < size; i++)
+      {
+         lo = (data[i] < lo) ? data[i] : lo;
+         hi = (data[i] > hi) ? data[i] : hi;
+      }
+      size_t         range = (size_t)((long long)hi - (long long)lo) + 1u;
+      unsigned char *seen  = (range <= size && range <= ((size_t)1 << 20))
+                                ? (unsigned char *)calloc(range, 1)
+                                : NULL;
+      if (seen)
+      {
+         for (size_t i = 0; i < size; i++)
+         {
+            seen[(size_t)((long long)data[i] - lo)] = 1;
+         }
+         for (size_t v = 0; v < range; v++)
+         {
+            if (seen[v])
+            {
+               data[count++] = (int)((long long)lo + (long long)v);
+            }
+         }
+         free(seen);
+         return count;
+      }
+   }
+
    qsort(data, size, sizeof(int), IntArrayCompare);
    for (size_t i = 0; i < size; i++)
    {

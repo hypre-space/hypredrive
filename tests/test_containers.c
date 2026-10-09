@@ -440,6 +440,28 @@ test_IntArray_partition_reads(void)
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
+/* Small label ranges (the common dofmap case) take the presence-table path;
+ * the unique sets must still come out sorted, including negative labels. */
+static void
+test_IntArray_unique_small_range(void)
+{
+   const int data[] = {5, -2, 5, 3, -2, 3, 5, 4};
+   IntArray *array  = NULL;
+   hypredrv_ErrorStateReset();
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 8, data, &array);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(array);
+   ASSERT_EQ_SIZE(array->unique_size, 4);
+   ASSERT_EQ(array->unique_data[0], -2);
+   ASSERT_EQ(array->unique_data[1], 3);
+   ASSERT_EQ(array->unique_data[2], 4);
+   ASSERT_EQ(array->unique_data[3], 5);
+   ASSERT_EQ_SIZE(array->g_unique_size, 4);
+   for (size_t i = 0; i < 4; i++) ASSERT_EQ(array->g_unique_data[i], array->unique_data[i]);
+   for (int i = 0; i < 8; i++) ASSERT_EQ(array->data[i], data[i]);
+   hypredrv_IntArrayDestroy(&array);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -465,6 +487,7 @@ main(int argc, char **argv)
    RUN_TEST(test_numeric_arrays_reject_invalid_entries);
    RUN_TEST(test_StackIntArray_capacity);
    RUN_TEST(test_IntArray_distributed_labels);
+   RUN_TEST(test_IntArray_unique_small_range);
    RUN_TEST(test_IntArray_partition_reads);
    RUN_TEST(test_IntArray_patterns_and_invalid_sizes);
    RUN_TEST(test_IntArray_create_destroy);
