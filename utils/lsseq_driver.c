@@ -3189,13 +3189,20 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    {
       return EXIT_FAILURE;
    }
-   if (!LoadPackedSequence(args->input_filename, &seq, 1))
+   /* The blob hash covers the whole data section: verify it once on rank 0
+    * rather than having every rank re-read and hash the full file. */
    {
-      if (!myid)
+      int load_ok = LoadPackedSequence(args->input_filename, &seq, myid == 0);
+      int all_ok  = 0;
+      MPI_Allreduce(&load_ok, &all_ok, 1, MPI_INT, MPI_MIN, comm);
+      if (!all_ok)
       {
-         fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
+         if (!myid)
+         {
+            fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
+         }
+         MPI_Abort(comm, EXIT_FAILURE);
       }
-      MPI_Abort(comm, EXIT_FAILURE);
    }
 
    if (!EnsureDirectoryExists(args->output_dir))
