@@ -1378,13 +1378,13 @@ LSSeqMatrixMemPartFree(hypredrv_IJMatrixMemPart *part)
    memset(part, 0, sizeof(*part));
 }
 
-/* Prepares the rank-local staging state for reading system ls_id: validates the
+/* Prepares the rank-local state for reading system ls_id: validates the
  * id, collects this rank's part ids and the stored-to-runtime part order, and
  * opens the sequence file. Purely local (no collectives); returns 0 on any
  * local failure. */
 static int
-LSSeqPrepareStaging(MPI_Comm comm, const LSSeqData *seq, int ls_id, const char *filename,
-                    int **partids, int *nparts, uint32_t **part_order, FILE **fp)
+LSSeqPrepareRead(MPI_Comm comm, const LSSeqData *seq, int ls_id, const char *filename,
+                 int **partids, int *nparts, uint32_t **part_order, FILE **fp)
 {
    /* GCOVR_EXCL_BR_START */
    if (ls_id < 0 || ls_id >= (int)seq->header.num_systems) /* GCOVR_EXCL_BR_STOP */
@@ -1460,9 +1460,9 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    *matrix_ptr = NULL;
 
    /* GCOVR_EXCL_BR_START */
-   local_ok = LSSeqDataLoad(filename, &seq) &&
-              LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
-                                  &part_order, &fp);
+   local_ok =
+      LSSeqDataLoad(filename, &seq) &&
+      LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts, &part_order, &fp);
    if (local_ok)
    {
       mem_parts = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u,
@@ -1477,7 +1477,7 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
-                                  "LSSeq matrix local staging failed"))
+                                  "LSSeq matrix local decode failed"))
    {
       goto cleanup;
    }
@@ -1540,9 +1540,9 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    *rhs_ptr = NULL;
 
    /* GCOVR_EXCL_BR_START */
-   local_ok = LSSeqDataLoad(filename, &seq) &&
-              LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
-                                  &part_order, &fp);
+   local_ok =
+      LSSeqDataLoad(filename, &seq) &&
+      LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts, &part_order, &fp);
    if (local_ok)
    {
       mem_parts = (hypredrv_IJVectorMemPart *)calloc(nparts ? (size_t)nparts : 1u,
@@ -1557,7 +1557,7 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
-                                  "LSSeq RHS local staging failed"))
+                                  "LSSeq RHS local decode failed"))
    {
       goto cleanup;
    }
@@ -1679,15 +1679,15 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    local_ok = LSSeqDataLoad(filename, &seq);
    if (local_ok && (seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP)) /* GCOVR_EXCL_BR_STOP */
    {
-      local_ok = LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
-                                     &part_order, &fp);
+      local_ok = LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts,
+                                  &part_order, &fp);
    }
 
    /* Agree on the local status before the no-dofmap early return and the
     * collective build, so no rank is left waiting in a collective that a
     * failed rank skipped. */
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
-                                  "LSSeq dofmap local staging failed"))
+                                  "LSSeq dofmap local decode failed"))
    {
       goto cleanup;
    }
@@ -1708,7 +1708,7 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
-                                  "LSSeq dofmap local staging failed"))
+                                  "LSSeq dofmap local decode failed"))
    {
       goto cleanup;
    }
