@@ -29,5 +29,7 @@ void hypredrv_compress(comp_alg_t algo, size_t isize, const void *input,
                        size_t *osize_ptr, void **output_ptr, int compression_level);
 void hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input,
                          size_t *osize_ptr, void **output_ptr);
+int  hypredrv_decompress_slice(comp_alg_t algo, size_t isize, const void *input,
+                               size_t offset, size_t size, void **output);
 
 #endif /* COMP_HEADER */

@@ -1059,9 +1059,8 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
                        size_t *output_size)
 {
    uint64_t c_off, c_size;
-   void    *decoded      = NULL;
-   size_t   decoded_size = 0;
-   void    *slice        = NULL;
+   void    *blob = NULL;
+   int      ok   = 0;
 
    if (!fp || !part_blob_table || !output || !output_size || slot < 0 || slot > 2)
    /* GCOVR_EXCL_BR_LINE */
@@ -1092,31 +1091,38 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
       return 1;
    }
    /* GCOVR_EXCL_BR_START */
-   if (!LSSeqReadBlob(fp, codec, blob_base + c_off, c_size, 0, &decoded, &decoded_size))
-   /* GCOVR_EXCL_BR_STOP */
+   if (c_size > (uint64_t)LSSEQ_MAX_BLOB_BYTES) /* GCOVR_EXCL_BR_STOP */
    {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Blob size exceeds limit (%llu bytes)",
+                           (unsigned long long)c_size);
+      return 0;
+   }
+   blob = malloc((size_t)c_size);
+   if (!blob) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate %llu bytes for blob read",
+                           (unsigned long long)c_size);
       return 0;
    }
    /* GCOVR_EXCL_BR_START */
-   if (decomp_offset > UINT64_MAX - decomp_size ||
-       /* GCOVR_EXCL_BR_STOP */
-       decomp_offset + decomp_size > (uint64_t)decoded_size)
+   if (!LSSeqReadAt(fp, blob_base + c_off, blob, (size_t)c_size, "blob payload"))
+   /* GCOVR_EXCL_BR_STOP */
    {
-      free(decoded);
+      free(blob);
       return 0;
    }
-   slice = malloc((size_t)decomp_size);
-   if (!slice) /* GCOVR_EXCL_BR_LINE */
+
+   /* The part blob batches every system's payload; decode only this system's
+    * slice (streaming codecs stop at its end instead of inflating the rest). */
+   ok = hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
+                                  (size_t)decomp_size, output);
+   free(blob);
+   if (!ok)
    {
-      free(decoded);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate slice buffer (%llu bytes)",
-                           (unsigned long long)decomp_size);
       return 0;
    }
-   memcpy(slice, (const char *)decoded + (size_t)decomp_offset, (size_t)decomp_size);
-   free(decoded);
-   *output      = slice;
    *output_size = (size_t)decomp_size;
    return 1;
 }

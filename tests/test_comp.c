@@ -376,6 +376,79 @@ test_comp_none_zero_payload(void)
    free(out);
 }
 
+/* Slices of a compressed payload must match the source bytes, including
+ * slices that start mid-stream and cross the 128 KiB decode window. */
+static void
+run_slice_checks(comp_alg_t algo)
+{
+   const size_t   nbytes = (size_t)1 << 20;
+   unsigned char *input  = (unsigned char *)malloc(nbytes);
+   void          *blob   = NULL;
+   size_t         blob_size = 0;
+   const size_t   ranges[][2] = {
+      {0, 1000}, {131000, 2000}, {300000, 400000}, {nbytes - 10, 10}, {nbytes, 0},
+   };
+
+   ASSERT_NOT_NULL(input);
+   for (size_t i = 0; i < nbytes; i++)
+   {
+      input[i] = (unsigned char)((i * 2654435761u) >> 24);
+   }
+
+   hypredrv_ErrorCodeResetAll();
+   if (algo == COMP_NONE)
+   {
+      blob      = input;
+      blob_size = nbytes;
+   }
+   else
+   {
+      hypredrv_compress(algo, nbytes, input, &blob_size, &blob, -1);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   }
+
+   for (size_t r = 0; r < sizeof(ranges) / sizeof(ranges[0]); r++)
+   {
+      void *slice = NULL;
+      ASSERT_EQ(hypredrv_decompress_slice(algo, blob_size, blob, ranges[r][0],
+                                          ranges[r][1], &slice),
+                1);
+      if (ranges[r][1] == 0)
+      {
+         ASSERT_NULL(slice);
+         continue;
+      }
+      ASSERT_NOT_NULL(slice);
+      ASSERT_EQ(memcmp(slice, input + ranges[r][0], ranges[r][1]), 0);
+      free(slice);
+   }
+
+   /* Out-of-range requests fail without producing output. */
+   void *slice = NULL;
+   ASSERT_EQ(hypredrv_decompress_slice(algo, blob_size, blob, nbytes - 5, 10, &slice), 0);
+   ASSERT_NULL(slice);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   if (blob != input)
+   {
+      free(blob);
+   }
+   free(input);
+}
+
+static void
+test_comp_decompress_slice(void)
+{
+   run_slice_checks(COMP_NONE);
+#ifdef HYPREDRV_USING_ZLIB
+   run_slice_checks(COMP_ZLIB);
+#endif
+#ifdef HYPREDRV_USING_ZSTD
+   run_slice_checks(COMP_ZSTD);
+#endif
+}
+
 int
 main(void)
 {
@@ -401,6 +474,7 @@ main(void)
 #endif
    RUN_TEST(test_comp_invalid_args);
    RUN_TEST(test_comp_none_zero_payload);
+   RUN_TEST(test_comp_decompress_slice);
 
 #ifdef HYPREDRV_USING_ZLIB
    run_roundtrip(COMP_ZLIB);
