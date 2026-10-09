@@ -10,6 +10,7 @@
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
+#include "internal/linsys.h"
 #include "internal/utils.h"
 
 enum
@@ -448,4 +449,104 @@ cleanup:
       }
       *vec_ptr = NULL;
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * Build a host IJ vector directly from rank-local parts held in memory (the
+ * in-memory counterpart of hypredrv_IJVectorReadMultipartBinary). Collective
+ * over `comm`; values already in HYPRE_Complex width are used in place.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_IJVectorBuildFromHostParts(MPI_Comm comm, hypredrv_IJVectorMemPart *parts,
+                                    uint32_t nparts, HYPRE_IJVector *vec_ptr)
+{
+   uint64_t       nrows_sum = 0, nrows_max = 0, nrows_offset = 0, row = 0;
+   HYPRE_BigInt   ilower = 0, iupper = 0;
+   HYPRE_IJVector vec     = NULL;
+   HYPRE_BigInt  *indices = NULL;
+   HYPRE_Complex *wide    = NULL;
+
+   *vec_ptr = NULL;
+   for (uint32_t p = 0; p < nparts; p++)
+   {
+      if ((parts[p].value_size != sizeof(float) &&
+           parts[p].value_size != sizeof(double)) ||
+          parts[p].nrows > (uint64_t)IJVECTOR_MAX_PART_NROWS)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid vector part metadata in %s",
+                              parts[p].label ? parts[p].label : "(unknown)");
+         break;
+      }
+      nrows_sum += parts[p].nrows;
+      nrows_max = (parts[p].nrows > nrows_max) ? parts[p].nrows : nrows_max;
+   }
+   if (!hypredrv_ErrorCodeActive() && nrows_max > 0)
+   {
+      indices = (HYPRE_BigInt *)malloc((size_t)nrows_max * sizeof(HYPRE_BigInt));
+      wide    = (HYPRE_Complex *)malloc((size_t)nrows_max * sizeof(HYPRE_Complex));
+      /* GCOVR_EXCL_BR_START */
+      if (!indices || !wide) /* GCOVR_EXCL_BR_STOP */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                   /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd("Failed to allocate vector buffers"); /* GCOVR_EXCL_LINE */
+      }
+   }
+   if (!IJVectorAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
+   ilower = (HYPRE_BigInt)(nrows_offset - nrows_sum);
+   iupper = (HYPRE_BigInt)(ilower + (HYPRE_BigInt)nrows_sum - 1);
+   HYPRE_IJVectorCreate(comm, ilower, iupper, &vec);
+   HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR);
+   HYPRE_IJVectorInitialize_v2(vec, HYPRE_MEMORY_HOST);
+
+   /* Explicit indices keep each part at its concatenation offset. */
+   for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+   {
+      hypredrv_IJVectorMemPart *part = &parts[p];
+      HYPRE_Complex            *vals = wide;
+
+      if (part->nrows == 0)
+      {
+         continue;
+      }
+#if !defined(HYPRE_COMPLEX)
+      if (part->value_size == sizeof(HYPRE_Complex))
+      {
+         vals = (HYPRE_Complex *)part->vals;
+      }
+#endif
+      if (!hypredrv_ConvertCoefficients(part->vals, part->value_size, part->nrows, vals,
+                                        "vector", part->label))
+      {
+         break;
+      }
+      for (uint64_t i = 0; i < part->nrows; i++)
+      {
+         indices[i] = ilower + (HYPRE_BigInt)(row + i);
+      }
+      HYPRE_IJVectorSetValues(vec, (HYPRE_Int)part->nrows, indices, vals);
+      row += part->nrows;
+   }
+   if (!IJVectorAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   HYPRE_IJVectorAssemble(vec);
+   *vec_ptr = vec;
+   vec      = NULL;
+
+cleanup:
+   if (vec)
+   {
+      HYPRE_IJVectorDestroy(vec);
+   }
+   free(indices);
+   free(wide);
 }
