@@ -1317,24 +1317,36 @@ hypredrv_LSSeqReadSummary(const char *filename, int *num_systems, int *num_patte
    return 1;
 }
 
-/* Decodes one part's matrix slice (pattern indices and this system's values)
- * into `out`, whose arrays the caller frees. Returns zero on failure. */
-static int
-LSSeqDecodeMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_id,
-                      hypredrv_IJMatrixMemPart *out)
+/* hypredrv_IJMatrixPartSource over this rank's parts of one LSSeq system:
+ * metadata comes from the sequence headers; indices and values are decoded
+ * only when requested. */
+typedef struct
 {
-   const LSSeqPartMeta       *part = &seq->parts[part_id];
+   FILE            *fp;
+   const LSSeqData *seq;
+   int              ls_id;
+   const int       *partids;
+   const uint32_t  *part_order;
+} LSSeqMatrixSource;
+
+static int
+LSSeqMatrixSourceLoad(void *ctx, uint32_t p, int want, hypredrv_IJMatrixMemPart *out)
+{
+   const LSSeqMatrixSource   *src     = (const LSSeqMatrixSource *)ctx;
+   const LSSeqData           *seq     = src->seq;
+   uint32_t                   part_id = src->part_order[src->partids[p]];
+   const LSSeqPartMeta       *part    = &seq->parts[part_id];
    const LSSeqSystemPartMeta *sys =
-      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
+      &seq->sys_parts[((size_t)src->ls_id * (size_t)seq->header.num_parts) +
+                      (size_t)part_id];
    const LSSeqPatternMeta *pattern       = NULL;
    size_t                  expected_size = 0, rows_size = 0, cols_size = 0, vals_size = 0;
 
-   memset(out, 0, sizeof(*out));
    if (sys->pattern_id >= seq->header.num_patterns)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd("Invalid pattern id %u for system %d part %u", sys->pattern_id,
-                           ls_id, part_id);
+                           src->ls_id, part_id);
       return 0;
    }
    pattern = &seq->patterns[sys->pattern_id];
@@ -1342,8 +1354,8 @@ LSSeqDecodeMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_i
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
       hypredrv_ErrorMsgAdd(
-         "Pattern-part mismatch for system %d part %u (pattern part=%u)", ls_id, part_id,
-         pattern->part_id);
+         "Pattern-part mismatch for system %d part %u (pattern part=%u)", src->ls_id,
+         part_id, pattern->part_id);
       return 0;
    }
 
@@ -1354,28 +1366,28 @@ LSSeqDecodeMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_i
    out->label      = "LSSeq matrix part";
 
    /* GCOVR_EXCL_BR_START */
-   return LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
-                              &expected_size, "matrix index blob size") &&
-          LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES,
-                                 "matrix index blob") &&
-          LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->rows_blob_offset,
-                        pattern->rows_blob_size, expected_size, &out->rows, &rows_size) &&
-          LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->cols_blob_offset,
-                        pattern->cols_blob_size, expected_size, &out->cols, &cols_size) &&
-          LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
-                                 seq->header.offset_blob_data, seq->part_blob_table,
-                                 part_id, 0, sys->values_blob_offset,
-                                 sys->values_blob_size, &out->vals, &vals_size);
+   if ((want & HYPREDRV_PART_INDICES) &&
+       !(LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
+                             &expected_size, "matrix index blob size") &&
+         LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES,
+                                "matrix index blob") &&
+         LSSeqReadBlob(src->fp, (comp_alg_t)seq->header.codec, pattern->rows_blob_offset,
+                       pattern->rows_blob_size, expected_size, &out->rows, &rows_size) &&
+         LSSeqReadBlob(src->fp, (comp_alg_t)seq->header.codec, pattern->cols_blob_offset,
+                       pattern->cols_blob_size, expected_size, &out->cols, &cols_size)))
+   {
+      return 0;
+   }
+   if ((want & HYPREDRV_PART_VALUES) &&
+       !LSSeqReadPartBlobSlice(src->fp, (comp_alg_t)seq->header.codec,
+                               seq->header.offset_blob_data, seq->part_blob_table,
+                               part_id, 0, sys->values_blob_offset, sys->values_blob_size,
+                               &out->vals, &vals_size))
    /* GCOVR_EXCL_BR_STOP */
-}
-
-static void
-LSSeqMatrixMemPartFree(hypredrv_IJMatrixMemPart *part)
-{
-   free(part->rows);
-   free(part->cols);
-   free(part->vals);
-   memset(part, 0, sizeof(*part));
+   {
+      return 0;
+   }
+   return 1;
 }
 
 /* Prepares the rank-local state for reading system ls_id: validates the
@@ -1442,14 +1454,13 @@ int
 hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                          HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
 {
-   LSSeqData                 seq        = {0};
-   FILE                     *fp         = NULL;
-   int                      *partids    = NULL;
-   uint32_t                 *part_order = NULL;
-   int                       nparts     = 0;
-   int                       local_ok   = 1;
-   int                       ok         = 0;
-   hypredrv_IJMatrixMemPart *mem_parts  = NULL;
+   LSSeqData seq        = {0};
+   FILE     *fp         = NULL;
+   int      *partids    = NULL;
+   uint32_t *part_order = NULL;
+   int       nparts     = 0;
+   int       local_ok   = 1;
+   int       ok         = 0;
 
    if (!matrix_ptr)
    {
@@ -1463,27 +1474,18 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    local_ok =
       LSSeqDataLoad(filename, &seq) &&
       LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts, &part_order, &fp);
-   if (local_ok)
-   {
-      mem_parts = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u,
-                                                     sizeof(*mem_parts));
-      local_ok = (mem_parts != NULL);
-   }
    /* GCOVR_EXCL_BR_STOP */
-   for (int i = 0; i < nparts && local_ok; i++)
-   {
-      local_ok =
-         LSSeqDecodeMatrixPart(fp, &seq, ls_id, part_order[partids[i]], &mem_parts[i]);
-   }
-
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq matrix local decode failed"))
    {
       goto cleanup;
    }
 
-   hypredrv_IJMatrixBuildFromParts(comm, mem_parts, (uint32_t)nparts, memory_location,
-                                   matrix_ptr);
+   {
+      LSSeqMatrixSource           ctx = {fp, &seq, ls_id, partids, part_order};
+      hypredrv_IJMatrixPartSource src = {&ctx, (uint32_t)nparts, LSSeqMatrixSourceLoad};
+      hypredrv_IJMatrixBuildFromSource(comm, &src, memory_location, matrix_ptr);
+   }
    local_ok = (!hypredrv_ErrorCodeActive() && *matrix_ptr != NULL);
 
    /* GCOVR_EXCL_BR_START */
@@ -1507,11 +1509,6 @@ cleanup:
    {
       fclose(fp);
    }
-   for (int i = 0; mem_parts && i < nparts; i++)
-   {
-      LSSeqMatrixMemPartFree(&mem_parts[i]);
-   }
-   free(mem_parts);
    free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);

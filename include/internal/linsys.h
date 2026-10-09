@@ -252,10 +252,10 @@ void hypredrv_IJVectorReadMultipartBinary(const char *, MPI_Comm, uint64_t,
 void hypredrv_IJMatrixReadMultipartBinary(const char *, MPI_Comm, uint64_t,
                                           HYPRE_MemoryLocation, HYPRE_IJMatrix *);
 
-/* One rank-local matrix part already in memory, in the multipart part layout:
- * `nnz` row and column indices of `index_size` (4 or 8) bytes and `nnz` values
- * of `value_size` (4 or 8) bytes. The builder may convert the arrays in place;
- * `label` names the part in error messages. */
+/* One rank-local matrix part in the multipart part layout: `nnz` row and column
+ * indices of `index_size` (4 or 8) bytes and `nnz` values of `value_size` (4 or
+ * 8) bytes. The builder may convert the arrays in place; `label` names the part
+ * in error messages. */
 typedef struct
 {
    uint64_t    nrows;
@@ -268,8 +268,26 @@ typedef struct
    const char *label;
 } hypredrv_IJMatrixMemPart;
 
-void hypredrv_IJMatrixBuildFromParts(MPI_Comm, hypredrv_IJMatrixMemPart *, uint32_t,
-                                     HYPRE_MemoryLocation, HYPRE_IJMatrix *);
+/* Supplies rank-local matrix part p to hypredrv_IJMatrixBuildFromSource. `load`
+ * always fills the metadata (nrows, nnz, widths, label) and allocates (malloc)
+ * the index arrays when `want` has HYPREDRV_PART_INDICES and the values when
+ * it has HYPREDRV_PART_VALUES; the builder frees them. A values-only request
+ * may receive a part whose indices are already loaded. Returns 0 with the
+ * error state set on failure. */
+enum
+{
+   HYPREDRV_PART_INDICES = 1,
+   HYPREDRV_PART_VALUES  = 2,
+};
+typedef struct
+{
+   void    *ctx;
+   uint32_t nparts;
+   int (*load)(void *ctx, uint32_t p, int want, hypredrv_IJMatrixMemPart *part);
+} hypredrv_IJMatrixPartSource;
+
+void hypredrv_IJMatrixBuildFromSource(MPI_Comm, const hypredrv_IJMatrixPartSource *,
+                                      HYPRE_MemoryLocation, HYPRE_IJMatrix *);
 
 /* One rank-local vector part already in memory: `nrows` values of `value_size`
  * (4 or 8) bytes, convertible in place; `label` names it in error messages. */
