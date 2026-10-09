@@ -1407,10 +1407,10 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
 
    raw->row_index_size = header[1];
    raw->value_size     = header[2];
-   raw->nrows          = header[5];
    raw->nnz            = header[6];
    raw->row_lower      = header[7];
    raw->row_upper      = header[8];
+   raw->nrows          = raw->row_upper - raw->row_lower + 1u; /* header[5] is global nnz */
 
    nnz = (size_t)raw->nnz;
    row_bytes = (size_t)raw->row_index_size;
@@ -2591,7 +2591,8 @@ DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
 }
 
 static int
-WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
+WriteMatrixPartBinary(const char *filename, uint64_t global_nrows, uint64_t global_nnz,
+                      const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
                       const void *rows, const void *cols, const void *vals)
 {
    FILE    *fp = NULL;
@@ -2608,12 +2609,18 @@ WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSS
    {
       return 0;
    }
-   header[1] = part->row_index_size;
-   header[2] = part->value_size;
-   header[5] = part->row_upper - part->row_lower + 1;
-   header[6] = pattern->nnz;
-   header[7] = part->row_lower;
-   header[8] = part->row_upper;
+   /* Same header as hypre's HYPRE_IJMatrixPrintBinary (square matrix). */
+   header[0]  = 1; /* header version */
+   header[1]  = part->row_index_size;
+   header[2]  = part->value_size;
+   header[3]  = global_nrows;
+   header[4]  = global_nrows;
+   header[5]  = global_nnz;
+   header[6]  = pattern->nnz;
+   header[7]  = part->row_lower;
+   header[8]  = part->row_upper;
+   header[9]  = part->row_lower;
+   header[10] = part->row_upper;
    if (fwrite(header, sizeof(uint64_t), 11, fp) != 11)
    {
       fclose(fp);
@@ -2634,7 +2641,8 @@ WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSS
 }
 
 static int
-WriteRHSPartBinary(const char *filename, const LSSeqPartMeta *part, const void *vals)
+WriteRHSPartBinary(const char *filename, uint64_t global_nrows, const LSSeqPartMeta *part,
+                   const void *vals)
 {
    FILE    *fp = NULL;
    uint64_t header[8] = {0};
@@ -2650,8 +2658,14 @@ WriteRHSPartBinary(const char *filename, const LSSeqPartMeta *part, const void *
    {
       return 0;
    }
+   /* Same header as hypre's HYPRE_IJVectorPrintBinary (one component). */
+   header[0] = 1; /* header version */
    header[1] = part->value_size;
+   header[2] = part->row_lower;
+   header[3] = part->row_lower + part->nrows; /* exclusive upper bound */
+   header[4] = global_nrows;
    header[5] = part->nrows;
+   header[6] = 1; /* num_components */
    if (fwrite(header, sizeof(uint64_t), 8, fp) != 8)
    {
       fclose(fp);
@@ -3416,6 +3430,11 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                   digits_suffix, suffix);
          path_copy(system_dir, sizeof(system_dir), path_tmp);
       }
+      uint64_t global_nnz = 0;
+      for (uint32_t p = 0; p < seq.header.num_parts; p++)
+      {
+         global_nnz += seq.sys_parts[(size_t)s * (size_t)seq.header.num_parts + p].nnz;
+      }
 
       for (int lp = 0; lp < local_nparts; lp++)
       {
@@ -3498,8 +3517,9 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                                             cols, vals) ||
                !WriteVectorPartMatrixMarket(rfile, global_nrows, part, rhs))) ||
              (args->format == UNPACK_FORMAT_HYPRE &&
-              (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
-               !WriteRHSPartBinary(rfile, part, rhs))))
+              (!WriteMatrixPartBinary(mfile, global_nrows, global_nnz, part, pat, rows, cols,
+                                      vals) ||
+               !WriteRHSPartBinary(rfile, global_nrows, part, rhs))))
          {
             free(vals); free(rhs); free(dof);
             fclose(fp);
