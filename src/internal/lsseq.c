@@ -1118,13 +1118,22 @@ LSSeqStreamKeyMake(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t size,
 #endif
 }
 
+static int
+LSSeqStreamKeyEqual(const LSSeqStreamKey *a, const LSSeqStreamKey *b)
+{
+   return a->dev == b->dev && a->ino == b->ino && a->size == b->size &&
+          a->mtime_sec == b->mtime_sec && a->mtime_nsec == b->mtime_nsec &&
+          a->blob_offset == b->blob_offset && a->blob_size == b->blob_size &&
+          a->codec == b->codec && !memcmp(a->head, b->head, sizeof(a->head)) &&
+          !memcmp(a->tail, b->tail, sizeof(a->tail));
+}
+
 static hypredrv_SliceStream *
 LSSeqStreamCacheFind(const LSSeqStreamKey *key)
 {
    for (int i = 0; i < LSSEQ_STREAM_CACHE_SIZE; i++)
    {
-      if (g_lsseq_streams[i].stream &&
-          !memcmp(&g_lsseq_streams[i].key, key, sizeof(*key)))
+      if (g_lsseq_streams[i].stream && LSSeqStreamKeyEqual(&g_lsseq_streams[i].key, key))
       {
          g_lsseq_streams[i].used = ++g_lsseq_stream_clock;
          return g_lsseq_streams[i].stream;
