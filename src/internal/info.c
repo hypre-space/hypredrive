@@ -2591,6 +2591,19 @@ PrintIntelGpuMemory(double bytes_to_gib)
    }
 }
 
+/* Per-rank accelerator binding strings gathered on rank 0. */
+static void
+PrintAcceleratorBinding(const char *gpuBindingAll, int nprocs)
+{
+   printf("Accelerator Binding (per rank)\n");
+   printf("-------------------------------\n");
+   for (int r = 0; r < nprocs; r++)
+   {
+      printf("Rank %-3d              : %s\n", r,
+             gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
+   }
+}
+
 /* Legacy system-information report, section 2: host and accelerator memory. */
 static void
 PrintLegacyMemorySection(int nprocs, double bytes_to_gib, double mib_to_gib,
@@ -2615,22 +2628,15 @@ PrintLegacyMemorySection(int nprocs, double bytes_to_gib, double mib_to_gib,
 
    if (gpuBindingAll)
    {
-      printf("Accelerator Binding (per rank)\n");
-      printf("-------------------------------\n");
-      for (int r = 0; r < nprocs; r++)
-      {
-         printf("Rank %-3d              : %s\n", r,
-                gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
-      }
+      PrintAcceleratorBinding(gpuBindingAll, nprocs);
    }
 }
 
-/* Legacy system-information report, section 3: operating system identity. */
+/* Operating system identity (shared by the legacy and hwloc reports). */
 static void
-PrintLegacyOsSection(void)
+PrintOsSection(void)
 {
-   // 3. OS system info, release, version, machine
-   printf("\nOperating System\n");
+   printf("Operating System\n");
    printf("-----------------\n");
    struct utsname sysinfo;
    if (uname(&sysinfo) == 0)
@@ -2643,11 +2649,10 @@ PrintLegacyOsSection(void)
    }
 }
 
-/* Legacy system-information report, section 5: current working directory. */
+/* Current working directory (shared by the legacy and hwloc reports). */
 static void
-PrintLegacyCwdSection(void)
+PrintCwdSection(void)
 {
-   // 5. Current working directory
    printf("Current Working Directory\n");
    printf("--------------------------\n");
    char cwd[4096];
@@ -2657,11 +2662,10 @@ PrintLegacyCwdSection(void)
    }
 }
 
-/* Legacy system-information report, section 6: loaded dynamic libraries. */
+/* Loaded dynamic libraries (shared by the legacy and hwloc reports). */
 static void
-PrintLegacyDynamicLibrariesSection(void)
+PrintDynamicLibrariesSection(void)
 {
-   // 6. Dynamic libraries used
    printf("Dynamic Libraries Loaded\n");
    printf("------------------------\n");
 #ifdef __APPLE__
@@ -2721,13 +2725,14 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 
       PrintLegacyMemorySection(nprocs, bytes_to_gib, mib_to_gib, gpuBindingAll);
 
-      PrintLegacyOsSection();
+      printf("\n");
+      PrintOsSection();
 
       PrintCompilationInfo();
 
-      PrintLegacyCwdSection();
+      PrintCwdSection();
 
-      PrintLegacyDynamicLibrariesSection();
+      PrintDynamicLibrariesSection();
 
       PrintMpiRuntimeInformation(comm);
       PrintThreadingEnvironmentInformation();
@@ -3830,6 +3835,10 @@ PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
    {
       printf("\n");
    }
+#else
+   (void)comm;
+   (void)gpus;
+   (void)gpu_count;
 #endif
 }
 
@@ -4002,59 +4011,6 @@ PrintMemoryInformation(double bytes_to_gib, double mib_to_gib)
 }
 
 static void
-PrintOperatingSystemInfo(void)
-{
-   printf("Operating System\n");
-   printf("-----------------\n");
-   struct utsname sysinfo;
-   if (uname(&sysinfo) == 0)
-   {
-      printf("System Name           : %s\n", sysinfo.sysname);
-      printf("Node Name             : %s\n", sysinfo.nodename);
-      printf("Release               : %s\n", sysinfo.release);
-      printf("Version               : %s\n", sysinfo.version);
-      printf("Machine Architecture  : %s\n\n", sysinfo.machine);
-   }
-}
-
-static void
-PrintWorkingDirectory(void)
-{
-   printf("Current Working Directory\n");
-   printf("--------------------------\n");
-   char cwd[4096];
-   if (getcwd(cwd, sizeof(cwd)) != NULL)
-   {
-      printf("%s\n\n", cwd);
-   }
-}
-
-static void
-PrintDynamicLibraries(void)
-{
-   printf("Dynamic Libraries Loaded\n");
-   printf("------------------------\n");
-#ifdef __APPLE__
-   uint32_t dcount = _dyld_image_count();
-   for (uint32_t i = 0; i < dcount; i++)
-   {
-      const char               *name     = _dyld_get_image_name(i);
-      const struct mach_header *header   = _dyld_get_image_header(i);
-      const char               *filename = strrchr(name, '/');
-
-      filename = filename ? filename + 1 : name;
-      printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
-   }
-#else
-   if (!PrintDynamicLibrariesTree())
-   {
-      dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
-   }
-#endif
-   printf("\n");
-}
-
-static void
 PrintRunningInfo(MPI_Comm comm)
 {
    int myid = 0, nprocs = 0;
@@ -4145,13 +4101,7 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
       // 8. Accelerator Binding (per rank)
       if (gpuBindingAll)
       {
-         printf("Accelerator Binding (per rank)\n");
-         printf("-------------------------------\n");
-         for (int r = 0; r < nprocs; r++)
-         {
-            printf("Rank %-3d              : %s\n", r,
-                   gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
-         }
+         PrintAcceleratorBinding(gpuBindingAll, nprocs);
          printf("\n");
       }
 
@@ -4169,7 +4119,7 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
       PrintTopologyTree();
 
       // 12. Operating System
-      PrintOperatingSystemInfo();
+      PrintOsSection();
 
       // 13. Compilation Information
       PrintCompilationInfo();
@@ -4186,10 +4136,10 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
 #endif
 
       // 17. Current Working Directory
-      PrintWorkingDirectory();
+      PrintCwdSection();
 
       // 18. Dynamic Libraries
-      PrintDynamicLibraries();
+      PrintDynamicLibrariesSection();
 
       // 19. hwloc Information
       printf("hwloc Information\n");
