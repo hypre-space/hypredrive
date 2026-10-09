@@ -1775,6 +1775,7 @@ LoadTimesteps(const char *filename, LSSeqTimestepEntry **entries_ptr, uint32_t *
       fclose(fp);
       return 0;
    }
+   long declared = strtol(line, NULL, 10);
 
    while (fgets(line, sizeof(line), fp))
    {
@@ -1805,6 +1806,15 @@ LoadTimesteps(const char *filename, LSSeqTimestepEntry **entries_ptr, uint32_t *
    }
 
    fclose(fp);
+   /* The library's timestep reader stops after the declared count; flag files
+    * where it would see a different number of timesteps than the container. */
+   if (declared != (long)count)
+   {
+      fprintf(stderr,
+              "[lsseq][pack] Warning: '%s' declares %ld timesteps but lists %u; "
+              "packing all %u listed entries\n",
+              filename, declared, (unsigned int)count, (unsigned int)count);
+   }
    *entries_ptr = entries;
    *count_ptr   = count;
    return 1;
