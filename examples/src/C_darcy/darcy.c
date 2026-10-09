@@ -374,8 +374,7 @@ layout_zface(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
 }
 
 static HYPRE_BigInt
-layout_cell(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
-            HYPRE_BigInt j, HYPRE_BigInt k)
+layout_cell(const DarcyLayout *layout, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
 {
    HYPRE_Int    rx = layout->xpart[i];
    HYPRE_Int    ry = layout->ypart[j];
@@ -567,8 +566,8 @@ is_pinned_neumann_physical(const DarcyMesh *mesh, HYPRE_Int axis, HYPRE_BigInt i
 }
 
 static HYPRE_Real
-dirichlet_rhs_physical(const DarcyMesh *mesh, HYPRE_Int axis, HYPRE_BigInt i,
-                       HYPRE_BigInt j, HYPRE_BigInt k, HYPRE_Int drive_axis)
+dirichlet_rhs_physical(HYPRE_Int axis, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k,
+                       HYPRE_Int drive_axis)
 {
    (void)j;
    (void)k;
@@ -1254,9 +1253,9 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
             append_or_accumulate_entry(cols, vals, &nentries, faces[bb], m);             \
          }                                                                               \
       }                                                                                  \
-      append_or_accumulate_entry(                                                        \
-         cols, vals, &nentries, layout_cell(layout, mesh, (cell_i), (cell_j), (cell_k)), \
-         -(HYPRE_Real)signs[a]);                                                         \
+      append_or_accumulate_entry(cols, vals, &nentries,                                  \
+                                 layout_cell(layout, (cell_i), (cell_j), (cell_k)),      \
+                                 -(HYPRE_Real)signs[a]);                                 \
    } while (0)
 
    for (HYPRE_BigInt k = z_start; k < z_end; k++)
@@ -1269,7 +1268,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
             HYPRE_BigInt row      = layout_xface(layout, mesh, i, j, k);
             HYPRE_Int    nentries = 0;
             dofmap[lr]            = 1;
-            rhs[lr]               = dirichlet_rhs_physical(mesh, 0, i, j, k, drive_axis);
+            rhs[lr]               = dirichlet_rhs_physical(0, i, j, k, drive_axis);
             if (is_pinned_neumann_physical(mesh, 0, i, j, k, drive_axis))
             {
                cols[nentries]   = row;
@@ -1297,7 +1296,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                HYPRE_BigInt row      = layout_yface(layout, mesh, i, j, k);
                HYPRE_Int    nentries = 0;
                dofmap[lr]            = 1;
-               rhs[lr] = dirichlet_rhs_physical(mesh, 1, i, j, k, drive_axis);
+               rhs[lr]               = dirichlet_rhs_physical(1, i, j, k, drive_axis);
                if (is_pinned_neumann_physical(mesh, 1, i, j, k, drive_axis))
                {
                   cols[nentries]   = row;
@@ -1326,7 +1325,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                HYPRE_BigInt row      = layout_zface(layout, mesh, i, j, k);
                HYPRE_Int    nentries = 0;
                dofmap[lr]            = 1;
-               rhs[lr] = dirichlet_rhs_physical(mesh, 2, i, j, k, drive_axis);
+               rhs[lr]               = dirichlet_rhs_physical(2, i, j, k, drive_axis);
                if (is_pinned_neumann_physical(mesh, 2, i, j, k, drive_axis))
                {
                   cols[nentries]   = row;
@@ -1363,7 +1362,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                coarse grids (heap corruption) without it. Fixed in hypre 3.1.0.
                Older releases use the legacy AMG default, whose relaxation must
                not see this explicit zero diagonal. */
-            cols[nentries]   = layout_cell(layout, mesh, i, j, k);
+            cols[nentries]   = layout_cell(layout, i, j, k);
             vals[nentries++] = 0.0;
 #endif
             for (HYPRE_Int a = 0; a < nloc; a++)
@@ -1422,7 +1421,7 @@ pressure_l2_error(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layou
       {
          for (HYPRE_BigInt i = layout->x0[rx]; i < layout->x1[rx]; i++)
          {
-            HYPRE_BigInt row = layout_cell(layout, mesh, i, j, k);
+            HYPRE_BigInt row = layout_cell(layout, i, j, k);
             HYPRE_BigInt c   = cell_index(mesh, i, j, k);
             (void)c;
             HYPRE_Real coord[3] = {(i + 0.5) * mesh->h[0], (j + 0.5) * mesh->h[1],
@@ -1713,7 +1712,7 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          for (HYPRE_BigInt i = layout->x0[rx]; i < layout->x1[rx]; i++)
          {
             HYPRE_BigInt cell = cell_index(mesh, i, j, k);
-            pressure[p]       = solution[layout_cell(layout, mesh, i, j, k)];
+            pressure[p]       = solution[layout_cell(layout, i, j, k)];
             flux[3 * p]       = 0.5 *
                           (solution[layout_xface(layout, mesh, i, j, k)] +
                            solution[layout_xface(layout, mesh, i + 1, j, k)]) /
