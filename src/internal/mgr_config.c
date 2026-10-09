@@ -1226,16 +1226,16 @@ hypredrv_MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+      static StrIntMap map[] = {
+         {"def", -1},
+         {"amg", 0},
+         {"spdirect", 29},
+         {"ilu", 32},
+         {"fsai", 33},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      static StrIntMap map[] = {
-         {"def", -1}, {"amg", 0},   {"spdirect", 29},
-         {"ilu", 32}, {"fsai", 33}, {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
-      };
-#else
-      static StrIntMap map[] = {
-         {"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}, {"fsai", 33},
-      };
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
 #endif
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
