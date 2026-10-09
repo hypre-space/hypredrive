@@ -167,6 +167,25 @@ PreconOpsLookup(precon_t method)
    return &precon_ops[method];
 }
 
+/* Reports a preconditioner whose hypre entry points are not compiled in. */
+static void
+PreconReportUnavailable(precon_t method)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   if (method == PRECON_MGR)
+   {
+      hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+   }
+   else if (method == PRECON_ILU)
+   {
+      hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
+   }
+   else if (method == PRECON_FSAI)
+   {
+      hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
+   }
+}
+
 void
 hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
                             HYPRE_PtrToParSolverFcn *solve)
@@ -815,19 +834,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
    if (!ops || !ops->setup)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      if (precon_method == PRECON_MGR)
-      {
-         hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_ILU)
-      {
-         hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_FSAI)
-      {
-         hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-      }
+      PreconReportUnavailable(precon_method);
       return;
    }
 
@@ -900,19 +907,7 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
    if (!ops || !ops->solve)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      if (precon_method == PRECON_MGR)
-      {
-         hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_ILU)
-      {
-         hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_FSAI)
-      {
-         hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-      }
+      PreconReportUnavailable(precon_method);
       return;
    }
 
