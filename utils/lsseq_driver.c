@@ -4763,7 +4763,11 @@ main(int argc, char **argv)
          MPI_Abort(comm, 1);
       }
 
-      fclose(out);
+      if (!CloseWrittenFile(out))
+      {
+         fprintf(stderr, "Could not finish writing sequence file '%s'\n", output_filename);
+         MPI_Abort(comm, 1);
+      }
       free(timesteps);
       free(info_payload);
 
