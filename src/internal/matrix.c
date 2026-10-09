@@ -867,9 +867,10 @@ hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *par
          break;
       }
       nrows_sum += part->nrows;
-      rows[p] = IJMatrixIndexView(part->rows, part->nnz, part->index_size, &owned[2 * p]);
-      cols[p] =
-         IJMatrixIndexView(part->cols, part->nnz, part->index_size, &owned[2 * p + 1]);
+      rows[p] = IJMatrixIndexView(part->rows, part->nnz, part->index_size,
+                                  &owned[(size_t)2 * p]);
+      cols[p] = IJMatrixIndexView(part->cols, part->nnz, part->index_size,
+                                  &owned[((size_t)2 * p) + 1]);
    }
    if (!IJMatrixAllRanksOk(comm))
    {

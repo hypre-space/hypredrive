@@ -1870,7 +1870,7 @@ LSSeqAppendDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_i
                                seq->header.offset_blob_data, seq->part_blob_table,
                                part_id, 2, sys->dof_blob_offset, (uint64_t)expected_size,
                                &dof_data, &dof_size) ||
-       *count > (size_t)INT_MAX - entries) /* GCOVR_EXCL_BR_STOP */
+       !dof_data || *count > (size_t)INT_MAX - entries) /* GCOVR_EXCL_BR_STOP */
    {
       free(dof_data);
       return 0;
