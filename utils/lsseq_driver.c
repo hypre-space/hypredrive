@@ -1655,6 +1655,19 @@ PackWriteBlob(FILE *blob_fp, comp_alg_t algo, int compression_level, const void 
       return 1;
    }
 
+   /* Uncompressed blobs are written as-is (no staging copy of the payload). */
+   if (algo == COMP_NONE)
+   {
+      if (fwrite(data, 1, size, blob_fp) != size)
+      {
+         return 0;
+      }
+      *offset    = *cursor;
+      *blob_size = (uint64_t)size;
+      *cursor += (uint64_t)size;
+      return 1;
+   }
+
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
    hypredrv_compress(algo, size, data, &comp_size, &comp_data, compression_level);
