@@ -1302,6 +1302,22 @@ LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
    return 1;
 }
 
+/* Runs a HYPRE call inside the CSR/array builders below; on failure records the
+ * HYPRE error description, prefixed by `label`, and jumps to `fail`. */
+#define LINSYS_HYPRE_CALL(label, call)                                            \
+   do                                                                             \
+   {                                                                              \
+      HYPRE_Int hypre_ierr = (call);                                              \
+      if (hypre_ierr != 0)                                                        \
+      {                                                                           \
+         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                   \
+         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                          \
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                             \
+         hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, hypre_err_msg); \
+         goto fail;                                                               \
+      }                                                                           \
+   } while (0)
+
 uint32_t
 hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         HYPRE_MemoryLocation memory_location,
@@ -1312,21 +1328,6 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 {
    HYPRE_Int    *ncols_per_row = NULL;
    HYPRE_BigInt *row_ids       = NULL;
-
-#define HYPREDRV_CSR_HYPRE_CALL(call)                                      \
-   do                                                                      \
-   {                                                                       \
-      HYPRE_Int hypre_ierr = (call);                                       \
-      if (hypre_ierr != 0)                                                 \
-      {                                                                    \
-         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                            \
-         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                   \
-         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                      \
-         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: HYPRE call failed: %s", \
-                              hypre_err_msg);                              \
-         goto fail;                                                        \
-      }                                                                    \
-   } while (0)
 
    HYPRE_Int nrows = 0;
    HYPRE_Int nnz   = 0;
@@ -1349,19 +1350,22 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
     * lower/upper bounds; HYPRE composes the global column partition from the
     * concatenation. This matches how matrices read from file are built (see
     * src/matrix.c) and gives standard ParCSR layout. */
-   HYPREDRV_CSR_HYPRE_CALL(
+   LINSYS_HYPRE_CALL(
+      "BuildMatrixFromCSR",
       HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr));
-   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
-   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                     HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                     HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
 
    if (nrows == 0)
    {
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
       return hypredrv_ErrorCodeGet();
    }
    if (nnz == 0)
    {
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
       return hypredrv_ErrorCodeGet();
    }
 
@@ -1442,20 +1446,20 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
-      HYPREDRV_CSR_HYPRE_CALL(ierr);
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", ierr);
    }
    else
 #endif
    {
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row,
-                                                      row_ids, col_indices + indptr[0],
-                                                      data + indptr[0]));
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row, row_ids,
+                                                col_indices + indptr[0],
+                                                data + indptr[0]));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
    }
 
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
-#undef HYPREDRV_CSR_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 
 fail:
@@ -1466,7 +1470,6 @@ fail:
       HYPRE_IJMatrixDestroy(*mat_ptr);
       *mat_ptr = NULL;
    }
-#undef HYPREDRV_CSR_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 }
 
@@ -1480,21 +1483,6 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
-#define HYPREDRV_RHS_HYPRE_CALL(call)                                     \
-   do                                                                     \
-   {                                                                      \
-      HYPRE_Int hypre_ierr = (call);                                      \
-      if (hypre_ierr != 0)                                                \
-      {                                                                   \
-         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                           \
-         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                  \
-         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                     \
-         hypredrv_ErrorMsgAdd("BuildRHSFromArray: HYPRE call failed: %s", \
-                              hypre_err_msg);                             \
-         goto fail;                                                       \
-      }                                                                   \
-   } while (0)
-
    if (!rhs_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1533,17 +1521,20 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
       *rhs_ptr = NULL;
    }
 
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location));
 
    if (nrows > 0)
    {
-      HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values));
+      LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                        HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values));
    }
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorAssemble(*rhs_ptr));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(*rhs_ptr));
 
-#undef HYPREDRV_RHS_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 
 fail:
@@ -1552,9 +1543,10 @@ fail:
       HYPRE_IJVectorDestroy(*rhs_ptr);
       *rhs_ptr = NULL;
    }
-#undef HYPREDRV_RHS_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 }
+
+#undef LINSYS_HYPRE_CALL
 
 /*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemMatrixGetNumRows
