@@ -1453,9 +1453,38 @@ LSSeqRHSSourceLoad(void *ctx, uint32_t p, int want_values, hypredrv_IJVectorMemP
                                  &out->vals, &vals_size);
 }
 
-int
-hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
-                         HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
+/* Builds the matrix (out: HYPRE_IJMatrix *) or RHS (out: HYPRE_IJVector *) from
+ * the opened sequence through a part source; returns nonzero if a handle was set. */
+typedef int (*LSSeqBuildFn)(MPI_Comm comm, LSSeqPartSource *ctx, uint32_t nparts,
+                            HYPRE_MemoryLocation memory_location, void *out);
+
+static int
+LSSeqBuildMatrix(MPI_Comm comm, LSSeqPartSource *ctx, uint32_t nparts,
+                 HYPRE_MemoryLocation memory_location, void *out)
+{
+   HYPRE_IJMatrix             *matrix_ptr = (HYPRE_IJMatrix *)out;
+   hypredrv_IJMatrixPartSource src        = {ctx, nparts, LSSeqPartSourceLoad};
+   hypredrv_IJMatrixBuildFromSource(comm, &src, memory_location, matrix_ptr);
+   return *matrix_ptr != NULL;
+}
+
+static int
+LSSeqBuildRHS(MPI_Comm comm, LSSeqPartSource *ctx, uint32_t nparts,
+              HYPRE_MemoryLocation memory_location, void *out)
+{
+   HYPRE_IJVector             *rhs_ptr = (HYPRE_IJVector *)out;
+   hypredrv_IJVectorPartSource src     = {ctx, nparts, LSSeqRHSSourceLoad};
+   hypredrv_IJVectorBuildFromSource(comm, &src, memory_location, rhs_ptr);
+   return *rhs_ptr != NULL;
+}
+
+/* Shared collective flow of the matrix/RHS readers: load the sequence, open this
+ * rank's parts, build the object into `out` and agree on success across ranks.
+ * The handle may be set even on failure; the caller destroys it then. */
+static int
+LSSeqReadObject(MPI_Comm comm, const char *filename, int ls_id,
+                HYPRE_MemoryLocation memory_location, const char *what,
+                LSSeqBuildFn build, void *out)
 {
    LSSeqData seq        = {0};
    FILE     *fp         = NULL;
@@ -1464,49 +1493,23 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    int       nparts     = 0;
    int       local_ok   = 1;
    int       ok         = 0;
-
-   if (!matrix_ptr)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Null matrix pointer for LSSeqReadMatrix");
-      return 0;
-   }
-   *matrix_ptr = NULL;
+   char      msg[64];
 
    /* GCOVR_EXCL_BR_START */
    local_ok =
       LSSeqDataLoad(filename, &seq) &&
       LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts, &part_order, &fp);
    /* GCOVR_EXCL_BR_STOP */
-   if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
-                                  "LSSeq matrix local decode failed"))
+   snprintf(msg, sizeof(msg), "LSSeq %s local decode failed", what);
+   if (LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY, msg))
    {
-      goto cleanup;
+      LSSeqPartSource ctx = {fp, &seq, ls_id, partids, part_order};
+      local_ok            = build(comm, &ctx, (uint32_t)nparts, memory_location, out) &&
+                 !hypredrv_ErrorCodeActive();
+      snprintf(msg, sizeof(msg), "LSSeq %s collective import failed", what);
+      ok = LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN, msg);
    }
 
-   {
-      LSSeqPartSource             ctx = {fp, &seq, ls_id, partids, part_order};
-      hypredrv_IJMatrixPartSource src = {&ctx, (uint32_t)nparts, LSSeqPartSourceLoad};
-      hypredrv_IJMatrixBuildFromSource(comm, &src, memory_location, matrix_ptr);
-   }
-   local_ok = (!hypredrv_ErrorCodeActive() && *matrix_ptr != NULL);
-
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN,
-                                  "LSSeq matrix collective import failed"))
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      goto cleanup;
-   }
-
-   ok = 1;
-
-cleanup:
-   if (!ok && *matrix_ptr) /* GCOVR_EXCL_BR_LINE */
-   {
-      HYPRE_IJMatrixDestroy(*matrix_ptr);
-      *matrix_ptr = NULL;
-   }
    /* GCOVR_EXCL_BR_START */
    if (fp) /* GCOVR_EXCL_BR_STOP */
    {
@@ -1519,17 +1522,34 @@ cleanup:
 }
 
 int
+hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
+                         HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
+{
+   if (!matrix_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Null matrix pointer for LSSeqReadMatrix");
+      return 0;
+   }
+   *matrix_ptr = NULL;
+
+   if (!LSSeqReadObject(comm, filename, ls_id, memory_location, "matrix",
+                        LSSeqBuildMatrix, matrix_ptr))
+   {
+      if (*matrix_ptr) /* GCOVR_EXCL_BR_LINE */
+      {
+         HYPRE_IJMatrixDestroy(*matrix_ptr);
+         *matrix_ptr = NULL;
+      }
+      return 0;
+   }
+   return 1;
+}
+
+int
 hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
                       HYPRE_MemoryLocation memory_location, HYPRE_IJVector *rhs_ptr)
 {
-   LSSeqData seq        = {0};
-   FILE     *fp         = NULL;
-   int      *partids    = NULL;
-   uint32_t *part_order = NULL;
-   int       nparts     = 0;
-   int       local_ok   = 1;
-   int       ok         = 0;
-
    if (!rhs_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1538,49 +1558,17 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
    }
    *rhs_ptr = NULL;
 
-   /* GCOVR_EXCL_BR_START */
-   local_ok =
-      LSSeqDataLoad(filename, &seq) &&
-      LSSeqPrepareRead(comm, &seq, ls_id, filename, &partids, &nparts, &part_order, &fp);
-   /* GCOVR_EXCL_BR_STOP */
-   if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
-                                  "LSSeq RHS local decode failed"))
+   if (!LSSeqReadObject(comm, filename, ls_id, memory_location, "RHS", LSSeqBuildRHS,
+                        rhs_ptr))
    {
-      goto cleanup;
+      if (*rhs_ptr) /* GCOVR_EXCL_BR_LINE */
+      {
+         HYPRE_IJVectorDestroy(*rhs_ptr);
+         *rhs_ptr = NULL;
+      }
+      return 0;
    }
-
-   {
-      LSSeqPartSource             ctx = {fp, &seq, ls_id, partids, part_order};
-      hypredrv_IJVectorPartSource src = {&ctx, (uint32_t)nparts, LSSeqRHSSourceLoad};
-      hypredrv_IJVectorBuildFromSource(comm, &src, memory_location, rhs_ptr);
-   }
-   local_ok = (!hypredrv_ErrorCodeActive() && *rhs_ptr != NULL);
-
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN,
-                                  "LSSeq RHS collective import failed"))
-   /* GCOVR_EXCL_BR_STOP */
-   {
-      goto cleanup;
-   }
-
-   ok = 1;
-
-cleanup:
-   if (!ok && *rhs_ptr) /* GCOVR_EXCL_BR_LINE */
-   {
-      HYPRE_IJVectorDestroy(*rhs_ptr);
-      *rhs_ptr = NULL;
-   }
-   /* GCOVR_EXCL_BR_START */
-   if (fp) /* GCOVR_EXCL_BR_STOP */
-   {
-      fclose(fp);
-   }
-   free(part_order);
-   free(partids);
-   LSSeqDataDestroy(&seq);
-   return ok;
+   return 1;
 }
 
 /* The dofmap payload is int32; IntArray stores it as int. */
