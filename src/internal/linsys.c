@@ -1328,6 +1328,8 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 {
    HYPRE_Int    *ncols_per_row = NULL;
    HYPRE_BigInt *row_ids       = NULL;
+   HYPRE_Int    *diag_sizes    = NULL;
+   HYPRE_Int    *offd_sizes    = NULL;
 
    HYPRE_Int nrows = 0;
    HYPRE_Int nnz   = 0;
@@ -1355,25 +1357,29 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr));
    LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
                      HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
-   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                     HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
 
-   if (nrows == 0)
+   if (nrows == 0 || nnz == 0)
    {
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
-      return hypredrv_ErrorCodeGet();
-   }
-   if (nnz == 0)
-   {
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
       LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
       return hypredrv_ErrorCodeGet();
    }
 
    /* HYPRE_IJMatrixSetValues requires per-row counts and row ids on every call.
     * These transient O(nrows) scratch arrays stay on the host even when matrix
-    * values are initialized for a device memory location. */
-   ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
-   row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+    * values are initialized for a device memory location. For host matrices the
+    * same pass also counts each row's diagonal/off-diagonal block entries so
+    * the matrix can be pre-sized (as the file readers do) instead of growing
+    * hypre's auxiliary rows during assembly. */
+   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
+   ncols_per_row  = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   row_ids        = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+   if (host)
+   {
+      diag_sizes = hypre_CTAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+      offd_sizes = hypre_CTAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   }
    for (HYPRE_Int i = 0; i < nrows; i++)
    {
       HYPRE_BigInt row_nnz = indptr[i + 1] - indptr[i];
@@ -1395,7 +1401,26 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       }
       ncols_per_row[i] = (HYPRE_Int)row_nnz;
       row_ids[i]       = row_start + (HYPRE_BigInt)i;
+      for (HYPRE_BigInt k = indptr[i]; host && k < indptr[i + 1]; k++)
+      {
+         HYPRE_BigInt col = col_indices[k];
+         if (col >= row_start && col <= row_end)
+         {
+            diag_sizes[i]++;
+         }
+         else
+         {
+            offd_sizes[i]++;
+         }
+      }
    }
+   if (host)
+   {
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixSetDiagOffdSizes(*mat_ptr, diag_sizes, offd_sizes));
+   }
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                     HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
 
 #ifdef HYPREDRV_USING_DEBUG
    for (HYPRE_Int k = 0; k < nnz; k++)
@@ -1460,11 +1485,15 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+   hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
    return hypredrv_ErrorCodeGet();
 
 fail:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+   hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
    if (*mat_ptr)
    {
       HYPRE_IJMatrixDestroy(*mat_ptr);
