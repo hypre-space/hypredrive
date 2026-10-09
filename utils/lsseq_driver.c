@@ -1618,21 +1618,55 @@ FNV1a64(const void *data, size_t nbytes, uint64_t hash)
    return hash;
 }
 
+static inline uint64_t
+HashMixWord(uint64_t hash, uint64_t word)
+{
+   hash ^= word;
+   hash *= UINT64_C(0x9E3779B97F4A7C15);
+   return hash ^ (hash >> 32);
+}
+
+/* Word-at-a-time hash for pattern dedup. It only lives in memory during pack
+ * (unlike the FNV-1a64 file hashes), so it is free to favor speed: the index
+ * arrays are hashed 8 bytes per step instead of one. */
+static uint64_t
+HashBytes(const void *data, size_t nbytes, uint64_t hash)
+{
+   const unsigned char *bytes = (const unsigned char *)data;
+   uint64_t             word  = 0;
+   size_t               i     = 0;
+
+   if (!bytes)
+   {
+      return hash;
+   }
+   for (; i + sizeof(word) <= nbytes; i += sizeof(word))
+   {
+      memcpy(&word, bytes + i, sizeof(word));
+      hash = HashMixWord(hash, word);
+   }
+   word = 0;
+   memcpy(&word, bytes + i, nbytes - i);
+   return HashMixWord(hash, word ^ ((uint64_t)nbytes << 56));
+}
+
 static uint64_t
 PatternHash(const MatrixPartRaw *raw, uint32_t part_id)
 {
    uint64_t hash = UINT64_C(1469598103934665603);
+   size_t   bytes;
    if (!raw)
    {
       return hash;
    }
-   hash = FNV1a64(&part_id, sizeof(part_id), hash);
-   hash = FNV1a64(&raw->nnz, sizeof(raw->nnz), hash);
-   hash = FNV1a64(&raw->row_index_size, sizeof(raw->row_index_size), hash);
-   hash = FNV1a64(&raw->row_lower, sizeof(raw->row_lower), hash);
-   hash = FNV1a64(&raw->row_upper, sizeof(raw->row_upper), hash);
-   hash = FNV1a64(raw->rows, (size_t)raw->nnz * (size_t)raw->row_index_size, hash);
-   hash = FNV1a64(raw->cols, (size_t)raw->nnz * (size_t)raw->row_index_size, hash);
+   bytes = (size_t)raw->nnz * (size_t)raw->row_index_size;
+   hash  = HashMixWord(hash, part_id);
+   hash  = HashMixWord(hash, raw->nnz);
+   hash  = HashMixWord(hash, raw->row_index_size);
+   hash  = HashMixWord(hash, raw->row_lower);
+   hash  = HashMixWord(hash, raw->row_upper);
+   hash  = HashBytes(raw->rows, bytes, hash);
+   hash  = HashBytes(raw->cols, bytes, hash);
    return hash;
 }
 
