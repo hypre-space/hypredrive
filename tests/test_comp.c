@@ -437,6 +437,64 @@ run_slice_checks(comp_alg_t algo)
    free(input);
 }
 
+/* A slice stream must return correct bytes when resuming forward and when
+ * asked for an earlier offset (restart). */
+static void
+run_slice_stream_checks(comp_alg_t algo)
+{
+   const size_t   nbytes = (size_t)1 << 20;
+   unsigned char *input  = (unsigned char *)malloc(nbytes);
+   void          *blob   = NULL;
+   size_t         blob_size = 0;
+   const size_t   ranges[][2] = {
+      {1000, 5000}, {200000, 300000}, {900000, 1000}, {50, 100}, {500000, 10},
+   };
+
+   ASSERT_NOT_NULL(input);
+   for (size_t i = 0; i < nbytes; i++)
+   {
+      input[i] = (unsigned char)((i * 40503u) >> 7);
+   }
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_compress(algo, nbytes, input, &blob_size, &blob, -1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_SliceStream *st = hypredrv_SliceStreamCreate(algo, blob_size, blob);
+   ASSERT_NOT_NULL(st);
+
+   for (size_t r = 0; r < sizeof(ranges) / sizeof(ranges[0]); r++)
+   {
+      void *slice = NULL;
+      ASSERT_EQ(hypredrv_SliceStreamRead(st, ranges[r][0], ranges[r][1], &slice), 1);
+      ASSERT_NOT_NULL(slice);
+      ASSERT_EQ(memcmp(slice, input + ranges[r][0], ranges[r][1]), 0);
+      free(slice);
+   }
+
+   void *slice = NULL;
+   ASSERT_EQ(hypredrv_SliceStreamRead(st, nbytes, 1, &slice), 0);
+   ASSERT_NULL(slice);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   hypredrv_SliceStreamDestroy(&st);
+   ASSERT_NULL(st);
+   ASSERT_NULL(hypredrv_SliceStreamCreate(COMP_NONE, nbytes, input));
+   free(blob);
+   free(input);
+}
+
+static void
+test_comp_slice_stream(void)
+{
+#ifdef HYPREDRV_USING_ZLIB
+   run_slice_stream_checks(COMP_ZLIB);
+#endif
+#ifdef HYPREDRV_USING_ZSTD
+   run_slice_stream_checks(COMP_ZSTD);
+#endif
+}
+
 static void
 test_comp_decompress_slice(void)
 {
@@ -475,6 +533,7 @@ main(void)
    RUN_TEST(test_comp_invalid_args);
    RUN_TEST(test_comp_none_zero_payload);
    RUN_TEST(test_comp_decompress_slice);
+   RUN_TEST(test_comp_slice_stream);
 
 #ifdef HYPREDRV_USING_ZLIB
    run_roundtrip(COMP_ZLIB);

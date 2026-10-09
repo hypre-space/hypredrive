@@ -32,4 +32,14 @@ void hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input,
 int  hypredrv_decompress_slice(comp_alg_t algo, size_t isize, const void *input,
                                size_t offset, size_t size, void **output);
 
+/* Resumable slice decoder over one compressed blob (zstd/zlib only; Create
+ * returns NULL for other codecs). Reading slices in increasing offset order
+ * decodes the blob once; an earlier offset restarts from the beginning. */
+typedef struct hypredrv_SliceStream_struct hypredrv_SliceStream;
+hypredrv_SliceStream *hypredrv_SliceStreamCreate(comp_alg_t algo, size_t isize,
+                                                 const void *input);
+int  hypredrv_SliceStreamRead(hypredrv_SliceStream *, size_t offset, size_t size,
+                              void **output);
+void hypredrv_SliceStreamDestroy(hypredrv_SliceStream **);
+
 #endif /* COMP_HEADER */

@@ -568,6 +568,7 @@ HYPREDRV_Finalize(void)
       hypredrv_RuntimeDestroyAllLiveObjects(DestroyObjectInternal);
    }
 
+   hypredrv_LSSeqReleaseCaches();
    hypredrv_RuntimeFinalizeState();
 
 #ifdef HYPREDRV_ENABLE_CALIPER

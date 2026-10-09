@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #ifndef _MSC_VER
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
 #endif
@@ -1044,6 +1045,132 @@ LSSeqReadBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size,
    return 1;
 }
 
+/* Resumable decoders for recently read part blobs. Systems are usually read
+ * in order, and each part blob batches every system's payload, so resuming
+ * the previous decode keeps sequential reads from re-inflating (and
+ * re-reading) all earlier systems. Entries are keyed by file identity (device,
+ * inode, size, modification time), blob offset, size and codec, plus the bytes
+ * at both ends of the compressed blob, so a modified file misses the cache. Each entry
+ * holds one compressed blob and decoder state, never decoded payload. POSIX only;
+ * elsewhere every read decodes from the start of the blob. */
+enum
+{
+   LSSEQ_STREAM_CACHE_SIZE = 8
+};
+
+typedef struct
+{
+   unsigned long long dev, ino, size, mtime_sec, mtime_nsec;
+   uint64_t           blob_offset, blob_size;
+   int                codec;
+   unsigned char      head[128], tail[128]; /* content fingerprint of the blob */
+} LSSeqStreamKey;
+
+typedef struct
+{
+   hypredrv_SliceStream *stream;
+   LSSeqStreamKey        key;
+   unsigned long         used;
+} LSSeqStreamEntry;
+
+static LSSeqStreamEntry g_lsseq_streams[LSSEQ_STREAM_CACHE_SIZE];
+static unsigned long    g_lsseq_stream_clock;
+
+/* Fills `key` for the blob at `offset`; returns 0 when the file identity is
+ * unavailable (no caching then). */
+static int
+LSSeqStreamKeyMake(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t size,
+                   LSSeqStreamKey *key)
+{
+#if defined(_WIN32)
+   (void)fp;
+   (void)codec;
+   (void)offset;
+   (void)size;
+   (void)key;
+   return 0;
+#else
+   struct stat st;
+
+   if (fstat(fileno(fp), &st) != 0) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0; /* GCOVR_EXCL_LINE */
+   }
+   memset(key, 0, sizeof(*key));
+   key->dev       = (unsigned long long)st.st_dev;
+   key->ino       = (unsigned long long)st.st_ino;
+   key->size      = (unsigned long long)st.st_size;
+   key->mtime_sec = (unsigned long long)st.st_mtime;
+#if defined(__linux__)
+   key->mtime_nsec = (unsigned long long)st.st_mtim.tv_nsec;
+#endif
+   key->blob_offset = offset;
+   key->blob_size   = size;
+   key->codec       = (int)codec;
+
+   /* Fingerprint both ends of the compressed blob so a rewritten file that
+    * reuses the inode within one timestamp tick still misses. */
+   size_t n = (size < sizeof(key->head)) ? (size_t)size : sizeof(key->head);
+   /* GCOVR_EXCL_BR_START */
+   return LSSeqReadAt(fp, offset, key->head, n, "blob fingerprint") &&
+          LSSeqReadAt(fp, offset + size - n, key->tail, n, "blob fingerprint");
+   /* GCOVR_EXCL_BR_STOP */
+#endif
+}
+
+static hypredrv_SliceStream *
+LSSeqStreamCacheFind(const LSSeqStreamKey *key)
+{
+   for (int i = 0; i < LSSEQ_STREAM_CACHE_SIZE; i++)
+   {
+      if (g_lsseq_streams[i].stream &&
+          !memcmp(&g_lsseq_streams[i].key, key, sizeof(*key)))
+      {
+         g_lsseq_streams[i].used = ++g_lsseq_stream_clock;
+         return g_lsseq_streams[i].stream;
+      }
+   }
+   return NULL;
+}
+
+/* Creates a stream for `blob` and caches it, evicting the least recently used
+ * entry. Returns NULL for codecs without resumable decoding. */
+static hypredrv_SliceStream *
+LSSeqStreamCacheInsert(const LSSeqStreamKey *key, comp_alg_t codec, size_t blob_size,
+                       const void *blob)
+{
+   hypredrv_SliceStream *stream = hypredrv_SliceStreamCreate(codec, blob_size, blob);
+   int                   victim = 0;
+
+   if (!stream)
+   {
+      return NULL;
+   }
+   for (int i = 1; i < LSSEQ_STREAM_CACHE_SIZE; i++)
+   {
+      if (g_lsseq_streams[i].used < g_lsseq_streams[victim].used)
+      {
+         victim = i;
+      }
+   }
+   hypredrv_SliceStreamDestroy(&g_lsseq_streams[victim].stream);
+   g_lsseq_streams[victim].stream = stream;
+   g_lsseq_streams[victim].key    = *key;
+   g_lsseq_streams[victim].used   = ++g_lsseq_stream_clock;
+   return stream;
+}
+
+void
+hypredrv_LSSeqReleaseCaches(void)
+{
+   for (int i = 0; i < LSSEQ_STREAM_CACHE_SIZE; i++)
+   {
+      hypredrv_SliceStreamDestroy(&g_lsseq_streams[i].stream);
+      g_lsseq_streams[i].used = 0;
+   }
+   g_lsseq_stream_clock = 0;
+}
+
 /* v2 only: read a slice from a part's batched blob (slot: 0=values, 1=rhs, 2=dof) */
 static int
 LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
@@ -1120,6 +1247,21 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
       return 1;
    }
 
+   /* A cached decoder for this exact blob skips re-reading it. */
+   LSSeqStreamKey key;
+   int            keyed = LSSeqStreamKeyMake(fp, codec, blob_base + c_off, c_size, &key);
+   hypredrv_SliceStream *stream = keyed ? LSSeqStreamCacheFind(&key) : NULL;
+   if (stream)
+   {
+      if (!hypredrv_SliceStreamRead(stream, (size_t)decomp_offset, (size_t)decomp_size,
+                                    output))
+      {
+         return 0;
+      }
+      *output_size = (size_t)decomp_size;
+      return 1;
+   }
+
    blob = malloc((size_t)c_size);
    if (!blob) /* GCOVR_EXCL_BR_LINE */
    {
@@ -1137,9 +1279,14 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    }
 
    /* The part blob batches every system's payload; decode only this system's
-    * slice (streaming codecs stop at its end instead of inflating the rest). */
-   ok = hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
-                                  (size_t)decomp_size, output);
+    * slice, resuming a cached decoder when the previous read left off before
+    * it (streaming codecs stop at the slice end instead of inflating the rest). */
+   stream = keyed ? LSSeqStreamCacheInsert(&key, codec, (size_t)c_size, blob) : NULL;
+   ok     = stream
+               ? hypredrv_SliceStreamRead(stream, (size_t)decomp_offset, (size_t)decomp_size,
+                                          output)
+               : hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
+                                           (size_t)decomp_size, output);
    free(blob);
    if (!ok)
    {

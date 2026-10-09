@@ -134,5 +134,7 @@ int hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
 int hypredrv_LSSeqReadTimestepsWithIds(const char *filename, IntArray **timestep_ids,
                                        IntArray **timestep_starts);
 int hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts);
+/* Frees the cached LSSeq blob decoders (called from HYPREDRV_Finalize). */
+void hypredrv_LSSeqReleaseCaches(void);
 
 #endif /* LSSEQ_HEADER */
