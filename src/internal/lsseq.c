@@ -1012,17 +1012,10 @@ LSSeqReadBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size,
    /* GCOVR_EXCL_BR_START */
    if (codec == COMP_NONE) /* GCOVR_EXCL_BR_STOP */
    {
-      decoded = malloc((size_t)blob_size);
-      if (!decoded) /* GCOVR_EXCL_BR_LINE */
-      {
-         free(blob_data);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate %llu bytes for blob decode",
-                              (unsigned long long)blob_size);
-         return 0;
-      }
-      memcpy(decoded, blob_data, (size_t)blob_size);
+      /* Raw payload: hand the read buffer over instead of copying it. */
+      decoded      = blob_data;
       decoded_size = (size_t)blob_size;
+      blob_data    = NULL;
    }
    else
    {
@@ -1098,6 +1091,35 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
                            (unsigned long long)c_size);
       return 0;
    }
+   /* Raw part blobs: read just this system's slice from the file. */
+   if (codec == COMP_NONE)
+   {
+      /* GCOVR_EXCL_BR_START */
+      if (decomp_offset > c_size || decomp_size > c_size - decomp_offset)
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Raw blob slice exceeds its part blob");
+         return 0;
+      }
+      if (decomp_size == 0)
+      {
+         return 1;
+      }
+      *output = malloc((size_t)decomp_size);
+      /* GCOVR_EXCL_BR_START */
+      if (!*output ||
+          !LSSeqReadAt(fp, blob_base + c_off + decomp_offset, *output,
+                       (size_t)decomp_size, "blob payload")) /* GCOVR_EXCL_BR_STOP */
+      {
+         free(*output);
+         *output = NULL;
+         return 0;
+      }
+      *output_size = (size_t)decomp_size;
+      return 1;
+   }
+
    blob = malloc((size_t)c_size);
    if (!blob) /* GCOVR_EXCL_BR_LINE */
    {
@@ -1525,22 +1547,19 @@ hypredrv_LSSeqReadSummary(const char *filename, int *num_systems, int *num_patte
    return 1;
 }
 
-/* Stages one part's matrix slice into the shared temporary files that
- * hypredrv_IJMatrixReadMultipartBinary() consumes. Returns zero on failure. */
+/* Decodes one part's matrix slice (pattern indices and this system's values)
+ * into `out`, whose arrays the caller frees. Returns zero on failure. */
 static int
-LSSeqStageMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
-                     const uint32_t *part_order, const char *prefix, char *part_filename,
-                     size_t part_filename_size)
+LSSeqDecodeMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_id,
+                      hypredrv_IJMatrixMemPart *out)
 {
-   uint32_t                   part_id = part_order[tmp_part_id];
-   const LSSeqPartMeta       *part    = &seq->parts[part_id];
+   const LSSeqPartMeta       *part = &seq->parts[part_id];
    const LSSeqSystemPartMeta *sys =
       &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
-   void                   *rows = NULL, *cols = NULL, *vals = NULL;
-   size_t                  rows_size = 0, cols_size = 0, vals_size = 0;
    const LSSeqPatternMeta *pattern       = NULL;
-   size_t                  expected_size = 0;
+   size_t                  expected_size = 0, rows_size = 0, cols_size = 0, vals_size = 0;
 
+   memset(out, 0, sizeof(*out));
    if (sys->pattern_id >= seq->header.num_patterns)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
@@ -1558,64 +1577,61 @@ LSSeqStageMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_par
       return 0;
    }
 
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
-                            /* GCOVR_EXCL_BR_STOP */
-                            /* GCOVR_EXCL_BR_START */
-                            &expected_size, "matrix index blob size") ||
-       /* GCOVR_EXCL_BR_STOP */
-       !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "matrix index blob"))
-   {
-      return 0;
-   }
-   if (!LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->rows_blob_offset,
-                      /* GCOVR_EXCL_BR_START */
-                      pattern->rows_blob_size, expected_size, &rows, &rows_size) ||
-       /* GCOVR_EXCL_BR_STOP */
-       !LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->cols_blob_offset,
-                      pattern->cols_blob_size, expected_size, &cols, &cols_size))
-   {
-      free(rows);
-      free(cols);
-      return 0;
-   }
-
-   if (!LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
-                               seq->header.offset_blob_data, seq->part_blob_table,
-                               part_id, 0, sys->values_blob_offset, sys->values_blob_size,
-                               &vals, &vals_size))
-   {
-      free(rows);
-      free(cols);
-      free(vals);
-      return 0;
-   }
+   out->nrows      = part->row_upper - part->row_lower + 1;
+   out->nnz        = pattern->nnz;
+   out->index_size = part->row_index_size;
+   out->value_size = part->value_size;
+   out->label      = "LSSeq matrix part";
 
    /* GCOVR_EXCL_BR_START */
-   if (!LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
-                                /* GCOVR_EXCL_BR_STOP */
-                                tmp_part_id, ".bin"))
-   {
-      free(rows);
-      free(cols);
-      free(vals);
-      return 0;
-   }
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqWriteMatrixPartFile(part_filename, part, pattern, rows, cols, vals))
+   return LSSeqCheckedMulSize((size_t)pattern->nnz, (size_t)part->row_index_size,
+                              &expected_size, "matrix index blob size") &&
+          LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES,
+                                 "matrix index blob") &&
+          LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->rows_blob_offset,
+                        pattern->rows_blob_size, expected_size, &out->rows, &rows_size) &&
+          LSSeqReadBlob(fp, (comp_alg_t)seq->header.codec, pattern->cols_blob_offset,
+                        pattern->cols_blob_size, expected_size, &out->cols, &cols_size) &&
+          LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
+                                 seq->header.offset_blob_data, seq->part_blob_table,
+                                 part_id, 0, sys->values_blob_offset,
+                                 sys->values_blob_size, &out->vals, &vals_size);
    /* GCOVR_EXCL_BR_STOP */
-   {
-      free(rows);
-      free(cols);
-      free(vals);
-      return 0;
-   }
+}
 
-   free(rows);
-   free(cols);
-   free(vals);
+static void
+LSSeqMatrixMemPartFree(hypredrv_IJMatrixMemPart *part)
+{
+   free(part->rows);
+   free(part->cols);
+   free(part->vals);
+   memset(part, 0, sizeof(*part));
+}
 
-   return 1;
+/* Stages one part's matrix slice into the temporary files that
+ * hypredrv_IJMatrixReadMultipartBinary() consumes (device reads only).
+ * Returns zero on failure. */
+static int
+LSSeqStageMatrixPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
+                     const uint32_t *part_order, const char *prefix, char *part_filename,
+                     size_t part_filename_size)
+{
+   uint32_t                   part_id = part_order[tmp_part_id];
+   const LSSeqSystemPartMeta *sys =
+      &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
+   hypredrv_IJMatrixMemPart mem;
+
+   /* GCOVR_EXCL_BR_START */
+   int ok = LSSeqDecodeMatrixPart(fp, seq, ls_id, part_id, &mem) &&
+            LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
+                                    tmp_part_id, ".bin") &&
+            LSSeqWriteMatrixPartFile(part_filename, &seq->parts[part_id],
+                                     &seq->patterns[sys->pattern_id], mem.rows, mem.cols,
+                                     mem.vals);
+   /* GCOVR_EXCL_BR_STOP */
+   LSSeqMatrixMemPartFree(&mem);
+
+   return ok;
 }
 
 /* Prepares the rank-local staging state for reading system ls_id: validates the
@@ -1690,15 +1706,16 @@ int
 hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
                          HYPRE_MemoryLocation memory_location, HYPRE_IJMatrix *matrix_ptr)
 {
-   LSSeqData seq                         = {0};
-   FILE     *fp                          = NULL;
-   int      *partids                     = NULL;
-   uint32_t *part_order                  = NULL;
-   int       nparts                      = 0;
-   char      prefix[MAX_FILENAME_LENGTH] = {0};
-   char      part_filename[MAX_FILENAME_LENGTH];
-   int       local_ok = 1;
-   int       ok       = 0;
+   LSSeqData                 seq                         = {0};
+   FILE                     *fp                          = NULL;
+   int                      *partids                     = NULL;
+   uint32_t                 *part_order                  = NULL;
+   int                       nparts                      = 0;
+   char                      prefix[MAX_FILENAME_LENGTH] = {0};
+   char                      part_filename[MAX_FILENAME_LENGTH];
+   int                       local_ok  = 1;
+   int                       ok        = 0;
+   hypredrv_IJMatrixMemPart *mem_parts = NULL;
 
    if (!matrix_ptr)
    {
@@ -1708,16 +1725,29 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
    }
    *matrix_ptr = NULL;
 
+   /* Host reads build the matrix straight from the decoded parts; device reads
+    * still stage part files for the multipart reader's device path. */
+   const int direct = (memory_location == HYPRE_MEMORY_HOST);
+
    /* GCOVR_EXCL_BR_START */
    local_ok = LSSeqDataLoad(filename, &seq) &&
               LSSeqPrepareStaging(comm, &seq, ls_id, filename, &partids, &nparts,
                                   &part_order, &fp) &&
-              LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix));
+              (direct || LSSeqTempPrefixBuild(comm, ls_id, "A", prefix, sizeof(prefix)));
+   if (local_ok && direct)
+   {
+      mem_parts = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u,
+                                                     sizeof(*mem_parts));
+      local_ok = (mem_parts != NULL);
+   }
    /* GCOVR_EXCL_BR_STOP */
    for (int i = 0; i < nparts && local_ok; i++)
    {
-      local_ok = LSSeqStageMatrixPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
-                                      prefix, part_filename, sizeof(part_filename));
+      local_ok =
+         direct ? LSSeqDecodeMatrixPart(fp, &seq, ls_id, part_order[partids[i]],
+                                        &mem_parts[i])
+                : LSSeqStageMatrixPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
+                                       prefix, part_filename, sizeof(part_filename));
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
@@ -1726,8 +1756,15 @@ hypredrv_LSSeqReadMatrix(MPI_Comm comm, const char *filename, int ls_id,
       goto cleanup;
    }
 
-   hypredrv_IJMatrixReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
-                                        memory_location, matrix_ptr);
+   if (direct)
+   {
+      hypredrv_IJMatrixBuildFromHostParts(comm, mem_parts, (uint32_t)nparts, matrix_ptr);
+   }
+   else
+   {
+      hypredrv_IJMatrixReadMultipartBinary(prefix, comm, (uint64_t)seq.header.num_parts,
+                                           memory_location, matrix_ptr);
+   }
    local_ok = (!hypredrv_ErrorCodeActive() && *matrix_ptr != NULL);
 
    /* GCOVR_EXCL_BR_START */
@@ -1752,6 +1789,11 @@ cleanup:
       fclose(fp);
    }
    LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
+   for (int i = 0; mem_parts && i < nparts; i++)
+   {
+      LSSeqMatrixMemPartFree(&mem_parts[i]);
+   }
+   free(mem_parts);
    free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);

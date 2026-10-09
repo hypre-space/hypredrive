@@ -11,6 +11,7 @@
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
+#include "internal/linsys.h"
 #include "internal/utils.h"
 
 enum
@@ -792,4 +793,175 @@ cleanup:
       }
       *mat_ptr = NULL;
    }
+}
+
+/*-----------------------------------------------------------------------------
+ * Build a host IJ matrix directly from rank-local parts held in memory (the
+ * same layout and validation as hypredrv_IJMatrixReadMultipartBinary, without
+ * a round trip through part files). Collective over `comm`; index and value
+ * arrays already in HYPRE_BigInt/HYPRE_Complex width are used in place.
+ *-----------------------------------------------------------------------------*/
+
+/* Returns `src` viewed as HYPRE_BigInt, converting into a new array (stored in
+ * *owned for the caller to free) when the on-disk width differs. */
+static HYPRE_BigInt *
+IJMatrixIndexView(void *src, uint64_t nnz, uint64_t isize, HYPRE_BigInt **owned)
+{
+   *owned = NULL;
+   if (isize == sizeof(HYPRE_BigInt) || nnz == 0)
+   {
+      return (HYPRE_BigInt *)src;
+   }
+
+   /* GCOVR_EXCL_START */
+   *owned = (HYPRE_BigInt *)malloc((size_t)nnz * sizeof(HYPRE_BigInt));
+   if (!*owned)
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate matrix index conversion buffer");
+      return NULL;
+   }
+   for (size_t i = 0; i < (size_t)nnz; i++)
+   {
+      (*owned)[i] = (isize == sizeof(uint32_t)) ? (HYPRE_BigInt)((uint32_t *)src)[i]
+                                                : (HYPRE_BigInt)((uint64_t *)src)[i];
+   }
+   return *owned;
+   /* GCOVR_EXCL_STOP */
+}
+
+void
+hypredrv_IJMatrixBuildFromHostParts(MPI_Comm comm, hypredrv_IJMatrixMemPart *parts,
+                                    uint32_t nparts, HYPRE_IJMatrix *mat_ptr)
+{
+   uint64_t       nrows_sum = 0, nrows = 0, nrows_offset = 0;
+   HYPRE_BigInt   ilower = 0, iupper = 0;
+   HYPRE_IJMatrix mat    = NULL;
+   size_t         nalloc = nparts ? (size_t)nparts : 1u;
+   HYPRE_BigInt **rows   = (HYPRE_BigInt **)calloc(nalloc, sizeof(HYPRE_BigInt *));
+   HYPRE_BigInt **cols   = (HYPRE_BigInt **)calloc(nalloc, sizeof(HYPRE_BigInt *));
+   HYPRE_BigInt **owned  = (HYPRE_BigInt **)calloc(2 * nalloc, sizeof(HYPRE_BigInt *));
+   HYPRE_Int     *dsizes = NULL;
+   HYPRE_Int     *osizes = NULL;
+
+   *mat_ptr = NULL;
+   /* GCOVR_EXCL_BR_START */
+   if (!rows || !cols || !owned) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                      /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("Failed to allocate matrix part views"); /* GCOVR_EXCL_LINE */
+   }
+
+   /* 1) Validate part metadata and view the indices as HYPRE_BigInt. */
+   for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+   {
+      const hypredrv_IJMatrixMemPart *part = &parts[p];
+      if (!IJMatrixIndexDtypeIsValid(part->index_size) ||
+          (part->value_size != sizeof(float) && part->value_size != sizeof(double)) ||
+          part->nnz > (uint64_t)IJMATRIX_MAX_PART_NNZ ||
+          part->nrows > (uint64_t)IJMATRIX_MAX_PART_NROWS)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid matrix part metadata in %s",
+                              part->label ? part->label : "(unknown)");
+         break;
+      }
+      nrows_sum += part->nrows;
+      rows[p] = IJMatrixIndexView(part->rows, part->nnz, part->index_size, &owned[2 * p]);
+      cols[p] =
+         IJMatrixIndexView(part->cols, part->nnz, part->index_size, &owned[2 * p + 1]);
+   }
+   if (!IJMatrixAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   /* 2) Row range, then the per-row sparsity used to pre-size the matrix. */
+   MPI_Allreduce(&nrows_sum, &nrows, 1, MPI_UINT64_T, MPI_SUM, comm);
+   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
+   ilower = (HYPRE_BigInt)(nrows_offset - nrows_sum);
+   iupper = (HYPRE_BigInt)(ilower + (HYPRE_BigInt)nrows_sum - 1);
+   HYPRE_IJMatrixCreate(comm, ilower, iupper, ilower, iupper, &mat);
+   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
+
+   dsizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
+   osizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
+   /* GCOVR_EXCL_BR_START */
+   if (!dsizes || !osizes) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd(
+         "Failed to allocate matrix host sparsity buffers"); /* GCOVR_EXCL_LINE */
+   }
+   for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+   {
+      (void)IJMatrixCountPartSparsity(rows[p], cols[p], parts[p].nnz, nrows, ilower,
+                                      iupper, nrows_sum, dsizes, osizes, parts[p].label);
+   }
+   if (!hypredrv_ErrorCodeActive())
+   {
+      HYPRE_IJMatrixSetDiagOffdSizes(mat, dsizes, osizes);
+   }
+   if (!IJMatrixAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   /* 3) Values: validate/widen (in place when widths match), then insert. */
+   HYPRE_IJMatrixInitialize_v2(mat, HYPRE_MEMORY_HOST);
+   for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
+   {
+      hypredrv_IJMatrixMemPart *part = &parts[p];
+      HYPRE_Complex            *vals = (HYPRE_Complex *)part->vals;
+      HYPRE_Complex            *wide = NULL;
+
+      if (part->nnz == 0)
+      {
+         continue;
+      }
+#if !defined(HYPRE_COMPLEX)
+      if (part->value_size != sizeof(HYPRE_Complex))
+#endif
+      {
+         wide = (HYPRE_Complex *)malloc((size_t)part->nnz * sizeof(HYPRE_Complex));
+         vals = wide;
+      }
+      /* GCOVR_EXCL_BR_START */
+      if (vals && hypredrv_ConvertCoefficients(part->vals, part->value_size, part->nnz,
+                                               vals, "matrix", part->label))
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         HYPRE_IJMatrixSetValues(mat, (HYPRE_Int)part->nnz, NULL, rows[p], cols[p], vals);
+      }
+      else if (!vals) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd(
+            "Failed to allocate matrix value buffer"); /* GCOVR_EXCL_LINE */
+      }
+      free(wide);
+   }
+   if (!IJMatrixAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   HYPRE_IJMatrixAssemble(mat);
+   *mat_ptr = mat;
+   mat      = NULL;
+
+cleanup:
+   if (mat)
+   {
+      HYPRE_IJMatrixDestroy(mat);
+   }
+   for (size_t i = 0; owned && i < 2 * nalloc; i++)
+   {
+      free(owned[i]);
+   }
+   free(owned);
+   free(rows);
+   free(cols);
+   free(dsizes);
+   free(osizes);
 }

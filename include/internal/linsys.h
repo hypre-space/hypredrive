@@ -252,4 +252,23 @@ void hypredrv_IJVectorReadMultipartBinary(const char *, MPI_Comm, uint64_t,
 void hypredrv_IJMatrixReadMultipartBinary(const char *, MPI_Comm, uint64_t,
                                           HYPRE_MemoryLocation, HYPRE_IJMatrix *);
 
+/* One rank-local matrix part already in memory, in the multipart part layout:
+ * `nnz` row and column indices of `index_size` (4 or 8) bytes and `nnz` values
+ * of `value_size` (4 or 8) bytes. The builder may convert the arrays in place;
+ * `label` names the part in error messages. */
+typedef struct
+{
+   uint64_t    nrows;
+   uint64_t    nnz;
+   uint64_t    index_size;
+   uint64_t    value_size;
+   void       *rows;
+   void       *cols;
+   void       *vals;
+   const char *label;
+} hypredrv_IJMatrixMemPart;
+
+void hypredrv_IJMatrixBuildFromHostParts(MPI_Comm, hypredrv_IJMatrixMemPart *, uint32_t,
+                                         HYPRE_IJMatrix *);
+
 #endif /* LINSYS_HEADER */
