@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <string.h>
 #if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
 #include <fenv.h>
@@ -672,4 +673,25 @@ hypredrv_ConvertCoefficients(const void *src, uint64_t vsize, uint64_t count,
    }
 
    return 1;
+}
+
+/*-----------------------------------------------------------------------------
+ * Formats a diagnostic reason into `reason` (size `reason_size`). Safe to call
+ * without a sink (NULL or zero size), so callers need not guard every call.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_FormatReason(char *reason, size_t reason_size, const char *fmt, ...)
+{
+   va_list ap;
+
+   /* GCOVR_EXCL_BR_START */
+   if (!reason || reason_size == 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
+   va_start(ap, fmt);
+   vsnprintf(reason, reason_size, fmt, ap);
+   va_end(ap);
 }

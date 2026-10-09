@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1650,24 +1649,6 @@ PrintSystemStageEnabled(const PrintSystem_args *cfg, int stage)
    /* GCOVR_EXCL_BR_STOP */
 }
 
-/* Records why a dump was (or was not) scheduled. Safe to call with no sink, so
- * callers do not have to guard every diagnostic. */
-static void
-PrintSystemSetReason(char *reason, size_t reason_size, const char *fmt, ...)
-{
-   va_list ap;
-
-   /* GCOVR_EXCL_BR_START */
-   if (!reason || reason_size == 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      return;
-   }
-
-   va_start(ap, fmt);
-   vsnprintf(reason, reason_size, fmt, ap);
-   va_end(ap);
-}
-
 /* Preconditions common to every selection type: a usable config and context,
  * with the current stage enabled. */
 static int
@@ -1677,26 +1658,26 @@ PrintSystemDumpGateOpen(const PrintSystem_args *cfg, const PrintSystemContext *c
    /* GCOVR_EXCL_BR_START */
    if (!cfg) /* GCOVR_EXCL_BR_STOP */
    {
-      PrintSystemSetReason(reason, reason_size, "%s",
-                           "missing configuration"); /* GCOVR_EXCL_LINE */
-      return 0;                                      /* GCOVR_EXCL_LINE */
+      hypredrv_FormatReason(reason, reason_size, "%s",
+                            "missing configuration"); /* GCOVR_EXCL_LINE */
+      return 0;                                       /* GCOVR_EXCL_LINE */
    }
    if (!cfg->enabled)
    {
-      PrintSystemSetReason(reason, reason_size, "%s", "print_system disabled");
+      hypredrv_FormatReason(reason, reason_size, "%s", "print_system disabled");
       return 0;
    }
    /* GCOVR_EXCL_BR_START */
    if (!ctx) /* GCOVR_EXCL_BR_STOP */
    {
-      PrintSystemSetReason(reason, reason_size, "%s",
-                           "missing context"); /* GCOVR_EXCL_LINE */
-      return 0;                                /* GCOVR_EXCL_LINE */
+      hypredrv_FormatReason(reason, reason_size, "%s",
+                            "missing context"); /* GCOVR_EXCL_LINE */
+      return 0;                                 /* GCOVR_EXCL_LINE */
    }
    if (!PrintSystemStageEnabled(cfg, ctx->stage))
    {
-      PrintSystemSetReason(reason, reason_size, "stage '%s' not selected",
-                           PrintSystemStageName(ctx->stage));
+      hypredrv_FormatReason(reason, reason_size, "stage '%s' not selected",
+                            PrintSystemStageName(ctx->stage));
       return 0;
    }
 
@@ -1712,13 +1693,13 @@ PrintSystemDescribeMatchedSelector(const DumpSelector_args *selector, size_t ind
 {
    if (PrintSystemBasisUsesThreshold(selector->basis))
    {
-      PrintSystemSetReason(
+      hypredrv_FormatReason(
          reason, reason_size, "selector[%zu] basis=%s metric_value=%.2e threshold=%.2e",
          index, PrintSystemBasisName(selector->basis), metric_value, selector->threshold);
    }
    else
    {
-      PrintSystemSetReason(
+      hypredrv_FormatReason(
          reason, reason_size, "selector[%zu] basis=%s level=%d basis_value=%d", index,
          PrintSystemBasisName(selector->basis), selector->level, basis_value);
    }
@@ -1732,7 +1713,7 @@ PrintSystemAnySelectorMatches(const PrintSystem_args *cfg, const PrintSystemCont
    /* GCOVR_EXCL_BR_START */
    if (!cfg->selectors || cfg->num_selectors == 0) /* GCOVR_EXCL_BR_STOP */
    {
-      PrintSystemSetReason(reason, reason_size, "%s", "selectors list is empty");
+      hypredrv_FormatReason(reason, reason_size, "%s", "selectors list is empty");
       return 0;
    }
 
@@ -1750,8 +1731,8 @@ PrintSystemAnySelectorMatches(const PrintSystem_args *cfg, const PrintSystemCont
       }
    }
 
-   PrintSystemSetReason(reason, reason_size, "no selector matched (count=%zu)",
-                        cfg->num_selectors);
+   hypredrv_FormatReason(reason, reason_size, "no selector matched (count=%zu)",
+                         cfg->num_selectors);
 
    return 0;
 }
@@ -1772,8 +1753,8 @@ PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContex
             (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
          /* GCOVR_EXCL_BR_STOP */
 
-         PrintSystemSetReason(reason, reason_size, "last_iter=%d threshold=%.3e",
-                              ctx->last_iter, cfg->threshold);
+         hypredrv_FormatReason(reason, reason_size, "last_iter=%d threshold=%.3e",
+                               ctx->last_iter, cfg->threshold);
          return matched;
       }
 
@@ -1784,8 +1765,8 @@ PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContex
             (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
          /* GCOVR_EXCL_BR_STOP */
 
-         PrintSystemSetReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
-                              ctx->last_setup_time, cfg->threshold);
+         hypredrv_FormatReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
+                               ctx->last_setup_time, cfg->threshold);
          return matched;
       }
 
@@ -1796,8 +1777,8 @@ PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContex
             (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
          /* GCOVR_EXCL_BR_STOP */
 
-         PrintSystemSetReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
-                              ctx->last_solve_time, cfg->threshold);
+         hypredrv_FormatReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
+                               ctx->last_solve_time, cfg->threshold);
          return matched;
       }
       default:
@@ -1825,7 +1806,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    switch (cfg->type)
    {
       case PRINT_SYSTEM_TYPE_ALL:
-         PrintSystemSetReason(reason, reason_size, "%s", "type=all");
+         hypredrv_FormatReason(reason, reason_size, "%s", "type=all");
          return 1;
 
       case PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS:
@@ -1835,8 +1816,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
                        /* GCOVR_EXCL_BR_STOP */
                        ((ctx->system_index % cfg->every) == 0);
 
-         PrintSystemSetReason(reason, reason_size, "system_index=%d every=%d",
-                              ctx->system_index, cfg->every);
+         hypredrv_FormatReason(reason, reason_size, "system_index=%d every=%d",
+                               ctx->system_index, cfg->every);
          return matched;
       }
 
@@ -1847,8 +1828,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
                        /* GCOVR_EXCL_BR_STOP */
                        ((ctx->timestep_index % cfg->every) == 0);
 
-         PrintSystemSetReason(reason, reason_size, "timestep_index=%d every=%d",
-                              ctx->timestep_index, cfg->every);
+         hypredrv_FormatReason(reason, reason_size, "timestep_index=%d every=%d",
+                               ctx->timestep_index, cfg->every);
          return matched;
       }
 
@@ -1856,10 +1837,10 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       {
          int matched = PrintSystemContainsID(cfg->ids, ctx->system_index);
 
-         PrintSystemSetReason(reason, reason_size, "system_index=%d ids_size=%zu",
-                              ctx->system_index,
-                              /* GCOVR_EXCL_BR_START */
-                              cfg->ids ? cfg->ids->size : 0);
+         hypredrv_FormatReason(reason, reason_size, "system_index=%d ids_size=%zu",
+                               ctx->system_index,
+                               /* GCOVR_EXCL_BR_START */
+                               cfg->ids ? cfg->ids->size : 0);
          /* GCOVR_EXCL_BR_STOP */
          return matched;
       }
@@ -1868,8 +1849,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       {
          int matched = PrintSystemContainsRange(&cfg->ranges, ctx->system_index);
 
-         PrintSystemSetReason(reason, reason_size, "system_index=%d ranges_size=%zu",
-                              ctx->system_index, cfg->ranges.size);
+         hypredrv_FormatReason(reason, reason_size, "system_index=%d ranges_size=%zu",
+                               ctx->system_index, cfg->ranges.size);
          return matched;
       }
 
@@ -1885,7 +1866,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
          break;
    }
 
-   PrintSystemSetReason(reason, reason_size, "unknown type=%d", cfg->type);
+   hypredrv_FormatReason(reason, reason_size, "unknown type=%d", cfg->type);
 
    return 0;
 }

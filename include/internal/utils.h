@@ -103,8 +103,10 @@ void hypredrv_HypreConsumeErrors(void);
  * Harder hypre failures are left intact. Prefer hypredrv_HypreConsumeErrors() at
  * public API boundaries. */
 void hypredrv_HypreClearConvergenceErrors(void);
-int  hypredrv_ConvertCoefficients(const void *src, uint64_t vsize, uint64_t count,
-                                  HYPRE_Complex *out, const char *kind, const char *label);
+void hypredrv_FormatReason(char *reason, size_t reason_size, const char *fmt, ...)
+   HYPREDRV_PRINTF_FORMAT(3, 4);
+int hypredrv_ConvertCoefficients(const void *src, uint64_t vsize, uint64_t count,
+                                 HYPRE_Complex *out, const char *kind, const char *label);
 
 static inline int
 hypredrv_FloatIsFinite(float value)
