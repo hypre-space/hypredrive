@@ -2590,6 +2590,15 @@ DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    return 1;
 }
 
+/* Closes a file this tool wrote; fails if any buffered write or the final
+ * flush failed (e.g. disk full). */
+static int
+CloseWrittenFile(FILE *fp)
+{
+   int ok = !ferror(fp);
+   return (fclose(fp) == 0) && ok;
+}
+
 static int
 WriteMatrixPartBinary(const char *filename, uint64_t global_nrows, uint64_t global_nnz,
                       const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
@@ -2636,8 +2645,7 @@ WriteMatrixPartBinary(const char *filename, uint64_t global_nrows, uint64_t glob
       fclose(fp);
       return 0;
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2677,8 +2685,7 @@ WriteRHSPartBinary(const char *filename, uint64_t global_nrows, const LSSeqPartM
       fclose(fp);
       return 0;
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2700,8 +2707,7 @@ WriteDofPartASCII(const char *filename, const int32_t *vals, uint64_t nentries)
    {
       fprintf(fp, "%d\n", vals ? (int)vals[i] : 0);
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2791,8 +2797,7 @@ WriteMatrixPartMatrixMarket(const char *filename, uint64_t global_nrows, uint64_
               (unsigned long long)(col + 1u), val);
    }
 
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2829,8 +2834,7 @@ WriteVectorPartMatrixMarket(const char *filename, uint64_t global_nrows, const L
               (unsigned long long)(part->row_lower + (uint64_t)i + 1u), val);
    }
 
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2859,8 +2863,7 @@ WriteDofPartMatrixMarket(const char *filename, uint64_t global_nrows, const LSSe
               vals ? (int)vals[i] : 0);
    }
 
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -3169,8 +3172,7 @@ WriteTimestepsFile(const char *filename, const LSSeqTimestepEntry *timesteps, ui
    {
       fprintf(fp, "%d %d\n", timesteps[i].timestep, timesteps[i].ls_start);
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
