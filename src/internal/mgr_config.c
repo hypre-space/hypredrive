@@ -1258,29 +1258,26 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
    }
    else if (!strcmp(key, "type"))
    {
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       static StrIntMap map[] = {
-         {"", -1},          {"none", -1},
-         {"single", 7},     {"jacobi", 7},
-         {"l1-jacobi", 18}, {"v(1,0)", 1},
-         {"amg", 2},        {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-         {"chebyshev", 16}, {"ilu", 32},
-         {"ge", 9},         {"spdirect", 29},
-         {"ge-piv", 99},    {"ge-inv", 199},
-         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
-      };
-#else
-      static StrIntMap map[] = {
-         {"", -1},          {"none", -1},
-         {"single", 7},     {"jacobi", 7},
-         {"l1-jacobi", 18}, {"v(1,0)", 1},
-         {"amg", 2},        {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-         {"chebyshev", 16}, {"ilu", 32},
-         {"ge", 9},         {"spdirect", 29},
-         {"ge-piv", 99},    {"ge-inv", 199},
+         {"", -1},
+         {"none", -1},
+         {"single", 7},
+         {"jacobi", 7},
+         {"l1-jacobi", 18},
+         {"v(1,0)", 1},
+         {"amg", 2},
+         {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+         {"chebyshev", 16},
+         {"ilu", 32},
+         {"ge", 9},
+         {"spdirect", 29},
+         {"ge-piv", 99},
+         {"ge-inv", 199},
          {"fsai", 33},
-      };
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
 #endif
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1299,28 +1296,30 @@ hypredrv_MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+      static StrIntMap map[] = {
+         {"", -1},
+         {"none", -1},
+         {"blk-jacobi", 0},
+         {"blk-gs", 1},
+         {"mixed-gs", 2},
+         {"amg", 20},
+         {"h-fgs", 3},
+         {"h-bgs", 4},
+         {"ch-gs", 5},
+         {"h-ssor", 6},
+         {"euclid", 8},
+         {"2stg-fgs", 11},
+         {"2stg-bgs", 12},
+         {"l1-hfgs", 13},
+         {"l1-hbgs", 14},
+         {"ilu", 16},
+         {"spdirect", 29},
+         {"l1-hsgs", 88},
+         {"fsai", 33},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      static StrIntMap map[] = {
-         {"", -1},          {"none", -1},
-         {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2},   {"amg", 20},
-         {"h-fgs", 3},      {"h-bgs", 4},
-         {"ch-gs", 5},      {"h-ssor", 6},
-         {"euclid", 8},     {"2stg-fgs", 11},
-         {"2stg-bgs", 12},  {"l1-hfgs", 13},
-         {"l1-hbgs", 14},   {"ilu", 16},
-         {"spdirect", 29},  {"l1-hsgs", 88},
-         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
-      };
-#else
-      static StrIntMap map[] = {
-         {"", -1},         {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
-         {"ch-gs", 5},     {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
-         {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
-         {"spdirect", 29}, {"l1-hsgs", 88}, {"fsai", 33},
-      };
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
 #endif
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1372,18 +1371,15 @@ hypredrv_MGRlvlGetValidValues(const char *key)
    }
    if (!strcmp(key, "restriction_type"))
    {
+      static StrIntMap map[] = {
+         {"injection", 0},   {"jacobi", 2},
+         {"approx-inv", 3},
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)
-      static StrIntMap map[] = {
-         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},
-         {"air_1", 4},     {"air_1.5", 5},   {"blk-jacobi", 12},
-         {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
-      };
-#else
-      static StrIntMap map[] = {
-         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},        {"blk-jacobi", 12},
-         {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
-      };
+         {"air_1", 4},       {"air_1.5", 5},
 #endif
+         {"blk-jacobi", 12}, {"cpr-like", 13},
+         {"columped", 14},   {"columped-partial", 15},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
