@@ -1258,76 +1258,6 @@ LSSeqSynchronizeMPIStatus(MPI_Comm comm, int local_ok, hypredrv_error_t fallback
    return 1;
 }
 
-static int
-LSSeqSharedTempPrefixBuild(MPI_Comm comm, int ls_id, const char *tag, char *prefix,
-                           size_t prefix_size)
-{
-   char        tmp_root_buf[MAX_FILENAME_LENGTH];
-   const char *tmp_root = tmp_root_buf;
-   char        tmpdir_path[MAX_FILENAME_LENGTH];
-   int         myid    = 0;
-   int         success = 1;
-   int         written = 0;
-
-   if (!prefix || prefix_size == 0) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid shared temporary prefix output");
-      return 0;
-   }
-
-   LSSeqSanitizedTmpRoot(tmp_root_buf, sizeof(tmp_root_buf));
-
-   memset(tmpdir_path, 0, sizeof(tmpdir_path));
-   MPI_Comm_rank(comm, &myid);
-
-   if (!myid)
-   {
-      char tmpdir_template[MAX_FILENAME_LENGTH];
-
-      /* GCOVR_EXCL_BR_START */
-      written = snprintf(tmpdir_template, sizeof(tmpdir_template),
-                         /* GCOVR_EXCL_BR_STOP */
-                         "%s/hypredrv_lsseq_%s_%d_%d_XXXXXX", tmp_root, tag ? tag : "tmp",
-                         (int)getpid(), ls_id);
-      /* GCOVR_EXCL_BR_START */
-      if (written < 0 || (size_t)written >= sizeof(tmpdir_template))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         success = 0;
-      }
-      else if (!hypredrv_Mkdtemp(tmpdir_template)) /* GCOVR_EXCL_BR_LINE */
-      {
-         success = 0;
-      }
-      else
-      {
-         strncpy(tmpdir_path, tmpdir_template, sizeof(tmpdir_path) - 1);
-      }
-   }
-
-   MPI_Bcast(&success, 1, MPI_INT, 0, comm);
-   if (!success) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not create shared LSSeq temporary directory");
-      return 0;
-   }
-
-   MPI_Bcast(tmpdir_path, (int)sizeof(tmpdir_path), MPI_CHAR, 0, comm);
-   written = snprintf(prefix, prefix_size, "%s/part", tmpdir_path);
-   if (written < 0 || (size_t)written >= prefix_size) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Shared LSSeq temporary prefix exceeds buffer size (%zu "
-                           "bytes)",
-                           prefix_size);
-      return 0;
-   }
-
-   return 1;
-}
-
 static void
 LSSeqCleanupPartFiles(const char *prefix, const int *partids, int nparts,
                       const char *suffix)
@@ -1872,98 +1802,69 @@ cleanup:
    return ok;
 }
 
-/* The staged dofmap parts store the int32 payload as IntArray's int entries. */
-_Static_assert(sizeof(int) == sizeof(int32_t),
-               "LSSeq dofmap staging requires 32-bit int");
+/* The dofmap payload is int32; IntArray stores it as int. */
+_Static_assert(sizeof(int) == sizeof(int32_t), "LSSeq dofmap requires 32-bit int");
 
-/* Stages one part's dofmap slice into the shared temporary file that
- * hypredrv_IntArrayParRead() consumes, using its binary part format (size_t
- * entry count followed by the int entries). Returns zero on any local failure. */
+/* Appends one part's dofmap slice for system ls_id to *local (growing it and
+ * *count). Returns zero on any local failure. */
 static int
-LSSeqStageDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t tmp_part_id,
-                     const uint32_t *part_order, const char *prefix, char *part_filename,
-                     size_t part_filename_size)
+LSSeqAppendDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_id,
+                      int **local, size_t *count)
 {
-   uint32_t                   part_id = part_order[tmp_part_id];
    const LSSeqSystemPartMeta *sys =
       &seq->sys_parts[((size_t)ls_id * (size_t)seq->header.num_parts) + (size_t)part_id];
-   int32_t *dof_data = NULL;
-   size_t   dof_size = 0;
-   FILE    *out      = NULL;
+   size_t entries       = (size_t)sys->dof_num_entries;
+   size_t expected_size = 0;
+   void  *dof_data      = NULL;
+   size_t dof_size      = 0;
 
-   /* GCOVR_EXCL_BR_START */
-   if (!LSSeqFormatPartFilename(part_filename, part_filename_size, prefix,
-                                /* GCOVR_EXCL_BR_STOP */
-                                tmp_part_id, ".bin"))
+   if (entries == 0)
    {
+      return 1;
+   }
+   /* GCOVR_EXCL_BR_START */
+   if (!LSSeqCheckedMulSize(entries, sizeof(int32_t), &expected_size,
+                            "dof payload size") ||
+       !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "dof payload") ||
+       !LSSeqReadPartBlobSlice(fp, (comp_alg_t)seq->header.codec,
+                               seq->header.offset_blob_data, seq->part_blob_table,
+                               part_id, 2, sys->dof_blob_offset, (uint64_t)expected_size,
+                               &dof_data, &dof_size) ||
+       *count > (size_t)INT_MAX - entries) /* GCOVR_EXCL_BR_STOP */
+   {
+      free(dof_data);
       return 0;
    }
-   out = hypredrv_FopenCreateRestricted(part_filename, 0, 1);
-   if (!out) /* GCOVR_EXCL_BR_LINE */
+
+   int *grown = (int *)realloc(*local, (*count + entries) * sizeof(int));
+   if (!grown) /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not create dofmap temporary part '%s'", part_filename);
+      free(dof_data);
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate LSSeq dofmap buffer");
       return 0;
    }
-
-   /* GCOVR_EXCL_BR_START */
-   if (sys->dof_num_entries > 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      size_t expected_size = 0;
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqCheckedMulSize((size_t)sys->dof_num_entries, sizeof(int32_t),
-                               /* GCOVR_EXCL_BR_STOP */
-                               /* GCOVR_EXCL_BR_START */
-                               &expected_size, "dof payload size") ||
-          /* GCOVR_EXCL_BR_STOP */
-          !LSSeqValidateByteLimit(expected_size, LSSEQ_MAX_BLOB_BYTES, "dof payload"))
-      {
-         fclose(out);
-         return 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      if (!LSSeqReadPartBlobSlice(
-             /* GCOVR_EXCL_BR_STOP */
-             fp, (comp_alg_t)seq->header.codec, seq->header.offset_blob_data,
-             seq->part_blob_table, part_id, 2, sys->dof_blob_offset,
-             (uint64_t)expected_size, (void **)&dof_data, &dof_size))
-      {
-         fclose(out);
-         free(dof_data);
-         return 0;
-      }
-   }
-
-   size_t count = (size_t)sys->dof_num_entries;
-   /* GCOVR_EXCL_BR_START */
-   int ok = fwrite(&count, sizeof(count), 1, out) == 1 &&
-            (count == 0 ||
-             (dof_data && fwrite(dof_data, sizeof(int32_t), count, out) == count));
-   /* GCOVR_EXCL_BR_STOP */
-   ok = (fclose(out) == 0) && ok;
+   memcpy(grown + *count, dof_data, entries * sizeof(int));
+   *local = grown;
+   *count += entries;
    free(dof_data);
-   if (!ok) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-      hypredrv_ErrorMsgAdd("Could not write dofmap temporary part '%s'", part_filename);
-   }
 
-   return ok;
+   return 1;
 }
 
 int
 hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                          IntArray **dofmap_ptr)
 {
-   LSSeqData seq                         = {0};
-   FILE     *fp                          = NULL;
-   int      *partids                     = NULL;
-   uint32_t *part_order                  = NULL;
-   int       nparts                      = 0;
-   char      prefix[MAX_FILENAME_LENGTH] = {0};
-   char      part_filename[MAX_FILENAME_LENGTH];
-   int       local_ok = 1;
-   int       ok       = 0;
+   LSSeqData seq        = {0};
+   FILE     *fp         = NULL;
+   int      *partids    = NULL;
+   uint32_t *part_order = NULL;
+   int       nparts     = 0;
+   int      *local      = NULL;
+   size_t    count      = 0;
+   int       local_ok   = 1;
+   int       ok         = 0;
 
    if (!dofmap_ptr)
    {
@@ -1986,9 +1887,9 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                                      &part_order, &fp);
    }
 
-   /* Agree on the local status before the collective shared-prefix build (and
-    * before the no-dofmap early return), so no rank is left waiting in a
-    * collective that a failed rank skipped. */
+   /* Agree on the local status before the no-dofmap early return and the
+    * collective build, so no rank is left waiting in a collective that a
+    * failed rank skipped. */
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq dofmap local staging failed"))
    {
@@ -2002,13 +1903,12 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
       return (*dofmap_ptr != NULL);
    }
 
-   /* GCOVR_EXCL_BR_START */
-   local_ok = LSSeqSharedTempPrefixBuild(comm, ls_id, "dof", prefix, sizeof(prefix));
-   /* GCOVR_EXCL_BR_STOP */
+   /* This rank's parts are the same contiguous range IntArrayParRead would
+    * assign, so concatenate their slices and build the distributed array. */
    for (int i = 0; i < nparts && local_ok; i++)
    {
-      local_ok = LSSeqStageDofmapPart(fp, &seq, ls_id, (uint32_t)partids[i], part_order,
-                                      prefix, part_filename, sizeof(part_filename));
+      local_ok =
+         LSSeqAppendDofmapPart(fp, &seq, ls_id, part_order[partids[i]], &local, &count);
    }
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
@@ -2017,9 +1917,7 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
       goto cleanup;
    }
 
-   /* Ensure all rank-local dof files are visible before parallel read. */
-   MPI_Barrier(comm);
-   hypredrv_IntArrayParRead(comm, prefix, dofmap_ptr);
+   hypredrv_IntArrayBuild(comm, (int)count, local, dofmap_ptr);
    local_ok = (!hypredrv_ErrorCodeActive() && *dofmap_ptr != NULL);
    /* GCOVR_EXCL_BR_START */
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_UNKNOWN,
@@ -2037,20 +1935,11 @@ cleanup:
       hypredrv_IntArrayDestroy(dofmap_ptr);
    }
    /* GCOVR_EXCL_BR_START */
-   if (ok) /* GCOVR_EXCL_BR_STOP */
-   {
-      MPI_Barrier(comm);
-   }
-   /* GCOVR_EXCL_BR_START */
    if (fp) /* GCOVR_EXCL_BR_STOP */
    {
       fclose(fp);
    }
-   /* GCOVR_EXCL_BR_START */
-   if (prefix[0] != '\0') /* GCOVR_EXCL_BR_STOP */
-   {
-      LSSeqCleanupPartFiles(prefix, partids, nparts, ".bin");
-   }
+   free(local);
    free(part_order);
    free(partids);
    LSSeqDataDestroy(&seq);
