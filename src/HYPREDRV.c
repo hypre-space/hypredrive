@@ -2862,9 +2862,9 @@ RecordAdaptiveReuseObservation(HYPREDRV_t hypredrv, int solve_succeeded)
 }
 
 static uint32_t
-SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
-                  double *r0_norm_out, double *x_norm_out, double *xref_norm_out,
-                  double *e_norm_out, int *solve_succeeded_out)
+SolveScaledSystemWork(HYPREDRV_t hypredrv, HYPRE_IJVector *vec_r, double *b_norm_out,
+                      double *r_norm_out, double *r0_norm_out, double *x_norm_out,
+                      double *xref_norm_out, double *e_norm_out, int *solve_succeeded_out)
 {
    double b_norm = 0.0, r_norm = 0.0, r0_norm = 0.0;
    double x_norm = 0.0, xref_norm = 0.0, e_norm = 0.0;
@@ -2874,8 +2874,8 @@ SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
    int xref_scaled = 0;
 
    /* Compute initial residual norm before solve (on current system state) */
-   hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
-                                            hypredrv->vec_x, "L2", &r0_norm);
+   hypredrv_LinearSystemComputeResidualNormWork(hypredrv->mat_A, hypredrv->vec_b,
+                                                hypredrv->vec_x, "L2", vec_r, &r0_norm);
    if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
    {
       RestoreScaledSystemState(hypredrv, 0);
@@ -2931,10 +2931,10 @@ SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
 
    /* Compute residual norms on original (now restored) system */
    hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_b, "L2", &b_norm);
-   hypredrv_LinearSystemComputeResidualNorm(hypredrv->mat_A, hypredrv->vec_b,
-                                            hypredrv->vec_x, "L2",
-                                            &r_norm); /* GCOVR_EXCL_BR_LINE */
-   b_norm = (b_norm > 0.0) ? b_norm : 1.0;            /* GCOVR_EXCL_BR_LINE */
+   hypredrv_LinearSystemComputeResidualNormWork(hypredrv->mat_A, hypredrv->vec_b,
+                                                hypredrv->vec_x, "L2", vec_r,
+                                                &r_norm); /* GCOVR_EXCL_BR_LINE */
+   b_norm = (b_norm > 0.0) ? b_norm : 1.0;                /* GCOVR_EXCL_BR_LINE */
    hypredrv_StatsRelativeResNormSet(hypredrv->stats, r_norm / b_norm);
 
    *b_norm_out          = b_norm;
@@ -2950,6 +2950,24 @@ SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
     * the collective error sync that every rank has to reach. Rank-local errors
     * raised here are settled there instead. */
    return 0;
+}
+
+/* Scaled solve with one residual work vector shared by the initial and final
+ * residual norms (same IJ layout; A is scaled and restored in place). */
+static uint32_t
+SolveScaledSystem(HYPREDRV_t hypredrv, double *b_norm_out, double *r_norm_out,
+                  double *r0_norm_out, double *x_norm_out, double *xref_norm_out,
+                  double *e_norm_out, int *solve_succeeded_out)
+{
+   HYPRE_IJVector vec_r = NULL;
+   uint32_t       code =
+      SolveScaledSystemWork(hypredrv, &vec_r, b_norm_out, r_norm_out, r0_norm_out,
+                            x_norm_out, xref_norm_out, e_norm_out, solve_succeeded_out);
+   if (vec_r)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+   }
+   return code;
 }
 
 /* Solve path for an unscaled system: hypredrv_SolverApply already records the
