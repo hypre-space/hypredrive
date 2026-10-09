@@ -2414,11 +2414,15 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
    return 1;
 }
 
+/* Reads one system's slice of a part's batched blob (slot: 0=values, 1=rhs,
+ * 2=dof). Raw blobs are read at the slice's file offset. For streamable codecs,
+ * `stream` (optional) keeps a resumable decoder for this part/slot across
+ * calls, so unpacking systems in order inflates each blob only once. */
 static int
 DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
                     const uint64_t *part_blob_table, uint32_t part_id, int slot,
                     uint64_t decoded_offset, uint64_t decoded_size_expected, void **decoded_ptr,
-                    size_t *decoded_size_ptr)
+                    size_t *decoded_size_ptr, hypredrv_SliceStream **stream)
 {
    uint64_t c_offset = 0, c_size = 0;
    void    *decoded = NULL;
@@ -2440,6 +2444,55 @@ DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    if (c_size == 0)
    {
       return decoded_size_expected == 0 ? 1 : 0;
+   }
+   if (decoded_size_expected > (uint64_t)SIZE_MAX)
+   {
+      return 0;
+   }
+
+   if (codec == COMP_NONE)
+   {
+      if (decoded_offset > c_size || decoded_size_expected > c_size - decoded_offset)
+      {
+         return 0;
+      }
+      if (decoded_size_expected == 0)
+      {
+         return 1;
+      }
+      slice = malloc((size_t)decoded_size_expected);
+      if (!slice || !SeqReadAt(fp, blob_base + c_offset + decoded_offset, slice,
+                               (size_t)decoded_size_expected))
+      {
+         free(slice);
+         return 0;
+      }
+      *decoded_ptr      = slice;
+      *decoded_size_ptr = (size_t)decoded_size_expected;
+      return 1;
+   }
+
+   if (stream && !*stream && c_size <= (uint64_t)SIZE_MAX)
+   {
+      void *blob = malloc((size_t)c_size);
+      if (blob && SeqReadAt(fp, blob_base + c_offset, blob, (size_t)c_size))
+      {
+         *stream = hypredrv_SliceStreamCreate(codec, (size_t)c_size, blob);
+      }
+      free(blob);
+   }
+   if (stream && *stream)
+   {
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
+      if (!hypredrv_SliceStreamRead(*stream, (size_t)decoded_offset,
+                                    (size_t)decoded_size_expected, &slice))
+      {
+         return 0;
+      }
+      *decoded_ptr      = slice;
+      *decoded_size_ptr = (size_t)decoded_size_expected;
+      return 1;
    }
 
    if (!DecodeBlob(fp, codec, blob_base + c_offset, c_size, 0, &decoded, &decoded_size))
@@ -3262,6 +3315,18 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    fflush(stdout);
    progress_start_time = MPI_Wtime();
 
+   /* One resumable decoder per local part and blob slot (values, rhs, dof):
+    * systems are unpacked in order, so each batched blob is inflated once. */
+   hypredrv_SliceStream **streams =
+      (hypredrv_SliceStream **)calloc((size_t)(local_nparts > 0 ? local_nparts : 1) * 3u,
+                                      sizeof(*streams));
+   if (!streams)
+   {
+      fclose(fp);
+      SeqPackedDataDestroy(&seq);
+      MPI_Abort(comm, EXIT_FAILURE);
+   }
+
    for (uint32_t s = 0; s < seq.header.num_systems; s++)
    {
       char system_dir[MAX_FILENAME_LENGTH];
@@ -3304,10 +3369,12 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                          (size_t)pat->nnz * (size_t)part->row_index_size, &cols, &cols_sz) ||
              !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
                                   seq.part_blob_table, part_id, 0, sp->values_blob_offset,
-                                  sp->values_blob_size, &vals, &vals_sz) ||
+                                  sp->values_blob_size, &vals, &vals_sz,
+                                  &streams[(size_t)lp * 3u + 0u]) ||
              !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
                                   seq.part_blob_table, part_id, 1, sp->rhs_blob_offset,
-                                  sp->rhs_blob_size, &rhs, &rhs_sz))
+                                  sp->rhs_blob_size, &rhs, &rhs_sz,
+                                  &streams[(size_t)lp * 3u + 1u]))
          {
             free(rows); free(cols); free(vals); free(rhs); free(dof);
             fclose(fp);
@@ -3346,7 +3413,8 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
             if (sp->dof_num_entries > 0 &&
                 !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec,
                                      seq.header.offset_blob_data, seq.part_blob_table, part_id, 2,
-                                     sp->dof_blob_offset, sp->dof_blob_size, &dof, &dof_sz))
+                                     sp->dof_blob_offset, sp->dof_blob_size, &dof, &dof_sz,
+                                     &streams[(size_t)lp * 3u + 2u]))
             {
                free(rows); free(cols); free(vals); free(rhs); free(dof);
                fclose(fp);
@@ -3390,6 +3458,11 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       }
    }
 
+   for (size_t i = 0; i < (size_t)(local_nparts > 0 ? local_nparts : 1) * 3u; i++)
+   {
+      hypredrv_SliceStreamDestroy(&streams[i]);
+   }
+   free(streams);
    fclose(fp);
    MPI_Barrier(comm);
    if (!myid)
