@@ -2429,13 +2429,7 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
 
    if (codec == COMP_NONE)
    {
-      decoded = malloc((size_t)blob_size);
-      if (!decoded)
-      {
-         free(blob);
-         return 0;
-      }
-      memcpy(decoded, blob, (size_t)blob_size);
+      decoded      = blob; /* raw payload: hand over the read buffer */
       decoded_size = (size_t)blob_size;
    }
    else
@@ -2443,13 +2437,13 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
       hypredrv_ErrorCodeResetAll();
       hypredrv_ErrorMsgClear();
       hypredrv_decompress(codec, (size_t)blob_size, blob, &decoded_size, &decoded);
+      free(blob);
       if (hypredrv_ErrorCodeActive() || !decoded)
       {
-         free(blob);
+         free(decoded);
          return 0;
       }
    }
-   free(blob);
 
    if (expected_size > 0 && decoded_size != expected_size)
    {
@@ -2459,6 +2453,28 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
    *decoded_ptr      = decoded;
    *decoded_size_ptr = decoded_size;
    return 1;
+}
+
+/* Exact check that a pattern already written to the pack blob file holds the
+ * same row/column arrays as `raw` (guards pattern dedup against hash
+ * collisions). Leaves `blob_fp` positioned at its end for further appends. */
+static int
+PatternBlobsMatch(FILE *blob_fp, comp_alg_t algo, const LSSeqPatternMeta *meta,
+                  const MatrixPartRaw *raw, int *match)
+{
+   size_t bytes = (size_t)raw->nnz * (size_t)raw->row_index_size;
+   void  *rows = NULL, *cols = NULL;
+   size_t rows_sz = 0, cols_sz = 0;
+   int    ok = DecodeBlob(blob_fp, algo, meta->rows_blob_offset, meta->rows_blob_size, bytes,
+                          &rows, &rows_sz) &&
+             DecodeBlob(blob_fp, algo, meta->cols_blob_offset, meta->cols_blob_size, bytes,
+                        &cols, &cols_sz);
+
+   *match = ok && (bytes == 0 ||
+                   (!memcmp(rows, raw->rows, bytes) && !memcmp(cols, raw->cols, bytes)));
+   free(rows);
+   free(cols);
+   return fseeko(blob_fp, 0, SEEK_END) == 0 && ok;
 }
 
 /* Reads one system's slice of a part's batched blob (slot: 0=values, 1=rhs,
@@ -3914,16 +3930,31 @@ main(int argc, char **argv)
    uint64_t *local_part_blob_sizes = NULL; /* 3*local_nparts: vals, rhs, dof per part */
    uint64_t  local_pattern_blob_ull = 0;  /* cursor after pattern blobs only */
 
+   /* Last pattern seen per local part (owned row/column arrays). */
+   typedef struct
+   {
+      int      id;
+      uint64_t nnz;
+      void    *rows;
+      void    *cols;
+   } LastPattern;
+   LastPattern *last_pat = NULL;
+
    if (local_nparts > 0)
    {
       part_vals = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_vals));
       part_rhs  = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_rhs));
       part_dof  = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_dof));
       local_part_blob_sizes = (uint64_t *)calloc((size_t)local_nparts * 3u, sizeof(uint64_t));
-      if (!part_vals || !part_rhs || !part_dof || !local_part_blob_sizes)
+      last_pat              = (LastPattern *)calloc((size_t)local_nparts, sizeof(*last_pat));
+      if (!part_vals || !part_rhs || !part_dof || !local_part_blob_sizes || !last_pat)
       {
          fprintf(stderr, "[lsseq][pack][rank %d] Allocation failure for v2 part buffers\n", myid);
          MPI_Abort(comm, 1);
+      }
+      for (int lp = 0; lp < local_nparts; lp++)
+      {
+         last_pat[lp].id = -1;
       }
    }
 
@@ -4005,15 +4036,39 @@ main(int argc, char **argv)
             }
          }
 
-         phash = PatternHash(&Araw, (uint32_t)global_p);
-         for (size_t k = 0; k < num_patterns_local; k++)
+         /* Consecutive systems usually repeat the part's previous pattern: compare
+          * it directly. Otherwise look up earlier patterns by hash and confirm a
+          * hit against the stored blobs, so dedup never trusts the hash alone. */
+         size_t pat_bytes = (size_t)Araw.nnz * (size_t)Araw.row_index_size;
+         if (last_pat[lp].id >= 0 && last_pat[lp].nnz == Araw.nnz &&
+             (pat_bytes == 0 || (!memcmp(last_pat[lp].rows, Araw.rows, pat_bytes) &&
+                                 !memcmp(last_pat[lp].cols, Araw.cols, pat_bytes))))
          {
-            if (patterns_local[k].hash == phash &&
-                patterns_local[k].meta.part_id == (uint32_t)global_p &&
-                patterns_local[k].meta.nnz == Araw.nnz)
+            pattern_id = last_pat[lp].id;
+         }
+         else
+         {
+            phash = PatternHash(&Araw, (uint32_t)global_p);
+            for (size_t k = 0; k < num_patterns_local && pattern_id < 0; k++)
             {
-               pattern_id = (int)k;
-               break;
+               int match = 0;
+               if (patterns_local[k].hash != phash ||
+                   patterns_local[k].meta.part_id != (uint32_t)global_p ||
+                   patterns_local[k].meta.nnz != Araw.nnz)
+               {
+                  continue;
+               }
+               if (!PatternBlobsMatch(blob_fp, args.algo, &patterns_local[k].meta, &Araw,
+                                      &match))
+               {
+                  fprintf(stderr, "[lsseq][pack][rank %d] Failed to re-read pattern blob\n",
+                          myid);
+                  MPI_Abort(comm, 1);
+               }
+               if (match)
+               {
+                  pattern_id = (int)k;
+               }
             }
          }
 
@@ -4069,6 +4124,18 @@ main(int argc, char **argv)
 
          sp->pattern_id = (uint32_t)pattern_id;
          sp->nnz        = Araw.nnz;
+         if (last_pat[lp].id != pattern_id)
+         {
+            /* Keep this pattern for the next system (take over Araw's arrays). */
+            free(last_pat[lp].rows);
+            free(last_pat[lp].cols);
+            last_pat[lp].id   = pattern_id;
+            last_pat[lp].nnz  = Araw.nnz;
+            last_pat[lp].rows = Araw.rows;
+            last_pat[lp].cols = Araw.cols;
+            Araw.rows         = NULL;
+            Araw.cols         = NULL;
+         }
 
          /* v2 batched: append to per-part buffers; store decompressed offset/size in sys_meta */
          {
@@ -4123,6 +4190,13 @@ main(int argc, char **argv)
          PrintModeProgress("pack", s + 1, num_systems, progress_start_time);
       }
    }
+
+   for (int lp = 0; lp < local_nparts; lp++)
+   {
+      free(last_pat[lp].rows);
+      free(last_pat[lp].cols);
+   }
+   free(last_pat);
 
    local_pattern_blob_ull = (unsigned long long)blob_cursor;
 
