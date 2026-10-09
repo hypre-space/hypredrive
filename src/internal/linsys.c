@@ -638,6 +638,78 @@ hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_ent
  * the gauge of solutions that are defined up to a null space contribution
  *-----------------------------------------------------------------------------*/
 
+/*-----------------------------------------------------------------------------
+ * HYPRE_IJVectorSetValues/GetValues with host index and value arrays. hypre's
+ * device IJ paths read and write device pointers (they copy with device-to-
+ * device transfers), so for a device-resident vector the arrays are staged
+ * through temporary device buffers.
+ *-----------------------------------------------------------------------------*/
+
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+static int
+LinearSystemVectorOnDevice(HYPRE_IJVector vec)
+{
+   return hypre_GetActualMemLocation(hypre_IJVectorMemoryLocation(vec)) ==
+          hypre_MEMORY_DEVICE;
+}
+#endif
+
+static HYPRE_Int
+LinearSystemSetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *indices,
+                          const HYPRE_Complex *values)
+{
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+   /* GCOVR_EXCL_START */
+   if (n > 0 && LinearSystemVectorOnDevice(vec))
+   {
+      HYPRE_BigInt  *d_idx  = NULL;
+      HYPRE_Complex *d_vals = hypre_TAlloc(HYPRE_Complex, n, HYPRE_MEMORY_DEVICE);
+      hypre_TMemcpy(d_vals, values, HYPRE_Complex, n, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      if (indices)
+      {
+         d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
+         hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+      }
+      HYPRE_Int ierr = HYPRE_IJVectorSetValues(vec, n, d_idx, d_vals);
+      hypre_TFree(d_idx, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+      return ierr;
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+   return HYPRE_IJVectorSetValues(vec, n, indices, values);
+}
+
+static HYPRE_Int
+LinearSystemGetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *indices,
+                          HYPRE_Complex *values)
+{
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+   /* GCOVR_EXCL_START */
+   if (n > 0 && LinearSystemVectorOnDevice(vec))
+   {
+      HYPRE_BigInt  *d_idx  = NULL;
+      HYPRE_Complex *d_vals = hypre_TAlloc(HYPRE_Complex, n, HYPRE_MEMORY_DEVICE);
+      if (indices)
+      {
+         d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
+         hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+      }
+      HYPRE_Int ierr = HYPRE_IJVectorGetValues(vec, n, d_idx, d_vals);
+      hypre_TMemcpy(values, d_vals, HYPRE_Complex, n, HYPRE_MEMORY_HOST,
+                    HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_idx, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+      return ierr;
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+   return HYPRE_IJVectorGetValues(vec, n, (HYPRE_BigInt *)(uintptr_t)indices, values);
+}
+
 /* Projects `vec` onto the orthogonal complement of the null-space modes: form
  * the dot product with each mode, reduce it across ranks, then subtract the
  * corresponding component. Buffers are supplied by the caller so the collective
@@ -653,7 +725,7 @@ LinearSystemProjectOntoModes(HYPRE_IJVector vec_ns, int num_ns, HYPRE_IJVector v
       indices[i] = jlower + (HYPRE_BigInt)i;
    }
 
-   HYPRE_IJVectorGetValues(vec, num_entries, NULL, xbuf);
+   LinearSystemGetHostValues(vec, num_entries, NULL, xbuf);
    for (int k = 0; k < num_ns; k++)
    {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
@@ -677,7 +749,7 @@ LinearSystemProjectOntoModes(HYPRE_IJVector vec_ns, int num_ns, HYPRE_IJVector v
          xbuf[i] -= (HYPRE_Complex)dots[k] * zbuf[i];
       }
    }
-   HYPRE_IJVectorSetValues(vec, num_entries, indices, xbuf);
+   LinearSystemSetHostValues(vec, num_entries, indices, xbuf);
    HYPRE_IJVectorAssemble(vec);
 }
 
@@ -1560,7 +1632,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
    if (nrows > 0)
    {
       LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                        HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values));
+                        LinearSystemSetHostValues(*rhs_ptr, nrows, NULL, values));
    }
    LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(*rhs_ptr));
 
@@ -1857,7 +1929,7 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
 
    HYPRE_Int local_size_hypre =
       (HYPRE_Int)local_size; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
-   HYPRE_IJVectorSetValues(*rhs_ptr, local_size_hypre, NULL, local_values);
+   LinearSystemSetHostValues(*rhs_ptr, local_size_hypre, NULL, local_values);
    HYPRE_IJVectorAssemble(*rhs_ptr);
 
    hypre_TFree(local_values, HYPRE_MEMORY_HOST);
@@ -2448,7 +2520,6 @@ BlockFrobeniusPrepare(MPI_Comm comm, HYPRE_IJMatrix matrix, const IntArray *dofm
       HYPRE_IJMatrixGetObject(matrix, &object);
       local_valid = object != NULL;
    }
-   int global_valid = 0;
    if (!BlockDiagnosticsAgree(
           comm, local_valid, log_object_name, ls_id,
           "block Frobenius diagnostics skipped: matrix or dofmap missing"))
@@ -2668,7 +2739,6 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
       return;
    }
 
-   void               *object            = NULL;
    hypre_ParCSRMatrix *par_matrix        = NULL;
    hypre_CSRMatrix    *diag              = NULL;
    hypre_CSRMatrix    *offd              = NULL;
