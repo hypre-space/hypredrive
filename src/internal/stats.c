@@ -896,8 +896,7 @@ hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char 
 
    /* No variadic args - use name as-is (do not interpret '%' in name) */
    char formatted_name[1024];
-   strncpy(formatted_name, name, sizeof(formatted_name) - 1);
-   formatted_name[sizeof(formatted_name) - 1] = '\0';
+   snprintf(formatted_name, sizeof(formatted_name), "%s", name);
 
    AnnotateFormatted(stats, action, formatted_name);
 }

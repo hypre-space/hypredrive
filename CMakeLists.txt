@@ -389,6 +389,11 @@ if(_hypredrv_object_link_libraries AND
     target_link_libraries(HYPREDRV_objects
         PRIVATE ${_hypredrv_object_link_libraries})
 endif()
+# The library sources are kept -Wall -Wextra clean on every supported hypre
+# version; enable the warnings for them (not for consumers) so regressions
+# surface, and become errors under CMAKE_COMPILE_WARNING_AS_ERROR.
+target_compile_options(HYPREDRV_objects PRIVATE
+    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
 if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_EXPORTS)
 else()
