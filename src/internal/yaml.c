@@ -2193,20 +2193,6 @@ YAMLargsFindFlagIndex(int argc, char **argv, const char *short_flag,
    return -1;
 }
 
-static int
-YAMLargsFindConfigFileIndex(int argc, char **argv)
-{
-   for (int i = 0; i < argc; i++)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (argv[i] && hypredrv_IsYAMLFilename(argv[i])) /* GCOVR_EXCL_BR_STOP */
-      {
-         return i;
-      }
-   }
-   return -1;
-}
-
 static bool
 YAMLargsTokenEndsOverrideList(const char *arg)
 {
