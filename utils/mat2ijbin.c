@@ -9,6 +9,7 @@
  * Includes
  *-----------------------------------------------------------------------------*/
 
+#include <ctype.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -190,6 +191,56 @@ compare_coo_index(const void *a, const void *b)
  * read_mtx_file
  *-----------------------------------------------------------------------------*/
 
+static void
+str_tolower(char *s)
+{
+   for (; *s; s++)
+   {
+      *s = (char)tolower((unsigned char)*s);
+   }
+}
+
+/* Parses the rest of a "%%MatrixMarket" banner line. Only real/integer
+ * coordinate matrices are supported; sets *symmetric to 1 for symmetric or
+ * hermitian (real) storage, -1 for skew-symmetric and 0 for general. */
+static int
+parse_mtx_banner(const char *rest, const char *filename, int *symmetric)
+{
+   char object[32] = "", format[32] = "", field[32] = "", sym[32] = "";
+
+   sscanf(rest, "%31s %31s %31s %31s", object, format, field, sym);
+   str_tolower(object);
+   str_tolower(format);
+   str_tolower(field);
+   str_tolower(sym);
+   if (strcmp(object, "matrix") || strcmp(format, "coordinate"))
+   {
+      fprintf(stderr, "%s: unsupported Matrix Market layout '%s %s' (need 'matrix coordinate')\n",
+              filename, object, format);
+      return 0;
+   }
+   if (strcmp(field, "real") && strcmp(field, "integer"))
+   {
+      fprintf(stderr, "%s: unsupported Matrix Market field '%s' (need real or integer)\n",
+              filename, field);
+      return 0;
+   }
+   if (!strcmp(sym, "symmetric") || !strcmp(sym, "hermitian"))
+   {
+      *symmetric = 1;
+   }
+   else if (!strcmp(sym, "skew-symmetric"))
+   {
+      *symmetric = -1;
+   }
+   else if (strcmp(sym, "general"))
+   {
+      fprintf(stderr, "%s: unsupported Matrix Market symmetry '%s'\n", filename, sym);
+      return 0;
+   }
+   return 1;
+}
+
 coomat_t* read_mtx_file(const char* filename)
 {
    coomat_t *mat;
@@ -198,7 +249,8 @@ coomat_t* read_mtx_file(const char* filename)
    double    coef;
    FILE     *file = fopen(filename, "r");
    char      line[1024];
-   int       symmetric = 0;
+   int       symmetric = 0; /* 1: symmetric/hermitian, -1: skew-symmetric */
+   int64_t   entries   = 0;
 
    if (file == NULL)
    {
@@ -221,11 +273,14 @@ coomat_t* read_mtx_file(const char* filename)
    num_nonzeros = 0;
    while (fgets(line, sizeof(line), file))
    {
-      if (line[0] == '%') // Comment or header line
+      if (line[0] == '%') // Banner or comment line
       {
-         if (strstr(line, "symmetric"))
+         if (!strncmp(line, "%%MatrixMarket", 14) &&
+             !parse_mtx_banner(line + 14, filename, &symmetric))
          {
-            symmetric = 1;
+            fclose(file);
+            free(mat);
+            exit(EXIT_FAILURE);
          }
          continue;
       }
@@ -247,7 +302,7 @@ coomat_t* read_mtx_file(const char* filename)
    }
 
    // Number of slots, doubled for symmetric expansion, with overflow validation.
-   int64_t capacity = validate_nnz(num_nonzeros, symmetric ? 1 : 0, filename);
+   int64_t capacity = validate_nnz(num_nonzeros, symmetric != 0, filename);
 
    mat->num_rows = num_rows;
    mat->num_nonzeros = num_nonzeros;
@@ -289,18 +344,26 @@ coomat_t* read_mtx_file(const char* filename)
          mat->cols[count] = col;
          mat->coefs[count] = coef;
          count++;
+         entries++;
 
          if (symmetric && row != col && count < capacity)
          {
             mat->rows[count] = col;
             mat->cols[count] = row;
-            mat->coefs[count] = coef;
+            mat->coefs[count] = (symmetric < 0) ? -coef : coef;
             count++;
          }
       }
    }
 
    fclose(file);
+   if (entries != num_nonzeros)
+   {
+      fprintf(stderr, "File %s declares %" PRId64 " non-zeros but contains %" PRId64 "\n",
+              filename, num_nonzeros, entries);
+      free_coomat(&mat);
+      exit(EXIT_FAILURE);
+   }
 
    // Update the actual number of nonzeros if symmetric
    mat->num_nonzeros = count;
@@ -601,7 +664,8 @@ usage(const char *prog)
            "\n"
            "Supported formats (by extension):\n"
            "  .coo         Plain COO text: \"nrows nnz\" then \"row col value\" per line (0- or 1-based)\n"
-           "  .mtx         Matrix Market coordinate (real general; symmetric expanded on read)\n"
+           "  .mtx         Matrix Market real/integer coordinate (symmetric, skew-symmetric\n"
+           "               and hermitian storage expanded on read)\n"
            "  .bin, .ijbin IJ binary: 11 int64 header + int32 rows/cols + double values\n"
            "\n"
            "Options:\n"

@@ -889,17 +889,117 @@ ProbeRHSPartFile(const char *filename)
 static void MatrixPartRawDestroy(MatrixPartRaw *part);
 static void RHSPartRawDestroy(RHSPartRaw *part);
 
+/* Longest line accepted in an ASCII part file; hypre writes one short entry
+ * ("row col value") per line. */
+enum { ASCII_LINE_MAX = 512 };
+
+/* Parses `nints` unsigned integers, then one double when `val` is non-NULL,
+ * from `line`; anything else on the line is an error. Returns -1 for a blank
+ * line, 1 on success and 0 otherwise. */
+static int
+ParseASCIILine(const char *line, int nints, unsigned long long *ints, double *val)
+{
+   const char *p   = line;
+   char       *end = NULL;
+
+   while (*p == ' ' || *p == '\t')
+   {
+      p++;
+   }
+   if (*p == '\n' || *p == '\r' || *p == '\0')
+   {
+      return -1;
+   }
+   for (int i = 0; i < nints; i++)
+   {
+      while (*p == ' ' || *p == '\t')
+      {
+         p++;
+      }
+      if (*p < '0' || *p > '9')
+      {
+         return 0;
+      }
+      errno   = 0;
+      ints[i] = strtoull(p, &end, 10);
+      if (errno != 0)
+      {
+         return 0;
+      }
+      p = end;
+   }
+   if (val)
+   {
+      *val = strtod(p, &end);
+      if (end == p)
+      {
+         return 0;
+      }
+      p = end;
+   }
+   while (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')
+   {
+      p++;
+   }
+   return (*p == '\0') ? 1 : 0;
+}
+
+/* Reads the next non-blank line of `fp` into `line` and parses it with
+ * ParseASCIILine. Returns 1 on success, 0 on a malformed line and EOF at the
+ * end of the file. */
+static int
+ReadASCIILine(FILE *fp, char *line, int nints, unsigned long long *ints, double *val)
+{
+   while (fgets(line, ASCII_LINE_MAX, fp))
+   {
+      int rc = ParseASCIILine(line, nints, ints, val);
+      if (rc >= 0)
+      {
+         return rc;
+      }
+   }
+   return EOF;
+}
+
+/* Number of whitespace-separated tokens on the first line of an ASCII part
+ * file: 4 for a matrix ("ilower iupper jlower jupper"), 2 for a vector
+ * ("ilower iupper") and 1 for a dofmap (entry count). 0 when unreadable. */
+static int
+ASCIIPartHeaderTokens(const char *filename)
+{
+   char  line[ASCII_LINE_MAX];
+   FILE *fp     = fopen(filename, "r");
+   int   ntoks  = 0;
+   int   in_tok = 0;
+
+   if (!fp)
+   {
+      return 0;
+   }
+   if (fgets(line, sizeof(line), fp))
+   {
+      for (const char *p = line; *p; p++)
+      {
+         int space = (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n');
+         ntoks += (!space && !in_tok);
+         in_tok = !space;
+      }
+   }
+   fclose(fp);
+   return ntoks;
+}
+
 static int
 ReadMatrixPartASCIIFile(const char *filename, MatrixPartRaw *raw)
 {
-   FILE     *fp = NULL;
-   uint64_t *rows = NULL;
-   uint64_t *cols = NULL;
-   double   *vals = NULL;
-   size_t    nnz = 0, cap = 0;
-   unsigned long long row_lower = 0, row_upper = 0;
-   unsigned long long col_lower = 0, col_upper = 0;
-   int rc = 0;
+   char               line[ASCII_LINE_MAX];
+   FILE              *fp   = NULL;
+   uint64_t          *rows = NULL;
+   uint64_t          *cols = NULL;
+   double            *vals = NULL;
+   size_t             nnz = 0, cap = 0;
+   unsigned long long header[4] = {0};
+   int                rc = 0;
 
    if (!filename || !raw)
    {
@@ -913,8 +1013,8 @@ ReadMatrixPartASCIIFile(const char *filename, MatrixPartRaw *raw)
       return 0;
    }
 
-   if (fscanf(fp, "%llu %llu %llu %llu", &row_lower, &row_upper, &col_lower, &col_upper) != 4 ||
-       row_upper < row_lower)
+   /* header: row_lower row_upper col_lower col_upper */
+   if (ReadASCIILine(fp, line, 4, header, NULL) != 1 || header[1] < header[0])
    {
       fclose(fp);
       return 0;
@@ -922,74 +1022,60 @@ ReadMatrixPartASCIIFile(const char *filename, MatrixPartRaw *raw)
 
    while (1)
    {
-      unsigned long long row = 0, col = 0;
-      double             val = 0.0;
+      unsigned long long idx[2] = {0};
+      double             val    = 0.0;
 
-      rc = fscanf(fp, "%llu %llu %lf", &row, &col, &val);
+      rc = ReadASCIILine(fp, line, 2, idx, &val);
       if (rc == EOF)
       {
          break;
       }
-      if (rc != 3 || row < row_lower || row > row_upper)
+      if (rc != 1 || idx[0] < header[0] || idx[0] > header[1])
       {
-         fclose(fp);
-         free(rows);
-         free(cols);
-         free(vals);
-         return 0;
+         break;
       }
 
       if (nnz == cap)
       {
-         size_t    new_cap = cap == 0 ? 4096u : (2u * cap);
-         uint64_t *new_rows = (uint64_t *)malloc(new_cap * sizeof(*new_rows));
-         uint64_t *new_cols = (uint64_t *)malloc(new_cap * sizeof(*new_cols));
-         double   *new_vals = (double *)malloc(new_cap * sizeof(*new_vals));
+         size_t    new_cap  = cap == 0 ? 4096u : (2u * cap);
+         uint64_t *new_rows = (uint64_t *)realloc(rows, new_cap * sizeof(*rows));
+         rows               = new_rows ? new_rows : rows;
+         uint64_t *new_cols = (uint64_t *)realloc(cols, new_cap * sizeof(*cols));
+         cols               = new_cols ? new_cols : cols;
+         double   *new_vals = (double *)realloc(vals, new_cap * sizeof(*vals));
+         vals               = new_vals ? new_vals : vals;
          if (!new_rows || !new_cols || !new_vals)
          {
-            fclose(fp);
-            free(new_rows);
-            free(new_cols);
-            free(new_vals);
-            free(rows);
-            free(cols);
-            free(vals);
-            return 0;
+            rc = 0;
+            break;
          }
-         if (nnz > 0)
-         {
-            memcpy(new_rows, rows, nnz * sizeof(*new_rows));
-            memcpy(new_cols, cols, nnz * sizeof(*new_cols));
-            memcpy(new_vals, vals, nnz * sizeof(*new_vals));
-         }
-         free(rows);
-         free(cols);
-         free(vals);
-         rows = new_rows;
-         cols = new_cols;
-         vals = new_vals;
-         cap  = new_cap;
+         cap = new_cap;
       }
 
-      rows[nnz] = (uint64_t)row;
-      cols[nnz] = (uint64_t)col;
+      rows[nnz] = (uint64_t)idx[0];
+      cols[nnz] = (uint64_t)idx[1];
       vals[nnz] = val;
       nnz++;
    }
 
    fclose(fp);
+   if (rc != EOF)
+   {
+      free(rows);
+      free(cols);
+      free(vals);
+      return 0;
+   }
 
    raw->row_index_size = (uint64_t)sizeof(uint64_t);
    raw->value_size     = (uint64_t)sizeof(double);
    raw->nnz            = (uint64_t)nnz;
-   raw->row_lower      = (uint64_t)row_lower;
-   raw->row_upper      = (uint64_t)row_upper;
-   raw->nrows          = (uint64_t)(row_upper - row_lower + 1u);
+   raw->row_lower      = (uint64_t)header[0];
+   raw->row_upper      = (uint64_t)header[1];
+   raw->nrows          = (uint64_t)(header[1] - header[0] + 1u);
    raw->rows           = rows;
    raw->cols           = cols;
    raw->vals           = vals;
-   (void)col_lower;
-   (void)col_upper;
 
    return 1;
 }
@@ -997,12 +1083,13 @@ ReadMatrixPartASCIIFile(const char *filename, MatrixPartRaw *raw)
 static int
 ReadRHSPartASCIIFile(const char *filename, RHSPartRaw *raw)
 {
-   FILE               *fp = NULL;
-   double             *vals = NULL;
-   unsigned long long  row_lower = 0, row_upper = 0;
-   uint64_t            nrows = 0;
-   uint64_t            count = 0;
-   int                 rc = 0;
+   char                line[ASCII_LINE_MAX];
+   FILE               *fp        = NULL;
+   double             *vals      = NULL;
+   unsigned long long  header[2] = {0};
+   uint64_t            nrows     = 0;
+   uint64_t            count     = 0;
+   int                 rc        = 0;
 
    if (!filename || !raw)
    {
@@ -1016,21 +1103,19 @@ ReadRHSPartASCIIFile(const char *filename, RHSPartRaw *raw)
       return 0;
    }
 
-   if (fscanf(fp, "%llu %llu", &row_lower, &row_upper) != 2 || row_upper < row_lower)
+   /* header: row_lower row_upper */
+   if (ReadASCIILine(fp, line, 2, header, NULL) != 1 || header[1] < header[0])
    {
       fclose(fp);
       return 0;
    }
 
-   nrows = (uint64_t)(row_upper - row_lower + 1u);
-   if (nrows > 0)
+   nrows = (uint64_t)(header[1] - header[0] + 1u);
+   vals  = (double *)calloc((size_t)nrows, sizeof(*vals));
+   if (!vals)
    {
-      vals = (double *)calloc((size_t)nrows, sizeof(*vals));
-      if (!vals)
-      {
-         fclose(fp);
-         return 0;
-      }
+      fclose(fp);
+      return 0;
    }
 
    while (1)
@@ -1038,24 +1123,22 @@ ReadRHSPartASCIIFile(const char *filename, RHSPartRaw *raw)
       unsigned long long row = 0;
       double             val = 0.0;
 
-      rc = fscanf(fp, "%llu %lf", &row, &val);
+      rc = ReadASCIILine(fp, line, 1, &row, &val);
       if (rc == EOF)
       {
          break;
       }
-      if (rc != 2 || row < row_lower || row > row_upper || count >= nrows)
+      if (rc != 1 || row < header[0] || row > header[1] || count >= nrows)
       {
-         fclose(fp);
-         free(vals);
-         return 0;
+         break;
       }
-      vals[(size_t)((uint64_t)row - (uint64_t)row_lower)] = val;
+      vals[(size_t)((uint64_t)row - (uint64_t)header[0])] = val;
       count++;
    }
 
    fclose(fp);
 
-   if (count != nrows)
+   if (rc != EOF || count != nrows)
    {
       free(vals);
       return 0;
@@ -1064,30 +1147,6 @@ ReadRHSPartASCIIFile(const char *filename, RHSPartRaw *raw)
    raw->value_size = (uint64_t)sizeof(double);
    raw->nrows      = nrows;
    raw->vals       = vals;
-   return 1;
-}
-
-static int
-ProbeMatrixPartASCIIFile(const char *filename)
-{
-   MatrixPartRaw raw;
-   if (!ReadMatrixPartASCIIFile(filename, &raw))
-   {
-      return 0;
-   }
-   MatrixPartRawDestroy(&raw);
-   return 1;
-}
-
-static int
-ProbeRHSPartASCIIFile(const char *filename)
-{
-   RHSPartRaw raw;
-   if (!ReadRHSPartASCIIFile(filename, &raw))
-   {
-      return 0;
-   }
-   RHSPartRawDestroy(&raw);
    return 1;
 }
 
@@ -1291,12 +1350,13 @@ AutoDetectFilenames(PackArgs *args, const char *system_dir)
       snprintf(part0_filename, sizeof(part0_filename), "%s/%s.00000", system_dir,
                ascii_prefixes[i]);
 
-      if (!have_matrix && ProbeMatrixPartASCIIFile(part0_filename))
+      int ntoks = ASCIIPartHeaderTokens(part0_filename);
+      if (!have_matrix && ntoks == 4)
       {
          snprintf(args->matrix_filename, sizeof(args->matrix_filename), "%s", ascii_prefixes[i]);
          have_matrix = 1;
       }
-      else if (!have_rhs && ProbeRHSPartASCIIFile(part0_filename))
+      else if (!have_rhs && ntoks == 2)
       {
          snprintf(args->rhs_filename, sizeof(args->rhs_filename), "%s", ascii_prefixes[i]);
          have_rhs = 1;
@@ -1308,9 +1368,18 @@ AutoDetectFilenames(PackArgs *args, const char *system_dir)
       for (size_t i = 0; i < nascii; i++)
       {
          char      dof_prefix[MAX_FILENAME_LENGTH];
+         char      part0_filename[MAX_FILENAME_LENGTH];
          DofPartRaw draw;
          memset(&draw, 0, sizeof(draw));
 
+         /* Only a one-token header ("count") marks a dofmap; matrix and vector
+          * parts start with their row range, which would also parse as a count. */
+         snprintf(part0_filename, sizeof(part0_filename), "%s/%s.00000", system_dir,
+                  ascii_prefixes[i]);
+         if (ASCIIPartHeaderTokens(part0_filename) != 1)
+         {
+            continue;
+         }
          snprintf(dof_prefix, sizeof(dof_prefix), "%s/%s", system_dir, ascii_prefixes[i]);
          if (ReadDofPart(dof_prefix, 0, &draw))
          {
@@ -1407,10 +1476,10 @@ ReadMatrixPart(const char *prefix, int part_id, MatrixPartRaw *raw)
 
    raw->row_index_size = header[1];
    raw->value_size     = header[2];
-   raw->nrows          = header[5];
    raw->nnz            = header[6];
    raw->row_lower      = header[7];
    raw->row_upper      = header[8];
+   raw->nrows          = raw->row_upper - raw->row_lower + 1u; /* header[5] is global nnz */
 
    nnz = (size_t)raw->nnz;
    row_bytes = (size_t)raw->row_index_size;
@@ -1618,21 +1687,55 @@ FNV1a64(const void *data, size_t nbytes, uint64_t hash)
    return hash;
 }
 
+static inline uint64_t
+HashMixWord(uint64_t hash, uint64_t word)
+{
+   hash ^= word;
+   hash *= UINT64_C(0x9E3779B97F4A7C15);
+   return hash ^ (hash >> 32);
+}
+
+/* Word-at-a-time hash for pattern dedup. It only lives in memory during pack
+ * (unlike the FNV-1a64 file hashes), so it is free to favor speed: the index
+ * arrays are hashed 8 bytes per step instead of one. */
+static uint64_t
+HashBytes(const void *data, size_t nbytes, uint64_t hash)
+{
+   const unsigned char *bytes = (const unsigned char *)data;
+   uint64_t             word  = 0;
+   size_t               i     = 0;
+
+   if (!bytes)
+   {
+      return hash;
+   }
+   for (; i + sizeof(word) <= nbytes; i += sizeof(word))
+   {
+      memcpy(&word, bytes + i, sizeof(word));
+      hash = HashMixWord(hash, word);
+   }
+   word = 0;
+   memcpy(&word, bytes + i, nbytes - i);
+   return HashMixWord(hash, word ^ ((uint64_t)nbytes << 56));
+}
+
 static uint64_t
 PatternHash(const MatrixPartRaw *raw, uint32_t part_id)
 {
    uint64_t hash = UINT64_C(1469598103934665603);
+   size_t   bytes;
    if (!raw)
    {
       return hash;
    }
-   hash = FNV1a64(&part_id, sizeof(part_id), hash);
-   hash = FNV1a64(&raw->nnz, sizeof(raw->nnz), hash);
-   hash = FNV1a64(&raw->row_index_size, sizeof(raw->row_index_size), hash);
-   hash = FNV1a64(&raw->row_lower, sizeof(raw->row_lower), hash);
-   hash = FNV1a64(&raw->row_upper, sizeof(raw->row_upper), hash);
-   hash = FNV1a64(raw->rows, (size_t)raw->nnz * (size_t)raw->row_index_size, hash);
-   hash = FNV1a64(raw->cols, (size_t)raw->nnz * (size_t)raw->row_index_size, hash);
+   bytes = (size_t)raw->nnz * (size_t)raw->row_index_size;
+   hash  = HashMixWord(hash, part_id);
+   hash  = HashMixWord(hash, raw->nnz);
+   hash  = HashMixWord(hash, raw->row_index_size);
+   hash  = HashMixWord(hash, raw->row_lower);
+   hash  = HashMixWord(hash, raw->row_upper);
+   hash  = HashBytes(raw->rows, bytes, hash);
+   hash  = HashBytes(raw->cols, bytes, hash);
    return hash;
 }
 
@@ -1652,6 +1755,19 @@ PackWriteBlob(FILE *blob_fp, comp_alg_t algo, int compression_level, const void 
    {
       *offset    = 0;
       *blob_size = 0;
+      return 1;
+   }
+
+   /* Uncompressed blobs are written as-is (no staging copy of the payload). */
+   if (algo == COMP_NONE)
+   {
+      if (fwrite(data, 1, size, blob_fp) != size)
+      {
+         return 0;
+      }
+      *offset    = *cursor;
+      *blob_size = (uint64_t)size;
+      *cursor += (uint64_t)size;
       return 1;
    }
 
@@ -1728,6 +1844,7 @@ LoadTimesteps(const char *filename, LSSeqTimestepEntry **entries_ptr, uint32_t *
       fclose(fp);
       return 0;
    }
+   long declared = strtol(line, NULL, 10);
 
    while (fgets(line, sizeof(line), fp))
    {
@@ -1758,6 +1875,15 @@ LoadTimesteps(const char *filename, LSSeqTimestepEntry **entries_ptr, uint32_t *
    }
 
    fclose(fp);
+   /* The library's timestep reader stops after the declared count; flag files
+    * where it would see a different number of timesteps than the container. */
+   if (declared != (long)count)
+   {
+      fprintf(stderr,
+              "[lsseq][pack] Warning: '%s' declares %ld timesteps but lists %u; "
+              "packing all %u listed entries\n",
+              filename, declared, (unsigned int)count, (unsigned int)count);
+   }
    *entries_ptr = entries;
    *count_ptr   = count;
    return 1;
@@ -1897,6 +2023,9 @@ BufAppendRaw(void **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const void *data,
    *cap_ptr = cap;
    return 1;
 }
+
+static int BufAppendf(char **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const char *fmt,
+                      ...) HYPREDRV_PRINTF_FORMAT(4, 5);
 
 static int
 BufAppendf(char **buf_ptr, size_t *len_ptr, size_t *cap_ptr, const char *fmt, ...)
@@ -2379,13 +2508,7 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
 
    if (codec == COMP_NONE)
    {
-      decoded = malloc((size_t)blob_size);
-      if (!decoded)
-      {
-         free(blob);
-         return 0;
-      }
-      memcpy(decoded, blob, (size_t)blob_size);
+      decoded      = blob; /* raw payload: hand over the read buffer */
       decoded_size = (size_t)blob_size;
    }
    else
@@ -2393,13 +2516,13 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
       hypredrv_ErrorCodeResetAll();
       hypredrv_ErrorMsgClear();
       hypredrv_decompress(codec, (size_t)blob_size, blob, &decoded_size, &decoded);
+      free(blob);
       if (hypredrv_ErrorCodeActive() || !decoded)
       {
-         free(blob);
+         free(decoded);
          return 0;
       }
    }
-   free(blob);
 
    if (expected_size > 0 && decoded_size != expected_size)
    {
@@ -2411,11 +2534,51 @@ DecodeBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size, size
    return 1;
 }
 
+/* Exact check that a pattern already written to the pack blob file holds the
+ * same row/column arrays as `raw` (guards pattern dedup against hash
+ * collisions). Leaves `blob_fp` positioned at its end for further appends. */
+static int
+PatternBlobsMatch(FILE *blob_fp, comp_alg_t algo, const LSSeqPatternMeta *meta,
+                  const MatrixPartRaw *raw, int *match)
+{
+   size_t bytes = (size_t)raw->nnz * (size_t)raw->row_index_size;
+   void  *rows = NULL, *cols = NULL;
+   size_t rows_sz = 0, cols_sz = 0;
+   int    ok = DecodeBlob(blob_fp, algo, meta->rows_blob_offset, meta->rows_blob_size, bytes,
+                          &rows, &rows_sz) &&
+             DecodeBlob(blob_fp, algo, meta->cols_blob_offset, meta->cols_blob_size, bytes,
+                        &cols, &cols_sz);
+
+   *match = ok && (bytes == 0 ||
+                   (!memcmp(rows, raw->rows, bytes) && !memcmp(cols, raw->cols, bytes)));
+   free(rows);
+   free(cols);
+   return fseeko(blob_fp, 0, SEEK_END) == 0 && ok;
+}
+
+/* Slice-stream source reading a compressed blob that starts at `base` in `fp`. */
+typedef struct
+{
+   FILE    *fp;
+   uint64_t base;
+} SeqFileBlob;
+
+static int
+SeqFileBlobRead(void *ctx, uint64_t offset, void *buffer, size_t size)
+{
+   const SeqFileBlob *blob = (const SeqFileBlob *)ctx;
+   return SeqReadAt(blob->fp, blob->base + offset, buffer, size);
+}
+
+/* Reads one system's slice of a part's batched blob (slot: 0=values, 1=rhs,
+ * 2=dof). Raw blobs are read at the slice's file offset. For streamable codecs,
+ * `stream` (optional) keeps a resumable decoder for this part/slot across
+ * calls, so unpacking systems in order inflates each blob only once. */
 static int
 DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
                     const uint64_t *part_blob_table, uint32_t part_id, int slot,
                     uint64_t decoded_offset, uint64_t decoded_size_expected, void **decoded_ptr,
-                    size_t *decoded_size_ptr)
+                    size_t *decoded_size_ptr, hypredrv_SliceStream **stream)
 {
    uint64_t c_offset = 0, c_size = 0;
    void    *decoded = NULL;
@@ -2437,6 +2600,54 @@ DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    if (c_size == 0)
    {
       return decoded_size_expected == 0 ? 1 : 0;
+   }
+   if (decoded_size_expected > (uint64_t)SIZE_MAX)
+   {
+      return 0;
+   }
+
+   if (codec == COMP_NONE)
+   {
+      if (decoded_offset > c_size || decoded_size_expected > c_size - decoded_offset)
+      {
+         return 0;
+      }
+      if (decoded_size_expected == 0)
+      {
+         return 1;
+      }
+      slice = malloc((size_t)decoded_size_expected);
+      if (!slice || !SeqReadAt(fp, blob_base + c_offset + decoded_offset, slice,
+                               (size_t)decoded_size_expected))
+      {
+         free(slice);
+         return 0;
+      }
+      *decoded_ptr      = slice;
+      *decoded_size_ptr = (size_t)decoded_size_expected;
+      return 1;
+   }
+
+   /* The stream pulls compressed input from the open file as it decodes, so no
+    * part blob is ever held in memory as a whole. */
+   SeqFileBlob          file_blob = {fp, blob_base + c_offset};
+   hypredrv_SliceSource src       = {SeqFileBlobRead, &file_blob};
+   if (stream && !*stream && c_size <= (uint64_t)SIZE_MAX)
+   {
+      *stream = hypredrv_SliceStreamCreate(codec, (size_t)c_size, &src);
+   }
+   if (stream && *stream)
+   {
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ErrorMsgClear();
+      if (!hypredrv_SliceStreamRead(*stream, &src, (size_t)decoded_offset,
+                                    (size_t)decoded_size_expected, &slice))
+      {
+         return 0;
+      }
+      *decoded_ptr      = slice;
+      *decoded_size_ptr = (size_t)decoded_size_expected;
+      return 1;
    }
 
    if (!DecodeBlob(fp, codec, blob_base + c_offset, c_size, 0, &decoded, &decoded_size))
@@ -2471,8 +2682,18 @@ DecodePartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
    return 1;
 }
 
+/* Closes a file this tool wrote; fails if any buffered write or the final
+ * flush failed (e.g. disk full). */
 static int
-WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
+CloseWrittenFile(FILE *fp)
+{
+   int ok = !ferror(fp);
+   return (fclose(fp) == 0) && ok;
+}
+
+static int
+WriteMatrixPartBinary(const char *filename, uint64_t global_nrows, uint64_t global_nnz,
+                      const LSSeqPartMeta *part, const LSSeqPatternMeta *pattern,
                       const void *rows, const void *cols, const void *vals)
 {
    FILE    *fp = NULL;
@@ -2489,12 +2710,18 @@ WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSS
    {
       return 0;
    }
-   header[1] = part->row_index_size;
-   header[2] = part->value_size;
-   header[5] = part->row_upper - part->row_lower + 1;
-   header[6] = pattern->nnz;
-   header[7] = part->row_lower;
-   header[8] = part->row_upper;
+   /* Same header as hypre's HYPRE_IJMatrixPrintBinary (square matrix). */
+   header[0]  = 1; /* header version */
+   header[1]  = part->row_index_size;
+   header[2]  = part->value_size;
+   header[3]  = global_nrows;
+   header[4]  = global_nrows;
+   header[5]  = global_nnz;
+   header[6]  = pattern->nnz;
+   header[7]  = part->row_lower;
+   header[8]  = part->row_upper;
+   header[9]  = part->row_lower;
+   header[10] = part->row_upper;
    if (fwrite(header, sizeof(uint64_t), 11, fp) != 11)
    {
       fclose(fp);
@@ -2510,12 +2737,12 @@ WriteMatrixPartBinary(const char *filename, const LSSeqPartMeta *part, const LSS
       fclose(fp);
       return 0;
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
-WriteRHSPartBinary(const char *filename, const LSSeqPartMeta *part, const void *vals)
+WriteRHSPartBinary(const char *filename, uint64_t global_nrows, const LSSeqPartMeta *part,
+                   const void *vals)
 {
    FILE    *fp = NULL;
    uint64_t header[8] = {0};
@@ -2531,8 +2758,14 @@ WriteRHSPartBinary(const char *filename, const LSSeqPartMeta *part, const void *
    {
       return 0;
    }
+   /* Same header as hypre's HYPRE_IJVectorPrintBinary (one component). */
+   header[0] = 1; /* header version */
    header[1] = part->value_size;
+   header[2] = part->row_lower;
+   header[3] = part->row_lower + part->nrows; /* exclusive upper bound */
+   header[4] = global_nrows;
    header[5] = part->nrows;
+   header[6] = 1; /* num_components */
    if (fwrite(header, sizeof(uint64_t), 8, fp) != 8)
    {
       fclose(fp);
@@ -2544,8 +2777,7 @@ WriteRHSPartBinary(const char *filename, const LSSeqPartMeta *part, const void *
       fclose(fp);
       return 0;
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2567,8 +2799,7 @@ WriteDofPartASCII(const char *filename, const int32_t *vals, uint64_t nentries)
    {
       fprintf(fp, "%d\n", vals ? (int)vals[i] : 0);
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2658,8 +2889,7 @@ WriteMatrixPartMatrixMarket(const char *filename, uint64_t global_nrows, uint64_
               (unsigned long long)(col + 1u), val);
    }
 
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2696,8 +2926,7 @@ WriteVectorPartMatrixMarket(const char *filename, uint64_t global_nrows, const L
               (unsigned long long)(part->row_lower + (uint64_t)i + 1u), val);
    }
 
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -2726,8 +2955,7 @@ WriteDofPartMatrixMarket(const char *filename, uint64_t global_nrows, const LSSe
               vals ? (int)vals[i] : 0);
    }
 
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -3036,8 +3264,7 @@ WriteTimestepsFile(const char *filename, const LSSeqTimestepEntry *timesteps, ui
    {
       fprintf(fp, "%d %d\n", timesteps[i].timestep, timesteps[i].ls_start);
    }
-   fclose(fp);
-   return 1;
+   return CloseWrittenFile(fp);
 }
 
 static int
@@ -3120,13 +3347,20 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    {
       return EXIT_FAILURE;
    }
-   if (!LoadPackedSequence(args->input_filename, &seq, 1))
+   /* The blob hash covers the whole data section: verify it once on rank 0
+    * rather than having every rank re-read and hash the full file. */
    {
-      if (!myid)
+      int load_ok = LoadPackedSequence(args->input_filename, &seq, myid == 0);
+      int all_ok  = 0;
+      MPI_Allreduce(&load_ok, &all_ok, 1, MPI_INT, MPI_MIN, comm);
+      if (!all_ok)
       {
-         fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
+         if (!myid)
+         {
+            fprintf(stderr, "Could not load sequence file '%s'\n", args->input_filename);
+         }
+         MPI_Abort(comm, EXIT_FAILURE);
       }
-      MPI_Abort(comm, EXIT_FAILURE);
    }
 
    if (!EnsureDirectoryExists(args->output_dir))
@@ -3259,6 +3493,27 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
    fflush(stdout);
    progress_start_time = MPI_Wtime();
 
+   /* One resumable decoder per local part and blob slot (values, rhs, dof):
+    * systems are unpacked in order, so each batched blob is inflated once. */
+   hypredrv_SliceStream **streams =
+      (hypredrv_SliceStream **)calloc((size_t)(local_nparts > 0 ? local_nparts : 1) * 3u,
+                                      sizeof(*streams));
+   /* Last decoded pattern (row/column blobs) per local part. */
+   size_t    nlocal   = (size_t)(local_nparts > 0 ? local_nparts : 1);
+   void    **pat_rows = (void **)calloc(nlocal, sizeof(void *));
+   void    **pat_cols = (void **)calloc(nlocal, sizeof(void *));
+   uint32_t *pat_id   = (uint32_t *)malloc(nlocal * sizeof(uint32_t));
+   if (!streams || !pat_rows || !pat_cols || !pat_id)
+   {
+      fclose(fp);
+      SeqPackedDataDestroy(&seq);
+      MPI_Abort(comm, EXIT_FAILURE);
+   }
+   for (size_t i = 0; i < nlocal; i++)
+   {
+      pat_id[i] = UINT32_MAX;
+   }
+
    for (uint32_t s = 0; s < seq.header.num_systems; s++)
    {
       char system_dir[MAX_FILENAME_LENGTH];
@@ -3268,6 +3523,11 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          snprintf(path_tmp, sizeof(path_tmp), "%s/%s_%0*d", args->output_dir, args->prefix,
                   digits_suffix, suffix);
          path_copy(system_dir, sizeof(system_dir), path_tmp);
+      }
+      uint64_t global_nnz = 0;
+      for (uint32_t p = 0; p < seq.header.num_parts; p++)
+      {
+         global_nnz += seq.sys_parts[(size_t)s * (size_t)seq.header.num_parts + p].nnz;
       }
 
       for (int lp = 0; lp < local_nparts; lp++)
@@ -3295,18 +3555,43 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
             MPI_Abort(comm, EXIT_FAILURE);
          }
 
-         if (!DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->rows_blob_offset, pat->rows_blob_size,
-                         (size_t)pat->nnz * (size_t)part->row_index_size, &rows, &rows_sz) ||
-             !DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->cols_blob_offset, pat->cols_blob_size,
-                         (size_t)pat->nnz * (size_t)part->row_index_size, &cols, &cols_sz) ||
-             !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
+         /* Consecutive systems usually share a part's pattern: decode its row/column
+          * blobs only when the pattern changes. */
+         if (pat_id[lp] != sp->pattern_id)
+         {
+            free(pat_rows[lp]);
+            free(pat_cols[lp]);
+            pat_rows[lp] = pat_cols[lp] = NULL;
+            pat_id[lp]                  = UINT32_MAX;
+            if (!DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->rows_blob_offset,
+                            pat->rows_blob_size, (size_t)pat->nnz * (size_t)part->row_index_size,
+                            &pat_rows[lp], &rows_sz) ||
+                !DecodeBlob(fp, (comp_alg_t)seq.header.codec, pat->cols_blob_offset,
+                            pat->cols_blob_size, (size_t)pat->nnz * (size_t)part->row_index_size,
+                            &pat_cols[lp], &cols_sz))
+            {
+               fclose(fp);
+               SeqPackedDataDestroy(&seq);
+               MPI_Abort(comm, EXIT_FAILURE);
+            }
+            pat_id[lp] = sp->pattern_id;
+         }
+         rows = pat_rows[lp];
+         cols = pat_cols[lp];
+
+         if (!DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
                                   seq.part_blob_table, part_id, 0, sp->values_blob_offset,
-                                  sp->values_blob_size, &vals, &vals_sz) ||
+                                  sp->values_blob_size, &vals, &vals_sz,
+                                  &streams[(size_t)lp * 3u + 0u]) ||
              !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec, seq.header.offset_blob_data,
                                   seq.part_blob_table, part_id, 1, sp->rhs_blob_offset,
-                                  sp->rhs_blob_size, &rhs, &rhs_sz))
+                                  sp->rhs_blob_size, &rhs, &rhs_sz,
+                                  &streams[(size_t)lp * 3u + 1u]) ||
+             /* The writers consume nnz (nrows) entries: reject short slices. */
+             vals_sz != (size_t)pat->nnz * (size_t)part->value_size ||
+             rhs_sz != (size_t)part->nrows * (size_t)part->value_size)
          {
-            free(rows); free(cols); free(vals); free(rhs); free(dof);
+            free(vals); free(rhs); free(dof);
             fclose(fp);
             SeqPackedDataDestroy(&seq);
             MPI_Abort(comm, EXIT_FAILURE);
@@ -3318,7 +3603,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                 !FormatOutputPartFilename(rfile, sizeof(rfile), system_dir, rhs_filename, part_id,
                                           part_mode_suffix, part_extension))
             {
-               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
                MPI_Abort(comm, EXIT_FAILURE);
@@ -3329,10 +3614,11 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                                             cols, vals) ||
                !WriteVectorPartMatrixMarket(rfile, global_nrows, part, rhs))) ||
              (args->format == UNPACK_FORMAT_HYPRE &&
-              (!WriteMatrixPartBinary(mfile, part, pat, rows, cols, vals) ||
-               !WriteRHSPartBinary(rfile, part, rhs))))
+              (!WriteMatrixPartBinary(mfile, global_nrows, global_nnz, part, pat, rows, cols,
+                                      vals) ||
+               !WriteRHSPartBinary(rfile, global_nrows, part, rhs))))
          {
-            free(rows); free(cols); free(vals); free(rhs); free(dof);
+            free(vals); free(rhs); free(dof);
             fclose(fp);
             SeqPackedDataDestroy(&seq);
             MPI_Abort(comm, EXIT_FAILURE);
@@ -3341,11 +3627,13 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
          if ((seq.header.flags & LSSEQ_FLAG_HAS_DOFMAP) && dofmap_filename[0] != '\0')
          {
             if (sp->dof_num_entries > 0 &&
-                !DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec,
-                                     seq.header.offset_blob_data, seq.part_blob_table, part_id, 2,
-                                     sp->dof_blob_offset, sp->dof_blob_size, &dof, &dof_sz))
+                (!DecodePartBlobSlice(fp, (comp_alg_t)seq.header.codec,
+                                      seq.header.offset_blob_data, seq.part_blob_table, part_id,
+                                      2, sp->dof_blob_offset, sp->dof_blob_size, &dof, &dof_sz,
+                                      &streams[(size_t)lp * 3u + 2u]) ||
+                 dof_sz != (size_t)sp->dof_num_entries * sizeof(int32_t)))
             {
-               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
                MPI_Abort(comm, EXIT_FAILURE);
@@ -3354,7 +3642,7 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                if (!FormatOutputPartFilename(dfile, sizeof(dfile), system_dir, dofmap_filename,
                                              part_id, "", part_extension))
                {
-                  free(rows); free(cols); free(vals); free(rhs); free(dof);
+                  free(vals); free(rhs); free(dof);
                   fclose(fp);
                   SeqPackedDataDestroy(&seq);
                   MPI_Abort(comm, EXIT_FAILURE);
@@ -3366,15 +3654,13 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
                 (args->format == UNPACK_FORMAT_HYPRE &&
                  !WriteDofPartASCII(dfile, (const int32_t *)dof, sp->dof_num_entries)))
             {
-               free(rows); free(cols); free(vals); free(rhs); free(dof);
+               free(vals); free(rhs); free(dof);
                fclose(fp);
                SeqPackedDataDestroy(&seq);
                MPI_Abort(comm, EXIT_FAILURE);
             }
          }
 
-         free(rows);
-         free(cols);
          free(vals);
          free(rhs);
          free(dof);
@@ -3387,6 +3673,19 @@ RunUnpackMode(MPI_Comm comm, int myid, int nprocs, const UnpackArgs *args)
       }
    }
 
+   for (size_t i = 0; i < nlocal * 3u; i++)
+   {
+      hypredrv_SliceStreamDestroy(&streams[i]);
+   }
+   for (size_t i = 0; i < nlocal; i++)
+   {
+      free(pat_rows[i]);
+      free(pat_cols[i]);
+   }
+   free(streams);
+   free(pat_rows);
+   free(pat_cols);
+   free(pat_id);
    fclose(fp);
    MPI_Barrier(comm);
    if (!myid)
@@ -3749,16 +4048,31 @@ main(int argc, char **argv)
    uint64_t *local_part_blob_sizes = NULL; /* 3*local_nparts: vals, rhs, dof per part */
    uint64_t  local_pattern_blob_ull = 0;  /* cursor after pattern blobs only */
 
+   /* Last pattern seen per local part (owned row/column arrays). */
+   typedef struct
+   {
+      int      id;
+      uint64_t nnz;
+      void    *rows;
+      void    *cols;
+   } LastPattern;
+   LastPattern *last_pat = NULL;
+
    if (local_nparts > 0)
    {
       part_vals = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_vals));
       part_rhs  = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_rhs));
       part_dof  = (PartBuf *)calloc((size_t)local_nparts, sizeof(*part_dof));
       local_part_blob_sizes = (uint64_t *)calloc((size_t)local_nparts * 3u, sizeof(uint64_t));
-      if (!part_vals || !part_rhs || !part_dof || !local_part_blob_sizes)
+      last_pat              = (LastPattern *)calloc((size_t)local_nparts, sizeof(*last_pat));
+      if (!part_vals || !part_rhs || !part_dof || !local_part_blob_sizes || !last_pat)
       {
          fprintf(stderr, "[lsseq][pack][rank %d] Allocation failure for v2 part buffers\n", myid);
          MPI_Abort(comm, 1);
+      }
+      for (int lp = 0; lp < local_nparts; lp++)
+      {
+         last_pat[lp].id = -1;
       }
    }
 
@@ -3840,15 +4154,39 @@ main(int argc, char **argv)
             }
          }
 
-         phash = PatternHash(&Araw, (uint32_t)global_p);
-         for (size_t k = 0; k < num_patterns_local; k++)
+         /* Consecutive systems usually repeat the part's previous pattern: compare
+          * it directly. Otherwise look up earlier patterns by hash and confirm a
+          * hit against the stored blobs, so dedup never trusts the hash alone. */
+         size_t pat_bytes = (size_t)Araw.nnz * (size_t)Araw.row_index_size;
+         if (last_pat[lp].id >= 0 && last_pat[lp].nnz == Araw.nnz &&
+             (pat_bytes == 0 || (!memcmp(last_pat[lp].rows, Araw.rows, pat_bytes) &&
+                                 !memcmp(last_pat[lp].cols, Araw.cols, pat_bytes))))
          {
-            if (patterns_local[k].hash == phash &&
-                patterns_local[k].meta.part_id == (uint32_t)global_p &&
-                patterns_local[k].meta.nnz == Araw.nnz)
+            pattern_id = last_pat[lp].id;
+         }
+         else
+         {
+            phash = PatternHash(&Araw, (uint32_t)global_p);
+            for (size_t k = 0; k < num_patterns_local && pattern_id < 0; k++)
             {
-               pattern_id = (int)k;
-               break;
+               int match = 0;
+               if (patterns_local[k].hash != phash ||
+                   patterns_local[k].meta.part_id != (uint32_t)global_p ||
+                   patterns_local[k].meta.nnz != Araw.nnz)
+               {
+                  continue;
+               }
+               if (!PatternBlobsMatch(blob_fp, args.algo, &patterns_local[k].meta, &Araw,
+                                      &match))
+               {
+                  fprintf(stderr, "[lsseq][pack][rank %d] Failed to re-read pattern blob\n",
+                          myid);
+                  MPI_Abort(comm, 1);
+               }
+               if (match)
+               {
+                  pattern_id = (int)k;
+               }
             }
          }
 
@@ -3904,6 +4242,18 @@ main(int argc, char **argv)
 
          sp->pattern_id = (uint32_t)pattern_id;
          sp->nnz        = Araw.nnz;
+         if (last_pat[lp].id != pattern_id)
+         {
+            /* Keep this pattern for the next system (take over Araw's arrays). */
+            free(last_pat[lp].rows);
+            free(last_pat[lp].cols);
+            last_pat[lp].id   = pattern_id;
+            last_pat[lp].nnz  = Araw.nnz;
+            last_pat[lp].rows = Araw.rows;
+            last_pat[lp].cols = Araw.cols;
+            Araw.rows         = NULL;
+            Araw.cols         = NULL;
+         }
 
          /* v2 batched: append to per-part buffers; store decompressed offset/size in sys_meta */
          {
@@ -3958,6 +4308,13 @@ main(int argc, char **argv)
          PrintModeProgress("pack", s + 1, num_systems, progress_start_time);
       }
    }
+
+   for (int lp = 0; lp < local_nparts; lp++)
+   {
+      free(last_pat[lp].rows);
+      free(last_pat[lp].cols);
+   }
+   free(last_pat);
 
    local_pattern_blob_ull = (unsigned long long)blob_cursor;
 
@@ -4502,7 +4859,11 @@ main(int argc, char **argv)
          MPI_Abort(comm, 1);
       }
 
-      fclose(out);
+      if (!CloseWrittenFile(out))
+      {
+         fprintf(stderr, "Could not finish writing sequence file '%s'\n", output_filename);
+         MPI_Abort(comm, 1);
+      }
       free(timesteps);
       free(info_payload);
 
