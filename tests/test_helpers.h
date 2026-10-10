@@ -68,11 +68,15 @@ hypredrv_TestHypreInit(void)
       } \
    } while (0)
 
+/* Comparison macros evaluate each argument once, so side-effecting arguments
+ * such as fclose(fp) are not repeated when a failure is reported. */
 #define ASSERT_EQ(a, b) \
    do { \
-      if ((a) != (b)) { \
+      __typeof__((a) + (b)) _lhs = (a); \
+      __typeof__((a) + (b)) _rhs = (b); \
+      if (_lhs != _rhs) { \
          fprintf(stderr, "FAIL: %s:%d: %s (%d) != %s (%d)\n", \
-                __FILE__, __LINE__, #a, (int)(a), #b, (int)(b)); \
+                __FILE__, __LINE__, #a, (int)_lhs, #b, (int)_rhs); \
          exit(1); \
       } \
    } while (0)
@@ -101,18 +105,22 @@ hypredrv_TestHypreInit(void)
 
 #define ASSERT_NE(a, b) \
    do { \
-      if ((a) == (b)) { \
+      __typeof__((a) + (b)) _lhs = (a); \
+      __typeof__((a) + (b)) _rhs = (b); \
+      if (_lhs == _rhs) { \
          fprintf(stderr, "FAIL: %s:%d: %s (%d) == %s (%d)\n", \
-                __FILE__, __LINE__, #a, (int)(a), #b, (int)(b)); \
+                __FILE__, __LINE__, #a, (int)_lhs, #b, (int)_rhs); \
          exit(1); \
       } \
    } while (0)
 
 #define ASSERT_PTR_EQ(a, b) \
    do { \
-      if ((a) != (b)) { \
+      const void *_lhs = (const void *)(a); \
+      const void *_rhs = (const void *)(b); \
+      if (_lhs != _rhs) { \
          fprintf(stderr, "FAIL: %s:%d: %s (%p) != %s (%p)\n", \
-                __FILE__, __LINE__, #a, (void *)(a), #b, (void *)(b)); \
+                __FILE__, __LINE__, #a, _lhs, #b, _rhs); \
          exit(1); \
       } \
    } while (0)

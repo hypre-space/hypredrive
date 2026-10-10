@@ -2925,7 +2925,8 @@ set_precon_preset_for_capture(void *context)
 static void
 test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
 {
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+/* Managed MGR component refresh requires hypre >= 3.1.0 develop 50. */
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return;
 #else
    reset_state();
@@ -3039,7 +3040,8 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
 static void
 test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles(void)
 {
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+/* Managed MGR component refresh requires hypre >= 3.1.0 develop 50. */
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return;
 #else
    reset_state();
@@ -3122,7 +3124,8 @@ test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles(void)
 static void
 test_HYPREDRV_InputArgsSetPreconPreset_discards_cached_mgr_handles(void)
 {
-#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(23100, 9)
+/* Managed MGR component refresh requires hypre >= 3.1.0 develop 50. */
+#if !defined(HYPREDRV_ENABLE_EXPERIMENTAL) || !HYPRE_CHECK_MIN_VERSION(30100, 50)
    return;
 #else
    reset_state();

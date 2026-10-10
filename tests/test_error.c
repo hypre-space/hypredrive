@@ -292,7 +292,7 @@ test_ErrorCodeDescribe_comprehensive_table(void)
    } describe_case;
 
    static const describe_case cases[] = {
-      {ERROR_YAML_INVALID_INDENT, "invalid indendation", "indent"},
+      {ERROR_YAML_INVALID_INDENT, "invalid indentation", "indent"},
       {ERROR_YAML_INVALID_DIVISOR, "invalid divisor", "divisor"},
       {ERROR_INVALID_VAL, "invalid value", "invalid_val"},
       {ERROR_UNEXPECTED_VAL, "unexpected value", "unexpected_val"},
@@ -348,7 +348,7 @@ test_ErrorCodeDescribe_comprehensive_table(void)
    {
       char buffer[1024];
       capture_error_output(hypredrv_ErrorMsgPrint, buffer, sizeof(buffer));
-      ASSERT_NOT_NULL(strstr(buffer, "invalid indendation"));
+      ASSERT_NOT_NULL(strstr(buffer, "invalid indentation"));
       ASSERT_NOT_NULL(strstr(buffer, "invalid value"));
       ASSERT_NOT_NULL(strstr(buffer, "unexpected value"));
    }

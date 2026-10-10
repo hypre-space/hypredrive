@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <string.h>
 #if defined(__linux__) && defined(HYPRE_USING_FPE_TRAP)
 #include <fenv.h>
@@ -337,6 +338,27 @@ hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
    }
 }
 
+/* Whether partition `partition` of `prefix` exists (binary: with ".bin"). */
+static int
+PartitionFileExists(const char *prefix, int partition, int binary)
+{
+   char  filename[MAX_FILENAME_LENGTH] = {0};
+   FILE *fp                            = NULL;
+
+   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, partition, binary))
+   {
+      return 0;
+   }
+   fp = fopen(filename, "r");
+   if (!fp)
+   {
+      return 0;
+   }
+   fclose(fp);
+
+   return 1;
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
@@ -344,28 +366,7 @@ hypredrv_FopenCreateRestricted(const char *path, int append, int binary)
 int
 hypredrv_CheckBinaryDataExists(const char *prefix)
 {
-   char filename[MAX_FILENAME_LENGTH] = {0};
-
-   int   file_exists = 0;
-   FILE *fp          = NULL;
-
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
-   {
-      return 0;
-   }
-
-   /* Check if binary data exist */
-   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 1))
-   {
-      return 0;
-   }
-   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp)
-   {
-      fclose(fp);
-   }
-
-   return file_exists;
+   return hypredrv_BinaryPathPrefixIsSafe(prefix) && PartitionFileExists(prefix, 0, 1);
 }
 
 /*-----------------------------------------------------------------------------
@@ -375,28 +376,7 @@ hypredrv_CheckBinaryDataExists(const char *prefix)
 int
 hypredrv_CheckASCIIDataExists(const char *prefix)
 {
-   char filename[MAX_FILENAME_LENGTH] = {0};
-
-   int   file_exists = 0;
-   FILE *fp          = NULL;
-
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
-   {
-      return 0;
-   }
-
-   /* Check if ASCII data exist */
-   if (!FormatPartitionFilename(filename, sizeof(filename), prefix, 0, 0))
-   {
-      return 0;
-   }
-   file_exists = ((fp = fopen(filename, "r")) == NULL) ? 0 : 1;
-   if (fp)
-   {
-      fclose(fp);
-   }
-
-   return file_exists;
+   return hypredrv_BinaryPathPrefixIsSafe(prefix) && PartitionFileExists(prefix, 0, 0);
 }
 
 /*-----------------------------------------------------------------------------
@@ -406,52 +386,16 @@ hypredrv_CheckASCIIDataExists(const char *prefix)
 int
 hypredrv_CountNumberOfPartitions(const char *prefix)
 {
-   char filename[MAX_FILENAME_LENGTH];
-   int  num_files = 0;
+   int num_files = 0;
 
-   if (prefix == NULL)
-   {
-      return 0;
-   }
-   if (!hypredrv_BinaryPathPrefixIsSafe(prefix))
+   if (prefix == NULL || !hypredrv_BinaryPathPrefixIsSafe(prefix))
    {
       return 0;
    }
 
-   while (1)
+   while (PartitionFileExists(prefix, num_files, 1) ||
+          PartitionFileExists(prefix, num_files, 0))
    {
-      FILE *fp = NULL;
-      int   file_exists;
-
-      if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 1))
-      {
-         break;
-      }
-      fp          = fopen(filename, "r");
-      file_exists = (fp == NULL) ? 0 : 1;
-      if (fp)
-      {
-         fclose(fp);
-      }
-      if (!file_exists)
-      {
-         if (!FormatPartitionFilename(filename, sizeof(filename), prefix, num_files, 0))
-         {
-            break;
-         }
-         fp          = fopen(filename, "r");
-         file_exists = (fp == NULL) ? 0 : 1;
-         if (fp)
-         {
-            fclose(fp);
-         }
-      }
-
-      if (!file_exists)
-      {
-         break;
-      }
-
       num_files++;
    }
 
@@ -687,4 +631,74 @@ hypredrv_PathIsUnderRoot(const char *path, const char *root)
            0
 #endif
            ) != 0;
+}
+
+/*-----------------------------------------------------------------------------
+ * Validate `count` float or double coefficients (width `vsize`, 4 or 8) in
+ * `src` and widen them into `out` (skipped when `src` already is `out`).
+ * Rejects non-finite entries; `kind` and `label` only name the error message.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_ConvertCoefficients(const void *src, uint64_t vsize, uint64_t count,
+                             HYPRE_Complex *out, const char *kind, const char *label)
+{
+   size_t i = 0;
+
+   /* One loop per stored width: the finiteness test and copy stay branch-free. */
+   if (vsize == sizeof(float))
+   {
+      const float *in = (const float *)src;
+      for (; i < (size_t)count && hypredrv_FloatIsFinite(in[i]); i++)
+      {
+         out[i] = (HYPRE_Complex)in[i];
+      }
+   }
+   else
+   {
+      const double *in = (const double *)src;
+      if (src == (const void *)out)
+      {
+         while (i < (size_t)count && hypredrv_DoubleIsFinite(in[i]))
+         {
+            i++;
+         }
+      }
+      else
+      {
+         for (; i < (size_t)count && hypredrv_DoubleIsFinite(in[i]); i++)
+         {
+            out[i] = (HYPRE_Complex)in[i];
+         }
+      }
+   }
+   if (i < (size_t)count)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Detected non-finite %s coefficient while reading %s", kind,
+                           label ? label : "(unknown)");
+      return 0;
+   }
+   return 1;
+}
+
+/*-----------------------------------------------------------------------------
+ * Formats a diagnostic reason into `reason` (size `reason_size`). Safe to call
+ * without a sink (NULL or zero size), so callers need not guard every call.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_FormatReason(char *reason, size_t reason_size, const char *fmt, ...)
+{
+   va_list ap;
+
+   /* GCOVR_EXCL_BR_START */
+   if (!reason || reason_size == 0) /* GCOVR_EXCL_BR_STOP */
+   {
+      return;
+   }
+
+   va_start(ap, fmt);
+   vsnprintf(reason, reason_size, fmt, ap);
+   va_end(ap);
 }

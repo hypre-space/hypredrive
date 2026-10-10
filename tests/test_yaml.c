@@ -1858,8 +1858,6 @@ stub_schema_vals(const char *key)
    return STR_INT_MAP_ARRAY_VOID();
 }
 
-static int g_stub_set_field_calls = 0;
-
 static void
 stub_schema_set_field(void *args, const YAMLnode *node)
 {
@@ -2283,14 +2281,12 @@ test_YAMLtreeBuild_many_keys_token_reserve(void)
    char  buf[16384];
    char *p   = buf;
    size_t left = sizeof(buf);
-   int    n    = 0;
    for (int i = 0; i < 40 && left > 32; i++)
    {
       int w = snprintf(p, left, "k%02d: %d\n", i, i);
       ASSERT_TRUE(w > 0 && (size_t)w < left);
       p += w;
       left -= (size_t)w;
-      n++;
    }
    *p = '\0';
 
