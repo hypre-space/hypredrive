@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <utime.h>
 
 #include "internal/comp.h"
 #include "internal/containers.h"
@@ -1786,11 +1788,12 @@ write_lsseq_rows_blob_decoded_size_mismatch(const char *filename)
    fclose(fp);
 }
 
-#if defined(HYPREDRV_USING_ZLIB)
+#if defined(HYPREDRV_USING_ZLIB) || defined(HYPREDRV_USING_LZ4)
 /* rows_declared != 0 overwrites the decoded size stored in the rows blob's
  * header, to model a corrupt container. */
 static void
-write_lsseq_zlib_pattern_rows_cols(const char *filename, uint64_t rows_declared)
+write_lsseq_compressed_parts(const char *filename, comp_alg_t codec,
+                             uint64_t rows_declared, double rhs_base)
 {
    const char          payload[] = "k=v\n";
    LSSeqHeader         header;
@@ -1803,7 +1806,7 @@ write_lsseq_zlib_pattern_rows_cols(const char *filename, uint64_t rows_declared)
    HYPRE_BigInt        rows0[2] = {0, 1};
    HYPRE_BigInt        cols0[2] = {0, 1};
    double              vals0[2] = {10.0, 20.0};
-   double              rhs0[2]  = {1.0, 2.0};
+   double              rhs0[2]  = {rhs_base, rhs_base + 1.0};
    int32_t             dof0[2]  = {0, 1};
    void               *zrows = NULL, *zcols = NULL;
    void               *zvals = NULL, *zrhs = NULL, *zdof = NULL;
@@ -1823,30 +1826,30 @@ write_lsseq_zlib_pattern_rows_cols(const char *filename, uint64_t rows_declared)
    memset(part_blob_table, 0, sizeof(part_blob_table));
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_compress(COMP_ZLIB, sizeof(rows0), rows0, &zrows_sz, &zrows, -1);
+   hypredrv_compress(codec, sizeof(rows0), rows0, &zrows_sz, &zrows, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zrows);
    if (rows_declared)
    {
       memcpy(zrows, &rows_declared, sizeof(rows_declared));
    }
-   hypredrv_compress(COMP_ZLIB, sizeof(cols0), cols0, &zcols_sz, &zcols, -1);
+   hypredrv_compress(codec, sizeof(cols0), cols0, &zcols_sz, &zcols, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zcols);
-   hypredrv_compress(COMP_ZLIB, sizeof(vals0), vals0, &zvals_sz, &zvals, -1);
+   hypredrv_compress(codec, sizeof(vals0), vals0, &zvals_sz, &zvals, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zvals);
-   hypredrv_compress(COMP_ZLIB, sizeof(rhs0), rhs0, &zrhs_sz, &zrhs, -1);
+   hypredrv_compress(codec, sizeof(rhs0), rhs0, &zrhs_sz, &zrhs, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zrhs);
-   hypredrv_compress(COMP_ZLIB, sizeof(dof0), dof0, &zdof_sz, &zdof, -1);
+   hypredrv_compress(codec, sizeof(dof0), dof0, &zdof_sz, &zdof, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zdof);
 
    header.magic         = LSSEQ_MAGIC;
    header.version       = LSSEQ_VERSION;
    header.flags         = LSSEQ_FLAG_HAS_INFO | LSSEQ_FLAG_HAS_DOFMAP | LSSEQ_FLAG_HAS_TIMESTEPS;
-   header.codec         = (uint32_t)COMP_ZLIB;
+   header.codec         = (uint32_t)codec;
    header.num_systems   = 1;
    header.num_parts     = 1;
    header.num_patterns  = 1;
@@ -1936,6 +1939,13 @@ write_lsseq_zlib_pattern_rows_cols(const char *filename, uint64_t rows_declared)
    free(zdof);
    fclose(fp);
 }
+#if defined(HYPREDRV_USING_ZLIB)
+static void
+write_lsseq_zlib_pattern_rows_cols(const char *filename, uint64_t rows_declared)
+{
+   write_lsseq_compressed_parts(filename, COMP_ZLIB, rows_declared, 1.0);
+}
+#endif
 #endif /* HYPREDRV_USING_ZLIB */
 
 static void
@@ -3351,11 +3361,115 @@ test_lsseq_read_matrix_zero_nnz_and_rhs_zero_nrows(void)
    hypredrv_ErrorMsgClear();
 }
 
+#if defined(HYPREDRV_USING_ZLIB) || defined(HYPREDRV_USING_LZ4)
+static void
+assert_compressed_part_values(const char *filename, double rhs_base)
+{
+   HYPRE_IJMatrix mat        = NULL;
+   HYPRE_IJVector rhs        = NULL;
+   IntArray      *dofmap     = NULL;
+   HYPRE_BigInt   indices[2] = {0, 1};
+   HYPRE_Complex  values[2]  = {0};
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(
+      hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
+   ASSERT_NOT_NULL(mat);
+   ASSERT_EQ((int)hypredrv_LinearSystemMatrixGetNumNonzeros(mat), 2);
+   HYPRE_IJMatrixDestroy(mat);
+   ASSERT_TRUE(
+      hypredrv_LSSeqReadRHS(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &rhs));
+   ASSERT_NOT_NULL(rhs);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 2, indices, values), 0);
+   ASSERT_EQ_DOUBLE((double)values[0], rhs_base, 1.0e-12);
+   ASSERT_EQ_DOUBLE((double)values[1], rhs_base + 1.0, 1.0e-12);
+   HYPRE_IJVectorDestroy(rhs);
+   ASSERT_TRUE(hypredrv_LSSeqReadDofmap(MPI_COMM_SELF, filename, 0, &dofmap));
+   ASSERT_NOT_NULL(dofmap);
+   ASSERT_EQ(dofmap->size, 2);
+   ASSERT_EQ(dofmap->data[0], 0);
+   ASSERT_EQ(dofmap->data[1], 1);
+   hypredrv_IntArrayDestroy(&dofmap);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+}
+#endif
+
+#if defined(HYPREDRV_USING_ZLIB)
+static void
+test_lsseq_compressed_cache_reuse_and_eviction(void)
+{
+   char filenames[4][64];
+
+   hypredrv_LSSeqReleaseCaches();
+   for (int i = 0; i < 4; i++)
+   {
+      snprintf(filenames[i], sizeof(filenames[i]), "test_lsseq_cached_%d.bin", i);
+      write_lsseq_compressed_parts(filenames[i], COMP_ZLIB, 0, 1.0 + i);
+      add_temp_file(filenames[i]);
+      assert_compressed_part_values(filenames[i], 1.0 + i);
+      /* Re-reading the same slices restarts the cached decoders correctly. */
+      assert_compressed_part_values(filenames[i], 1.0 + i);
+   }
+   /* Twelve blobs exceed the cache capacity; evicted streams must reload. */
+   assert_compressed_part_values(filenames[0], 1.0);
+   hypredrv_LSSeqReleaseCaches();
+   assert_compressed_part_values(filenames[0], 1.0);
+   hypredrv_LSSeqReleaseCaches();
+}
+
+static void
+test_lsseq_compressed_cache_rejects_stale_rewrite(void)
+{
+   const char    *filename  = "test_lsseq_cached_rewrite.bin";
+   struct utimbuf timestamp = {1234567890, 1234567890};
+   struct stat    before, after;
+
+   hypredrv_LSSeqReleaseCaches();
+   write_lsseq_compressed_parts(filename, COMP_ZLIB, 0, 3.0);
+   add_temp_file(filename);
+   ASSERT_EQ(utime(filename, &timestamp), 0);
+   ASSERT_EQ(stat(filename, &before), 0);
+   assert_compressed_part_values(filename, 3.0);
+
+   /* The inode, size, and timestamp stay the same; changed compressed bytes
+    * must invalidate the stream rather than return the previous RHS. */
+   write_lsseq_compressed_parts(filename, COMP_ZLIB, 0, 5.0);
+   ASSERT_EQ(utime(filename, &timestamp), 0);
+   ASSERT_EQ(stat(filename, &after), 0);
+   ASSERT_EQ_SIZE((size_t)before.st_size, (size_t)after.st_size);
+   assert_compressed_part_values(filename, 5.0);
+   assert_compressed_part_values(filename, 5.0);
+   hypredrv_LSSeqReleaseCaches();
+}
+#endif
+
+#if defined(HYPREDRV_USING_LZ4)
+static void
+test_lsseq_compressed_slice_fallback(void)
+{
+   const char *filename = "test_lsseq_lz4_slices.bin";
+
+   write_lsseq_compressed_parts(filename, COMP_LZ4, 0, 5.0);
+   add_temp_file(filename);
+   assert_compressed_part_values(filename, 5.0);
+   assert_compressed_part_values(filename, 5.0);
+   hypredrv_LSSeqReleaseCaches();
+}
+#endif
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
    TEST_HYPRE_INIT();
+
+#if defined(HYPREDRV_USING_ZLIB)
+   RUN_TEST(test_lsseq_compressed_cache_reuse_and_eviction);
+   RUN_TEST(test_lsseq_compressed_cache_rejects_stale_rewrite);
+#endif
+#if defined(HYPREDRV_USING_LZ4)
+   RUN_TEST(test_lsseq_compressed_slice_fallback);
+#endif
 
    RUN_TEST(test_lsseq_summary_and_timesteps);
    RUN_TEST(test_lsseq_info_block);

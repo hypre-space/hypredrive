@@ -105,28 +105,19 @@ IJVectorSourceLoad(const hypredrv_IJVectorPartSource *src, uint32_t p, int want_
    return 0;
 }
 
-void
-hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSource *src,
-                                 HYPRE_MemoryLocation memory_location,
-                                 HYPRE_IJVector      *vec_ptr)
+typedef struct
 {
-   const uint32_t nparts    = src->nparts;
-   uint64_t       nrows_sum = 0, nrows_max = 0, nrows_offset = 0, row = 0;
-   HYPRE_BigInt   ilower = 0, iupper = 0;
-   HYPRE_IJVector vec       = NULL;
-   HYPRE_BigInt  *indices   = NULL;
-   HYPRE_Complex *wide      = NULL;
-   HYPRE_BigInt  *d_indices = NULL;
-   HYPRE_Complex *d_vals    = NULL;
+   HYPRE_BigInt  *indices;
+   HYPRE_Complex *wide;
+   HYPRE_BigInt  *d_indices;
+   HYPRE_Complex *d_vals;
+} IJVectorSourceBuffers;
 
-   *vec_ptr = NULL;
-#ifndef HYPRE_USING_GPU
-   (void)d_indices;
-   (void)d_vals;
-#endif
-
-   /* 1) Metadata: validate every part and size the local row range. */
-   for (uint32_t p = 0; p < nparts; p++)
+static void
+IJVectorSourceScanMetadata(const hypredrv_IJVectorPartSource *src, uint64_t *nrows_sum,
+                           uint64_t *nrows_max)
+{
+   for (uint32_t p = 0; p < src->nparts; p++)
    {
       hypredrv_IJVectorMemPart meta = {0};
       if (!IJVectorSourceLoad(src, p, 0, &meta))
@@ -141,15 +132,76 @@ hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSourc
                               meta.label ? meta.label : "(unknown)");
          break;
       }
-      nrows_sum += meta.nrows;
-      nrows_max = (meta.nrows > nrows_max) ? meta.nrows : nrows_max;
+      *nrows_sum += meta.nrows;
+      *nrows_max = (meta.nrows > *nrows_max) ? meta.nrows : *nrows_max;
    }
+}
+
+/* Widens one part's values and inserts them at its concatenation offset. */
+static int
+IJVectorSourceInsertPart(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_location,
+                         const hypredrv_IJVectorMemPart *part, HYPRE_BigInt ilower,
+                         uint64_t row, IJVectorSourceBuffers *buffers)
+{
+   HYPRE_Complex *vals = buffers->wide;
+#if !defined(HYPRE_COMPLEX)
+   if (part->value_size == sizeof(HYPRE_Complex))
+   {
+      vals = (HYPRE_Complex *)part->vals;
+   }
+#endif
+   if (!hypredrv_ConvertCoefficients(part->vals, part->value_size, part->nrows, vals,
+                                     "vector", part->label))
+   {
+      return 0;
+   }
+   for (uint64_t i = 0; i < part->nrows; i++)
+   {
+      buffers->indices[i] = ilower + (HYPRE_BigInt)(row + i);
+   }
+
+   HYPRE_BigInt  *set_indices = buffers->indices;
+   HYPRE_Complex *set_vals    = vals;
+#ifdef HYPRE_USING_GPU
+   /* GCOVR_EXCL_START */
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      hypre_TMemcpy(buffers->d_indices, buffers->indices, HYPRE_BigInt, part->nrows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(buffers->d_vals, vals, HYPRE_Complex, part->nrows,
+                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+      set_indices = buffers->d_indices;
+      set_vals    = buffers->d_vals;
+   }
+   /* GCOVR_EXCL_STOP */
+#else
+   (void)memory_location;
+#endif
+   HYPRE_IJVectorSetValues(vec, (HYPRE_Int)part->nrows, set_indices, set_vals);
+   return 1;
+}
+
+void
+hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSource *src,
+                                 HYPRE_MemoryLocation memory_location,
+                                 HYPRE_IJVector      *vec_ptr)
+{
+   const uint32_t        nparts    = src->nparts;
+   uint64_t              nrows_sum = 0, nrows_max = 0, nrows_offset = 0, row = 0;
+   HYPRE_BigInt          ilower = 0, iupper = 0;
+   HYPRE_IJVector        vec     = NULL;
+   IJVectorSourceBuffers buffers = {0};
+
+   *vec_ptr = NULL;
+
+   /* 1) Metadata: validate every part and size the local row range. */
+   IJVectorSourceScanMetadata(src, &nrows_sum, &nrows_max);
    if (!hypredrv_ErrorCodeActive() && nrows_max > 0)
    {
-      indices = (HYPRE_BigInt *)malloc((size_t)nrows_max * sizeof(HYPRE_BigInt));
-      wide    = (HYPRE_Complex *)malloc((size_t)nrows_max * sizeof(HYPRE_Complex));
+      buffers.indices = (HYPRE_BigInt *)malloc((size_t)nrows_max * sizeof(HYPRE_BigInt));
+      buffers.wide = (HYPRE_Complex *)malloc((size_t)nrows_max * sizeof(HYPRE_Complex));
       /* GCOVR_EXCL_BR_START */
-      if (!indices || !wide) /* GCOVR_EXCL_BR_STOP */
+      if (!buffers.indices || !buffers.wide) /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                   /* GCOVR_EXCL_LINE */
          hypredrv_ErrorMsgAdd("Failed to allocate vector buffers"); /* GCOVR_EXCL_LINE */
@@ -157,8 +209,8 @@ hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSourc
 #ifdef HYPRE_USING_GPU
       if (memory_location == HYPRE_MEMORY_DEVICE)
       {
-         d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
-         d_vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+         buffers.d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
+         buffers.d_vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
       }
 #endif
    }
@@ -178,7 +230,6 @@ hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSourc
    for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
    {
       hypredrv_IJVectorMemPart part = {0};
-      HYPRE_Complex           *vals = wide;
 
       if (!IJVectorSourceLoad(src, p, 1, &part))
       {
@@ -198,39 +249,11 @@ hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSourc
          free(part.vals);
          continue;
       }
-#if !defined(HYPRE_COMPLEX)
-      if (part.value_size == sizeof(HYPRE_Complex))
-      {
-         vals = (HYPRE_Complex *)part.vals;
-      }
-#endif
-      if (!hypredrv_ConvertCoefficients(part.vals, part.value_size, part.nrows, vals,
-                                        "vector", part.label))
+      if (!IJVectorSourceInsertPart(vec, memory_location, &part, ilower, row, &buffers))
       {
          free(part.vals);
          break;
       }
-      for (uint64_t i = 0; i < part.nrows; i++)
-      {
-         indices[i] = ilower + (HYPRE_BigInt)(row + i);
-      }
-
-      HYPRE_BigInt  *set_indices = indices;
-      HYPRE_Complex *set_vals    = vals;
-#ifdef HYPRE_USING_GPU
-      /* GCOVR_EXCL_START */
-      if (memory_location == HYPRE_MEMORY_DEVICE)
-      {
-         hypre_TMemcpy(d_indices, indices, HYPRE_BigInt, part.nrows, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-         hypre_TMemcpy(d_vals, vals, HYPRE_Complex, part.nrows, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-         set_indices = d_indices;
-         set_vals    = d_vals;
-      }
-      /* GCOVR_EXCL_STOP */
-#endif
-      HYPRE_IJVectorSetValues(vec, (HYPRE_Int)part.nrows, set_indices, set_vals);
       row += part.nrows;
       free(part.vals);
    }
@@ -245,15 +268,15 @@ hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSourc
 
 cleanup:
 #ifdef HYPRE_USING_GPU
-   hypre_TFree(d_indices, memory_location);
-   hypre_TFree(d_vals, memory_location);
+   hypre_TFree(buffers.d_indices, memory_location);
+   hypre_TFree(buffers.d_vals, memory_location);
 #endif
    if (vec)
    {
       HYPRE_IJVectorDestroy(vec);
    }
-   free(indices);
-   free(wide);
+   free(buffers.indices);
+   free(buffers.wide);
 }
 
 /*-----------------------------------------------------------------------------

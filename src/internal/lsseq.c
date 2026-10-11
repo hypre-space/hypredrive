@@ -1095,6 +1095,82 @@ LSSeqFileBlobRead(void *ctx, uint64_t offset, void *buffer, size_t size)
    return LSSeqReadAt(blob->fp, blob->base + offset, buffer, size, "blob payload");
 }
 
+/* Raw part blobs need only the requested system's bytes from the file. */
+static int
+LSSeqReadRawBlobSlice(FILE *fp, uint64_t blob_offset, uint64_t blob_size,
+                      uint64_t decomp_offset, uint64_t decomp_size, void **output)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (decomp_offset > blob_size || decomp_size > blob_size - decomp_offset)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Raw blob slice exceeds its part blob");
+      return 0;
+   }
+   if (decomp_size == 0)
+   {
+      return 1;
+   }
+   *output = malloc((size_t)decomp_size);
+   /* GCOVR_EXCL_BR_START */
+   if (!*output || !LSSeqReadAt(fp, blob_offset + decomp_offset, *output,
+                                (size_t)decomp_size, "blob payload"))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      free(*output);
+      *output = NULL;
+      return 0;
+   }
+   return 1;
+}
+
+static int
+LSSeqDecodeBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_offset, uint64_t c_size,
+                     uint64_t decomp_offset, uint64_t decomp_size, void **output)
+{
+   void *blob = NULL;
+   int   ok   = 0;
+
+   /* Streaming codecs decode through a cached decoder for this exact blob that
+    * reads its compressed input from the file on demand: reading a part's
+    * slices in order inflates the blob once and never holds a copy of it. */
+   LSSeqFileBlob         file_blob = {fp, blob_offset};
+   hypredrv_SliceSource  src       = {LSSeqFileBlobRead, &file_blob};
+   LSSeqStreamKey        key;
+   int                   keyed = LSSeqStreamKeyMake(fp, codec, blob_offset, c_size, &key);
+   hypredrv_SliceStream *stream = keyed ? LSSeqStreamCacheFind(&key) : NULL;
+   if (!stream && keyed)
+   {
+      stream = LSSeqStreamCacheInsert(&key, codec, (size_t)c_size, &src);
+   }
+   if (stream)
+   {
+      ok = hypredrv_SliceStreamRead(stream, &src, (size_t)decomp_offset,
+                                    (size_t)decomp_size, output);
+   }
+   else
+   {
+      /* No file identity (no caching) or no resumable decoder for this codec:
+       * read the whole blob and decode just the slice from memory. */
+      blob = malloc((size_t)c_size);
+      if (!blob) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate %llu bytes for blob read",
+                              (unsigned long long)c_size);
+         return 0;
+      }
+      /* GCOVR_EXCL_BR_START */
+      ok = LSSeqReadAt(fp, blob_offset, blob, (size_t)c_size, "blob payload") &&
+           hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
+                                     (size_t)decomp_size, output);
+      /* GCOVR_EXCL_BR_STOP */
+      free(blob);
+   }
+   return ok;
+}
+
 /* v2 only: read a slice from a part's batched blob (slot: 0=values, 1=rhs, 2=dof) */
 static int
 LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
@@ -1103,8 +1179,7 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
                        size_t *output_size)
 {
    uint64_t c_off, c_size;
-   void    *blob = NULL;
-   int      ok   = 0;
+   int      ok = 0;
 
    if (!fp || !part_blob_table || !output || !output_size || slot < 0 || slot > 2)
    {
@@ -1140,70 +1215,15 @@ LSSeqReadPartBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_base,
                            (unsigned long long)c_size);
       return 0;
    }
-   /* Raw part blobs: read just this system's slice from the file. */
    if (codec == COMP_NONE)
    {
-      /* GCOVR_EXCL_BR_START */
-      if (decomp_offset > c_size || decomp_size > c_size - decomp_offset)
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Raw blob slice exceeds its part blob");
-         return 0;
-      }
-      if (decomp_size == 0)
-      {
-         return 1;
-      }
-      *output = malloc((size_t)decomp_size);
-      /* GCOVR_EXCL_BR_START */
-      if (!*output ||
-          !LSSeqReadAt(fp, blob_base + c_off + decomp_offset, *output,
-                       (size_t)decomp_size, "blob payload")) /* GCOVR_EXCL_BR_STOP */
-      {
-         free(*output);
-         *output = NULL;
-         return 0;
-      }
-      *output_size = (size_t)decomp_size;
-      return 1;
-   }
-
-   /* Streaming codecs decode through a cached decoder for this exact blob that
-    * reads its compressed input from the file on demand: reading a part's
-    * slices in order inflates the blob once and never holds a copy of it. */
-   LSSeqFileBlob        file_blob = {fp, blob_base + c_off};
-   hypredrv_SliceSource src       = {LSSeqFileBlobRead, &file_blob};
-   LSSeqStreamKey       key;
-   int keyed = LSSeqStreamKeyMake(fp, codec, blob_base + c_off, c_size, &key);
-   hypredrv_SliceStream *stream = keyed ? LSSeqStreamCacheFind(&key) : NULL;
-   if (!stream && keyed)
-   {
-      stream = LSSeqStreamCacheInsert(&key, codec, (size_t)c_size, &src);
-   }
-   if (stream)
-   {
-      ok = hypredrv_SliceStreamRead(stream, &src, (size_t)decomp_offset,
-                                    (size_t)decomp_size, output);
+      ok = LSSeqReadRawBlobSlice(fp, blob_base + c_off, c_size, decomp_offset,
+                                 decomp_size, output);
    }
    else
    {
-      /* No file identity (no caching) or no resumable decoder for this codec:
-       * read the whole blob and decode just the slice from memory. */
-      blob = malloc((size_t)c_size);
-      if (!blob) /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate %llu bytes for blob read",
-                              (unsigned long long)c_size);
-         return 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      ok = LSSeqReadAt(fp, blob_base + c_off, blob, (size_t)c_size, "blob payload") &&
-           hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
-                                     (size_t)decomp_size, output);
-      /* GCOVR_EXCL_BR_STOP */
-      free(blob);
+      ok = LSSeqDecodeBlobSlice(fp, codec, blob_base + c_off, c_size, decomp_offset,
+                                decomp_size, output);
    }
    if (!ok)
    {
