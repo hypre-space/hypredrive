@@ -67,21 +67,6 @@ test_comp_roundtrip_none(void)
 }
 
 static void
-test_comp_filename_detection(void)
-{
-   ASSERT_EQ((int)hypredrv_compression_from_filename(NULL), (int)COMP_NONE);
-   ASSERT_EQ((int)hypredrv_compression_from_filename(""), (int)COMP_NONE);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a.bin"), (int)COMP_NONE);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a.zlib.bin"), (int)COMP_ZLIB);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a.zst.bin"), (int)COMP_ZSTD);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a.lz4.bin"), (int)COMP_LZ4);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a.lz4hc.bin"), (int)COMP_LZ4HC);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a.blosc.bin"), (int)COMP_BLOSC);
-   /* Longer suffix must match most specific rule first (.lz4hc before .bin) */
-   ASSERT_EQ((int)hypredrv_compression_from_filename("x.extra.lz4hc.bin"), (int)COMP_LZ4HC);
-}
-
-static void
 test_comp_name_extension_switch_defaults(void)
 {
    ASSERT_STREQ(hypredrv_compression_get_name((comp_alg_t)999), "unknown");
@@ -115,14 +100,6 @@ test_comp_name_extension_all_cases(void)
    ASSERT_STREQ(hypredrv_compression_get_name(COMP_BLOSC), "unknown");
    ASSERT_STREQ(hypredrv_compression_get_extension(COMP_BLOSC), ".bin");
 #endif
-}
-
-static void
-test_comp_filename_suffix_longer_than_name(void)
-{
-   /* HypredrvStringHasSuffix: m > n for each suffix attempt */
-   ASSERT_EQ((int)hypredrv_compression_from_filename("a"), (int)COMP_NONE);
-   ASSERT_EQ((int)hypredrv_compression_from_filename("zi"), (int)COMP_NONE);
 }
 
 #if !defined(HYPREDRV_USING_LZ4)
@@ -207,13 +184,13 @@ test_comp_unknown_algo_compress_decompress(void)
 static void
 test_comp_decompress_buffer_too_small(void)
 {
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+#ifdef HYPREDRV_USING_ZLIB
    char    buf[4] = {0};
    void   *out = NULL;
    size_t  sz  = 0;
 
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ErrorMsgClear();
-#ifdef HYPREDRV_USING_ZLIB
    hypredrv_decompress(COMP_ZLIB, 4, buf, &sz, &out);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
@@ -376,14 +353,181 @@ test_comp_none_zero_payload(void)
    free(out);
 }
 
+/* Slices of a compressed payload must match the source bytes, including
+ * slices that start mid-stream and cross the 128 KiB decode window. */
+static void
+run_slice_checks(comp_alg_t algo)
+{
+   const size_t   nbytes = (size_t)1 << 20;
+   unsigned char *input  = (unsigned char *)malloc(nbytes);
+   void          *blob   = NULL;
+   size_t         blob_size = 0;
+   const size_t   ranges[][2] = {
+      {0, 1000}, {131000, 2000}, {300000, 400000}, {nbytes - 10, 10}, {nbytes, 0},
+   };
+
+   ASSERT_NOT_NULL(input);
+   for (size_t i = 0; i < nbytes; i++)
+   {
+      input[i] = (unsigned char)((i * 2654435761u) >> 24);
+   }
+
+   hypredrv_ErrorCodeResetAll();
+   if (algo == COMP_NONE)
+   {
+      blob      = input;
+      blob_size = nbytes;
+   }
+   else
+   {
+      hypredrv_compress(algo, nbytes, input, &blob_size, &blob, -1);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   }
+
+   for (size_t r = 0; r < sizeof(ranges) / sizeof(ranges[0]); r++)
+   {
+      void *slice = NULL;
+      ASSERT_EQ(hypredrv_decompress_slice(algo, blob_size, blob, ranges[r][0],
+                                          ranges[r][1], &slice),
+                1);
+      if (ranges[r][1] == 0)
+      {
+         ASSERT_NULL(slice);
+         continue;
+      }
+      ASSERT_NOT_NULL(slice);
+      ASSERT_EQ(memcmp(slice, input + ranges[r][0], ranges[r][1]), 0);
+      free(slice);
+   }
+
+   /* Out-of-range requests fail without producing output. */
+   void *slice = NULL;
+   ASSERT_EQ(hypredrv_decompress_slice(algo, blob_size, blob, nbytes - 5, 10, &slice), 0);
+   ASSERT_NULL(slice);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   if (blob != input)
+   {
+      free(blob);
+   }
+   free(input);
+}
+
+/* In-memory source whose reads fail past `limit` bytes into the blob. */
+typedef struct
+{
+   const unsigned char *data;
+   uint64_t             limit;
+} ShortSource;
+
+static int
+ShortSourceRead(void *ctx, uint64_t offset, void *buffer, size_t size)
+{
+   const ShortSource *src = (const ShortSource *)ctx;
+   if (offset + size > src->limit)
+   {
+      return 0;
+   }
+   memcpy(buffer, src->data + offset, size);
+   return 1;
+}
+
+/* A slice stream must return correct bytes when resuming forward and when
+ * asked for an earlier offset (restart). */
+static HYPREDRV_MAYBE_UNUSED void
+run_slice_stream_checks(comp_alg_t algo)
+{
+   const size_t   nbytes = (size_t)1 << 20;
+   unsigned char *input  = (unsigned char *)malloc(nbytes);
+   void          *blob   = NULL;
+   size_t         blob_size = 0;
+   const size_t   ranges[][2] = {
+      {1000, 5000}, {200000, 300000}, {900000, 1000}, {50, 100}, {500000, 10},
+   };
+
+   ASSERT_NOT_NULL(input);
+   /* Mostly incompressible bytes, so the compressed blob spans several of the
+    * stream's input chunks. */
+   uint32_t state = 2463534242u;
+   for (size_t i = 0; i < nbytes; i++)
+   {
+      state ^= state << 13;
+      state ^= state >> 17;
+      state ^= state << 5;
+      input[i] = (unsigned char)(state >> 24);
+   }
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_compress(algo, nbytes, input, &blob_size, &blob, -1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   hypredrv_SliceSource  src = hypredrv_SliceSourceFromMemory(blob);
+   hypredrv_SliceStream *st  = hypredrv_SliceStreamCreate(algo, blob_size, &src);
+   ASSERT_NOT_NULL(st);
+
+   for (size_t r = 0; r < sizeof(ranges) / sizeof(ranges[0]); r++)
+   {
+      void *slice = NULL;
+      ASSERT_EQ(hypredrv_SliceStreamRead(st, &src, ranges[r][0], ranges[r][1], &slice),
+                1);
+      ASSERT_NOT_NULL(slice);
+      ASSERT_EQ(memcmp(slice, input + ranges[r][0], ranges[r][1]), 0);
+      free(slice);
+   }
+
+   void *slice = NULL;
+   ASSERT_EQ(hypredrv_SliceStreamRead(st, &src, nbytes, 1, &slice), 0);
+   ASSERT_NULL(slice);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_SliceStreamDestroy(&st);
+   ASSERT_NULL(st);
+
+   /* A source that fails partway through makes the read fail, not hang. */
+   ShortSource          short_ctx = {blob, 1u << 16};
+   hypredrv_SliceSource failing   = {ShortSourceRead, &short_ctx};
+   st = hypredrv_SliceStreamCreate(algo, blob_size, &failing);
+   ASSERT_NOT_NULL(st);
+   ASSERT_EQ(hypredrv_SliceStreamRead(st, &failing, nbytes - 1000, 1000, &slice), 0);
+   ASSERT_NULL(slice);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   hypredrv_SliceStreamDestroy(&st);
+
+   ASSERT_NULL(hypredrv_SliceStreamCreate(COMP_NONE, nbytes, &src));
+   free(blob);
+   free(input);
+}
+
+static void
+test_comp_slice_stream(void)
+{
+#ifdef HYPREDRV_USING_ZLIB
+   run_slice_stream_checks(COMP_ZLIB);
+#endif
+#ifdef HYPREDRV_USING_ZSTD
+   run_slice_stream_checks(COMP_ZSTD);
+#endif
+}
+
+static void
+test_comp_decompress_slice(void)
+{
+   run_slice_checks(COMP_NONE);
+#ifdef HYPREDRV_USING_ZLIB
+   run_slice_checks(COMP_ZLIB);
+#endif
+#ifdef HYPREDRV_USING_ZSTD
+   run_slice_checks(COMP_ZSTD);
+#endif
+}
+
 int
 main(void)
 {
    RUN_TEST(test_comp_roundtrip_none);
-   RUN_TEST(test_comp_filename_detection);
    RUN_TEST(test_comp_name_extension_switch_defaults);
    RUN_TEST(test_comp_name_extension_all_cases);
-   RUN_TEST(test_comp_filename_suffix_longer_than_name);
    RUN_TEST(test_comp_unknown_algo_compress_decompress);
 #if !defined(HYPREDRV_USING_LZ4)
    RUN_TEST(test_comp_missing_lz4_codecs);
@@ -401,6 +545,8 @@ main(void)
 #endif
    RUN_TEST(test_comp_invalid_args);
    RUN_TEST(test_comp_none_zero_payload);
+   RUN_TEST(test_comp_decompress_slice);
+   RUN_TEST(test_comp_slice_stream);
 
 #ifdef HYPREDRV_USING_ZLIB
    run_roundtrip(COMP_ZLIB);

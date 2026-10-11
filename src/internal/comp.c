@@ -13,6 +13,7 @@
 #include <string.h>
 #include "HYPREDRV_config.h"
 #include "internal/error.h"
+#include "internal/utils.h"
 
 #ifdef HYPREDRV_USING_ZLIB
 #include <zlib.h>
@@ -35,27 +36,6 @@
 #ifndef HYPREDRV_MAX_DECOMPRESSED_BYTES
 #define HYPREDRV_MAX_DECOMPRESSED_BYTES ((size_t)16ULL * 1024ULL * 1024ULL * 1024ULL)
 #endif
-
-static int
-HypredrvStringHasSuffix(const char *str, const char *suffix)
-{
-   size_t n = 0;
-   size_t m = 0;
-
-   /* Defensive: callers always pass non-NULL; only reachable via internal misuse. */
-   /* GCOVR_EXCL_BR_START */
-   if (!str || !suffix) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0;
-   }
-   n = strlen(str);
-   m = strlen(suffix);
-   if (m > n)
-   {
-      return 0;
-   }
-   return !strcmp(str + (n - m), suffix);
-}
 
 const char *
 hypredrv_compression_get_name(comp_alg_t algo)
@@ -109,45 +89,28 @@ hypredrv_compression_get_extension(comp_alg_t algo)
    }
 }
 
-comp_alg_t
-hypredrv_compression_from_filename(const char *filename)
-{
-   if (!filename || filename[0] == '\0')
-   {
-      return COMP_NONE;
-   }
-
-   if (HypredrvStringHasSuffix(filename, ".lz4hc.bin"))
-   {
-      return COMP_LZ4HC;
-   }
-   if (HypredrvStringHasSuffix(filename, ".zlib.bin"))
-   {
-      return COMP_ZLIB;
-   }
-   if (HypredrvStringHasSuffix(filename, ".zst.bin"))
-   {
-      return COMP_ZSTD;
-   }
-   if (HypredrvStringHasSuffix(filename, ".lz4.bin"))
-   {
-      return COMP_LZ4;
-   }
-   if (HypredrvStringHasSuffix(filename, ".blosc.bin"))
-   {
-      return COMP_BLOSC;
-   }
-   if (HypredrvStringHasSuffix(filename, ".bin"))
-   {
-      return COMP_NONE;
-   }
-
-   return COMP_NONE;
-}
-
 /*-----------------------------------------------------------------------------
  * Compression backends (per-algorithm; keep hypredrv_compress switch small)
  *-----------------------------------------------------------------------------*/
+
+/* Allocates a compressed blob of header_size + bound bytes and records the
+ * uncompressed size in its leading uint64_t. Returns 0 on allocation failure. */
+static HYPREDRV_MAYBE_UNUSED int
+CompressAllocOutput(size_t isize, size_t header_size, size_t bound, void **output_ptr)
+{
+   *output_ptr = malloc(header_size + bound);
+   /* GCOVR_EXCL_BR_START */
+   if (*output_ptr == NULL) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
+                           __LINE__, header_size + bound);
+      return 0;
+   }
+
+   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
+   return 1;
+}
 
 static int
 compress_zlib(size_t isize, const void *input, size_t header_size, void **output_ptr,
@@ -155,18 +118,10 @@ compress_zlib(size_t isize, const void *input, size_t header_size, void **output
 {
 #ifdef HYPREDRV_USING_ZLIB
    *comp_size = (size_t)compressBound((uLong)isize);
-   /* GCOVR_EXCL_BR_START */
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-   /* GCOVR_EXCL_BR_STOP */
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    uLongf zcomp_size = (uLongf)*comp_size;
    int ierr = compress((unsigned char *)(*output_ptr) + header_size, &zcomp_size, input,
@@ -203,18 +158,10 @@ compress_zstd(size_t isize, const void *input, size_t header_size, void **output
 {
 #ifdef HYPREDRV_USING_ZSTD
    *comp_size = ZSTD_compressBound(isize);
-   /* GCOVR_EXCL_BR_START */
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-   /* GCOVR_EXCL_BR_STOP */
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int level = (compression_level < 0) ? 5 : compression_level;
@@ -268,17 +215,11 @@ compress_lz4(size_t isize, const void *input, size_t header_size, void **output_
       return 0;
    }
    /* GCOVR_EXCL_STOP */
-   *comp_size  = (size_t)LZ4_compressBound((int)isize);
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   *comp_size = (size_t)LZ4_compressBound((int)isize);
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int lz4_ret = LZ4_compress_default(input, (char *)(*output_ptr) + header_size,
@@ -310,17 +251,11 @@ compress_lz4hc(size_t isize, const void *input, size_t header_size, void **outpu
       return 0;
    }
    /* GCOVR_EXCL_STOP */
-   *comp_size  = (size_t)LZ4_compressBound((int)isize);
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   *comp_size = (size_t)LZ4_compressBound((int)isize);
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       return 0;
    }
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int lz4hc_ret =
@@ -350,18 +285,12 @@ compress_blosc(size_t isize, const void *input, size_t header_size, void **outpu
    blosc_init();
    blosc_set_compressor("blosclz");
 
-   *comp_size  = isize + BLOSC_MAX_OVERHEAD;
-   *output_ptr = malloc(header_size + *comp_size);
-   if (*output_ptr == NULL)
+   *comp_size = isize + BLOSC_MAX_OVERHEAD;
+   if (!CompressAllocOutput(isize, header_size, *comp_size, output_ptr))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + *comp_size);
       blosc_destroy();
       return 0;
    }
-
-   *((uint64_t *)(*output_ptr)) = (uint64_t)isize;
 
    {
       int blosc_ret = blosc_compress(
@@ -803,4 +732,434 @@ hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input, size_t *os
    *osize_ptr = orig_size;
 
    return;
+}
+
+/*-----------------------------------------------------------------------------
+ * Resumable slice decoding (zstd/zlib)
+ *
+ * A slice stream holds the decoder state for one compressed blob and the
+ * number of original bytes produced so far. The compressed bytes are pulled on
+ * demand from a caller-supplied source (memory or an open file) through a
+ * small input buffer, so a long-lived stream never pins a copy of its blob.
+ * Reading [offset, offset+size) continues from the current position when
+ * offset is at or past it (bytes before the slice go through a scratch window;
+ * the slice itself is decoded straight into the output) and restarts the
+ * decoder otherwise, so reading a blob's slices in increasing order decodes it
+ * only once.
+ *-----------------------------------------------------------------------------*/
+
+enum
+{
+   SLICE_STREAM_WINDOW_SIZE = 1 << 17, /* scratch output for skipped bytes */
+   SLICE_STREAM_INPUT_SIZE  = 1 << 18, /* compressed input chunk */
+};
+
+struct hypredrv_SliceStream_struct
+{
+   comp_alg_t     algo;
+   size_t         payload; /* compressed bytes after the size header */
+   size_t         orig_size;
+   size_t         pos;    /* original bytes produced so far */
+   size_t         in_fed; /* payload bytes loaded into `input` so far */
+   unsigned char *input;
+   unsigned char *window;
+   int            started;
+#ifdef HYPREDRV_USING_ZSTD
+   ZSTD_DCtx    *zstd;
+   ZSTD_inBuffer zin;
+#endif
+#ifdef HYPREDRV_USING_ZLIB
+   z_stream zs;
+#endif
+};
+
+static int
+SliceSourceReadMemory(void *ctx, uint64_t offset, void *buffer, size_t size)
+{
+   memcpy(buffer, (const unsigned char *)ctx + offset, size);
+   return 1;
+}
+
+hypredrv_SliceSource
+hypredrv_SliceSourceFromMemory(const void *blob)
+{
+   hypredrv_SliceSource src = {SliceSourceReadMemory, (void *)(uintptr_t)blob};
+   return src;
+}
+
+static void
+SliceStreamEnd(hypredrv_SliceStream *st)
+{
+   if (!st->started)
+   {
+      return;
+   }
+#ifdef HYPREDRV_USING_ZSTD
+   if (st->algo == COMP_ZSTD)
+   {
+      ZSTD_freeDCtx(st->zstd);
+      st->zstd = NULL;
+   }
+#endif
+#ifdef HYPREDRV_USING_ZLIB
+   if (st->algo == COMP_ZLIB)
+   {
+      inflateEnd(&st->zs);
+   }
+#endif
+   st->started = 0;
+   st->pos     = 0;
+}
+
+/* (Re)starts decoding from the beginning of the payload. */
+static int
+SliceStreamStart(hypredrv_SliceStream *st)
+{
+   SliceStreamEnd(st);
+   st->in_fed = 0;
+#ifdef HYPREDRV_USING_ZSTD
+   if (st->algo == COMP_ZSTD)
+   {
+      st->zstd    = ZSTD_createDCtx();
+      st->zin     = (ZSTD_inBuffer){st->input, 0, 0};
+      st->started = (st->zstd != NULL);
+   }
+#endif
+#ifdef HYPREDRV_USING_ZLIB
+   if (st->algo == COMP_ZLIB)
+   {
+      memset(&st->zs, 0, sizeof(st->zs));
+      st->zs.next_in = st->input;
+      st->started    = (inflateInit(&st->zs) == Z_OK);
+   }
+#endif
+   return st->started;
+}
+
+/* Loads the next compressed chunk (the caller checks that input remains);
+ * returns its size, or 0 when the source read fails. */
+static HYPREDRV_MAYBE_UNUSED size_t
+SliceStreamRefill(hypredrv_SliceStream *st, const hypredrv_SliceSource *src)
+{
+   size_t n = st->payload - st->in_fed;
+
+   n = (n < SLICE_STREAM_INPUT_SIZE) ? n : SLICE_STREAM_INPUT_SIZE;
+   if (n == 0 || !src->read(src->ctx, sizeof(uint64_t) + st->in_fed, st->input, n))
+   {
+      return 0;
+   }
+   st->in_fed += n;
+   return n;
+}
+
+#ifdef HYPREDRV_USING_ZSTD
+static size_t
+SliceStreamDecodeZstd(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
+                      unsigned char *target, size_t avail)
+{
+   for (;;)
+   {
+      if (st->zin.pos == st->zin.size && st->in_fed < st->payload)
+      {
+         size_t got = SliceStreamRefill(st, src);
+         if (got == 0) /* GCOVR_EXCL_BR_LINE */
+         {
+            return 0; /* source read failed */
+         }
+         st->zin = (ZSTD_inBuffer){st->input, got, 0};
+      }
+      ZSTD_outBuffer o   = {target, avail, 0};
+      size_t         ret = ZSTD_decompressStream(st->zstd, &o, &st->zin);
+      /* GCOVR_EXCL_BR_START */
+      if (ZSTD_isError(ret))
+      {
+         return 0;
+      }
+      /* Retry only when an input chunk ran out before any output. */
+      if (o.pos > 0 || st->zin.pos < st->zin.size || st->in_fed == st->payload)
+      {
+         return o.pos;
+      }
+      /* GCOVR_EXCL_BR_STOP */
+   }
+}
+#endif
+
+#ifdef HYPREDRV_USING_ZLIB
+static size_t
+SliceStreamDecodeZlib(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
+                      unsigned char *target, size_t avail)
+{
+   /* zlib counts bytes in uInt: cap each output request (input chunks are
+    * already small) so slices larger than 4 GiB still decode. */
+   const uInt out_chunk = (avail > UINT_MAX) ? UINT_MAX : (uInt)avail;
+   for (;;)
+   {
+      if (st->zs.avail_in == 0 && st->in_fed < st->payload)
+      {
+         size_t got = SliceStreamRefill(st, src);
+         if (got == 0) /* GCOVR_EXCL_BR_LINE */
+         {
+            return 0; /* source read failed */
+         }
+         st->zs.next_in  = st->input;
+         st->zs.avail_in = (uInt)got;
+      }
+      st->zs.next_out  = target;
+      st->zs.avail_out = out_chunk;
+      int    ret       = inflate(&st->zs, Z_NO_FLUSH);
+      size_t produced  = out_chunk - st->zs.avail_out;
+      /* GCOVR_EXCL_BR_START */
+      if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR)
+      {
+         return 0;
+      }
+      if (produced > 0 || ret == Z_STREAM_END || st->zs.avail_in > 0 ||
+          st->in_fed == st->payload)
+      {
+         return produced;
+      }
+      /* GCOVR_EXCL_BR_STOP */
+   }
+}
+#endif
+
+/* Decodes up to `avail` bytes into `target`; returns the count (0 = no progress). */
+static size_t
+SliceStreamDecode(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
+                  unsigned char *target, size_t avail)
+{
+#ifdef HYPREDRV_USING_ZSTD
+   if (st->algo == COMP_ZSTD)
+   {
+      return SliceStreamDecodeZstd(st, src, target, avail);
+   }
+#endif
+#ifdef HYPREDRV_USING_ZLIB
+   if (st->algo == COMP_ZLIB)
+   {
+      return SliceStreamDecodeZlib(st, src, target, avail);
+   }
+#endif
+   (void)st;
+   (void)src;
+   (void)target;
+   (void)avail;
+   return 0;
+}
+
+hypredrv_SliceStream *
+hypredrv_SliceStreamCreate(comp_alg_t algo, size_t isize, const hypredrv_SliceSource *src)
+{
+   hypredrv_SliceStream *st        = NULL;
+   uint64_t              orig      = 0;
+   int                   resumable = 0;
+
+#ifdef HYPREDRV_USING_ZSTD
+   resumable |= (algo == COMP_ZSTD);
+#endif
+#ifdef HYPREDRV_USING_ZLIB
+   resumable |= (algo == COMP_ZLIB);
+#endif
+   if (!resumable || !src || !src->read || isize < sizeof(uint64_t) ||
+       !src->read(src->ctx, 0, &orig, sizeof(orig)))
+   {
+      return NULL;
+   }
+
+   st = (hypredrv_SliceStream *)calloc(1, sizeof(*st));
+   if (!st) /* GCOVR_EXCL_BR_LINE */
+   {
+      return NULL; /* GCOVR_EXCL_LINE */
+   }
+   st->algo      = algo;
+   st->payload   = isize - sizeof(uint64_t);
+   st->orig_size = (size_t)orig;
+   st->input     = (unsigned char *)malloc(SLICE_STREAM_INPUT_SIZE);
+   st->window    = (unsigned char *)malloc(SLICE_STREAM_WINDOW_SIZE);
+   if (!st->input || !st->window) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_SliceStreamDestroy(&st); /* GCOVR_EXCL_LINE */
+      return NULL;                      /* GCOVR_EXCL_LINE */
+   }
+   return st;
+}
+
+int
+hypredrv_SliceStreamRead(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
+                         size_t offset, size_t size, void **output)
+{
+   unsigned char *out = NULL;
+
+   *output = NULL;
+   /* GCOVR_EXCL_BR_START */
+   if (offset > st->orig_size || size > st->orig_size - offset) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Requested slice [%zu, +%zu) exceeds payload (%zu bytes)",
+                           offset, size, st->orig_size);
+      return 0;
+   }
+   if (size == 0)
+   {
+      return 1;
+   }
+   out = (unsigned char *)malloc(size);
+   if (!out) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_ErrorMsgAdd("Failed to allocate slice buffer (%zu bytes)", size);
+      return 0;
+   }
+
+   /* Resume when the slice starts at or after the current position. */
+   if ((!st->started || offset < st->pos) && !SliceStreamStart(st))
+   {
+      free(out);
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s decoder initialization failed",
+                           hypredrv_compression_get_name(st->algo));
+      return 0;
+   }
+
+   while (st->pos < offset + size)
+   {
+      /* Skip [pos, offset) through the window, capped so it never crosses
+       * into the slice; then decode the slice directly into `out`. */
+      size_t         avail  = 0;
+      unsigned char *target = NULL;
+      if (st->pos < offset)
+      {
+         avail  = (offset - st->pos < SLICE_STREAM_WINDOW_SIZE) ? offset - st->pos
+                                                                : SLICE_STREAM_WINDOW_SIZE;
+         target = st->window;
+      }
+      else
+      {
+         avail  = offset + size - st->pos;
+         target = out + (st->pos - offset);
+      }
+      size_t n = SliceStreamDecode(st, src, target, avail);
+      if (n == 0)
+      {
+         break;
+      }
+      st->pos += n;
+   }
+
+   if (st->pos < offset + size)
+   {
+      free(out);
+      SliceStreamEnd(st); /* state is unusable after a decode failure */
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s decompression of slice failed",
+                           hypredrv_compression_get_name(st->algo));
+      return 0;
+   }
+
+   *output = out;
+   return 1;
+}
+
+void
+hypredrv_SliceStreamDestroy(hypredrv_SliceStream **st_ptr)
+{
+   if (!st_ptr || !*st_ptr)
+   {
+      return;
+   }
+   SliceStreamEnd(*st_ptr);
+   free((*st_ptr)->input);
+   free((*st_ptr)->window);
+   free(*st_ptr);
+   *st_ptr = NULL;
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_decompress_slice
+ *
+ * Decompresses only bytes [offset, offset + size) of a blob produced by
+ * hypredrv_compress into a newly allocated *output (NULL when size is 0).
+ * zstd and zlib decode through a slice stream that stops at the end of the
+ * slice; other codecs fall back to a full decode. Returns 1 on success, 0 with
+ * the error state set.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_decompress_slice(comp_alg_t algo, size_t isize, const void *input, size_t offset,
+                          size_t size, void **output)
+{
+   hypredrv_SliceStream *st        = NULL;
+   uint64_t              orig_size = 0;
+   int                   ok        = 0;
+
+   *output = NULL;
+   if (algo == COMP_NONE)
+   {
+      orig_size = (uint64_t)isize;
+   }
+   else if (isize >= sizeof(uint64_t) && input)
+   {
+      memcpy(&orig_size, input, sizeof(orig_size));
+   }
+   /* GCOVR_EXCL_BR_START */
+   if ((algo != COMP_NONE && isize < sizeof(uint64_t)) || offset > orig_size ||
+       size > orig_size - offset) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Requested slice [%zu, +%zu) exceeds payload (%llu bytes)",
+                           offset, size, (unsigned long long)orig_size);
+      return 0;
+   }
+   if (size == 0)
+   {
+      return 1;
+   }
+
+   if (algo == COMP_NONE)
+   {
+      *output = malloc(size);
+      if (!*output) /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_ErrorMsgAdd("Failed to allocate slice buffer (%zu bytes)", size);
+         return 0;
+      }
+      memcpy(*output, (const unsigned char *)input + offset, size);
+      return 1;
+   }
+
+   hypredrv_SliceSource src = hypredrv_SliceSourceFromMemory(input);
+   st                       = hypredrv_SliceStreamCreate(algo, isize, &src);
+   if (st)
+   {
+      ok = hypredrv_SliceStreamRead(st, &src, offset, size, output);
+      hypredrv_SliceStreamDestroy(&st);
+      return ok;
+   }
+
+   /* Codecs without streaming support: full decode, then copy the slice. */
+   {
+      void  *full      = NULL;
+      size_t full_size = 0;
+      hypredrv_decompress(algo, isize, input, &full_size, &full);
+      ok = full && offset + size <= full_size;
+      if (ok)
+      {
+         *output = malloc(size);
+         ok      = (*output != NULL);
+      }
+      if (ok)
+      {
+         memcpy(*output, (const unsigned char *)full + offset, size);
+      }
+      free(full);
+   }
+   if (!ok && !hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("%s decompression of slice failed",
+                           hypredrv_compression_get_name(algo));
+   }
+   return ok;
 }
