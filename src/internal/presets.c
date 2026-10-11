@@ -55,6 +55,21 @@ normalize_preset_name(char *s)
    }
 }
 
+/* Preset named norm_name (already normalized) of the given kind (any if < 0) */
+static const hypredrv_Preset *
+PresetFindIn(const hypredrv_Preset *presets, size_t n, const char *norm_name,
+             hypredrv_PresetKind kind)
+{
+   for (size_t i = 0; i < n; i++)
+   {
+      if ((kind < 0 || presets[i].kind == kind) && !strcmp(norm_name, presets[i].name))
+      {
+         return &presets[i];
+      }
+   }
+   return NULL;
+}
+
 static const char *
 PresetKindHeader(hypredrv_PresetKind kind)
 {
@@ -99,30 +114,23 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
    }
    normalize_preset_name(norm);
 
-   /* Check for duplicates in built-in presets */
-   for (size_t i = 0; i < sizeof(g_presets) / sizeof(g_presets[0]); i++)
+   /* Reject names already taken by a built-in or a user preset (of any kind) */
+   const size_t nb = sizeof(g_presets) / sizeof(g_presets[0]);
+   if (PresetFindIn(g_presets, nb, norm, HYPREDRV_PRESET_ANY))
    {
-      if (!strcmp(norm, g_presets[i].name))
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "hypredrv_PresetRegister: preset '%s' conflicts with built-in preset", norm);
-         free(norm);
-         return -1;
-      }
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "hypredrv_PresetRegister: preset '%s' conflicts with built-in preset", norm);
+      free(norm);
+      return -1;
    }
-
-   /* Check for duplicates in user presets */
-   for (size_t i = 0; i < g_num_user_presets; i++)
+   if (PresetFindIn(g_user_presets, g_num_user_presets, norm, HYPREDRV_PRESET_ANY))
    {
-      if (!strcmp(norm, g_user_presets[i].name))
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered",
-                              norm);
-         free(norm);
-         return -1;
-      }
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered",
+                           norm);
+      free(norm);
+      return -1;
    }
 
    /* Grow array if needed */
@@ -190,66 +198,46 @@ hypredrv_PresetHelp(void)
    return hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
 }
 
+/* Write the "    - name: help" lines of the presets of the given kind into out
+ * (capacity cap; out may be NULL to measure) and return their length. */
+static size_t
+PresetHelpLines(const hypredrv_Preset *presets, size_t n, hypredrv_PresetKind kind,
+                char *out, size_t cap)
+{
+   size_t len = 0;
+   for (size_t i = 0; i < n; i++)
+   {
+      if (presets[i].kind != kind)
+      {
+         continue;
+      }
+      int w = snprintf(out ? out + len : NULL, out ? cap - len : 0, "    - %s: %s\n",
+                       presets[i].name ? presets[i].name : "",
+                       presets[i].help ? presets[i].help : "");
+      len += (w > 0) ? (size_t)w : 0;
+   }
+   return len;
+}
+
 char *
 hypredrv_PresetHelpTyped(hypredrv_PresetKind kind)
 {
-   const size_t nb     = sizeof(g_presets) / sizeof(g_presets[0]);
-   const char  *header = PresetKindHeader(kind);
-
-   size_t bytes = strlen(header) + 1;
-   for (size_t i = 0; i < nb; i++)
-   {
-      if (g_presets[i].kind != kind)
-      {
-         continue;
-      }
-      const char *pname = g_presets[i].name ? g_presets[i].name : "";
-      const char *phelp = g_presets[i].help ? g_presets[i].help : "";
-      bytes +=
-         strlen("    - ") + strlen(pname) + strlen(": ") + strlen(phelp) + strlen("\n");
-   }
-   for (size_t i = 0; i < g_num_user_presets; i++)
-   {
-      if (g_user_presets[i].kind != kind)
-      {
-         continue;
-      }
-      const char *pname = g_user_presets[i].name ? g_user_presets[i].name : "";
-      const char *phelp = g_user_presets[i].help ? g_user_presets[i].help : "";
-      bytes +=
-         strlen("    - ") + strlen(pname) + strlen(": ") + strlen(phelp) + strlen("\n");
-   }
+   const size_t nb       = sizeof(g_presets) / sizeof(g_presets[0]);
+   const char  *header   = PresetKindHeader(kind);
+   size_t       head_len = strlen(header);
+   size_t       nb_len   = PresetHelpLines(g_presets, nb, kind, NULL, 0);
+   size_t nu_len = PresetHelpLines(g_user_presets, g_num_user_presets, kind, NULL, 0);
+   size_t bytes  = head_len + nb_len + nu_len + 1;
 
    char *out = (char *)malloc(bytes);
    if (!out)
    {
       return NULL;
    }
-   out[0] = '\0';
-
-   (void)strcat(out, header);
-   for (size_t i = 0; i < nb; i++)
-   {
-      if (g_presets[i].kind != kind)
-      {
-         continue;
-      }
-      char line[1024];
-      (void)snprintf(line, sizeof(line), "    - %s: %s\n", g_presets[i].name,
-                     g_presets[i].help);
-      (void)strcat(out, line);
-   }
-   for (size_t i = 0; i < g_num_user_presets; i++)
-   {
-      if (g_user_presets[i].kind != kind)
-      {
-         continue;
-      }
-      char line[1024];
-      (void)snprintf(line, sizeof(line), "    - %s: %s\n", g_user_presets[i].name,
-                     g_user_presets[i].help);
-      (void)strcat(out, line);
-   }
+   memcpy(out, header, head_len + 1);
+   PresetHelpLines(g_presets, nb, kind, out + head_len, bytes - head_len);
+   PresetHelpLines(g_user_presets, g_num_user_presets, kind, out + head_len + nb_len,
+                   bytes - head_len - nb_len);
    return out;
 }
 
@@ -279,34 +267,11 @@ hypredrv_PresetFindTyped(const char *name, hypredrv_PresetKind kind)
 
    normalize_preset_name(lower);
 
-   const hypredrv_Preset *match = NULL;
-   for (size_t i = 0; i < (sizeof(g_presets) / sizeof(g_presets[0])); i++)
-   {
-      if (kind >= 0 && g_presets[i].kind != kind)
-      {
-         continue;
-      }
-      if (!strcmp(lower, g_presets[i].name))
-      {
-         match = &g_presets[i];
-         break;
-      }
-   }
-
+   const hypredrv_Preset *match =
+      PresetFindIn(g_presets, sizeof(g_presets) / sizeof(g_presets[0]), lower, kind);
    if (!match)
    {
-      for (size_t i = 0; i < g_num_user_presets; i++)
-      {
-         if (kind >= 0 && g_user_presets[i].kind != kind)
-         {
-            continue;
-         }
-         if (!strcmp(lower, g_user_presets[i].name))
-         {
-            match = &g_user_presets[i];
-            break;
-         }
-      }
+      match = PresetFindIn(g_user_presets, g_num_user_presets, lower, kind);
    }
 
    free(lower);

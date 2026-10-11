@@ -315,8 +315,8 @@ ScalingComputeDofmapMag(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
    if (num_local_rows < 0 || dofmap->size != (size_t)num_local_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",
-                           dofmap->size, num_local_rows);
+      hypredrv_ErrorMsgAdd("dofmap size (%zu) does not match local matrix rows (%lld)",
+                           dofmap->size, (long long)num_local_rows);
       return;
    }
 
@@ -441,8 +441,8 @@ ScalingDofmapCustomPrepare(MPI_Comm comm, const Scaling_args *args, HYPRE_IJMatr
    if (num_local_rows < 0 || dofmap->size != (size_t)num_local_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dofmap size (%d) does not match local matrix rows (%d)",
-                           dofmap->size, num_local_rows);
+      hypredrv_ErrorMsgAdd("dofmap size (%zu) does not match local matrix rows (%lld)",
+                           dofmap->size, (long long)num_local_rows);
       return 0;
    }
 

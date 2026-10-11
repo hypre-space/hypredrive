@@ -22,18 +22,18 @@
  * @param _map Name of the map containing field information.
  * @param _numFields Number of fields in the map.
  */
-#define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields)        \
-   void _funcName(void *vargs, const YAMLnode *_node)                                \
-   {                                                                                 \
-      _argsType *_args = (_argsType *)vargs;                                         \
-      for (size_t i = 0; i < (_numFields); i++)                                      \
-      {                                                                              \
-         if (!strcmp((_map)[i].name, (_node)->key))                                  \
-         {                                                                           \
-            (_map)[i].setter((void *)((char *)(_args) + (_map)[i].offset), (_node)); \
-            return;                                                                  \
-         }                                                                           \
-      }                                                                              \
+#define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields) \
+   void _funcName(void *vargs, const YAMLnode *_node)                         \
+   {                                                                          \
+      _argsType *_args = (_argsType *)vargs;                                  \
+      for (size_t i = 0; i < (_numFields); i++)                               \
+      {                                                                       \
+         if (!strcmp((_map)[i].name, (_node)->key))                           \
+         {                                                                    \
+            hypredrv_FieldOffsetMapSet(&(_map)[i], (void *)(_args), (_node)); \
+            return;                                                           \
+         }                                                                    \
+      }                                                                       \
    }
 
 /**
@@ -263,17 +263,36 @@
    DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
 
 /**
- * @brief Like GENERATE_PREFIXED_COMPONENTS, but uses a custom prefixSetArgsFromYAML.
+ * @brief Like DEFINE_SET_ARGS_FUNC, for args that own memory. A YAML key may
+ *        repeat (last wins), so first release what a previous parse of the same
+ *        key allocated; needs a _fnPrefix##ReleaseArgs(_prefix##_args *).
  */
-#define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix)                   \
-   DEFINE_FIELD_OFFSET_MAP(prefix)                                                  \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
-   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
-                              prefix##_field_offset_map)                            \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                 \
-   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                  \
-   DECLARE_SET_ARGS_FROM_YAML_FUNC(hypredrv_##prefix)                               \
-   DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
+#define DEFINE_SET_ARGS_RELEASING_FUNC(_prefix, _fnPrefix)          \
+   void _fnPrefix##SetArgs(void *vargs, const YAMLnode *parent)     \
+   {                                                                \
+      _prefix##_args *args = (_prefix##_args *)vargs;               \
+      _fnPrefix##ReleaseArgs(args);                                 \
+      _fnPrefix##SetDefaultArgs(args);                              \
+      _fnPrefix##SetArgsFromYAML((void *)args, (YAMLnode *)parent); \
+   }
+
+/**
+ * @brief Like GENERATE_PREFIXED_COMPONENTS, but uses a custom prefixSetArgsFromYAML;
+ *        `_set_args_def` defines prefixSetArgs (DEFINE_SET_ARGS_FUNC or
+ *        DEFINE_SET_ARGS_RELEASING_FUNC).
+ */
+#define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH(prefix, _set_args_def) \
+   DEFINE_FIELD_OFFSET_MAP(prefix)                                                    \
+   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,    \
+                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)      \
+   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS,   \
+                              prefix##_field_offset_map)                              \
+   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                   \
+   DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                    \
+   DECLARE_SET_ARGS_FROM_YAML_FUNC(hypredrv_##prefix)                                 \
+   _set_args_def(prefix, hypredrv_##prefix)
+
+#define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix) \
+   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH(prefix, DEFINE_SET_ARGS_FUNC)
 
 #endif /* GEN_MACROS_HEADER */

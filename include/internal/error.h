@@ -13,6 +13,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#ifndef HYPREDRV_PRINTF_FORMAT
+#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
+#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index) \
+   __attribute__((format(printf, _format_index, _argument_index)))
+#else
+#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index)
+#endif
+#endif
+
 typedef enum hypredrv_error_enum
 {
    ERROR_NONE                     = 0x00000000, // No error
@@ -68,8 +77,8 @@ bool     hypredrv_DistributedErrorStateSync(MPI_Comm);
 /*******************************************************************************
  *******************************************************************************/
 
-void hypredrv_ErrorMsgAdd(const char *, ...);
-void hypredrv_ErrorMsgAddUnique(const char *, ...);
+void hypredrv_ErrorMsgAdd(const char *, ...) HYPREDRV_PRINTF_FORMAT(1, 2);
+void hypredrv_ErrorMsgAddUnique(const char *, ...) HYPREDRV_PRINTF_FORMAT(1, 2);
 void hypredrv_ErrorMsgAddCodeWithCount(hypredrv_error_t, const char *);
 void hypredrv_ErrorMsgAddMissingKey(const char *);
 void hypredrv_ErrorMsgAddExtraKey(const char *);

@@ -24,6 +24,39 @@ test_FieldTypeIntSet(void)
    hypredrv_YAMLnodeDestroy(node);
 }
 
+/* Integer setters must write the whole member when it is wider than int (as
+ * HYPRE_Int is with bigint hypre): a -1 default must not keep its upper half. */
+typedef struct
+{
+   long long wide_int;
+   long long wide_nonneg;
+} WideFields;
+
+static void
+test_FieldOffsetMapSet_widens_integer_fields(void)
+{
+   const FieldOffsetMap map[] = {
+      FIELD_OFFSET_MAP_ENTRY(WideFields, wide_int, hypredrv_FieldTypeIntSet),
+      FIELD_OFFSET_MAP_ENTRY(WideFields, wide_nonneg, hypredrv_FieldTypeNonNegIntSet),
+   };
+   WideFields fields = {-1, -1};
+   YAMLnode  *three  = make_node("3");
+   YAMLnode  *neg    = make_node("-5");
+
+   hypredrv_FieldOffsetMapSet(&map[0], &fields, three);
+   ASSERT_TRUE(fields.wide_int == 3);
+
+   /* Rejected input leaves the member untouched. */
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_FieldOffsetMapSet(&map[1], &fields, neg);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(fields.wide_nonneg == -1);
+   hypredrv_ErrorCodeResetAll();
+
+   hypredrv_YAMLnodeDestroy(three);
+   hypredrv_YAMLnodeDestroy(neg);
+}
+
 static void
 test_FieldTypeDoubleSet(void)
 {
@@ -277,6 +310,7 @@ int
 main(void)
 {
    RUN_TEST(test_FieldTypeIntSet);
+   RUN_TEST(test_FieldOffsetMapSet_widens_integer_fields);
    RUN_TEST(test_FieldTypeIntSet_rejects_invalid_values);
    RUN_TEST(test_FieldTypeNonNegIntSet_bounds);
    RUN_TEST(test_FieldTypePositiveIntSet_bounds);

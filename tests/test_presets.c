@@ -185,6 +185,35 @@ test_PresetHelp_includes_user_preset(void)
 }
 
 /*-----------------------------------------------------------------------------
+ * test_PresetHelp_keeps_long_help_text
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_PresetHelp_keeps_long_help_text(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+
+   /* Longer than the 1024-byte line buffer the help text was once built in */
+   char long_help[1501];
+   memset(long_help, 'x', sizeof(long_help) - 1);
+   long_help[sizeof(long_help) - 1] = '\0';
+
+   int ret = hypredrv_PresetRegister("long_help_preset", "amg", long_help);
+   ASSERT_EQ(ret, 0);
+
+   char *help = hypredrv_PresetHelp();
+   ASSERT_NOT_NULL(help);
+   char expected[1600];
+   snprintf(expected, sizeof(expected), "    - long_help_preset: %s\n", long_help);
+   ASSERT_NOT_NULL(strstr(help, expected));
+
+   free(help);
+   hypredrv_PresetFreeUserPresets();
+   hypredrv_ErrorCodeResetAll();
+}
+
+/*-----------------------------------------------------------------------------
  * test_PresetFreeUserPresets_idempotent
  *-----------------------------------------------------------------------------*/
 
@@ -288,6 +317,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PresetRegister_hyphen_in_name_normalizes);
    RUN_TEST(test_PresetFind_user_preset_case_insensitive);
    RUN_TEST(test_PresetHelp_includes_user_preset);
+   RUN_TEST(test_PresetHelp_keeps_long_help_text);
    RUN_TEST(test_PresetFreeUserPresets_idempotent);
    RUN_TEST(test_HYPREDRV_PreconPresetRegister_public);
    RUN_TEST(test_HYPREDRV_SolverPresetRegister_public);

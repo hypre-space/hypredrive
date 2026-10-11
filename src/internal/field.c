@@ -76,6 +76,42 @@ hypredrv_FieldTypePositiveIntSet(void *field, const YAMLnode *node)
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_FieldOffsetMapSet
+ *
+ * Apply `entry`'s setter to its member of the args struct at `base`. The integer
+ * setters parse into an int, but many members are HYPRE_Int, which is 64-bit
+ * when hypre is built with --enable-bigint: route those through an int and
+ * write back the whole member, so a default such as -1 does not keep its upper
+ * half set after "3" is stored.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_FieldOffsetMapSet(const FieldOffsetMap *entry, void *base, const YAMLnode *node)
+{
+   void *field = (char *)base + entry->offset;
+
+   if (entry->size == sizeof(long long) && sizeof(long long) != sizeof(int) &&
+       (entry->setter == hypredrv_FieldTypeIntSet ||
+        entry->setter == hypredrv_FieldTypeNonNegIntSet ||
+        entry->setter == hypredrv_FieldTypePositiveIntSet))
+   {
+      long long wide = 0;
+      int       before, value;
+
+      memcpy(&wide, field, sizeof(wide));
+      before = value = (int)wide;
+      entry->setter(&value, node);
+      if (value != before) /* unchanged on rejected input: keep the member as is */
+      {
+         wide = value;
+         memcpy(field, &wide, sizeof(wide));
+      }
+      return;
+   }
+   entry->setter(field, node);
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntArraySet
  *-----------------------------------------------------------------------------*/
 
