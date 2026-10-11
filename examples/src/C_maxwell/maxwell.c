@@ -32,9 +32,9 @@
  *      curl (muinv curl E) + sigma E = f   in  Omega = [0,Lx]x[0,Ly]x[0,Lz]
  *      E x n = prescribed                  on  the boundary
  *
- *   In this example muinv = sigma = 1, so the operator reduces to
- *   curl-curl + mass. The mass term (sigma > 0) makes the problem definite,
- *   which is the ideal target for the Auxiliary-space Maxwell Solver (AMS).
+ *   muinv and sigma default to 1 (-muinv, -sigma), giving curl-curl + mass.
+ *   The mass term (sigma > 0) makes the problem definite, which is the ideal
+ *   target for the Auxiliary-space Maxwell Solver (AMS).
  *
  *   Discretization:
  *   ---------------
@@ -45,7 +45,7 @@
  *   Manufactured solution (benchmark):
  *   ----------------------------------
  *      E = (sin(k y), sin(k z), sin(k x)),  k = freq * pi.
- *      It satisfies curl curl E = k^2 E, so f = (1 + k^2) E. This gives an
+ *      It satisfies curl curl E = k^2 E, so f = (muinv k^2 + sigma) E. This gives an
  *      exact reference field used to measure the discretization error and to
  *      verify the solver converges to the right answer (not just a small
  *      residual). The reference edge DOFs have the closed form
@@ -86,7 +86,7 @@ typedef struct
 {
    MPI_Comm      cart_comm;
    HYPRE_Int     mypid;
-   HYPRE_Int     nprocs;
+   int           nprocs;   /* MPI ranks */
    HYPRE_Int     gdims[3]; /* global node dimensions */
    HYPRE_Int     pdims[3]; /* processor grid dimensions */
    HYPRE_Int     coords[3];
@@ -125,6 +125,15 @@ block_of(HYPRE_BigInt g, const HYPRE_BigInt *ps, HYPRE_Int P)
    return b;
 }
 
+/* MPI rank of processor block (px,py,pz). The Cartesian communicator is created
+ * without reordering, so ranks follow the row-major (z fastest) block order,
+ * which MPI_Cart_rank would return; computing it avoids a call per edge. */
+static inline int
+cart_rank(const MaxwellMesh *m, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz)
+{
+   return (int)((px * m->pdims[1] + py) * m->pdims[2] + pz);
+}
+
 /* Global node id of node (gi,gj,gk). Rank-monotonic: rank r owns a contiguous
  * range starting at rank_node_lower[r]; within a rank the nodes are ordered
  * lexicographically (x fastest). This mirrors the edge numbering so the node
@@ -133,11 +142,10 @@ block_of(HYPRE_BigInt g, const HYPRE_BigInt *ps, HYPRE_Int P)
 static HYPRE_BigInt
 node_gid(const MaxwellMesh *m, HYPRE_BigInt gi, HYPRE_BigInt gj, HYPRE_BigInt gk)
 {
-   HYPRE_Int px = block_of(gi, m->pstarts[0], m->pdims[0]);
-   HYPRE_Int py = block_of(gj, m->pstarts[1], m->pdims[1]);
-   HYPRE_Int pz = block_of(gk, m->pstarts[2], m->pdims[2]);
-   int       owner;
-   MPI_Cart_rank(m->cart_comm, (int[]){(int)px, (int)py, (int)pz}, &owner);
+   HYPRE_Int px    = block_of(gi, m->pstarts[0], m->pdims[0]);
+   HYPRE_Int py    = block_of(gj, m->pstarts[1], m->pdims[1]);
+   HYPRE_Int pz    = block_of(gk, m->pstarts[2], m->pdims[2]);
+   int       owner = cart_rank(m, px, py, pz);
 
    HYPRE_Int nx = (HYPRE_Int)(m->pstarts[0][px + 1] - m->pstarts[0][px]);
    HYPRE_Int ny = (HYPRE_Int)(m->pstarts[1][py + 1] - m->pstarts[1][py]);
@@ -178,11 +186,10 @@ static HYPRE_BigInt
 edge_gid(const MaxwellMesh *m, int family, HYPRE_BigInt gi, HYPRE_BigInt gj,
          HYPRE_BigInt gk)
 {
-   HYPRE_Int px = block_of(gi, m->pstarts[0], m->pdims[0]);
-   HYPRE_Int py = block_of(gj, m->pstarts[1], m->pdims[1]);
-   HYPRE_Int pz = block_of(gk, m->pstarts[2], m->pdims[2]);
-   int       owner;
-   MPI_Cart_rank(m->cart_comm, (int[]){(int)px, (int)py, (int)pz}, &owner);
+   HYPRE_Int px    = block_of(gi, m->pstarts[0], m->pdims[0]);
+   HYPRE_Int py    = block_of(gj, m->pstarts[1], m->pdims[1]);
+   HYPRE_Int pz    = block_of(gk, m->pstarts[2], m->pdims[2]);
+   int       owner = cart_rank(m, px, py, pz);
 
    HYPRE_BigInt base = m->rank_edge_lower[owner];
 
@@ -270,6 +277,15 @@ PrintUsage(void)
    return 0;
 }
 
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
+}
+
 /*--------------------------------------------------------------------------
  * Parse command line arguments
  *--------------------------------------------------------------------------*/
@@ -298,7 +314,8 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -308,11 +325,13 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "--name"))
       {
-         if (++i < argc) params->name = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->name = argv[++i];
       }
       else if (!strcmp(argv[i], "-vtk") || !strcmp(argv[i], "--vtk"))
       {
-         if (++i < argc) params->vtk_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->vtk_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -343,28 +362,39 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-freq"))
       {
-         if (++i < argc) params->freq = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->freq = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-muinv"))
       {
-         if (++i < argc) params->muinv = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->muinv = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-sigma"))
       {
-         if (++i < argc) params->sigma = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->sigma = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-ns") || !strcmp(argv[i], "--nsolve"))
       {
-         if (++i < argc) params->nsolve = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nsolve = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!myid) PrintUsage();
          return 2;
+      }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
       }
    }
 
@@ -372,8 +402,8 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
    {
       if (!myid)
       {
-         printf("Error: number of processes (%d) must equal Px*Py*Pz (%d)\n", num_procs,
-                params->P[0] * params->P[1] * params->P[2]);
+         printf("Error: number of processes (%d) must equal Px*Py*Pz (%lld)\n", num_procs,
+                (long long)(params->P[0] * params->P[1] * params->P[2]));
       }
       return 1;
    }
@@ -384,9 +414,14 @@ ParseArguments(int argc, char *argv[], MaxwellParams *params, int myid, int num_
          if (!myid) printf("Error: each grid dimension must be >= 2 nodes\n");
          return 1;
       }
-      if (params->P[d] > params->N[d] - 1)
+      if (!(params->L[d] > 0.0))
       {
-         if (!myid) printf("Error: too many ranks in dimension %d\n", d);
+         if (!myid) printf("Error: -L entries must be > 0\n");
+         return 1;
+      }
+      if (params->P[d] < 1 || params->P[d] > params->N[d] - 1)
+      {
+         if (!myid) printf("Error: -P entry %d must be in [1, N - 1]\n", d);
          return 1;
       }
    }
@@ -631,7 +666,7 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
    const HYPRE_Int  Nx = m->gdims[0], Ny = m->gdims[1], Nz = m->gdims[2];
 
    HYPRE_IJMatrix A, G;
-   HYPRE_IJVector b, cx, cy, cz;
+   HYPRE_IJVector b, coord[3];
 
    HYPRE_IJMatrixCreate(comm, m->edge_ilower, m->edge_iupper, m->edge_ilower,
                         m->edge_iupper, &A);
@@ -647,15 +682,12 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
    HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
-   HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cx);
-   HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cy);
-   HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cz);
-   HYPRE_IJVectorSetObjectType(cx, HYPRE_PARCSR);
-   HYPRE_IJVectorSetObjectType(cy, HYPRE_PARCSR);
-   HYPRE_IJVectorSetObjectType(cz, HYPRE_PARCSR);
-   HYPREDRV_IJ_VECTOR_INIT_HOST(cx);
-   HYPREDRV_IJ_VECTOR_INIT_HOST(cy);
-   HYPREDRV_IJ_VECTOR_INIT_HOST(cz);
+   for (int d = 0; d < 3; d++)
+   {
+      HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &coord[d]);
+      HYPRE_IJVectorSetObjectType(coord[d], HYPRE_PARCSR);
+      HYPREDRV_IJ_VECTOR_INIT_HOST(coord[d]);
+   }
 
    HYPRE_Real *xref = (HYPRE_Real *)calloc(
       (size_t)(m->num_edges_local > 0 ? m->num_edges_local : 1), sizeof(HYPRE_Real));
@@ -683,6 +715,40 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
       (HYPRE_Int)((m->pstarts[2][m->coords[2] + 1] < Nz) ? m->pstarts[2][m->coords[2] + 1]
                                                          : Nz - 1);
 
+   /* The basis values at the 27 quadrature points are the same on every cell,
+    * and each load component depends on one coordinate only (f_x on y, f_y on
+    * z, f_z on x), so tabulate both once instead of per cell. */
+   HYPRE_Real Wq[27][12][3];
+   for (int q = 0; q < 27; q++)
+   {
+      HYPRE_Real lx = g3_x[q % 3] * m->h[0], ly = g3_x[(q / 3) % 3] * m->h[1],
+                 lz = g3_x[q / 9] * m->h[2];
+      for (int e = 0; e < 12; e++)
+      {
+         HYPRE_Real C[3];
+         edge_basis(e, lx, ly, lz, m->h, Wq[q][e], C);
+      }
+   }
+   HYPRE_Real *fx_tab = (HYPRE_Real *)malloc((size_t)(3 * (cy_hi - cy_lo) + 1) *
+                                             sizeof(HYPRE_Real)); /* sin(k y) */
+   HYPRE_Real *fy_tab = (HYPRE_Real *)malloc((size_t)(3 * (cz_hi - cz_lo) + 1) *
+                                             sizeof(HYPRE_Real)); /* sin(k z) */
+   HYPRE_Real *fz_tab = (HYPRE_Real *)malloc((size_t)(3 * (cx_hi - cx_lo) + 1) *
+                                             sizeof(HYPRE_Real)); /* sin(k x) */
+   for (int q = 0; q < 3; q++)
+   {
+      for (HYPRE_Int c = cy_lo; c < cy_hi; c++)
+         fx_tab[3 * (c - cy_lo) + q] =
+            fcoef * sin(kappa * (c * m->h[1] + g3_x[q] * m->h[1]));
+      for (HYPRE_Int c = cz_lo; c < cz_hi; c++)
+         fy_tab[3 * (c - cz_lo) + q] =
+            fcoef * sin(kappa * (c * m->h[2] + g3_x[q] * m->h[2]));
+      for (HYPRE_Int c = cx_lo; c < cx_hi; c++)
+         fz_tab[3 * (c - cx_lo) + q] =
+            fcoef * sin(kappa * (c * m->h[0] + g3_x[q] * m->h[0]));
+   }
+   const HYPRE_Real cell_vol = m->h[0] * m->h[1] * m->h[2];
+
    for (HYPRE_Int cz = cz_lo; cz < cz_hi; cz++)
       for (HYPRE_Int cy = cy_lo; cy < cy_hi; cy++)
          for (HYPRE_Int cx = cx_lo; cx < cx_hi; cx++)
@@ -699,7 +765,8 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
                HYPRE_BigInt gi = cx + off[0], gj = cy + off[1], gk = cz + off[2];
                egid[e] = edge_gid(m, edge_dir[e], gi, gj, gk);
                ebnd[e] = edge_is_boundary(m, edge_dir[e], gi, gj, gk);
-               eval[e] = edge_exact(m, kappa, edge_dir[e], gi, gj, gk);
+               /* The exact value is only needed to lift boundary columns */
+               eval[e] = ebnd[e] ? edge_exact(m, kappa, edge_dir[e], gi, gj, gk) : 0.0;
                F[e]    = 0.0;
             }
 
@@ -708,51 +775,52 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
                for (int qy = 0; qy < 3; qy++)
                   for (int qx = 0; qx < 3; qx++)
                   {
-                     HYPRE_Real lx = g3_x[qx] * m->h[0], ly = g3_x[qy] * m->h[1],
-                                lz = g3_x[qz] * m->h[2];
-                     HYPRE_Real px = cx * m->h[0] + lx, py = cy * m->h[1] + ly,
-                                pz = cz * m->h[2] + lz;
-                     HYPRE_Real wq =
-                        g3_w[qx] * g3_w[qy] * g3_w[qz] * (m->h[0] * m->h[1] * m->h[2]);
-                     HYPRE_Real fx = fcoef * sin(kappa * py); /* f = (1+k^2) E */
-                     HYPRE_Real fy = fcoef * sin(kappa * pz);
-                     HYPRE_Real fz = fcoef * sin(kappa * px);
+                     const HYPRE_Real(*W)[3] = Wq[(qz * 3 + qy) * 3 + qx];
+                     HYPRE_Real wq           = g3_w[qx] * g3_w[qy] * g3_w[qz] * cell_vol;
+                     HYPRE_Real fx           = fx_tab[3 * (cy - cy_lo) + qy];
+                     HYPRE_Real fy           = fy_tab[3 * (cz - cz_lo) + qz];
+                     HYPRE_Real fz           = fz_tab[3 * (cx - cx_lo) + qx];
                      for (int e = 0; e < 12; e++)
                      {
-                        HYPRE_Real W[3], C[3];
-                        edge_basis(e, lx, ly, lz, m->h, W, C);
-                        F[e] += wq * (fx * W[0] + fy * W[1] + fz * W[2]);
+                        F[e] += wq * (fx * W[e][0] + fy * W[e][1] + fz * W[e][2]);
                      }
                   }
 
-            /* Add owned interior rows; lift inhomogeneous Dirichlet columns to RHS. */
+            /* Add owned interior rows; lift inhomogeneous Dirichlet columns to RHS.
+             * All of this cell's rows go to hypre in one call. */
+            HYPRE_Int    nrows = 0, ncols[12], off = 0;
+            HYPRE_BigInt rows[12], cols[12 * 12];
+            HYPRE_Real   vals[12 * 12], rhs[12];
             for (int a = 0; a < 12; a++)
             {
                if (ebnd[a]) continue; /* boundary rows handled separately */
                /* Only add contributions to rows this rank owns. */
                if (egid[a] < m->edge_ilower || egid[a] > m->edge_iupper) continue;
 
-               HYPRE_BigInt row   = egid[a];
-               HYPRE_Int    ncols = 0;
-               HYPRE_BigInt cols[12];
-               HYPRE_Real   vals[12];
-               HYPRE_Real   rhs = F[a];
+               rows[nrows]  = egid[a];
+               rhs[nrows]   = F[a];
+               ncols[nrows] = 0;
                for (int bcol = 0; bcol < 12; bcol++)
                {
                   if (ebnd[bcol])
                   {
-                     rhs -=
-                        S[a][bcol] * eval[bcol]; /* move known boundary value to RHS */
+                     /* move the known boundary value to the RHS */
+                     rhs[nrows] -= S[a][bcol] * eval[bcol];
                   }
                   else
                   {
-                     cols[ncols] = egid[bcol];
-                     vals[ncols] = S[a][bcol];
-                     ncols++;
+                     cols[off] = egid[bcol];
+                     vals[off] = S[a][bcol];
+                     off++;
+                     ncols[nrows]++;
                   }
                }
-               HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
-               HYPRE_IJVectorAddToValues(b, 1, &row, &rhs);
+               nrows++;
+            }
+            if (nrows > 0)
+            {
+               HYPRE_IJMatrixAddToValues(A, nrows, ncols, rows, cols, vals);
+               HYPRE_IJVectorAddToValues(b, nrows, rows, rhs);
             }
          }
 
@@ -803,30 +871,34 @@ BuildMaxwellSystem(MaxwellMesh *m, MaxwellParams *params, MPI_Comm comm,
       for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
          for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
          {
-            HYPRE_BigInt gi  = m->pstarts[0][m->coords[0]] + li;
-            HYPRE_BigInt gj  = m->pstarts[1][m->coords[1]] + lj;
-            HYPRE_BigInt gk  = m->pstarts[2][m->coords[2]] + lk;
-            HYPRE_BigInt nid = node_gid(m, gi, gj, gk);
-            HYPRE_Real   vx = gi * m->h[0], vy = gj * m->h[1], vz = gk * m->h[2];
-            HYPRE_IJVectorSetValues(cx, 1, &nid, &vx);
-            HYPRE_IJVectorSetValues(cy, 1, &nid, &vy);
-            HYPRE_IJVectorSetValues(cz, 1, &nid, &vz);
+            HYPRE_BigInt gi   = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj   = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk   = m->pstarts[2][m->coords[2]] + lk;
+            HYPRE_BigInt nid  = node_gid(m, gi, gj, gk);
+            HYPRE_Real   v[3] = {gi * m->h[0], gj * m->h[1], gk * m->h[2]};
+            for (int d = 0; d < 3; d++)
+            {
+               HYPRE_IJVectorSetValues(coord[d], 1, &nid, &v[d]);
+            }
          }
+
+   free(fx_tab);
+   free(fy_tab);
+   free(fz_tab);
 
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJMatrixAssemble(G);
    HYPRE_IJVectorAssemble(b);
-   HYPRE_IJVectorAssemble(cx);
-   HYPRE_IJVectorAssemble(cy);
-   HYPRE_IJVectorAssemble(cz);
+   for (int d = 0; d < 3; d++)
+   {
+      HYPRE_IJVectorAssemble(coord[d]);
+      coord_ptr[d] = coord[d];
+   }
 
-   *A_ptr       = A;
-   *b_ptr       = b;
-   *G_ptr       = G;
-   coord_ptr[0] = cx;
-   coord_ptr[1] = cy;
-   coord_ptr[2] = cz;
-   *xref_ptr    = xref;
+   *A_ptr    = A;
+   *b_ptr    = b;
+   *G_ptr    = G;
+   *xref_ptr = xref;
    return 0;
 }
 
@@ -854,12 +926,12 @@ vtk_cell_extent(const MaxwellMesh *m, HYPRE_Int px, HYPRE_Int py, HYPRE_Int pz,
    ext[5]          = (HYPRE_Int)(z1 < m->gdims[2] ? z1 : m->gdims[2] - 1);
 }
 
-static void
+static int
 vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3],
                 const double *evec, const double *emag, size_t ncells)
 {
    FILE *fp = fopen(fname, "wb");
-   if (!fp) return;
+   if (!fp) return 1;
    uint64_t eb = (uint64_t)ncells * 3 * sizeof(double);
    uint64_t mb = (uint64_t)ncells * sizeof(double);
    uint64_t eo = 0, mo = eo + sizeof(uint64_t) + eb;
@@ -867,11 +939,13 @@ vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3
    fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" byte_order=\"LittleEndian\" "
                "header_type=\"UInt64\">\n");
    fprintf(fp,
-           "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "  <ImageData WholeExtent=\"%lld %lld %lld %lld %lld %lld\" Origin=\"0 0 0\" "
            "Spacing=\"%.17g %.17g %.17g\">\n",
-           ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], sp[0], sp[1], sp[2]);
-   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2],
-           ext[3], ext[4], ext[5]);
+           (long long)ext[0], (long long)ext[1], (long long)ext[2], (long long)ext[3],
+           (long long)ext[4], (long long)ext[5], sp[0], sp[1], sp[2]);
+   fprintf(fp, "    <Piece Extent=\"%lld %lld %lld %lld %lld %lld\">\n",
+           (long long)ext[0], (long long)ext[1], (long long)ext[2], (long long)ext[3],
+           (long long)ext[4], (long long)ext[5]);
    fprintf(fp, "      <CellData Vectors=\"solution\" Scalars=\"magnitude\">\n");
    fprintf(fp,
            "        <DataArray type=\"Float64\" Name=\"solution\" "
@@ -888,22 +962,23 @@ vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3
    fwrite(&mb, sizeof(uint64_t), 1, fp);
    fwrite(emag, 1, (size_t)mb, fp);
    fprintf(fp, "\n  </AppendedData>\n</VTKFile>\n");
-   fclose(fp);
+   return fclose(fp) != 0;
 }
 
-static void
+static int
 vtk_write_master(const char *fname, const char *piece_base, const MaxwellMesh *m,
                  const HYPRE_Real sp[3])
 {
    FILE *fp = fopen(fname, "w");
-   if (!fp) return;
+   if (!fp) return 1;
    HYPRE_Int whole[6] = {0, m->gdims[0] - 1, 0, m->gdims[1] - 1, 0, m->gdims[2] - 1};
    fprintf(fp, "<?xml version=\"1.0\"?>\n<VTKFile type=\"PImageData\" version=\"1.0\" "
                "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n");
    fprintf(fp,
-           "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "  <PImageData WholeExtent=\"%lld %lld %lld %lld %lld %lld\" Origin=\"0 0 0\" "
            "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
-           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1],
+           (long long)whole[0], (long long)whole[1], (long long)whole[2],
+           (long long)whole[3], (long long)whole[4], (long long)whole[5], sp[0], sp[1],
            sp[2]);
    fprintf(
       fp,
@@ -915,14 +990,18 @@ vtk_write_master(const char *fname, const char *piece_base, const MaxwellMesh *m
       HYPRE_Int ext[6];
       vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2],
                       ext);
-      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n",
-              ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
+      fprintf(
+         fp,
+         "    <Piece Extent=\"%lld %lld %lld %lld %lld %lld\" Source=\"%s_p%d.vti\"/>\n",
+         (long long)ext[0], (long long)ext[1], (long long)ext[2], (long long)ext[3],
+         (long long)ext[4], (long long)ext[5], piece_base, r);
    }
    fprintf(fp, "  </PImageData>\n</VTKFile>\n");
-   fclose(fp);
+   return fclose(fp) != 0;
 }
 
-static void
+/* Returns nonzero on every rank if any rank failed to write its file */
+static int
 WriteMaxwellVTK(const MaxwellMesh *m, const char *base, const HYPRE_Complex *sol_local)
 {
    /* Gather the full edge solution to every rank (rank-contiguous numbering). */
@@ -981,20 +1060,27 @@ WriteMaxwellVTK(const MaxwellMesh *m, const char *base, const HYPRE_Complex *sol
    }
    else
    {
-      snprintf(fname, sizeof(fname), "%s_p%d.vti", base, m->mypid);
+      snprintf(fname, sizeof(fname), "%s_p%lld.vti", base, (long long)m->mypid);
    }
-   vtk_write_piece(fname, ext, m->h, evec, emag, ncells);
+   int failed = vtk_write_piece(fname, ext, m->h, evec, emag, ncells);
    if (m->mypid == 0 && m->nprocs > 1)
    {
       snprintf(fname, sizeof(fname), "%s.pvti", base);
-      vtk_write_master(fname, bn, m, m->h);
+      failed |= vtk_write_master(fname, bn, m, m->h);
    }
+   if (failed)
+   {
+      fprintf(stderr, "Error: rank %d could not write VTK output for '%s'\n",
+              (int)m->mypid, base);
+   }
+   MPI_Allreduce(MPI_IN_PLACE, &failed, 1, MPI_INT, MPI_MAX, m->cart_comm);
 
    free(evec);
    free(emag);
    free(gsol);
    free(counts);
    free(displs);
+   return failed;
 }
 
 /*--------------------------------------------------------------------------
@@ -1024,6 +1110,11 @@ main(int argc, char *argv[])
    }
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
 
    /* Register an "ams" preconditioner preset for the default (no-YAML) path. */
    HYPREDRV_SAFE_CALL(
@@ -1126,8 +1217,7 @@ main(int argc, char *argv[])
 
       if (params.vtk_file)
       {
-         WriteMaxwellVTK(mesh, params.vtk_file, sol);
-         if (!myid)
+         if (!WriteMaxwellVTK(mesh, params.vtk_file, sol) && !myid)
             printf("Wrote VTK solution to %s%s\n", params.vtk_file,
                    num_procs > 1 ? ".pvti" : ".vti");
       }
@@ -1144,6 +1234,9 @@ main(int argc, char *argv[])
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
    return 0;
 }

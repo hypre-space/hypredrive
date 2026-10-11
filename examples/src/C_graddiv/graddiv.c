@@ -32,9 +32,9 @@
  *      -alpha grad(div u) + beta u = f   in  Omega = [0,Lx]x[0,Ly]x[0,Lz]
  *      u . n = prescribed                on  the boundary
  *
- *   In this example alpha = beta = 1, so the operator reduces to grad-div +
- *   mass. The mass term (beta > 0) makes the problem definite, which is the
- *   ideal target for the Auxiliary-space Divergence Solver (ADS).
+ *   alpha and beta default to 1 (-alpha, -beta), giving grad-div + mass. The
+ *   mass term (beta > 0) makes the problem definite, which is the ideal target
+ *   for the Auxiliary-space Divergence Solver (ADS).
  *
  *   Discretization:
  *   ---------------
@@ -46,7 +46,8 @@
  *   ----------------------------------
  *      u = (sin(k x), sin(k y), sin(k z)),  k = freq * pi.
  *      Then div u = k (cos kx + cos ky + cos kz) and grad(div u) = -k^2 u, so
- *      f = -grad(div u) + u = (1 + k^2) u. This gives an exact reference field
+ *      f = -alpha grad(div u) + beta u = (alpha k^2 + beta) u. This gives an exact
+ *      reference field
  *      to measure the discretization error and verify the solver converges to
  *      the right answer. The reference face DOFs have the closed form
  *         x-face: hy*hz * sin(k * x_node),
@@ -88,7 +89,7 @@ typedef struct
 {
    MPI_Comm      cart_comm;
    HYPRE_Int     mypid;
-   HYPRE_Int     nprocs;
+   int           nprocs; /* MPI ranks */
    HYPRE_Int     gdims[3];
    HYPRE_Int     pdims[3];
    HYPRE_Int     coords[3];
@@ -126,17 +127,17 @@ block_of(HYPRE_BigInt g, const HYPRE_BigInt *ps, HYPRE_Int P)
    return b;
 }
 
-/* Owner MPI rank of node/entity anchored at node (gi,gj,gk). */
+/* Owner MPI rank of node/entity anchored at node (gi,gj,gk). The Cartesian
+ * communicator is created without reordering, so ranks follow the row-major
+ * (z fastest) block order that MPI_Cart_rank would return; computing it avoids
+ * a call per index. */
 static int
 owner_rank(const GradDivMesh *m, HYPRE_BigInt gi, HYPRE_BigInt gj, HYPRE_BigInt gk)
 {
-   int owner;
-   MPI_Cart_rank(m->cart_comm,
-                 (int[]){(int)block_of(gi, m->pstarts[0], m->pdims[0]),
-                         (int)block_of(gj, m->pstarts[1], m->pdims[1]),
-                         (int)block_of(gk, m->pstarts[2], m->pdims[2])},
-                 &owner);
-   return owner;
+   HYPRE_Int px = block_of(gi, m->pstarts[0], m->pdims[0]);
+   HYPRE_Int py = block_of(gj, m->pstarts[1], m->pdims[1]);
+   HYPRE_Int pz = block_of(gk, m->pstarts[2], m->pdims[2]);
+   return (int)((px * m->pdims[1] + py) * m->pdims[2] + pz);
 }
 
 /* Owner block dimensions (node counts nx,ny,nz) and per-dimension "caps"
@@ -296,6 +297,15 @@ PrintUsage(void)
    return 0;
 }
 
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
+}
+
 static int
 ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_procs)
 {
@@ -321,7 +331,8 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -331,7 +342,8 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "--name"))
       {
-         if (++i < argc) params->name = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->name = argv[++i];
       }
       else if (!strcmp(argv[i], "-n"))
       {
@@ -362,40 +374,52 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-freq"))
       {
-         if (++i < argc) params->freq = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->freq = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-alpha"))
       {
-         if (++i < argc) params->alpha = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->alpha = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-beta"))
       {
-         if (++i < argc) params->beta = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->beta = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-ns") || !strcmp(argv[i], "--nsolve"))
       {
-         if (++i < argc) params->nsolve = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nsolve = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-vtk") || !strcmp(argv[i], "--vtk"))
       {
-         if (++i < argc) params->vtk_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->vtk_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!myid) PrintUsage();
          return 2;
       }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
+      }
    }
 
    if (params->P[0] * params->P[1] * params->P[2] != num_procs)
    {
       if (!myid)
-         printf("Error: number of processes (%d) must equal Px*Py*Pz (%d)\n", num_procs,
-                params->P[0] * params->P[1] * params->P[2]);
+         printf("Error: number of processes (%d) must equal Px*Py*Pz (%lld)\n", num_procs,
+                (long long)(params->P[0] * params->P[1] * params->P[2]));
       return 1;
    }
    for (int d = 0; d < 3; d++)
@@ -405,9 +429,14 @@ ParseArguments(int argc, char *argv[], GradDivParams *params, int myid, int num_
          if (!myid) printf("Error: each grid dimension must be >= 2 nodes\n");
          return 1;
       }
-      if (params->P[d] > params->N[d] - 1)
+      if (!(params->L[d] > 0.0))
       {
-         if (!myid) printf("Error: too many ranks in dimension %d\n", d);
+         if (!myid) printf("Error: -L entries must be > 0\n");
+         return 1;
+      }
+      if (params->P[d] < 1 || params->P[d] > params->N[d] - 1)
+      {
+         if (!myid) printf("Error: -P entry %d must be in [1, N - 1]\n", d);
          return 1;
       }
    }
@@ -623,7 +652,7 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
    const HYPRE_Int  Nx = m->gdims[0], Ny = m->gdims[1], Nz = m->gdims[2];
 
    HYPRE_IJMatrix A, G, C;
-   HYPRE_IJVector b, cx, cy, cz;
+   HYPRE_IJVector b, coord[3];
 
    HYPRE_IJMatrixCreate(comm, m->face_ilower, m->face_iupper, m->face_ilower,
                         m->face_iupper, &A);
@@ -640,15 +669,12 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
    HYPRE_IJVectorCreate(comm, m->face_ilower, m->face_iupper, &b);
    HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR);
    HYPREDRV_IJ_VECTOR_INIT_HOST(b);
-   HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cx);
-   HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cy);
-   HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &cz);
-   HYPRE_IJVectorSetObjectType(cx, HYPRE_PARCSR);
-   HYPRE_IJVectorSetObjectType(cy, HYPRE_PARCSR);
-   HYPRE_IJVectorSetObjectType(cz, HYPRE_PARCSR);
-   HYPREDRV_IJ_VECTOR_INIT_HOST(cx);
-   HYPREDRV_IJ_VECTOR_INIT_HOST(cy);
-   HYPREDRV_IJ_VECTOR_INIT_HOST(cz);
+   for (int d = 0; d < 3; d++)
+   {
+      HYPRE_IJVectorCreate(comm, m->node_ilower, m->node_iupper, &coord[d]);
+      HYPRE_IJVectorSetObjectType(coord[d], HYPRE_PARCSR);
+      HYPREDRV_IJ_VECTOR_INIT_HOST(coord[d]);
+   }
 
    HYPRE_Real *xref = (HYPRE_Real *)calloc(
       (size_t)(m->num_faces_local > 0 ? m->num_faces_local : 1), sizeof(HYPRE_Real));
@@ -672,6 +698,40 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
       (HYPRE_Int)((m->pstarts[2][m->coords[2] + 1] < Nz) ? m->pstarts[2][m->coords[2] + 1]
                                                          : Nz - 1);
 
+   /* The basis values at the 27 quadrature points are the same on every cell,
+    * and each load component depends on one coordinate only (f_x on x, f_y on
+    * y, f_z on z), so tabulate both once instead of per cell. */
+   HYPRE_Real vq[27][6][3];
+   for (int q = 0; q < 27; q++)
+   {
+      HYPRE_Real lx = g3_x[q % 3] * m->h[0], ly = g3_x[(q / 3) % 3] * m->h[1],
+                 lz = g3_x[q / 9] * m->h[2];
+      for (int a = 0; a < 6; a++)
+      {
+         HYPRE_Real dv;
+         rt0_basis(a, lx, ly, lz, m->h, vq[q][a], &dv);
+      }
+   }
+   HYPRE_Real *fx_tab =
+      (HYPRE_Real *)malloc((size_t)(3 * (cx_hi - cx_lo) + 1) * sizeof(HYPRE_Real));
+   HYPRE_Real *fy_tab =
+      (HYPRE_Real *)malloc((size_t)(3 * (cy_hi - cy_lo) + 1) * sizeof(HYPRE_Real));
+   HYPRE_Real *fz_tab =
+      (HYPRE_Real *)malloc((size_t)(3 * (cz_hi - cz_lo) + 1) * sizeof(HYPRE_Real));
+   for (int q = 0; q < 3; q++)
+   {
+      for (HYPRE_Int c = cx_lo; c < cx_hi; c++)
+         fx_tab[3 * (c - cx_lo) + q] =
+            fcoef * sin(kappa * (c * m->h[0] + g3_x[q] * m->h[0]));
+      for (HYPRE_Int c = cy_lo; c < cy_hi; c++)
+         fy_tab[3 * (c - cy_lo) + q] =
+            fcoef * sin(kappa * (c * m->h[1] + g3_x[q] * m->h[1]));
+      for (HYPRE_Int c = cz_lo; c < cz_hi; c++)
+         fz_tab[3 * (c - cz_lo) + q] =
+            fcoef * sin(kappa * (c * m->h[2] + g3_x[q] * m->h[2]));
+   }
+   const HYPRE_Real cell_vol = m->h[0] * m->h[1] * m->h[2];
+
    for (HYPRE_Int cz = cz_lo; cz < cz_hi; cz++)
       for (HYPRE_Int cy = cy_lo; cy < cy_hi; cy++)
          for (HYPRE_Int cx = cx_lo; cx < cx_hi; cx++)
@@ -685,59 +745,65 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
                             gk = cz + face_off6[a][2];
                fgid[a]         = face_gid(m, face_dir6[a], gi, gj, gk);
                fbnd[a]         = face_is_boundary(m, face_dir6[a], gi, gj, gk);
-               fval[a]         = face_exact(m, kappa, face_dir6[a], gi, gj, gk);
-               F[a]            = 0.0;
+               /* The exact value is only needed to lift boundary columns */
+               fval[a] = fbnd[a] ? face_exact(m, kappa, face_dir6[a], gi, gj, gk) : 0.0;
+               F[a]    = 0.0;
             }
 
             for (int qz = 0; qz < 3; qz++)
                for (int qy = 0; qy < 3; qy++)
                   for (int qx = 0; qx < 3; qx++)
                   {
-                     HYPRE_Real lx = g3_x[qx] * m->h[0], ly = g3_x[qy] * m->h[1],
-                                lz = g3_x[qz] * m->h[2];
-                     HYPRE_Real px = cx * m->h[0] + lx, py = cy * m->h[1] + ly,
-                                pz = cz * m->h[2] + lz;
-                     HYPRE_Real wq =
-                        g3_w[qx] * g3_w[qy] * g3_w[qz] * (m->h[0] * m->h[1] * m->h[2]);
-                     HYPRE_Real fx = fcoef * sin(kappa * px); /* f = (1+k^2) u */
-                     HYPRE_Real fy = fcoef * sin(kappa * py);
-                     HYPRE_Real fz = fcoef * sin(kappa * pz);
+                     const HYPRE_Real(*v)[3] = vq[(qz * 3 + qy) * 3 + qx];
+                     HYPRE_Real wq           = g3_w[qx] * g3_w[qy] * g3_w[qz] * cell_vol;
+                     HYPRE_Real fx           = fx_tab[3 * (cx - cx_lo) + qx];
+                     HYPRE_Real fy           = fy_tab[3 * (cy - cy_lo) + qy];
+                     HYPRE_Real fz           = fz_tab[3 * (cz - cz_lo) + qz];
                      for (int a = 0; a < 6; a++)
                      {
-                        HYPRE_Real v[3], dv;
-                        rt0_basis(a, lx, ly, lz, m->h, v, &dv);
-                        F[a] += wq * (fx * v[0] + fy * v[1] + fz * v[2]);
+                        F[a] += wq * (fx * v[a][0] + fy * v[a][1] + fz * v[a][2]);
                      }
                   }
 
+            /* Owned interior rows, with boundary columns lifted to the RHS; all
+             * of this cell's rows go to hypre in one call. */
+            HYPRE_Int    nrows = 0, ncols[6], off = 0;
+            HYPRE_BigInt rows[6], cols[6 * 6];
+            HYPRE_Real   vals[6 * 6], rhs[6];
             for (int a = 0; a < 6; a++)
             {
                if (fbnd[a]) continue;
                if (fgid[a] < m->face_ilower || fgid[a] > m->face_iupper)
                   continue; /* owned rows only */
 
-               HYPRE_BigInt row   = fgid[a];
-               HYPRE_Int    ncols = 0;
-               HYPRE_BigInt cols[6];
-               HYPRE_Real   vals[6];
-               HYPRE_Real   rhs = F[a];
+               rows[nrows]  = fgid[a];
+               rhs[nrows]   = F[a];
+               ncols[nrows] = 0;
                for (int bcol = 0; bcol < 6; bcol++)
                {
                   if (fbnd[bcol])
                   {
-                     rhs -= S[a][bcol] * fval[bcol];
+                     rhs[nrows] -= S[a][bcol] * fval[bcol];
                   }
                   else
                   {
-                     cols[ncols] = fgid[bcol];
-                     vals[ncols] = S[a][bcol];
-                     ncols++;
+                     cols[off] = fgid[bcol];
+                     vals[off] = S[a][bcol];
+                     off++;
+                     ncols[nrows]++;
                   }
                }
-               HYPRE_IJMatrixAddToValues(A, 1, &ncols, &row, cols, vals);
-               HYPRE_IJVectorAddToValues(b, 1, &row, &rhs);
+               nrows++;
+            }
+            if (nrows > 0)
+            {
+               HYPRE_IJMatrixAddToValues(A, nrows, ncols, rows, cols, vals);
+               HYPRE_IJVectorAddToValues(b, nrows, rows, rhs);
             }
          }
+   free(fx_tab);
+   free(fy_tab);
+   free(fz_tab);
 
    /* ---- Owned-face pass: boundary identity rows, discrete-curl rows, xref ----
     * C[face][edge] is the signed incidence of the 4 boundary edges of the face,
@@ -843,32 +909,32 @@ BuildGradDivSystem(GradDivMesh *m, GradDivParams *params, MPI_Comm comm,
       for (HYPRE_Int lj = 0; lj < m->nlocal[1]; lj++)
          for (HYPRE_Int li = 0; li < m->nlocal[0]; li++)
          {
-            HYPRE_BigInt gi  = m->pstarts[0][m->coords[0]] + li;
-            HYPRE_BigInt gj  = m->pstarts[1][m->coords[1]] + lj;
-            HYPRE_BigInt gk  = m->pstarts[2][m->coords[2]] + lk;
-            HYPRE_BigInt nid = node_gid(m, gi, gj, gk);
-            HYPRE_Real   vx = gi * m->h[0], vy = gj * m->h[1], vz = gk * m->h[2];
-            HYPRE_IJVectorSetValues(cx, 1, &nid, &vx);
-            HYPRE_IJVectorSetValues(cy, 1, &nid, &vy);
-            HYPRE_IJVectorSetValues(cz, 1, &nid, &vz);
+            HYPRE_BigInt gi   = m->pstarts[0][m->coords[0]] + li;
+            HYPRE_BigInt gj   = m->pstarts[1][m->coords[1]] + lj;
+            HYPRE_BigInt gk   = m->pstarts[2][m->coords[2]] + lk;
+            HYPRE_BigInt nid  = node_gid(m, gi, gj, gk);
+            HYPRE_Real   v[3] = {gi * m->h[0], gj * m->h[1], gk * m->h[2]};
+            for (int d = 0; d < 3; d++)
+            {
+               HYPRE_IJVectorSetValues(coord[d], 1, &nid, &v[d]);
+            }
          }
 
    HYPRE_IJMatrixAssemble(A);
    HYPRE_IJMatrixAssemble(G);
    HYPRE_IJMatrixAssemble(C);
    HYPRE_IJVectorAssemble(b);
-   HYPRE_IJVectorAssemble(cx);
-   HYPRE_IJVectorAssemble(cy);
-   HYPRE_IJVectorAssemble(cz);
+   for (int d = 0; d < 3; d++)
+   {
+      HYPRE_IJVectorAssemble(coord[d]);
+      coord_ptr[d] = coord[d];
+   }
 
-   *A_ptr       = A;
-   *b_ptr       = b;
-   *G_ptr       = G;
-   *C_ptr       = C;
-   coord_ptr[0] = cx;
-   coord_ptr[1] = cy;
-   coord_ptr[2] = cz;
-   *xref_ptr    = xref;
+   *A_ptr    = A;
+   *b_ptr    = b;
+   *G_ptr    = G;
+   *C_ptr    = C;
+   *xref_ptr = xref;
    return 0;
 }
 
@@ -906,11 +972,13 @@ vtk_write_piece(const char *fname, const HYPRE_Int ext[6], const HYPRE_Real sp[3
    fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" byte_order=\"LittleEndian\" "
                "header_type=\"UInt64\">\n");
    fprintf(fp,
-           "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "  <ImageData WholeExtent=\"%lld %lld %lld %lld %lld %lld\" Origin=\"0 0 0\" "
            "Spacing=\"%.17g %.17g %.17g\">\n",
-           ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], sp[0], sp[1], sp[2]);
-   fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", ext[0], ext[1], ext[2],
-           ext[3], ext[4], ext[5]);
+           (long long)ext[0], (long long)ext[1], (long long)ext[2], (long long)ext[3],
+           (long long)ext[4], (long long)ext[5], sp[0], sp[1], sp[2]);
+   fprintf(fp, "    <Piece Extent=\"%lld %lld %lld %lld %lld %lld\">\n",
+           (long long)ext[0], (long long)ext[1], (long long)ext[2], (long long)ext[3],
+           (long long)ext[4], (long long)ext[5]);
    fprintf(fp, "      <CellData Vectors=\"solution\" Scalars=\"magnitude\">\n");
    fprintf(fp,
            "        <DataArray type=\"Float64\" Name=\"solution\" "
@@ -940,9 +1008,10 @@ vtk_write_master(const char *fname, const char *piece_base, const GradDivMesh *m
    fprintf(fp, "<?xml version=\"1.0\"?>\n<VTKFile type=\"PImageData\" version=\"1.0\" "
                "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n");
    fprintf(fp,
-           "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" Origin=\"0 0 0\" "
+           "  <PImageData WholeExtent=\"%lld %lld %lld %lld %lld %lld\" Origin=\"0 0 0\" "
            "Spacing=\"%.17g %.17g %.17g\" GhostLevel=\"0\">\n",
-           whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sp[0], sp[1],
+           (long long)whole[0], (long long)whole[1], (long long)whole[2],
+           (long long)whole[3], (long long)whole[4], (long long)whole[5], sp[0], sp[1],
            sp[2]);
    fprintf(
       fp,
@@ -954,8 +1023,11 @@ vtk_write_master(const char *fname, const char *piece_base, const GradDivMesh *m
       HYPRE_Int ext[6];
       vtk_cell_extent(m, m->rank_coords[r][0], m->rank_coords[r][1], m->rank_coords[r][2],
                       ext);
-      fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s_p%d.vti\"/>\n",
-              ext[0], ext[1], ext[2], ext[3], ext[4], ext[5], piece_base, r);
+      fprintf(
+         fp,
+         "    <Piece Extent=\"%lld %lld %lld %lld %lld %lld\" Source=\"%s_p%d.vti\"/>\n",
+         (long long)ext[0], (long long)ext[1], (long long)ext[2], (long long)ext[3],
+         (long long)ext[4], (long long)ext[5], piece_base, r);
    }
    fprintf(fp, "  </PImageData>\n</VTKFile>\n");
    fclose(fp);
@@ -1015,7 +1087,7 @@ WriteGradDivVTK(const GradDivMesh *m, const char *base, const HYPRE_Complex *sol
    }
    else
    {
-      snprintf(fname, sizeof(fname), "%s_p%d.vti", base, m->mypid);
+      snprintf(fname, sizeof(fname), "%s_p%lld.vti", base, (long long)m->mypid);
    }
    vtk_write_piece(fname, ext, m->h, uvec, umag, ncells);
    if (m->mypid == 0 && m->nprocs > 1)
@@ -1058,6 +1130,11 @@ main(int argc, char *argv[])
    }
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
 
    /* Register an "ads" preconditioner preset for the default (no-YAML) path. */
    HYPREDRV_SAFE_CALL(
@@ -1176,6 +1253,9 @@ main(int argc, char *argv[])
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
    return 0;
 }

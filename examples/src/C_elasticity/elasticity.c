@@ -15,16 +15,6 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
-/* HYPREDRV_HYPRE_RELEASE_NUMBER is provided by the internal hypredrive headers
-   only; examples see hypre's own HYPRE_RELEASE_NUMBER through HYPREDRV.h */
-#ifndef HYPREDRV_HYPRE_RELEASE_NUMBER
-#ifdef HYPRE_RELEASE_NUMBER
-#define HYPREDRV_HYPRE_RELEASE_NUMBER HYPRE_RELEASE_NUMBER
-#else
-#define HYPREDRV_HYPRE_RELEASE_NUMBER 0
-#endif
-#endif
-
 /* The built-in two-material (mixed u-p) recipe drives MGR's coarse solve with the
    application-assembled pressure-mass Schur (coarse_level_type: user), which needs
    HYPRE_MGRSetCoarseGridMatrixAtLevel -- hypre 3.1.0 develop 77 or newer. */
@@ -115,6 +105,7 @@
  * HYPREDRV_LinearSystemSetCoarseSchur. Targets hypre >= 3.1.0 with MGR
  * coarse_grid_method 6 (user); older releases can run a user file via -i.
  *--------------------------------------------------------------------------*/
+#if ELASTICITY_HAVE_MGR_USER_COARSE
 static const char *default_config_mixed = "solver:\n"
                                           "  fgmres:\n"
                                           "    krylov_dim: 100\n"
@@ -170,6 +161,7 @@ static const char *default_config_mixed = "solver:\n"
                                           "              down_type: forward-hl1gs\n"
                                           "              up_type: backward-hl1gs\n"
                                           "              coarse_type: ge\n";
+#endif
 
 /*--------------------------------------------------------------------------
  * Problem parameters struct
@@ -211,7 +203,7 @@ typedef struct
    HYPRE_Int     pdims[3];
    HYPRE_Int     coords[3];
    HYPRE_Int     nlocal[3];
-   HYPRE_Int     nbrs[14];
+   int           nbrs[14];
    HYPRE_Int     local_size; /* local number of nodes */
    HYPRE_BigInt  ilower;     /* first local node gid (scalar) */
    HYPRE_BigInt  iupper;     /* last  local node gid (scalar) */
@@ -290,7 +282,7 @@ PrintUsage(void)
    printf("                         0: none\n");
    printf("                         1: ASCII VTK\n");
    printf("                         2: binary VTK\n");
-   printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
+   printf("  -v|--verbose <n>  : Verbosity bitset (3)\n");
    printf("                         0x1: Library info and linear solver statistics\n");
    printf("                         0x2: System info\n");
    printf("                         0x4: Print linear system matrices\n");
@@ -298,6 +290,15 @@ PrintUsage(void)
    printf("\n");
 
    return 0;
+}
+
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -343,7 +344,8 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -411,11 +413,13 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "--E-top"))
       {
-         if (++i < argc) params->E_top = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->E_top = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "--nu-top"))
       {
-         if (++i < argc) params->nu_top = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nu_top = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "--coarse-schur"))
       {
@@ -459,19 +463,23 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-E"))
       {
-         if (++i < argc) params->E = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->E = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-br") || !strcmp(argv[i], "--batch-rows"))
       {
-         if (++i < argc) params->max_rows_per_call = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->max_rows_per_call = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-nu"))
       {
-         if (++i < argc) params->nu = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nu = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-rho"))
       {
-         if (++i < argc) params->rho = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->rho = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-g"))
       {
@@ -494,7 +502,8 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-ns") || !strcmp(argv[i], "--nsolve"))
       {
-         if (++i < argc) params->nsolve = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nsolve = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-vis") || !strcmp(argv[i], "--visualize"))
       {
@@ -510,12 +519,19 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!myid) PrintUsage();
          return 2;
+      }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
       }
    }
 
@@ -526,14 +542,26 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       return 1;
    }
 
+   for (int d = 0; d < 3; d++)
+   {
+      if (params->P[d] < 1 || params->N[d] < 2 || !(params->L[d] > 0.0))
+      {
+         if (!myid)
+            printf(
+               "Error: -P entries must be >= 1, -n entries >= 2 and -L entries > 0\n");
+         return 1;
+      }
+   }
+
    if (params->P[0] * params->P[1] * params->P[2] != num_procs)
    {
       if (!myid)
       {
          printf("Error: Number of processes (%d) must match processor grid "
-                "dimensions (%d x %d x %d = %d)\n",
-                num_procs, params->P[0], params->P[1], params->P[2],
-                params->P[0] * params->P[1] * params->P[2]);
+                "dimensions (%lld x %lld x %lld = %lld)\n",
+                num_procs, (long long)params->P[0], (long long)params->P[1],
+                (long long)params->P[2],
+                (long long)(params->P[0] * params->P[1] * params->P[2]));
       }
       return 1;
    }
@@ -545,12 +573,18 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       {
          if (!myid)
          {
-            printf("Error: %s grid dimension (N = %d) must be larger than the "
-                   "number of ranks (P = %d)\n",
-                   name[d], params->N[d], params->P[d]);
+            printf("Error: %s grid dimension (N = %lld) must be larger than the "
+                   "number of ranks (P = %lld)\n",
+                   name[d], (long long)params->N[d], (long long)params->P[d]);
          }
          return 1;
       }
+   }
+
+   if (params->visualize < 0 || params->visualize > 2)
+   {
+      if (!myid) printf("Error: -vis must be 0, 1 or 2\n");
+      return 1;
    }
 
    if (params->nu <= -1.0 || params->nu >= 0.5)
@@ -561,6 +595,12 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
 
    /* Resolve the top-material modulus sentinel (inherit the bottom modulus) */
    if (params->E_top < 0.0) params->E_top = params->E;
+
+   if (!(params->E > 0.0) || !(params->E_top > 0.0))
+   {
+      if (!myid) printf("Error: Young's moduli (-E, --E-top) must be > 0\n");
+      return 1;
+   }
 
    if (params->problem)
    {
@@ -588,9 +628,9 @@ ParseArguments(int argc, char *argv[], ElasticParams *params, int myid, int num_
       {
          if (!myid)
             printf("Error: --problem two-material --discretization mixed requires "
-                   "Py <= (ny-1)/2 = %d so each half (split at y=Ly/2) reaches every "
-                   "rank (Py=%d)\n",
-                   (params->N[1] - 1) / 2, params->P[1]);
+                   "Py <= (ny-1)/2 = %lld so each half (split at y=Ly/2) reaches every "
+                   "rank (Py=%lld)\n",
+                   (long long)((params->N[1] - 1) / 2), (long long)params->P[1]);
          return 1;
       }
    }
@@ -699,6 +739,15 @@ grid2idx(const HYPRE_BigInt gcoords[3], const HYPRE_Int bcoords[3],
           (gcoords[0] - pstarts[0][bcoords[0]]);
 }
 
+/* Largest block c in [0,P-1] with starts[c] <= idx */
+static inline HYPRE_Int
+FindBlock(const HYPRE_BigInt *starts, HYPRE_Int P, HYPRE_BigInt idx)
+{
+   HYPRE_Int c = 0;
+   while (c + 1 < P && idx >= starts[c + 1]) c++;
+   return c;
+}
+
 /*--------------------------------------------------------------------------
  * Create mesh partition information (reused from Laplacian example)
  *--------------------------------------------------------------------------*/
@@ -707,8 +756,7 @@ CreateDistMesh(MPI_Comm comm, HYPRE_Int Nx, HYPRE_Int Ny, HYPRE_Int Nz, HYPRE_In
                HYPRE_Int Py, HYPRE_Int Pz, DistMesh **mesh_ptr)
 {
    DistMesh *mesh = (DistMesh *)malloc(sizeof(DistMesh));
-   int       myid, num_procs = 0;
-   (void)num_procs; /* Reserved for future use */
+   int       myid;
 
    mesh->gdims[0] = Nx;
    mesh->gdims[1] = Ny;
@@ -1124,15 +1172,6 @@ ml_lrank(const MixedLayout *L, HYPRE_Int cx, HYPRE_Int cy, HYPRE_Int cz)
    return cx + L->Px * (cy + L->Py * cz);
 }
 
-/* Largest block c in [0,P-1] with starts[c] <= idx */
-static inline HYPRE_Int
-ml_find_block(const HYPRE_BigInt *starts, HYPRE_Int P, HYPRE_BigInt idx)
-{
-   HYPRE_Int c = 0;
-   while (c + 1 < P && idx >= starts[c + 1]) c++;
-   return c;
-}
-
 /* Balanced prefix split of n consecutive items into P parts */
 static void
 ml_split_prefix(HYPRE_BigInt n, HYPRE_Int P, HYPRE_BigInt *prefix)
@@ -1150,14 +1189,14 @@ ml_split_prefix(HYPRE_BigInt n, HYPRE_Int P, HYPRE_BigInt *prefix)
 static inline HYPRE_Int
 ml_owner_bot(const MixedLayout *L, HYPRE_BigInt gy)
 {
-   return ml_find_block(L->dbot_lo, L->Py, (HYPRE_BigInt)L->Jsplit - gy);
+   return FindBlock(L->dbot_lo, L->Py, (HYPRE_BigInt)L->Jsplit - gy);
 }
 
 /* Owner cy of a top-half displacement node layer gy in [Jsplit+1,Ny-1] */
 static inline HYPRE_Int
 ml_owner_top(const MixedLayout *L, HYPRE_BigInt gy)
 {
-   return ml_find_block(L->dtop_lo, L->Py, gy - (HYPRE_BigInt)(L->Jsplit + 1));
+   return FindBlock(L->dtop_lo, L->Py, gy - (HYPRE_BigInt)(L->Jsplit + 1));
 }
 
 /* Map a pressure dof (global id in the FULL system numbering) to its index in
@@ -1167,9 +1206,26 @@ static inline HYPRE_BigInt
 ml_pdof_to_coarse(const MixedLayout *L, const HYPRE_BigInt *coarse_start,
                   HYPRE_BigInt pgid)
 {
-   HYPRE_Int    owner  = ml_find_block(L->offset, L->nprocs, pgid);
+   HYPRE_Int    owner  = FindBlock(L->offset, L->nprocs, pgid);
    HYPRE_BigInt pstart = L->offset[owner] + L->count_ubot[owner] + L->count_utop[owner];
    return coarse_start[owner] + (pgid - pstart);
+}
+
+static void
+MixedLayoutDestroy(MixedLayout **L_ptr)
+{
+   MixedLayout *L = *L_ptr;
+   if (!L) return;
+   free(L->xstart);
+   free(L->zstart);
+   free(L->dbot_lo);
+   free(L->dtop_lo);
+   free(L->count_ubot);
+   free(L->count_utop);
+   free(L->count_p);
+   free(L->offset);
+   free(L);
+   *L_ptr = NULL;
 }
 
 static int
@@ -1228,6 +1284,7 @@ MixedLayoutCreate(DistMesh *mesh, MixedLayout **L_ptr)
    {
       printf("Error: mixed layout dof count %lld != expected %lld\n", (long long)L->N,
              (long long)expect);
+      MixedLayoutDestroy(&L);
       return 1;
    }
 
@@ -1235,30 +1292,13 @@ MixedLayoutCreate(DistMesh *mesh, MixedLayout **L_ptr)
    return 0;
 }
 
-static void
-MixedLayoutDestroy(MixedLayout **L_ptr)
-{
-   MixedLayout *L = *L_ptr;
-   if (!L) return;
-   free(L->xstart);
-   free(L->zstart);
-   free(L->dbot_lo);
-   free(L->dtop_lo);
-   free(L->count_ubot);
-   free(L->count_utop);
-   free(L->count_p);
-   free(L->offset);
-   free(L);
-   *L_ptr = NULL;
-}
-
 /* Global displacement dof id for node (gx,gy,gz), component comp in {0,1,2}.
    Interface nodes (gy == Jsplit) belong to the bottom block by construction. */
 static HYPRE_BigInt
 ml_udof(const MixedLayout *L, HYPRE_BigInt gx, HYPRE_BigInt gy, HYPRE_BigInt gz, int comp)
 {
-   HYPRE_Int    cx     = ml_find_block(L->xstart, L->Px, gx);
-   HYPRE_Int    cz     = ml_find_block(L->zstart, L->Pz, gz);
+   HYPRE_Int    cx     = FindBlock(L->xstart, L->Px, gx);
+   HYPRE_Int    cz     = FindBlock(L->zstart, L->Pz, gz);
    int          is_top = (gy > L->Jsplit);
    HYPRE_Int    cy;
    HYPRE_BigInt gy_lo, nyslab;
@@ -1290,8 +1330,8 @@ ml_udof(const MixedLayout *L, HYPRE_BigInt gx, HYPRE_BigInt gy, HYPRE_BigInt gz,
 static HYPRE_BigInt
 ml_pdof(const MixedLayout *L, HYPRE_BigInt gx, HYPRE_BigInt gy, HYPRE_BigInt gz)
 {
-   HYPRE_Int    cx = ml_find_block(L->xstart, L->Px, gx);
-   HYPRE_Int    cz = ml_find_block(L->zstart, L->Pz, gz);
+   HYPRE_Int    cx = FindBlock(L->xstart, L->Px, gx);
+   HYPRE_Int    cz = FindBlock(L->zstart, L->Pz, gz);
    HYPRE_Int    cy = (gy == L->Jsplit) ? 0 : ml_owner_top(L, gy);
    HYPRE_BigInt gy_lo, nyslab;
 
@@ -1576,14 +1616,7 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
          {
             HYPRE_Int owner_bc[3];
             for (int d = 0; d < 3; d++)
-            {
-               HYPRE_Int     pd = mesh->pdims[d];
-               HYPRE_BigInt *ps = mesh->pstarts[d];
-               HYPRE_BigInt  cg = ng[a][d];
-               HYPRE_Int     bd = 0;
-               while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
-               owner_bc[d] = bd;
-            }
+               owner_bc[d] = FindBlock(mesh->pstarts[d], mesh->pdims[d], ng[a][d]);
             node_gid[a]        = grid2idx(ng[a], owner_bc, gdims, pstarts);
             dof_gid[3 * a + 0] = 3 * node_gid[a] + 0;
             dof_gid[3 * a + 1] = 3 * node_gid[a] + 1;
@@ -1717,33 +1750,16 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
       HYPRE_Real *vals_arr = (HYPRE_Real *)malloc((size_t)num_rows * sizeof(HYPRE_Real));
       HYPRE_Real *rhs_arr  = (HYPRE_Real *)malloc((size_t)num_rows * sizeof(HYPRE_Real));
 
-      HYPRE_Int idx          = 0;
-      HYPRE_Int num_nodes_gy = (HYPRE_Int)(pstarts[1][p[1] + 1] - pstarts[1][p[1]]);
-      HYPRE_Int num_nodes_gz = (HYPRE_Int)(pstarts[2][p[2] + 1] - pstarts[2][p[2]]);
-      HYPRE_Int total_nodes  = num_nodes_gy * num_nodes_gz;
-
 #ifdef _OPENMP
 #pragma omp parallel for
 #endif
-      for (HYPRE_Int node_idx = 0; node_idx < total_nodes; node_idx++)
+      for (HYPRE_Int node_idx = 0; node_idx < num_nodes; node_idx++)
       {
-         HYPRE_Int    idx_y      = node_idx / num_nodes_gz;
-         HYPRE_Int    idx_z      = node_idx % num_nodes_gz;
-         HYPRE_BigInt gy         = pstarts[1][p[1]] + idx_y;
-         HYPRE_BigInt gz         = pstarts[2][p[2]] + idx_z;
-         HYPRE_BigInt ncoords[3] = {0, gy, gz};
-         HYPRE_Int    owner_bc[3];
-         for (int d = 0; d < 3; d++)
-         {
-            HYPRE_Int     pd = mesh->pdims[d];
-            HYPRE_BigInt *ps = mesh->pstarts[d];
-            HYPRE_BigInt  cg = ncoords[d];
-            HYPRE_Int     bd = 0;
-            while ((bd + 1) < pd && cg >= ps[bd + 1]) bd++;
-            owner_bc[d] = bd;
-         }
-         HYPRE_BigInt n_gid     = grid2idx(ncoords, owner_bc, gdims, pstarts);
-         HYPRE_Int    local_idx = node_idx * 3;
+         /* Every node on this rank's part of the x=0 plane is owned locally */
+         HYPRE_BigInt ncoords[3] = {0, pstarts[1][p[1]] + node_idx / nz_plane,
+                                    pstarts[2][p[2]] + node_idx % nz_plane};
+         HYPRE_BigInt n_gid      = grid2idx(ncoords, p, gdims, pstarts);
+         HYPRE_Int    local_idx  = node_idx * 3;
          for (int c = 0; c < 3; c++)
          {
             HYPRE_BigInt r           = 3 * n_gid + c;
@@ -1754,14 +1770,14 @@ BuildElasticitySystem_Q1Hex(DistMesh *mesh, ElasticParams *params, HYPRE_IJMatri
             ncols_arr[local_idx + c] = 1;
          }
       }
-      idx = num_rows;
-      if (idx > 0)
+      if (num_rows > 0)
       {
          HYPRE_Int max_batch =
-            (params->max_rows_per_call > 0) ? params->max_rows_per_call : idx;
-         for (HYPRE_Int start = 0; start < idx; start += max_batch)
+            (params->max_rows_per_call > 0) ? params->max_rows_per_call : num_rows;
+         for (HYPRE_Int start = 0; start < num_rows; start += max_batch)
          {
-            HYPRE_Int count = (start + max_batch <= idx) ? max_batch : (idx - start);
+            HYPRE_Int count =
+               (start + max_batch <= num_rows) ? max_batch : (num_rows - start);
             HYPRE_IJMatrixSetValues(A, count, &ncols_arr[start], &rows_arr[start],
                                     &cols_arr[start], &vals_arr[start]);
             HYPRE_IJVectorSetValues(b, count, &rows_arr[start], &rhs_arr[start]);
@@ -2606,13 +2622,7 @@ WriteVTKMixedSolution(DistMesh *mesh, ElasticParams *params, HYPRE_Real *mixed_s
             HYPRE_BigInt ng[3] = {gx, gy, gz};
             HYPRE_Int    bc[3];
             for (int d = 0; d < 3; d++)
-            {
-               HYPRE_Int     pd = mesh->pdims[d];
-               HYPRE_BigInt *ps = mesh->pstarts[d];
-               HYPRE_Int     bd = 0;
-               while ((bd + 1) < pd && ng[d] >= ps[bd + 1]) bd++;
-               bc[d] = bd;
-            }
+               bc[d] = FindBlock(mesh->pstarts[d], mesh->pdims[d], ng[d]);
             HYPRE_BigInt nid = grid2idx(ng, bc, gdims, pstarts);
             for (int i = 0; i < 3; i++)
             {
@@ -2658,9 +2668,7 @@ ComputeRigidBodyModes(DistMesh *mesh, ElasticParams *params, HYPRE_Real **rbm_pt
    HYPRE_Int     *p       = &mesh->coords[0];
    HYPRE_Int     *nlocal  = &mesh->nlocal[0];
    HYPRE_BigInt **pstarts = &mesh->pstarts[0];
-   HYPRE_Int     *gdims   = &mesh->gdims[0];
-   (void)gdims; /* Reserved for future use */
-   HYPRE_Real *gsizes = &mesh->gsizes[0];
+   HYPRE_Real    *gsizes  = &mesh->gsizes[0];
 
    const HYPRE_Int    nx  = nlocal[0];
    const HYPRE_Int    ny  = nlocal[1];
@@ -2780,14 +2788,20 @@ main(int argc, char *argv[])
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &num_procs);
 
-   if (ParseArguments(argc, argv, &params, myid, num_procs))
+   int parse = ParseArguments(argc, argv, &params, myid, num_procs);
+   if (parse)
    {
       MPI_Finalize();
-      return 1;
+      return (parse == 2) ? 0 : 1; /* 2: help was printed */
    }
 
    /* Initialize hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
    HYPREDRV_SAFE_CALL(RegisterExamplePreconPresets());
 
    /* Print library info if requested */
@@ -2822,6 +2836,9 @@ main(int argc, char *argv[])
                 "-i instead\n");
       HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
       HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+      HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
       MPI_Finalize();
       return 1;
 #else
@@ -2897,8 +2914,8 @@ main(int argc, char *argv[])
                 params.traction[1], params.traction[2]);
       else printf("Top traction:            none\n");
       printf("Visualization:           %s\n", params.visualize ? "true" : "false");
-      printf("Verbosity level:         0x%x\n", params.verbose);
-      printf("Number of solves:        %d\n", params.nsolve);
+      printf("Verbosity level:         0x%llx\n", (long long)params.verbose);
+      printf("Number of solves:        %lld\n", (long long)params.nsolve);
       printf("=====================================================\n\n");
    }
 
@@ -2924,13 +2941,6 @@ main(int argc, char *argv[])
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
    if (!myid && (params.verbose > 0)) printf(" Done!\n");
-
-#if defined(HYPRE_USING_GPU)
-   if (!myid && (params.verbose > 0)) printf("Migrating linear system to GPU...");
-   HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
-   HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
-   if (!myid && (params.verbose > 0)) printf(" Done!\n");
-#endif
 
    if (use_mixed)
    {
@@ -2974,7 +2984,7 @@ main(int argc, char *argv[])
 
    for (int isolve = 0; isolve < params.nsolve; isolve++)
    {
-      if (!myid) printf("Solve %d/%d...\n", isolve + 1, params.nsolve);
+      if (!myid) printf("Solve %d/%lld...\n", isolve + 1, (long long)params.nsolve);
 
       /* (Optional) Annotate the entire solve iteration */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "Run", isolve));
@@ -3011,6 +3021,9 @@ main(int argc, char *argv[])
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
 
    return 0;
