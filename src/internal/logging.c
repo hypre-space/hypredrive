@@ -341,67 +341,16 @@ const char *
 hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                               size_t default_object_name_size)
 {
-   const char *object_name = NULL;
    if (!hypredrv)
    {
       return NULL;
    }
    if (hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
    {
-      object_name = hypredrv->stats->object_name;
-   }
-   if (!object_name || object_name[0] == '\0') /* GCOVR_EXCL_BR_LINE */
-   {
-      object_name = hypredrv_FormatLogObjectId(
-         hypredrv->runtime_object_id, default_object_name, default_object_name_size);
+      return hypredrv_StatsGetLogObjectName(hypredrv->stats, default_object_name,
+                                            default_object_name_size);
    }
 
-   return object_name;
-}
-
-/*-----------------------------------------------------------------------------
- * Temporarily install a generated log object name; true when one was pushed
- *-----------------------------------------------------------------------------*/
-
-bool
-hypredrv_PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
-                                  size_t default_object_name_size)
-{
-   if (!hypredrv || !hypredrv->stats || !default_object_name ||
-       default_object_name_size == 0 ||
-       hypredrv->stats->object_name[0] != '\0') /* GCOVR_EXCL_BR_LINE */
-   {
-      return false;
-   }
-
-   default_object_name[0]    = '\0';
-   const char *resolved_name = hypredrv_ResolveLogObjectName(
-      hypredrv, default_object_name, default_object_name_size); /* GCOVR_EXCL_BR_LINE */
-   if (!resolved_name || resolved_name[0] == '\0')              /* GCOVR_EXCL_BR_LINE */
-   {
-      return false;
-   }
-
-   hypredrv_StatsSetObjectName(hypredrv->stats, resolved_name);
-   return true;
-}
-
-/*-----------------------------------------------------------------------------
- * Undo hypredrv_PushDefaultLogObjectName, restoring an empty log object name
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_PopDefaultLogObjectName(HYPREDRV_t hypredrv, const char *default_object_name,
-                                 bool pushed_default_name)
-{
-   if (!pushed_default_name || !hypredrv || !hypredrv->stats || !default_object_name)
-   {
-      return;
-   }
-
-   if (!strcmp(hypredrv->stats->object_name,
-               default_object_name)) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_StatsSetObjectName(hypredrv->stats, "");
-   }
+   return hypredrv_FormatLogObjectId(hypredrv->runtime_object_id, default_object_name,
+                                     default_object_name_size);
 }

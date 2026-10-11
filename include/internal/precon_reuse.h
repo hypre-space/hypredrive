@@ -199,6 +199,7 @@ void hypredrv_PreconReuseBuildObservation(HYPREDRV_t, const IntArray *,
 void hypredrv_PreconReuseMarkRebuild(HYPREDRV_t, PreconReuseState *);
 void hypredrv_PreconReuseLogDecision(HYPREDRV_t, int, const PreconReuseDecision *,
                                      const char *);
+void hypredrv_PreconReuseKeepMGRHandles(HYPREDRV_t, int, const char *);
 int  hypredrv_PreconReuseResolveTimestepIndex(const IntArray *, const Stats *, int);
 int  hypredrv_PreconReuseShouldRebuildStatic(const PreconReuse_args *, const IntArray *,
                                              const Stats *, int);

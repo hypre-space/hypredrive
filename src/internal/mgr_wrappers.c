@@ -648,15 +648,7 @@ MGRFRelaxWrapperDestroy(void *wrapper_v)
    wrapper->inner_mgr = NULL;
    if (inner)
    {
-      if (wrapper->nested_args && !was_setup)
-      {
-         hypredrv_MGRDestroyCachedSolvers(wrapper->nested_args, 0);
-      }
-      HYPRE_MGRDestroy(inner);
-      if (wrapper->nested_args && was_setup)
-      {
-         hypredrv_MGRDestroyCachedSolvers(wrapper->nested_args, 1);
-      }
+      hypredrv_MGRDestroyWithCachedSolvers(wrapper->nested_args, inner, was_setup);
    }
 
    /* Match PreconDestroyMGRSolver: the owned point-marker buffer outlives

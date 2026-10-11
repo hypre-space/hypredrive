@@ -7,6 +7,7 @@
 
 #include "internal/krylov.h"
 #include "HYPRE_parcsr_mv.h"
+#include "_hypre_parcsr_mv.h" // for hypre_ParVectorOwnsPartitioning (older hypre)
 #include "internal/bicgstab.h"
 #include "internal/error.h"
 #include "internal/fgmres.h"
@@ -187,7 +188,6 @@ NestedKrylovSetPrecond(solver_t solver_method, HYPRE_Solver solver,
       return;
    }
 
-   /* GCOVR_EXCL_BR_LINE */
    switch (solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:
@@ -243,11 +243,10 @@ NestedKrylovBaseSolverSetup(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
 static HYPRE_Int
 NestedKrylovCreateSetupVector(HYPRE_Matrix A, HYPRE_ParVector *vector_ptr)
 {
-   MPI_Comm      comm         = MPI_COMM_NULL;
-   HYPRE_BigInt  global_rows  = 0;
-   HYPRE_BigInt  global_cols  = 0;
-   HYPRE_BigInt *partitioning = NULL;
-   HYPRE_Int     rc           = 0;
+   MPI_Comm     comm        = MPI_COMM_NULL;
+   HYPRE_BigInt global_rows = 0, global_cols = 0;
+   HYPRE_BigInt row_start = 0, row_end = -1, col_start = 0, col_end = -1;
+   HYPRE_Int    rc = 0;
 
    if (!A || !vector_ptr)
    {
@@ -256,13 +255,24 @@ NestedKrylovCreateSetupVector(HYPRE_Matrix A, HYPRE_ParVector *vector_ptr)
 
    rc |= HYPRE_ParCSRMatrixGetComm((HYPRE_ParCSRMatrix)A, &comm);
    rc |= HYPRE_ParCSRMatrixGetDims((HYPRE_ParCSRMatrix)A, &global_rows, &global_cols);
-   rc |= HYPRE_ParCSRMatrixGetRowPartitioning((HYPRE_ParCSRMatrix)A, &partitioning);
+   rc |= HYPRE_ParCSRMatrixGetLocalRange((HYPRE_ParCSRMatrix)A, &row_start, &row_end,
+                                         &col_start, &col_end);
    if (!rc)
    {
+      /* The vector takes this rank's row range [first, last + 1]. Older hypre
+       * keeps (and later frees) the partitioning array it is given; newer
+       * releases copy the two values. */
+#if defined(hypre_ParVectorOwnsPartitioning)
+      HYPRE_BigInt *partitioning = hypre_CTAlloc(HYPRE_BigInt, 2, HYPRE_MEMORY_HOST);
+#else
+      HYPRE_BigInt  local_partitioning[2];
+      HYPRE_BigInt *partitioning = local_partitioning;
+#endif
+      partitioning[0] = row_start;
+      partitioning[1] = row_end + 1;
       rc |= HYPRE_ParVectorCreate(comm, global_rows, partitioning, vector_ptr);
       rc |= HYPRE_ParVectorInitialize(*vector_ptr);
    }
-   free(partitioning);
 
    if (rc && *vector_ptr)
    {
@@ -294,7 +304,7 @@ NestedKrylovBaseSolverSolve(solver_t solver_method, HYPRE_Solver solver, HYPRE_M
       case SOLVER_BICGSTAB:
          return HYPRE_ParCSRBiCGSTABSolve(solver, (HYPRE_ParCSRMatrix)A,
                                           (HYPRE_ParVector)b, (HYPRE_ParVector)x);
-         /* GCOVR_EXCL_BR_LINE */ /* invalid solver_t without memory corruption */
+         /* invalid solver_t without memory corruption */
       default:
          hypredrv_ErrorCodeSet(ERROR_INVALID_SOLVER);
          hypredrv_ErrorMsgAdd("Nested Krylov solver method not supported");
@@ -387,7 +397,6 @@ hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_n
    {
       NestedKrylovParsePrecon(args, precon_node);
    }
-   /* GCOVR_EXCL_BR_LINE */
    switch (args->solver_method) /* GCOVR_EXCL_BR_LINE */ /* default arm excluded below */
    {
       case SOLVER_PCG:

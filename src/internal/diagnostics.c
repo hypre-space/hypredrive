@@ -35,7 +35,6 @@ hypredrv_SetPendingSolvePathContext(HYPREDRV_t hypredrv)
    {
       return;
    }
-   /* GCOVR_EXCL_BR_LINE */
    if (hypredrv->precon_reuse_timesteps.starts &&
        hypredrv->precon_reuse_timesteps.starts->data) /* GCOVR_EXCL_BR_LINE */
    {

@@ -8,7 +8,6 @@
 #ifndef HYPREDRV_EXECUTION_HEADER
 #define HYPREDRV_EXECUTION_HEADER
 
-#include <stddef.h>
 #include "HYPREDRV.h"
 #include "internal/precon.h"
 
@@ -19,9 +18,5 @@ uint32_t hypredrv_ApplyGlobalRuntimeSettings(HYPREDRV_t hypredrv);
 uint32_t hypredrv_ApplyConfiguredDeviceInitialization(HYPREDRV_t hypredrv);
 void hypredrv_PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj,
                                                           int is_matrix);
-void hypredrv_PrepareExplicitObjectsForConfiguredExecution(HYPREDRV_t   hypredrv,
-                                                           void *const *objects,
-                                                           size_t       num_objects,
-                                                           int          is_matrix);
 
 #endif /* HYPREDRV_EXECUTION_HEADER */

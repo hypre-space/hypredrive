@@ -275,6 +275,105 @@ test_init_guess_ones_reaches_solver(void)
    free_csr(indptr, cols, data, rhs);
 }
 
+/*-----------------------------------------------------------------------------
+ * test_init_guess_from_get_solution_handle
+ *
+ * Warm start by passing the handle from GetSolution back as the initial
+ * guess. SetInitialGuess must take over the owned working solution instead
+ * of destroying it while still referenced as x0 (use-after-free). The
+ * re-solve then starts from the converged solution: zero iterations.
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_init_guess_from_get_solution_handle(void)
+{
+   const int     n      = 32;
+   HYPRE_BigInt *indptr = NULL;
+   HYPRE_BigInt *cols   = NULL;
+   HYPRE_Real   *data   = NULL;
+   HYPRE_Real   *rhs    = NULL;
+   build_laplacian_1d_csr(n, 0, &indptr, &cols, &data, &rhs);
+
+   HYPREDRV_t obj = create_lib_obj(kPreviousYAML);
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, (HYPRE_BigInt)(n - 1), indptr,
+                                                   cols, data),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, (HYPRE_BigInt)(n - 1), rhs),
+             ERROR_NONE);
+   ASSERT_GT(solve_cycle(obj), 0);
+
+   HYPRE_Vector x = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolution(obj, &x), ERROR_NONE);
+   ASSERT_NOT_NULL(x);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, x), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+
+   int iters = -1;
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetNumIter(obj, &iters), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   ASSERT_EQ(iters, 0);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+
+   free_csr(indptr, cols, data, rhs);
+}
+
+/*-----------------------------------------------------------------------------
+ * test_set_solution_from_get_solution_handle
+ *
+ * Passing the handle from GetSolution back to SetSolution must not destroy
+ * the owned working solution (use-after-free on the next solve).
+ *-----------------------------------------------------------------------------*/
+
+static void
+test_set_solution_from_get_solution_handle(void)
+{
+   const int     n      = 32;
+   HYPRE_BigInt *indptr = NULL;
+   HYPRE_BigInt *cols   = NULL;
+   HYPRE_Real   *data   = NULL;
+   HYPRE_Real   *rhs    = NULL;
+   build_laplacian_1d_csr(n, 1, &indptr, &cols, &data, &rhs);
+
+   HYPREDRV_t obj = create_lib_obj(kOnesYAML);
+
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, (HYPRE_BigInt)(n - 1), indptr,
+                                                   cols, data),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, (HYPRE_BigInt)(n - 1), rhs),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+
+   HYPRE_Vector x = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolution(obj, &x), ERROR_NONE);
+   ASSERT_NOT_NULL(x);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetSolution(obj, x), ERROR_NONE);
+
+   HYPRE_Vector x_after = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolution(obj, &x_after), ERROR_NONE);
+   ASSERT_TRUE(x_after == x);
+
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+
+   double sol_norm = 0.0;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionNorm(obj, "l2", &sol_norm), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(sol_norm, sqrt((double)n), 1e-6);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+
+   free_csr(indptr, cols, data, rhs);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -283,6 +382,8 @@ main(int argc, char **argv)
    RUN_TEST(test_init_guess_previous_reuses_solution);
    RUN_TEST(test_init_guess_previous_first_solve_zeros_fallback);
    RUN_TEST(test_init_guess_ones_reaches_solver);
+   RUN_TEST(test_init_guess_from_get_solution_handle);
+   RUN_TEST(test_set_solution_from_get_solution_handle);
 
    MPI_Finalize();
    return 0;

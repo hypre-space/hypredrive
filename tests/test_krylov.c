@@ -52,7 +52,7 @@ configure_nested_solver(NestedKrylov_args *nk, solver_t method)
    }
 }
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 configure_nested_matched_schur(NestedKrylov_args *nk, solver_t method)
 {
    configure_nested_solver(nk, method);
@@ -330,6 +330,32 @@ run_nested_lifecycle_precon_schwarz(solver_t method)
 }
 #endif
 
+/* MGR may set up a nested solver without vectors; the work vectors created for
+ * that must follow the matrix row range and be released cleanly. */
+static void
+test_nested_krylov_setup_without_vectors(void)
+{
+   NestedKrylov_args nk;
+   configure_nested_solver(&nk, SOLVER_GMRES);
+
+   HYPRE_Solver inner = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, &inner);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(inner);
+
+   HYPRE_IJMatrix ij_A  = create_test_ijmatrix_1x1(4.0);
+   void          *par_A = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &par_A), 0);
+
+   ASSERT_EQ(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A, NULL, NULL),
+             0);
+   ASSERT_TRUE(nk.is_setup);
+
+   hypredrv_NestedKrylovDestroy(&nk);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(ij_A), 0);
+}
+
 static void
 test_nested_krylov_solver_matrix_no_precon(void)
 {
@@ -457,6 +483,7 @@ main(int argc, char **argv)
 
    RUN_TEST(test_nested_krylov_null_and_invalid_paths);
    RUN_TEST(test_nested_krylov_solver_matrix_no_precon);
+   RUN_TEST(test_nested_krylov_setup_without_vectors);
    RUN_TEST(test_nested_krylov_solver_matrix_with_amg_precon);
    RUN_TEST(test_nested_krylov_precon_ilu_matrix);
    RUN_TEST(test_nested_krylov_precon_fsai_matrix);

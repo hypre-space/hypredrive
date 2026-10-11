@@ -371,7 +371,8 @@ hypredrv_AMGaggGetValidValues(const char *key)
 StrIntMapArray
 hypredrv_AMGrlxGetValidValues(const char *key)
 {
-   if (!strcmp(key, "down_type"))
+   /* Pre- and post-smoothers accept the same relaxation types. */
+   if (!strcmp(key, "down_type") || !strcmp(key, "up_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",  0},
                                 {"forward-hgs",    3},
@@ -389,27 +390,6 @@ hypredrv_AMGrlxGetValidValues(const char *key)
                                 {"chebyshev",     16},
                                 {"l1-jacobi",     18},
                                 {"l1sym-hgs",     89},};
-
-      return STR_INT_MAP_ARRAY_CREATE(map);
-   }
-   if (!strcmp(key, "up_type"))
-   {
-      static StrIntMap map[] = {{"jacobi_non_mv",   0},
-                                {"forward-hgs",     3},
-                                {"backward-hgs",    4},
-                                {"chaotic-hgs",     5},
-                                {"hsgs",            6},
-                                {"jacobi",          7},
-                                {"l1-hsgs",         8},
-                                {"forward-solve",  10},
-                                {"2gs-it1",        11},
-                                {"2gs-it2",        12},
-                                {"forward-hl1gs",  13},
-                                {"backward-hl1gs", 14},
-                                {"cg",             15},
-                                {"chebyshev",      16},
-                                {"l1-jacobi",      18},
-                                {"l1sym-hgs",      89},};
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -621,9 +601,6 @@ AMGCreateRBMsFromHost(AMG_args *args, MPI_Comm comm, HYPRE_BigInt global_size,
 void
 hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
 {
-   HYPRE_BigInt jlower = 0, jupper = 0;
-   HYPRE_Int    num_entries = 0;
-
    if (!args)
    {
       return;
@@ -649,8 +626,9 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    }
 
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   HYPRE_BigInt jlower = 0, jupper = 0;
    HYPRE_IJVectorGetLocalRange(vec_nn, &jlower, &jupper);
-   num_entries                  = (HYPRE_Int)(jupper - jlower + 1);
+   HYPRE_Int      num_entries   = (HYPRE_Int)(jupper - jlower + 1);
    HYPRE_Int      vector_stride = 0, index_stride = 0;
    HYPRE_Complex *host_values =
       AMGNearNullDataToHost(vec_nn, num_entries, &vector_stride, &index_stride);
@@ -697,7 +675,7 @@ AMGSelectedDofsHash(const int *selected_dofs, size_t num_selected_dofs)
 
 /* Rejects unusable inputs and short-circuits when the cached projection is still
  * valid on every rank. Returns 0 to stop, 1 to rebuild the modes. */
-static int
+static HYPREDRV_MAYBE_UNUSED int
 AMGProjectedRBMsShouldRebuild(AMG_args *args, HYPRE_IJVector vec_nn,
                               const IntArray *dofmap, uint64_t input_generation,
                               const int *selected_dofs, size_t num_selected_dofs,
@@ -1133,6 +1111,8 @@ AMGApplyNodalInterpolation(HYPRE_Solver precon, const AMG_args *args)
    HYPRE_BoomerAMGSetInterpVecAbsQTrunc(precon, args->coarsening.interp_vec_abs_q_trunc);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    HYPRE_BoomerAMGSetSmoothInterpVectors(precon, smooth);
+#else
+   (void)smooth;
 #endif
    HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, (HYPRE_ParVector *)args->rbms);
 }
@@ -1197,16 +1177,18 @@ hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetILUMaxRowNnz(precon, args->smoother.ilu.max_row_nnz);
    HYPRE_BoomerAMGSetILUMaxIter(precon, args->smoother.num_sweeps);
 #endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   HYPRE_BoomerAMGSetFSAIMaxSteps(precon, args->smoother.fsai.max_steps);
+   HYPRE_BoomerAMGSetFSAIMaxStepSize(precon, args->smoother.fsai.max_step_size);
+   HYPRE_BoomerAMGSetFSAIEigMaxIters(precon, args->smoother.fsai.eig_max_iters);
+   HYPRE_BoomerAMGSetFSAIKapTolerance(precon, args->smoother.fsai.kap_tolerance);
+#endif
 #if HYPRE_CHECK_MIN_VERSION(23000, 0)
    HYPRE_BoomerAMGSetFSAIAlgoType(precon, args->smoother.fsai.algo_type);
    HYPRE_BoomerAMGSetFSAILocalSolveType(precon, args->smoother.fsai.ls_type);
-   HYPRE_BoomerAMGSetFSAIMaxSteps(precon, args->smoother.fsai.max_steps);
-   HYPRE_BoomerAMGSetFSAIMaxStepSize(precon, args->smoother.fsai.max_step_size);
    HYPRE_BoomerAMGSetFSAIMaxNnzRow(precon, args->smoother.fsai.max_nnz_row);
    HYPRE_BoomerAMGSetFSAINumLevels(precon, args->smoother.fsai.num_levels);
    HYPRE_BoomerAMGSetFSAIThreshold(precon, args->smoother.fsai.threshold);
-   HYPRE_BoomerAMGSetFSAIEigMaxIters(precon, args->smoother.fsai.eig_max_iters);
-   HYPRE_BoomerAMGSetFSAIKapTolerance(precon, args->smoother.fsai.kap_tolerance);
 #endif
    HYPRE_BoomerAMGSetNumFunctions(precon, args->coarsening.num_functions);
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)

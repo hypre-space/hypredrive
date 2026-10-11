@@ -188,6 +188,16 @@ struct MGR_args_struct
    HYPRE_Int   *point_marker_data;
 };
 
+/* Number of fine levels in use (entries of MGR_args::level). Returns 0 for an
+ * out-of-range num_levels so loops never index past MAX_MGR_LEVELS - 1. */
+static inline int
+hypredrv_MGRNumFineLevels(const MGR_args *args)
+{
+   return (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
+             ? (int)args->num_levels - 1
+             : 0;
+}
+
 /*--------------------------------------------------------------------------
  * Public prototypes
  *--------------------------------------------------------------------------*/
@@ -202,8 +212,6 @@ int  hypredrv_MGRValidateOuterSolver(const MGR_args *, int, const char *);
 void hypredrv_MGRSetCoarseSchur(MGR_args *, const HYPRE_IJMatrix *);
 void hypredrv_MGRCreate(MGR_args *, HYPRE_Solver *, const struct Stats_struct *, int);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
-int  hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *, const IntArray *,
-                                               const struct Stats_struct *, int);
 void hypredrv_MGRRefreshComponentsForSetup(MGR_args *, HYPRE_Solver, const IntArray *,
                                            const struct Stats_struct *, int);
 void hypredrv_MGRSelectCachedSolversToKeep(MGR_args *, const IntArray *,
@@ -211,6 +219,7 @@ void hypredrv_MGRSelectCachedSolversToKeep(MGR_args *, const IntArray *,
 void hypredrv_MGRCountCachedSolvers(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRCountKeepFlags(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRDestroyCachedSolvers(MGR_args *, int);
+void hypredrv_MGRDestroyWithCachedSolvers(MGR_args *, HYPRE_Solver, int);
 void hypredrv_MGRForgetCachedSolvers(MGR_args *);
 void hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
 int  hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);

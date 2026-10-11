@@ -14,7 +14,7 @@
 #include "test_helpers.h"
 
 static HYPREDRV_t
-create_distributed_test_object(int scaling_enabled)
+create_distributed_test_object(const char *scaling_type)
 {
    int rank = 0;
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -22,6 +22,13 @@ create_distributed_test_object(int scaling_enabled)
    HYPREDRV_t obj = NULL;
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char scaling_block[96] = "";
+   if (scaling_type)
+   {
+      snprintf(scaling_block, sizeof(scaling_block),
+               "  scaling:\n    enabled: 1\n    type: %s\n", scaling_type);
+   }
 
    char yaml[512];
    snprintf(yaml, sizeof(yaml),
@@ -37,7 +44,7 @@ create_distributed_test_object(int scaling_enabled)
             "preconditioner:\n"
             "  amg:\n"
             "    print_level: 0\n",
-            scaling_enabled ? "  scaling:\n    enabled: 1\n    type: rhs_l2\n" : "");
+            scaling_block);
    char *argv[] = {yaml};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
 
@@ -97,7 +104,7 @@ assert_local_system_restored(HYPREDRV_t obj)
 static void
 test_PreconSetup_synchronizes_rank_local_hypre_error(void)
 {
-   HYPREDRV_t obj = create_distributed_test_object(0);
+   HYPREDRV_t obj = create_distributed_test_object(NULL);
    ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
 
    inject_rank_local_hypre_error(1);
@@ -113,7 +120,7 @@ test_PreconSetup_synchronizes_rank_local_hypre_error(void)
 static void
 test_LinearSolverSetup_synchronizes_rank_local_hypre_error(void)
 {
-   HYPREDRV_t obj = create_distributed_test_object(0);
+   HYPREDRV_t obj = create_distributed_test_object(NULL);
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
 
    inject_rank_local_hypre_error(0);
@@ -129,7 +136,7 @@ test_LinearSolverSetup_synchronizes_rank_local_hypre_error(void)
 static void
 test_reused_precon_remains_setup_after_solver_setup_error(void)
 {
-   HYPREDRV_t obj = create_distributed_test_object(0);
+   HYPREDRV_t obj = create_distributed_test_object(NULL);
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
 
@@ -154,7 +161,7 @@ test_reused_precon_remains_setup_after_solver_setup_error(void)
 static void
 test_scaled_setup_restores_system_after_rank_local_hypre_error(void)
 {
-   HYPREDRV_t obj = create_distributed_test_object(1);
+   HYPREDRV_t obj = create_distributed_test_object("rhs_l2");
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
 
    inject_rank_local_hypre_error(0);
@@ -174,7 +181,7 @@ test_scaled_setup_restores_system_after_rank_local_hypre_error(void)
 static void
 test_scaled_solve_restores_system_after_rank_local_hypre_error(void)
 {
-   HYPREDRV_t obj = create_distributed_test_object(1);
+   HYPREDRV_t obj = create_distributed_test_object("rhs_l2");
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
 
@@ -186,6 +193,27 @@ test_scaled_solve_restores_system_after_rank_local_hypre_error(void)
    assert_collective_hypre_failure(code);
    ASSERT_FALSE(state->scaling_ctx->is_applied);
    assert_local_system_restored(obj);
+
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+}
+
+/* A dofmap that is invalid on one rank only must fail setup on every rank
+ * instead of leaving the others blocked in the scaling collectives. */
+static void
+test_dofmap_scaling_rank_local_size_mismatch_fails_collectively(void)
+{
+   int rank = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+   HYPREDRV_t obj     = create_distributed_test_object("dofmap_mag");
+   int        dofs[2] = {0, 0};
+   ASSERT_EQ(HYPREDRV_LinearSystemSetDofmap(obj, (rank == 1) ? 2 : 1, dofs), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+
+   uint32_t code = HYPREDRV_LinearSolverSetup(obj);
+   ASSERT_TRUE(code != ERROR_NONE);
 
    hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
@@ -209,6 +237,7 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
       RUN_TEST(test_scaled_setup_restores_system_after_rank_local_hypre_error);
       RUN_TEST(test_scaled_solve_restores_system_after_rank_local_hypre_error);
+      RUN_TEST(test_dofmap_scaling_rank_local_size_mismatch_fails_collectively);
 #endif
    }
 

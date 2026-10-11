@@ -36,54 +36,6 @@ PreconSetupNoop(void *solver, void *A, void *b, void *x)
    return 0;
 }
 
-static MPI_Comm
-SolverCommFromMatrix(HYPRE_IJMatrix mat)
-{
-   if (!mat)
-   {
-      return MPI_COMM_NULL;
-   }
-
-   void *obj = NULL;
-   HYPRE_IJMatrixGetObject(mat, &obj);
-   /* GCOVR_EXCL_BR_START */
-   if (!obj) /* GCOVR_EXCL_BR_STOP */
-   {
-      return MPI_COMM_NULL;
-   }
-
-   return hypre_ParCSRMatrixComm((hypre_ParCSRMatrix *)obj);
-}
-
-static MPI_Comm
-SolverCommFromVector(HYPRE_IJVector vec)
-{
-   if (!vec)
-   {
-      return MPI_COMM_NULL;
-   }
-
-   return hypre_IJVectorComm((hypre_IJVector *)vec);
-}
-
-static MPI_Comm
-SolverCommResolve(HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_IJVector x)
-{
-   MPI_Comm comm = SolverCommFromMatrix(A);
-   if (comm != MPI_COMM_NULL)
-   {
-      return comm;
-   }
-
-   comm = SolverCommFromVector(b);
-   if (comm != MPI_COMM_NULL)
-   {
-      return comm;
-   }
-
-   return SolverCommFromVector(x);
-}
-
 static int
 SolverLinearSystemID(const Stats *stats)
 {
@@ -459,7 +411,7 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
                               HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats,
                               int skip_precon_setup)
 {
-   MPI_Comm    log_comm = SolverCommResolve(M, b, x);
+   MPI_Comm    log_comm = hypredrv_IJSystemComm(M, NULL, b, x);
    int         ls_id    = SolverLinearSystemID(stats);
    int         log_rank = -1;
    char        log_name_buf[32];
@@ -562,7 +514,7 @@ HYPRE_Int
 hypredrv_SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
                          HYPRE_IJVector b, HYPRE_IJVector x)
 {
-   MPI_Comm log_comm = SolverCommResolve(A, b, x);
+   MPI_Comm log_comm = hypredrv_IJSystemComm(A, NULL, b, x);
    int      ls_id    = 0;
    int      log_rank = -1;
    /* GCOVR_EXCL_BR_START */
@@ -627,7 +579,7 @@ void
 hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix A,
                      HYPRE_IJVector b, HYPRE_IJVector x, Stats *stats)
 {
-   MPI_Comm    log_comm = SolverCommResolve(A, b, x);
+   MPI_Comm    log_comm = hypredrv_IJSystemComm(A, NULL, b, x);
    int         ls_id    = SolverLinearSystemID(stats);
    int         log_rank = -1;
    char        log_name_buf[32];
@@ -659,11 +611,12 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
       return;
    }
 
-   HYPRE_Int     iters  = 0;
-   HYPRE_Complex b_norm = NAN, r_norm = NAN, r0_norm = NAN;
+   HYPRE_Int      iters  = 0;
+   HYPRE_Complex  b_norm = NAN, r_norm = NAN, r0_norm = NAN;
+   HYPRE_IJVector vec_r = NULL; /* residual work vector shared by both norms */
 
    /* Compute initial residual norm (absolute L2) before timing the solve */
-   hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r0_norm);
+   hypredrv_LinearSystemComputeResidualNormWork(A, b, x, "L2", &vec_r, &r0_norm);
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
    hypredrv_StatsInitialResNormSet(stats, r0_norm);
@@ -672,6 +625,10 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 
    if (iters < 0)
    {
+      if (vec_r)
+      {
+         HYPRE_IJVectorDestroy(vec_r);
+      }
       hypredrv_StatsIterSet(stats, 0);
       hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
       HYPREDRV_LOGF(2, log_rank, log_object_name, ls_id,
@@ -684,7 +641,11 @@ hypredrv_SolverApply(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMatrix
 
    /* Compute the real relative residual norm. Note this is not timed */
    hypredrv_LinearSystemComputeVectorNorm(b, "L2", &b_norm);
-   hypredrv_LinearSystemComputeResidualNorm(A, b, x, "L2", &r_norm);
+   hypredrv_LinearSystemComputeResidualNormWork(A, b, x, "L2", &vec_r, &r_norm);
+   if (vec_r)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+   }
    b_norm = (b_norm > 0.0) ? b_norm : 1.0;
 
    hypredrv_StatsRelativeResNormSet(stats, r_norm / b_norm);

@@ -896,8 +896,7 @@ hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char 
 
    /* No variadic args - use name as-is (do not interpret '%' in name) */
    char formatted_name[1024];
-   strncpy(formatted_name, name, sizeof(formatted_name) - 1);
-   formatted_name[sizeof(formatted_name) - 1] = '\0';
+   snprintf(formatted_name, sizeof(formatted_name), "%s", name);
 
    AnnotateFormatted(stats, action, formatted_name);
 }
@@ -979,9 +978,6 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
       return;
    }
 
-   /* Use name as-is (caller should format before calling) */
-   const char *formatted_name = name;
-
    /* Check if level is already active */
    if (stats->level_stack[level].name != NULL)
    {
@@ -992,12 +988,12 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    }
 
    /* Push onto level stack - allocate memory for name */
-   size_t name_len                = strlen(formatted_name) + 1;
+   size_t name_len                = strlen(name) + 1;
    stats->level_stack[level].name = (const char *)malloc(name_len);
    /* GCOVR_EXCL_BR_START */
    if (stats->level_stack[level].name) /* GCOVR_EXCL_BR_STOP */
    {
-      memcpy((void *)stats->level_stack[level].name, formatted_name, name_len);
+      memcpy((void *)stats->level_stack[level].name, name, name_len);
    }
    stats->level_stack[level].level      = level;
    stats->level_stack[level].start_time = MPI_Wtime();
@@ -1084,9 +1080,6 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
       return;
    }
 
-   /* Use name as-is (caller should format before calling) */
-   const char *formatted_name = name;
-
    /* If no annotation is active at this level, treat the end as a no-op. This
     * happens when the caller begins tracking before any HYPREDRV object exists,
     * then ends it after the first solver object has been created. */
@@ -1096,11 +1089,11 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    }
 
    /* Check if level matches */
-   if (strcmp(stats->level_stack[level].name, formatted_name) != 0)
+   if (strcmp(stats->level_stack[level].name, name) != 0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
-                           stats->level_stack[level].name, formatted_name);
+                           stats->level_stack[level].name, name);
       return;
    }
 

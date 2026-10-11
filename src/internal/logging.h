@@ -12,12 +12,7 @@
 #include <stddef.h>
 #include "HYPREDRV.h"
 
-#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
-#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index) \
-   __attribute__((format(printf, _format_index, _argument_index)))
-#else
-#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index)
-#endif
+#include "internal/error.h" /* HYPREDRV_PRINTF_FORMAT */
 
 enum
 {
@@ -42,14 +37,9 @@ void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls
                            const char *header, const char *text);
 const char *hypredrv_FormatLogObjectId(int object_id, char *buffer, size_t buffer_size);
 
-/* The supplied name buffer must outlive use of the returned name or a pushed scope. */
+/* The supplied name buffer must outlive use of the returned name. */
 const char *hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
                                           size_t default_object_name_size);
-bool hypredrv_PushDefaultLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
-                                       size_t default_object_name_size);
-void hypredrv_PopDefaultLogObjectName(HYPREDRV_t  hypredrv,
-                                      const char *default_object_name,
-                                      bool        pushed_default_name);
 
 #define HYPREDRV_LOGF(_level, _mypid, _object_name, _ls_id, _fmt, ...)       \
    do                                                                        \
