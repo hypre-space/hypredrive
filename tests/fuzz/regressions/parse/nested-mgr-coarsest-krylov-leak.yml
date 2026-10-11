@@ -1,0 +1,10 @@
+preconditioner
+  mgr
+    level
+      0
+        f_relaxation
+          gmres
+            preconditioner
+              mgr:
+                coarsest_level
+                  1

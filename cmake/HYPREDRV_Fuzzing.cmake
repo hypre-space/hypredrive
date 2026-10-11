@@ -57,6 +57,9 @@ if(HYPREDRV_ENABLE_FUZZING)
         if(NOT CMAKE_C_COMPILER_ID MATCHES "Clang")
             message(FATAL_ERROR "HYPREDRV_FUZZ_ENGINE=libfuzzer requires Clang")
         endif()
+        # Instrument every target, the library included, so libFuzzer sees the
+        # coverage of the code under test and not only of the harness.
+        add_compile_options(-fsanitize=fuzzer-no-link)
     elseif(HYPREDRV_FUZZ_ENGINE STREQUAL "afl")
         get_filename_component(_hypredrv_fuzz_cc "${CMAKE_C_COMPILER}" NAME)
         if(NOT _hypredrv_fuzz_cc MATCHES "^afl-clang-(fast|lto)(\\+\\+)?$")
@@ -171,7 +174,6 @@ function(hypredrv_add_fuzz_target target_name mode)
 
     if(FUZZ_ENGINE STREQUAL "libfuzzer")
         target_compile_definitions(${target_name} PRIVATE HYPREDRV_FUZZ_ENGINE_LIBFUZZER=1)
-        target_compile_options(${target_name} PRIVATE -fsanitize=fuzzer-no-link)
         target_link_options(${target_name} PRIVATE -fsanitize=fuzzer)
     elseif(FUZZ_ENGINE STREQUAL "afl")
         target_compile_definitions(${target_name} PRIVATE HYPREDRV_FUZZ_ENGINE_AFL=1)
