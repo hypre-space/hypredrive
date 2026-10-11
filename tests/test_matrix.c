@@ -840,11 +840,171 @@ test_hypredrv_IJMatrixReadMultipartBinary_device_invalid_index_dtype_zero_nnz(vo
    cleanup_temp_files();
 }
 
+typedef struct
+{
+   int changed_field;
+   int change_on_values;
+   int fail_want;
+   int invalid_metadata;
+   int change_column;
+} MatrixSourceFixture;
+
+static int
+load_matrix_source_fixture(void *ctx, uint32_t p, int want,
+                           hypredrv_IJMatrixMemPart *part)
+{
+   MatrixSourceFixture *fixture = (MatrixSourceFixture *)ctx;
+   part->nrows = part->nnz = 1;
+   part->index_size        = sizeof(HYPRE_BigInt);
+   part->value_size        = sizeof(double);
+   part->label             = "memory matrix part";
+   if (fixture->fail_want == want)
+   {
+      return 0;
+   }
+   if (fixture->invalid_metadata == 1)
+   {
+      part->nnz = UINT64_MAX;
+   }
+   else if (fixture->invalid_metadata == 2)
+   {
+      part->nrows = UINT64_MAX;
+   }
+   if (want && (!fixture->change_on_values || (want & HYPREDRV_PART_VALUES)))
+   {
+      switch (fixture->changed_field)
+      {
+         case 1:
+            part->nnz++;
+            break;
+         case 2:
+            part->nrows++;
+            break;
+         case 3:
+            part->index_size = part->index_size == 4 ? 8 : 4;
+            break;
+         case 4:
+            part->value_size = sizeof(float);
+            break;
+      }
+   }
+   if (want & HYPREDRV_PART_INDICES)
+   {
+      HYPRE_BigInt row = (HYPRE_BigInt)p;
+      HYPRE_BigInt col =
+         fixture->change_column && (want & HYPREDRV_PART_VALUES) ? 2 : (HYPRE_BigInt)p;
+      part->rows = malloc(sizeof(row));
+      part->cols = malloc(sizeof(col));
+      ASSERT_NOT_NULL(part->rows);
+      ASSERT_NOT_NULL(part->cols);
+      memcpy(part->rows, &row, sizeof(row));
+      memcpy(part->cols, &col, sizeof(col));
+   }
+   if (want & HYPREDRV_PART_VALUES)
+   {
+      double value = 10.0 + p;
+      part->vals   = malloc(sizeof(value));
+      ASSERT_NOT_NULL(part->vals);
+      memcpy(part->vals, &value, sizeof(value));
+   }
+   return 1;
+}
+
+static void
+test_matrix_source_rejects_changed_parts(void)
+{
+   MatrixSourceFixture         fixture = {0};
+   hypredrv_IJMatrixPartSource source  = {&fixture, 1, load_matrix_source_fixture};
+   HYPRE_IJMatrix              mat     = NULL;
+   fixture.fail_want                   = -1;
+
+   /* Metadata must remain consistent in both the indices and cached values passes. */
+   for (int values_pass = 0; values_pass < 2; values_pass++)
+   {
+      fixture.change_on_values = values_pass;
+      for (int field = 1; field <= 4; field++)
+      {
+         fixture.changed_field = field;
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST,
+                                          &mat);
+         ASSERT_NULL(mat);
+         ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+      }
+   }
+   fixture.changed_field = 0;
+   for (int invalid = 1; invalid <= 2; invalid++)
+   {
+      fixture.invalid_metadata = invalid;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &mat);
+      ASSERT_NULL(mat);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   }
+   fixture.invalid_metadata = 0;
+   for (int want = 0; want <= HYPREDRV_PART_VALUES; want++)
+   {
+      fixture.fail_want = want;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &mat);
+      ASSERT_NULL(mat);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   }
+   fixture.fail_want     = -1;
+   fixture.change_column = 1;
+   source.nparts         = 2;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &mat);
+   ASSERT_NULL(mat);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+}
+
+static void
+test_matrix_source_values_and_communicator(void)
+{
+   MatrixSourceFixture         fixture = {0};
+   hypredrv_IJMatrixPartSource source  = {&fixture, 2, load_matrix_source_fixture};
+   HYPRE_IJMatrix              mat     = NULL;
+   HYPRE_BigInt                rows[2] = {0, 1}, cols[2] = {0, 1};
+   HYPRE_Int                   ncols[2]    = {1, 1};
+   HYPRE_Complex               vals[2]     = {0};
+   HYPRE_MemoryLocation        locations[] = {
+      HYPRE_MEMORY_HOST,
+#ifndef HYPRE_USING_GPU
+      HYPRE_MEMORY_DEVICE,
+#endif
+   };
+   fixture.fail_want = -1;
+   ASSERT_TRUE(hypredrv_IJMatrixComm(NULL) == MPI_COMM_NULL);
+   for (size_t i = 0; i < sizeof(locations) / sizeof(locations[0]); i++)
+   {
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, locations[i], &mat);
+      ASSERT_NOT_NULL(mat);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_TRUE(hypredrv_IJMatrixComm(mat) == MPI_COMM_SELF);
+      ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 2, ncols, rows, cols, vals), 0);
+      ASSERT_EQ_DOUBLE((double)vals[0], 10.0, 1.0e-12);
+      ASSERT_EQ_DOUBLE((double)vals[1], 11.0, 1.0e-12);
+      HYPRE_IJMatrixDestroy(mat);
+      mat = NULL;
+   }
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 0, 0, 0, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_TRUE(hypredrv_IJMatrixComm(mat) == MPI_COMM_NULL);
+   HYPRE_IJMatrixDestroy(mat);
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
    TEST_HYPRE_INIT();
+
+   RUN_TEST(test_matrix_source_rejects_changed_parts);
+   RUN_TEST(test_matrix_source_values_and_communicator);
 
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_success);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_missing_file);

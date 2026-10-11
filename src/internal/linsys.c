@@ -1479,6 +1479,27 @@ LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
       }                                                                           \
    } while (0)
 
+/* Counts one CSR row's entries in the local diagonal and off-diagonal blocks. */
+static void
+LinearSystemCSRCountRowSparsity(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
+                                HYPRE_BigInt entry_begin, HYPRE_BigInt entry_end,
+                                const HYPRE_BigInt *col_indices, HYPRE_Int *diag_size,
+                                HYPRE_Int *offd_size)
+{
+   for (HYPRE_BigInt k = entry_begin; k < entry_end; k++)
+   {
+      HYPRE_BigInt col = col_indices[k];
+      if (col >= row_start && col <= row_end)
+      {
+         (*diag_size)++;
+      }
+      else
+      {
+         (*offd_size)++;
+      }
+   }
+}
+
 uint32_t
 hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         HYPRE_MemoryLocation memory_location,
@@ -1562,17 +1583,10 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       }
       ncols_per_row[i] = (HYPRE_Int)row_nnz;
       row_ids[i]       = row_start + (HYPRE_BigInt)i;
-      for (HYPRE_BigInt k = indptr[i]; host && k < indptr[i + 1]; k++)
+      if (host)
       {
-         HYPRE_BigInt col = col_indices[k];
-         if (col >= row_start && col <= row_end)
-         {
-            diag_sizes[i]++;
-         }
-         else
-         {
-            offd_sizes[i]++;
-         }
+         LinearSystemCSRCountRowSparsity(row_start, row_end, indptr[i], indptr[i + 1],
+                                         col_indices, &diag_sizes[i], &offd_sizes[i]);
       }
    }
    if (host)

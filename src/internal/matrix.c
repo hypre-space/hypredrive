@@ -347,73 +347,60 @@ IJMatrixLoadPart(const hypredrv_IJMatrixPartSource *src, uint32_t p, int want,
    return 1;
 }
 
-void
-hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSource *src,
-                                 HYPRE_MemoryLocation memory_location,
-                                 HYPRE_IJMatrix      *mat_ptr)
+typedef struct
 {
-   const uint32_t            nparts    = src->nparts;
-   hypredrv_IJMatrixMemPart *meta      = NULL;
-   hypredrv_IJMatrixMemPart  cached    = {0};
-   uint64_t                  nrows_sum = 0, nrows = 0, nrows_offset = 0, nnz_max = 0;
-   HYPRE_BigInt              ilower = 0, iupper = 0;
-   HYPRE_IJMatrix            mat    = NULL;
-   HYPRE_Int                *dsizes = NULL, *osizes = NULL;
-   const int                 host   = (memory_location == HYPRE_MEMORY_HOST);
-   HYPRE_BigInt             *d_rows = NULL, *d_cols = NULL;
-   HYPRE_Complex            *d_vals = NULL;
+   hypredrv_IJMatrixMemPart *meta;
+   hypredrv_IJMatrixMemPart  cached;
+   uint64_t                  nrows_sum, nrows, nnz_max;
+   HYPRE_BigInt              ilower, iupper;
+   HYPRE_IJMatrix            mat;
+   HYPRE_Int                *dsizes, *osizes;
+   HYPRE_BigInt             *d_rows, *d_cols;
+   HYPRE_Complex            *d_vals;
+   HYPRE_MemoryLocation      memory_location;
+   int                       host;
+} IJMatrixSourceBuild;
 
-   *mat_ptr = NULL;
-#ifndef HYPRE_USING_GPU
-   (void)d_rows;
-   (void)d_cols;
-   (void)d_vals;
-#endif
-
-   /* 1) Metadata: validate every part and size the local row range. */
-   meta = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u, sizeof(*meta));
-   if (!meta) /* GCOVR_EXCL_BR_LINE */
+static void
+IJMatrixSourceScanMetadata(const hypredrv_IJMatrixPartSource *src,
+                           IJMatrixSourceBuild               *build)
+{
+   const uint32_t nparts = src->nparts;
+   for (uint32_t p = 0; build->meta && p < nparts && !hypredrv_ErrorCodeActive(); p++)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                     /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate matrix part list"); /* GCOVR_EXCL_LINE */
-   }
-   for (uint32_t p = 0; meta && p < nparts && !hypredrv_ErrorCodeActive(); p++)
-   {
-      if (!IJMatrixSourceLoad(src, p, 0, &meta[p]))
+      if (!IJMatrixSourceLoad(src, p, 0, &build->meta[p]))
       {
          break;
       }
-      if (!IJMatrixIndexDtypeIsValid(meta[p].index_size) ||
-          (meta[p].value_size != sizeof(float) && meta[p].value_size != sizeof(double)) ||
-          meta[p].nnz > (uint64_t)IJMATRIX_MAX_PART_NNZ ||
-          meta[p].nrows > (uint64_t)IJMATRIX_MAX_PART_NROWS)
+      if (!IJMatrixIndexDtypeIsValid(build->meta[p].index_size) ||
+          (build->meta[p].value_size != sizeof(float) &&
+           build->meta[p].value_size != sizeof(double)) ||
+          build->meta[p].nnz > (uint64_t)IJMATRIX_MAX_PART_NNZ ||
+          build->meta[p].nrows > (uint64_t)IJMATRIX_MAX_PART_NROWS)
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
          hypredrv_ErrorMsgAdd("Invalid matrix part metadata in %s",
-                              meta[p].label ? meta[p].label : "(unknown)");
+                              build->meta[p].label ? build->meta[p].label : "(unknown)");
          break;
       }
-      nrows_sum += meta[p].nrows;
-      nnz_max = (meta[p].nnz > nnz_max) ? meta[p].nnz : nnz_max;
+      build->nrows_sum += build->meta[p].nrows;
+      build->nnz_max =
+         (build->meta[p].nnz > build->nnz_max) ? build->meta[p].nnz : build->nnz_max;
    }
-   if (!IJMatrixAllRanksOk(comm))
-   {
-      goto cleanup;
-   }
+}
 
-   MPI_Allreduce(&nrows_sum, &nrows, 1, MPI_UINT64_T, MPI_SUM, comm);
-   MPI_Scan(&nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
-   ilower = (HYPRE_BigInt)(nrows_offset - nrows_sum);
-   iupper = (HYPRE_BigInt)(ilower + (HYPRE_BigInt)nrows_sum - 1);
-   HYPRE_IJMatrixCreate(comm, ilower, iupper, ilower, iupper, &mat);
-   HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR);
-
-   /* 2) Indices: validate entries; host matrices are also pre-sized. */
-   if (host)
+static void
+IJMatrixSourceReadIndices(const hypredrv_IJMatrixPartSource *src,
+                          IJMatrixSourceBuild               *build)
+{
+   const uint32_t nparts = src->nparts;
+   if (build->host)
    {
-      dsizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
-      osizes = (HYPRE_Int *)calloc(nrows_sum ? (size_t)nrows_sum : 1u, sizeof(HYPRE_Int));
-      if (!dsizes || !osizes) /* GCOVR_EXCL_BR_LINE */
+      build->dsizes = (HYPRE_Int *)calloc(
+         build->nrows_sum ? (size_t)build->nrows_sum : 1u, sizeof(HYPRE_Int));
+      build->osizes = (HYPRE_Int *)calloc(
+         build->nrows_sum ? (size_t)build->nrows_sum : 1u, sizeof(HYPRE_Int));
+      if (!build->dsizes || !build->osizes) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
          hypredrv_ErrorMsgAdd(
@@ -424,7 +411,7 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
    {
       hypredrv_IJMatrixMemPart part = {0};
 
-      if (!IJMatrixLoadPart(src, p, HYPREDRV_PART_INDICES, &meta[p], &part) ||
+      if (!IJMatrixLoadPart(src, p, HYPREDRV_PART_INDICES, &build->meta[p], &part) ||
           !IJMatrixIndicesToBigInt(&part))
       {
          IJMatrixMemPartFree(&part);
@@ -432,16 +419,17 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
       }
       const HYPRE_BigInt *rows = (const HYPRE_BigInt *)part.rows;
       const HYPRE_BigInt *cols = (const HYPRE_BigInt *)part.cols;
-      if (host)
+      if (build->host)
       {
-         (void)IJMatrixCountPartSparsity(rows, cols, part.nnz, nrows, ilower, iupper,
-                                         dsizes, osizes, part.label);
+         (void)IJMatrixCountPartSparsity(rows, cols, part.nnz, build->nrows,
+                                         build->ilower, build->iupper, build->dsizes,
+                                         build->osizes, part.label);
       }
       else
       {
          for (size_t k = 0; k < (size_t)part.nnz; k++)
          {
-            if (!IJMatrixValidateEntry(rows[k], cols[k], nrows, part.label))
+            if (!IJMatrixValidateEntry(rows[k], cols[k], build->nrows, part.label))
             {
                break;
             }
@@ -449,30 +437,78 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
       }
       if (nparts == 1)
       {
-         cached = part; /* reused by the values pass */
+         build->cached = part; /* reused by the values pass */
       }
       else
       {
          IJMatrixMemPartFree(&part);
       }
    }
-   if (host && !hypredrv_ErrorCodeActive())
+   if (build->host && !hypredrv_ErrorCodeActive())
    {
-      HYPRE_IJMatrixSetDiagOffdSizes(mat, dsizes, osizes);
+      HYPRE_IJMatrixSetDiagOffdSizes(build->mat, build->dsizes, build->osizes);
    }
-   if (!IJMatrixAllRanksOk(comm))
-   {
-      goto cleanup;
-   }
+}
 
-   /* 3) Values: validate/widen (in place when widths match) and insert. */
-   HYPRE_IJMatrixInitialize_v2(mat, memory_location);
+/* Inserts a validated part through host row runs or reusable device buffers. */
+static void
+IJMatrixSourceInsertPart(IJMatrixSourceBuild *build, const hypredrv_IJMatrixMemPart *part,
+                         HYPRE_Complex *vals)
+{
+   HYPRE_BigInt  *rows     = (HYPRE_BigInt *)part->rows;
+   HYPRE_BigInt  *cols     = (HYPRE_BigInt *)part->cols;
+   HYPRE_BigInt  *set_rows = rows, *set_cols = cols;
+   HYPRE_Complex *set_vals = vals;
 #ifdef HYPRE_USING_GPU
-   if (!host)
+   /* GCOVR_EXCL_START */
+   if (!build->host)
    {
-      d_rows = hypre_TAlloc(HYPRE_BigInt, nnz_max, memory_location);
-      d_cols = hypre_TAlloc(HYPRE_BigInt, nnz_max, memory_location);
-      d_vals = hypre_TAlloc(HYPRE_Complex, nnz_max, memory_location);
+      hypre_TMemcpy(build->d_rows, rows, HYPRE_BigInt, part->nnz, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(build->d_cols, cols, HYPRE_BigInt, part->nnz, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      hypre_TMemcpy(build->d_vals, vals, HYPRE_Complex, part->nnz, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      set_rows = build->d_rows;
+      set_cols = build->d_cols;
+      set_vals = build->d_vals;
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+   if (build->host)
+   {
+      HYPRE_Int  nruns = 0;
+      HYPRE_Int *ncols = IJMatrixRowRuns(rows, part->nnz, &nruns);
+      if (ncols)
+      {
+         HYPRE_IJMatrixSetValues(build->mat, nruns, ncols, rows, cols, vals);
+         free(ncols);
+      }
+      else /* GCOVR_EXCL_BR_LINE */
+      {
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                    /* GCOVR_EXCL_LINE */
+         hypredrv_ErrorMsgAdd("Failed to allocate matrix row runs"); /* GCOVR_EXCL_LINE */
+      }
+   }
+   else
+   {
+      HYPRE_IJMatrixSetValues(build->mat, (HYPRE_Int)part->nnz, NULL, set_rows, set_cols,
+                              set_vals);
+   }
+}
+
+static void
+IJMatrixSourceReadValues(const hypredrv_IJMatrixPartSource *src,
+                         IJMatrixSourceBuild               *build)
+{
+   const uint32_t nparts = src->nparts;
+   HYPRE_IJMatrixInitialize_v2(build->mat, build->memory_location);
+#ifdef HYPRE_USING_GPU
+   if (!build->host)
+   {
+      build->d_rows = hypre_TAlloc(HYPRE_BigInt, build->nnz_max, build->memory_location);
+      build->d_cols = hypre_TAlloc(HYPRE_BigInt, build->nnz_max, build->memory_location);
+      build->d_vals = hypre_TAlloc(HYPRE_Complex, build->nnz_max, build->memory_location);
    }
 #endif
    for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
@@ -485,14 +521,14 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
       {
          /* The cached single part already holds HYPRE_BigInt indices; the
           * reload is checked against the metadata so its nnz still matches them. */
-         part   = cached;
-         cached = (hypredrv_IJMatrixMemPart){0};
-         ok     = IJMatrixLoadPart(src, p, HYPREDRV_PART_VALUES, &meta[p], &part);
+         part          = build->cached;
+         build->cached = (hypredrv_IJMatrixMemPart){0};
+         ok = IJMatrixLoadPart(src, p, HYPREDRV_PART_VALUES, &build->meta[p], &part);
       }
       else
       {
          ok = IJMatrixLoadPart(src, p, HYPREDRV_PART_INDICES | HYPREDRV_PART_VALUES,
-                               &meta[p], &part) &&
+                               &build->meta[p], &part) &&
               IJMatrixIndicesToBigInt(&part);
       }
       if (!ok)
@@ -511,7 +547,7 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
       /* Indices re-loaded for multi-part ranks are re-validated. */
       for (size_t k = 0; nparts > 1 && k < (size_t)part.nnz; k++)
       {
-         if (!IJMatrixValidateEntry(rows[k], cols[k], nrows, part.label))
+         if (!IJMatrixValidateEntry(rows[k], cols[k], build->nrows, part.label))
          {
             break;
          }
@@ -530,45 +566,7 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
                                        "matrix", part.label))
       /* GCOVR_EXCL_BR_STOP */
       {
-         HYPRE_BigInt  *set_rows = rows, *set_cols = cols;
-         HYPRE_Complex *set_vals = vals;
-#ifdef HYPRE_USING_GPU
-         /* GCOVR_EXCL_START */
-         if (!host)
-         {
-            hypre_TMemcpy(d_rows, rows, HYPRE_BigInt, part.nnz, HYPRE_MEMORY_DEVICE,
-                          HYPRE_MEMORY_HOST);
-            hypre_TMemcpy(d_cols, cols, HYPRE_BigInt, part.nnz, HYPRE_MEMORY_DEVICE,
-                          HYPRE_MEMORY_HOST);
-            hypre_TMemcpy(d_vals, vals, HYPRE_Complex, part.nnz, HYPRE_MEMORY_DEVICE,
-                          HYPRE_MEMORY_HOST);
-            set_rows = d_rows;
-            set_cols = d_cols;
-            set_vals = d_vals;
-         }
-         /* GCOVR_EXCL_STOP */
-#endif
-         if (host)
-         {
-            HYPRE_Int  nruns = 0;
-            HYPRE_Int *ncols = IJMatrixRowRuns(rows, part.nnz, &nruns);
-            if (ncols)
-            {
-               HYPRE_IJMatrixSetValues(mat, nruns, ncols, rows, cols, vals);
-               free(ncols);
-            }
-            else /* GCOVR_EXCL_BR_LINE */
-            {
-               hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-               hypredrv_ErrorMsgAdd(
-                  "Failed to allocate matrix row runs"); /* GCOVR_EXCL_LINE */
-            }
-         }
-         else
-         {
-            HYPRE_IJMatrixSetValues(mat, (HYPRE_Int)part.nnz, NULL, set_rows, set_cols,
-                                    set_vals);
-         }
+         IJMatrixSourceInsertPart(build, &part, vals);
       }
       else if (!vals) /* GCOVR_EXCL_BR_LINE */
       {
@@ -579,29 +577,81 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
       free(wide);
       IJMatrixMemPartFree(&part);
    }
+}
+
+static void
+IJMatrixSourceBuildFree(IJMatrixSourceBuild *build)
+{
+#ifdef HYPRE_USING_GPU
+   hypre_TFree(build->d_rows, build->memory_location);
+   hypre_TFree(build->d_cols, build->memory_location);
+   hypre_TFree(build->d_vals, build->memory_location);
+#endif
+   if (build->mat)
+   {
+      HYPRE_IJMatrixDestroy(build->mat);
+   }
+   IJMatrixMemPartFree(&build->cached);
+   free(build->meta);
+   free(build->dsizes);
+   free(build->osizes);
+}
+
+void
+hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSource *src,
+                                 HYPRE_MemoryLocation memory_location,
+                                 HYPRE_IJMatrix      *mat_ptr)
+{
+   IJMatrixSourceBuild build        = {0};
+   uint64_t            nrows_offset = 0;
+   const uint32_t      nparts       = src->nparts;
+
+   *mat_ptr              = NULL;
+   build.memory_location = memory_location;
+   build.host            = (memory_location == HYPRE_MEMORY_HOST);
+
+   /* 1) Metadata: validate every part and size the local row range. */
+   build.meta = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u,
+                                                   sizeof(*build.meta));
+   if (!build.meta) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                     /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("Failed to allocate matrix part list"); /* GCOVR_EXCL_LINE */
+   }
+   IJMatrixSourceScanMetadata(src, &build);
    if (!IJMatrixAllRanksOk(comm))
    {
       goto cleanup;
    }
 
-   HYPRE_IJMatrixAssemble(mat);
-   *mat_ptr = mat;
-   mat      = NULL;
+   MPI_Allreduce(&build.nrows_sum, &build.nrows, 1, MPI_UINT64_T, MPI_SUM, comm);
+   MPI_Scan(&build.nrows_sum, &nrows_offset, 1, MPI_UINT64_T, MPI_SUM, comm);
+   build.ilower = (HYPRE_BigInt)(nrows_offset - build.nrows_sum);
+   build.iupper = (HYPRE_BigInt)(build.ilower + (HYPRE_BigInt)build.nrows_sum - 1);
+   HYPRE_IJMatrixCreate(comm, build.ilower, build.iupper, build.ilower, build.iupper,
+                        &build.mat);
+   HYPRE_IJMatrixSetObjectType(build.mat, HYPRE_PARCSR);
+
+   /* 2) Indices: validate entries; host matrices are also pre-sized. */
+   IJMatrixSourceReadIndices(src, &build);
+   if (!IJMatrixAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   /* 3) Values: validate/widen (in place when widths match) and insert. */
+   IJMatrixSourceReadValues(src, &build);
+   if (!IJMatrixAllRanksOk(comm))
+   {
+      goto cleanup;
+   }
+
+   HYPRE_IJMatrixAssemble(build.mat);
+   *mat_ptr  = build.mat;
+   build.mat = NULL;
 
 cleanup:
-#ifdef HYPRE_USING_GPU
-   hypre_TFree(d_rows, memory_location);
-   hypre_TFree(d_cols, memory_location);
-   hypre_TFree(d_vals, memory_location);
-#endif
-   if (mat)
-   {
-      HYPRE_IJMatrixDestroy(mat);
-   }
-   IJMatrixMemPartFree(&cached);
-   free(meta);
-   free(dsizes);
-   free(osizes);
+   IJMatrixSourceBuildFree(&build);
 }
 
 /*-----------------------------------------------------------------------------
