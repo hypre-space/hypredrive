@@ -454,6 +454,39 @@ test_hypredrv_IJMatrixReadMultipartBinary_invalid_dtype(void)
    cleanup_temp_files();
 }
 
+/* Entries arrive with rows interleaved and one (row, col) pair repeated; the
+ * assembled matrix must hold every value, with the later duplicate winning. */
+static void
+test_hypredrv_IJMatrixReadMultipartBinary_interleaved_rows(void)
+{
+   const char    *prefix      = "test_matrix_interleaved";
+   HYPRE_BigInt   rows[7]     = {0, 1, 0, 2, 2, 1, 0};
+   HYPRE_BigInt   cols[7]     = {0, 1, 1, 2, 0, 0, 0};
+   const double   vals[7]     = {9.0, 4.0, -1.0, 6.0, -3.0, -2.0, 5.0};
+   const double   want[9]     = {5.0, -1.0, 0.0, -2.0, 4.0, 0.0, -3.0, 0.0, 6.0};
+   HYPRE_Int      ncols[3]    = {3, 3, 3};
+   HYPRE_BigInt   get_rows[3] = {0, 1, 2};
+   HYPRE_BigInt   get_cols[9] = {0, 1, 2, 0, 1, 2, 0, 1, 2};
+   HYPRE_Complex  got[9]      = {0};
+   HYPRE_IJMatrix mat         = NULL;
+
+   create_matrix_part(prefix, 0, 0, 2, 7, rows, cols, vals);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJMatrixReadMultipartBinary(prefix, MPI_COMM_SELF, 1, HYPRE_MEMORY_HOST, &mat);
+
+   ASSERT_NOT_NULL(mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 3, ncols, get_rows, get_cols, got), 0);
+   for (int k = 0; k < 9; k++)
+   {
+      ASSERT_EQ_DOUBLE(got[k], want[k], 0.0);
+   }
+
+   HYPRE_IJMatrixDestroy(mat);
+   cleanup_temp_files();
+}
+
 static void
 test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices(void)
 {
@@ -552,6 +585,21 @@ test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs(void)
 
    HYPRE_IJMatrixDestroy(mat);
    cleanup_temp_files();
+}
+
+/* A 64-bit index beyond the HYPRE_BigInt range must be rejected, not wrapped
+ * into a valid row (2^32 would narrow to row 0 with 32-bit HYPRE_BigInt). */
+static void
+test_hypredrv_IJMatrixReadMultipartBinary_uint64_index_overflow_rejected(void)
+{
+   const char  *prefix    = "test_matrix_uint64_overflow";
+   uint64_t     rows64[2] = {0, UINT64_C(1) << 32};
+   uint64_t     cols64[2] = {0, 1};
+   const double vals[2]   = {1.0, 2.0};
+
+   create_matrix_part_typed(prefix, 0, 0, 1, 2, rows64, sizeof(uint64_t), cols64,
+                            sizeof(uint64_t), vals, sizeof(double));
+   assert_matrix_read_rejects(prefix);
 }
 
 static void
@@ -809,12 +857,14 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_oversized_part_row_count);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_truncated_bigint_rows_host);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_invalid_dtype);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_interleaved_rows);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_rows_device_path);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_truncated_cols_device_path);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_float_coefficients);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint32_indices_float_coeffs);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_double_coeffs);
+   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint64_index_overflow_rejected);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_uint64_indices_float_coeffs);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_invalid_value_type);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_zero_nnz_success);

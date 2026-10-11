@@ -17,6 +17,7 @@
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
 
+#include <ctype.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -40,8 +41,6 @@ enum
    HYPREDRV_BLOCK_NORM_MAX_LABELS      = 128,
    HYPREDRV_BLOCK_NORM_MAX_LABEL_SLOTS = 1048576
 };
-
-/* TODO: implement IJVectorClone/Copy and IJVectorMigrate/IJMatrix in hypre*/
 
 static void
 LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
@@ -333,8 +332,7 @@ hypredrv_LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
    {
       if (!strcmp(ls_field_offset_map[i].name, node->key))
       {
-         ls_field_offset_map[i].setter(
-            (void *)((char *)args + ls_field_offset_map[i].offset), node);
+         hypredrv_FieldOffsetMapSet(&ls_field_offset_map[i], (void *)args, node);
          return;
       }
    }
@@ -463,8 +461,8 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd(
-         "Number of entries (%d) does not match the expected local size (%d)",
-         num_entries, loc_expected);
+         "Number of entries (%d) does not match the expected local size (%lld)",
+         num_entries, (long long)loc_expected);
       return;
    }
 
@@ -521,7 +519,7 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
    if (args && args->exec_policy)
    {
 #if HYPRE_CHECK_MIN_VERSION(23300, 0)
-      HYPRE_IJVectorMigrate(*vec_nn_ptr, HYPRE_MEMORY_DEVICE);
+      hypredrv_IJVectorMigrate(*vec_nn_ptr, HYPRE_MEMORY_DEVICE);
 #endif
    }
    /* GCOVR_EXCL_STOP */
@@ -638,6 +636,78 @@ hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_ent
  * the gauge of solutions that are defined up to a null space contribution
  *-----------------------------------------------------------------------------*/
 
+/*-----------------------------------------------------------------------------
+ * HYPRE_IJVectorSetValues/GetValues with host index and value arrays. hypre's
+ * device IJ paths read and write device pointers (they copy with device-to-
+ * device transfers), so for a device-resident vector the arrays are staged
+ * through temporary device buffers.
+ *-----------------------------------------------------------------------------*/
+
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+static int
+LinearSystemVectorOnDevice(HYPRE_IJVector vec)
+{
+   return hypre_GetActualMemLocation(hypre_IJVectorMemoryLocation(vec)) ==
+          hypre_MEMORY_DEVICE;
+}
+#endif
+
+static HYPRE_Int
+LinearSystemSetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *indices,
+                          const HYPRE_Complex *values)
+{
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+   /* GCOVR_EXCL_START */
+   if (n > 0 && LinearSystemVectorOnDevice(vec))
+   {
+      HYPRE_BigInt  *d_idx  = NULL;
+      HYPRE_Complex *d_vals = hypre_TAlloc(HYPRE_Complex, n, HYPRE_MEMORY_DEVICE);
+      hypre_TMemcpy(d_vals, values, HYPRE_Complex, n, HYPRE_MEMORY_DEVICE,
+                    HYPRE_MEMORY_HOST);
+      if (indices)
+      {
+         d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
+         hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+      }
+      HYPRE_Int ierr = HYPRE_IJVectorSetValues(vec, n, d_idx, d_vals);
+      hypre_TFree(d_idx, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+      return ierr;
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+   return HYPRE_IJVectorSetValues(vec, n, indices, values);
+}
+
+static HYPRE_Int
+LinearSystemGetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *indices,
+                          HYPRE_Complex *values)
+{
+#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
+   /* GCOVR_EXCL_START */
+   if (n > 0 && LinearSystemVectorOnDevice(vec))
+   {
+      HYPRE_BigInt  *d_idx  = NULL;
+      HYPRE_Complex *d_vals = hypre_TAlloc(HYPRE_Complex, n, HYPRE_MEMORY_DEVICE);
+      if (indices)
+      {
+         d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
+         hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+      }
+      HYPRE_Int ierr = HYPRE_IJVectorGetValues(vec, n, d_idx, d_vals);
+      hypre_TMemcpy(values, d_vals, HYPRE_Complex, n, HYPRE_MEMORY_HOST,
+                    HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_idx, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+      return ierr;
+   }
+   /* GCOVR_EXCL_STOP */
+#endif
+   return HYPRE_IJVectorGetValues(vec, n, (HYPRE_BigInt *)(uintptr_t)indices, values);
+}
+
 /* Projects `vec` onto the orthogonal complement of the null-space modes: form
  * the dot product with each mode, reduce it across ranks, then subtract the
  * corresponding component. Buffers are supplied by the caller so the collective
@@ -653,7 +723,7 @@ LinearSystemProjectOntoModes(HYPRE_IJVector vec_ns, int num_ns, HYPRE_IJVector v
       indices[i] = jlower + (HYPRE_BigInt)i;
    }
 
-   HYPRE_IJVectorGetValues(vec, num_entries, NULL, xbuf);
+   LinearSystemGetHostValues(vec, num_entries, NULL, xbuf);
    for (int k = 0; k < num_ns; k++)
    {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
@@ -677,7 +747,7 @@ LinearSystemProjectOntoModes(HYPRE_IJVector vec_ns, int num_ns, HYPRE_IJVector v
          xbuf[i] -= (HYPRE_Complex)dots[k] * zbuf[i];
       }
    }
-   HYPRE_IJVectorSetValues(vec, num_entries, indices, xbuf);
+   LinearSystemSetHostValues(vec, num_entries, indices, xbuf);
    HYPRE_IJVectorAssemble(vec);
 }
 
@@ -727,7 +797,7 @@ hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
       hypre_VectorMemoryLocation(hypre_ParVectorLocalVector((HYPRE_ParVector)obj));
    if (orig_memloc != HYPRE_MEMORY_HOST)
    {
-      HYPRE_IJVectorMigrate(vec, HYPRE_MEMORY_HOST);
+      hypredrv_IJVectorMigrate(vec, HYPRE_MEMORY_HOST);
    }
 #endif
 
@@ -758,7 +828,7 @@ hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
 #if defined(HYPRE_USING_GPU)
    if (orig_memloc != HYPRE_MEMORY_HOST)
    {
-      HYPRE_IJVectorMigrate(vec, orig_memloc);
+      hypredrv_IJVectorMigrate(vec, orig_memloc);
    }
 #endif
 
@@ -831,15 +901,104 @@ LinearSystemMemoryLocationGet(const LS_args *args)
    /* GCOVR_EXCL_BR_STOP */
 }
 
-static MPI_Comm
-LinearSystemCommFromVector(HYPRE_IJVector vec)
+/*-----------------------------------------------------------------------------
+ * Communicators of IJ objects for logging/collectives: MPI_COMM_NULL when the
+ * object (or a matrix's ParCSR object) is missing. hypredrv_IJSystemComm
+ * returns the first available among A, M, b and x (any may be NULL).
+ *-----------------------------------------------------------------------------*/
+
+MPI_Comm
+hypredrv_IJMatrixComm(HYPRE_IJMatrix mat)
 {
-   if (!vec)
+   void *obj = NULL;
+
+   if (!mat)
    {
       return MPI_COMM_NULL;
    }
+   HYPRE_IJMatrixGetObject(mat, &obj);
+   /* GCOVR_EXCL_BR_START */
+   return obj ? hypre_ParCSRMatrixComm((hypre_ParCSRMatrix *)obj) : MPI_COMM_NULL;
+   /* GCOVR_EXCL_BR_STOP */
+}
 
-   return hypre_IJVectorComm((hypre_IJVector *)vec);
+MPI_Comm
+hypredrv_IJVectorComm(HYPRE_IJVector vec)
+{
+   return vec ? hypre_IJVectorComm((hypre_IJVector *)vec) : MPI_COMM_NULL;
+}
+
+/* hypre before 2.32.0 develop 37 (hypre PR #1257) copied num_rows entries of a
+ * CSR matrix's shorter rownnz array when migrating it, reading past its end
+ * (seen as a crash in multi-rank runs, whose off-diagonal blocks have one).
+ * rownnz is an optional index of the nonzero rows (NULL means all rows), so
+ * drop it before migrating on those versions. */
+static void
+CSRMatrixDropRownnzForMigrate(hypre_CSRMatrix *A)
+{
+#if HYPRE_CHECK_MIN_VERSION(23200, 37)
+   (void)A;
+#else
+   if (A && hypre_CSRMatrixRownnz(A))
+   {
+      hypre_TFree(hypre_CSRMatrixRownnz(A), hypre_CSRMatrixMemoryLocation(A));
+      hypre_CSRMatrixNumRownnz(A) = hypre_CSRMatrixNumRows(A);
+   }
+#endif
+}
+
+/* Migrates a ParCSR matrix, working around the rownnz bug above */
+HYPRE_Int
+hypredrv_ParCSRMatrixMigrate(HYPRE_ParCSRMatrix A, HYPRE_MemoryLocation location)
+{
+   if (!A)
+   {
+      return 0;
+   }
+   CSRMatrixDropRownnzForMigrate(hypre_ParCSRMatrixDiag((hypre_ParCSRMatrix *)A));
+   CSRMatrixDropRownnzForMigrate(hypre_ParCSRMatrixOffd((hypre_ParCSRMatrix *)A));
+   return hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)A, location);
+}
+
+/* HYPRE_IJMatrixMigrate/HYPRE_IJVectorMigrate first appear after hypre 2.32.0
+ * (develop 24) and only migrate the underlying ParCSR object, so use that. */
+HYPRE_Int
+hypredrv_IJMatrixMigrate(HYPRE_IJMatrix mat, HYPRE_MemoryLocation location)
+{
+   void *obj = NULL;
+   HYPRE_IJMatrixGetObject(mat, &obj);
+   return hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)obj, location);
+}
+
+HYPRE_Int
+hypredrv_IJVectorMigrate(HYPRE_IJVector vec, HYPRE_MemoryLocation location)
+{
+#if HYPRE_CHECK_MIN_VERSION(23200, 24)
+   return HYPRE_IJVectorMigrate(vec, location);
+#else
+   void *obj = NULL;
+   HYPRE_IJVectorGetObject(vec, &obj);
+   return obj ? hypre_ParVectorMigrate((hypre_ParVector *)obj, location) : 0;
+#endif
+}
+
+MPI_Comm
+hypredrv_IJSystemComm(HYPRE_IJMatrix A, HYPRE_IJMatrix M, HYPRE_IJVector b,
+                      HYPRE_IJVector x)
+{
+   MPI_Comm comm = hypredrv_IJMatrixComm(A);
+
+   /* GCOVR_EXCL_BR_START */
+   if (comm == MPI_COMM_NULL)
+   {
+      comm = hypredrv_IJMatrixComm(M);
+   }
+   if (comm == MPI_COMM_NULL)
+   {
+      comm = hypredrv_IJVectorComm(b);
+   }
+   /* GCOVR_EXCL_BR_STOP */
+   return (comm != MPI_COMM_NULL) ? comm : hypredrv_IJVectorComm(x);
 }
 
 static int
@@ -931,7 +1090,7 @@ LinearSystemIJMatrixMigrate(const LS_args *args, HYPRE_IJMatrix matrix)
    HYPRE_ParCSRMatrix par_A = (HYPRE_ParCSRMatrix)obj;
 
 #if HYPREDRV_HAVE_MEMORY_APIS
-   hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_DEVICE);
+   hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)par_A, HYPRE_MEMORY_DEVICE);
 #endif
    /* GCOVR_EXCL_STOP */
 }
@@ -1080,6 +1239,8 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
        * lowercased values the YAML parser produces for f_dofs entries. */
       if (!strcmp(child->key, "dof_labels"))
       {
+         /* A repeated dof_labels key replaces the earlier map. */
+         hypredrv_DofLabelMapDestroy(&args->dof_labels);
          args->dof_labels = hypredrv_DofLabelMapCreate();
 
          if (child->children)
@@ -1302,6 +1463,22 @@ LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
    return 1;
 }
 
+/* Runs a HYPRE call inside the CSR/array builders below; on failure records the
+ * HYPRE error description, prefixed by `label`, and jumps to `fail`. */
+#define LINSYS_HYPRE_CALL(label, call)                                            \
+   do                                                                             \
+   {                                                                              \
+      HYPRE_Int hypre_ierr = (call);                                              \
+      if (hypre_ierr != 0)                                                        \
+      {                                                                           \
+         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                   \
+         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                          \
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                             \
+         hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, hypre_err_msg); \
+         goto fail;                                                               \
+      }                                                                           \
+   } while (0)
+
 uint32_t
 hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         HYPRE_MemoryLocation memory_location,
@@ -1312,21 +1489,8 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 {
    HYPRE_Int    *ncols_per_row = NULL;
    HYPRE_BigInt *row_ids       = NULL;
-
-#define HYPREDRV_CSR_HYPRE_CALL(call)                                      \
-   do                                                                      \
-   {                                                                       \
-      HYPRE_Int hypre_ierr = (call);                                       \
-      if (hypre_ierr != 0)                                                 \
-      {                                                                    \
-         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                            \
-         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                   \
-         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                      \
-         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: HYPRE call failed: %s", \
-                              hypre_err_msg);                              \
-         goto fail;                                                        \
-      }                                                                    \
-   } while (0)
+   HYPRE_Int    *diag_sizes    = NULL;
+   HYPRE_Int    *offd_sizes    = NULL;
 
    HYPRE_Int nrows = 0;
    HYPRE_Int nnz   = 0;
@@ -1349,27 +1513,34 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
     * lower/upper bounds; HYPRE composes the global column partition from the
     * concatenation. This matches how matrices read from file are built (see
     * src/matrix.c) and gives standard ParCSR layout. */
-   HYPREDRV_CSR_HYPRE_CALL(
+   LINSYS_HYPRE_CALL(
+      "BuildMatrixFromCSR",
       HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr));
-   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
-   HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                     HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
 
-   if (nrows == 0)
+   if (nrows == 0 || nnz == 0)
    {
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
-      return hypredrv_ErrorCodeGet();
-   }
-   if (nnz == 0)
-   {
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
       return hypredrv_ErrorCodeGet();
    }
 
    /* HYPRE_IJMatrixSetValues requires per-row counts and row ids on every call.
     * These transient O(nrows) scratch arrays stay on the host even when matrix
-    * values are initialized for a device memory location. */
-   ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
-   row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+    * values are initialized for a device memory location. For host matrices the
+    * same pass also counts each row's diagonal/off-diagonal block entries so
+    * the matrix can be pre-sized (as the file readers do) instead of growing
+    * hypre's auxiliary rows during assembly. */
+   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
+   ncols_per_row  = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   row_ids        = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+   if (host)
+   {
+      diag_sizes = hypre_CTAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+      offd_sizes = hypre_CTAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   }
    for (HYPRE_Int i = 0; i < nrows; i++)
    {
       HYPRE_BigInt row_nnz = indptr[i + 1] - indptr[i];
@@ -1391,7 +1562,26 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       }
       ncols_per_row[i] = (HYPRE_Int)row_nnz;
       row_ids[i]       = row_start + (HYPRE_BigInt)i;
+      for (HYPRE_BigInt k = indptr[i]; host && k < indptr[i + 1]; k++)
+      {
+         HYPRE_BigInt col = col_indices[k];
+         if (col >= row_start && col <= row_end)
+         {
+            diag_sizes[i]++;
+         }
+         else
+         {
+            offd_sizes[i]++;
+         }
+      }
    }
+   if (host)
+   {
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixSetDiagOffdSizes(*mat_ptr, diag_sizes, offd_sizes));
+   }
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                     HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
 
 #ifdef HYPREDRV_USING_DEBUG
    for (HYPRE_Int k = 0; k < nnz; k++)
@@ -1442,31 +1632,34 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
       hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
-      HYPREDRV_CSR_HYPRE_CALL(ierr);
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", ierr);
    }
    else
 #endif
    {
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row,
-                                                      row_ids, col_indices + indptr[0],
-                                                      data + indptr[0]));
-      HYPREDRV_CSR_HYPRE_CALL(HYPRE_IJMatrixAssemble(*mat_ptr));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row, row_ids,
+                                                col_indices + indptr[0],
+                                                data + indptr[0]));
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
    }
 
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
-#undef HYPREDRV_CSR_HYPRE_CALL
+   hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
    return hypredrv_ErrorCodeGet();
 
 fail:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
+   hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
+   hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
    if (*mat_ptr)
    {
       HYPRE_IJMatrixDestroy(*mat_ptr);
       *mat_ptr = NULL;
    }
-#undef HYPREDRV_CSR_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 }
 
@@ -1480,21 +1673,6 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
-#define HYPREDRV_RHS_HYPRE_CALL(call)                                     \
-   do                                                                     \
-   {                                                                      \
-      HYPRE_Int hypre_ierr = (call);                                      \
-      if (hypre_ierr != 0)                                                \
-      {                                                                   \
-         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                           \
-         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                  \
-         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                     \
-         hypredrv_ErrorMsgAdd("BuildRHSFromArray: HYPRE call failed: %s", \
-                              hypre_err_msg);                             \
-         goto fail;                                                       \
-      }                                                                   \
-   } while (0)
-
    if (!rhs_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1533,17 +1711,20 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
       *rhs_ptr = NULL;
    }
 
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location));
 
    if (nrows > 0)
    {
-      HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorSetValues(*rhs_ptr, nrows, NULL, values));
+      LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                        LinearSystemSetHostValues(*rhs_ptr, nrows, NULL, values));
    }
-   HYPREDRV_RHS_HYPRE_CALL(HYPRE_IJVectorAssemble(*rhs_ptr));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(*rhs_ptr));
 
-#undef HYPREDRV_RHS_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 
 fail:
@@ -1552,9 +1733,10 @@ fail:
       HYPRE_IJVectorDestroy(*rhs_ptr);
       *rhs_ptr = NULL;
    }
-#undef HYPREDRV_RHS_HYPRE_CALL
    return hypredrv_ErrorCodeGet();
 }
+
+#undef LINSYS_HYPRE_CALL
 
 /*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemMatrixGetNumRows
@@ -1617,28 +1799,13 @@ hypredrv_LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix matrix)
    return (long long int)par_A->d_num_nonzeros;
 }
 
-#if defined(HYPRE_BIG_INT)
-#define HYPRE_BIG_INT_SSCANF "%lld"
-#else
-#define HYPRE_BIG_INT_SSCANF "%d"
-#endif
-
 /* Parses the Matrix Market size line of a dense vector. */
 static int
 MatrixMarketReadVectorDims(const char *line, HYPRE_BigInt *M_out, HYPRE_BigInt *N_out)
 {
-   const char *line_ptr = strchr(line, ' ');
-#ifdef HYPRE_BIG_INT
-   long long tmpM = strtoll(line, NULL, 10);
-   /* GCOVR_EXCL_BR_START */
-   long long tmpN = (line_ptr != NULL) ? strtoll(line_ptr + 1, NULL, 10) : 0;
-   /* GCOVR_EXCL_BR_STOP */
-#else
-   int tmpM = (int)strtol(line, NULL, 10);
-   /* GCOVR_EXCL_BR_START */
-   int tmpN = (line_ptr != NULL) ? (int)strtol(line_ptr + 1, NULL, 10) : 0;
-   /* GCOVR_EXCL_BR_STOP */
-#endif
+   char     *rest = NULL;
+   long long tmpM = strtoll(line, &rest, 10);
+   long long tmpN = strtoll(rest, NULL, 10); /* any whitespace separates M and N */
 
    *M_out = (HYPRE_BigInt)tmpM;
    *N_out = (HYPRE_BigInt)tmpN;
@@ -1691,17 +1858,16 @@ MatrixMarketReadVectorOnRoot(const char *rhs_filename, HYPRE_BigInt global_num_r
    if (N != 1)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("File %s is not a vector (N=" HYPRE_BIG_INT_SSCANF ")",
-                           rhs_filename, N);
+      hypredrv_ErrorMsgAdd("File %s is not a vector (N=%lld)", rhs_filename,
+                           (long long)N);
       fclose(file);
       return -1;
    }
    if (M != global_num_rows)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("RHS vector size " HYPRE_BIG_INT_SSCANF
-                           " does not match matrix size " HYPRE_BIG_INT_SSCANF,
-                           M, global_num_rows);
+      hypredrv_ErrorMsgAdd("RHS vector size %lld does not match matrix size %lld",
+                           (long long)M, (long long)global_num_rows);
       fclose(file);
       return -1;
    }
@@ -1716,21 +1882,23 @@ MatrixMarketReadVectorOnRoot(const char *rhs_filename, HYPRE_BigInt global_num_r
       if (fgets(line, sizeof(line), file) == NULL)
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("Error reading value for index " HYPRE_BIG_INT_SSCANF
-                              " from %s",
-                              i, rhs_filename);
+         hypredrv_ErrorMsgAdd("Error reading value for index %lld from %s", (long long)i,
+                              rhs_filename);
          fclose(file);
          return -1;
       }
 
       tmp_val = strtod(line, &endptr);
+      while (*endptr != '\0' && isspace((unsigned char)*endptr)) /* e.g. "\r\n" */
+      {
+         endptr++;
+      }
       /* GCOVR_EXCL_BR_START */
-      if (endptr == line || (*endptr != '\0' && *endptr != '\n')) /* GCOVR_EXCL_BR_STOP */
+      if (endptr == line || *endptr != '\0') /* GCOVR_EXCL_BR_STOP */
       {
          hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-         hypredrv_ErrorMsgAdd("Error converting value for index " HYPRE_BIG_INT_SSCANF
-                              " from %s",
-                              i, rhs_filename);
+         hypredrv_ErrorMsgAdd("Error converting value for index %lld from %s",
+                              (long long)i, rhs_filename);
          fclose(file);
          return -1;
       }
@@ -1836,7 +2004,7 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
 
    HYPRE_Int local_size_hypre =
       (HYPRE_Int)local_size; /* NOLINT(cppcoreguidelines-narrowing-conversions) */
-   HYPRE_IJVectorSetValues(*rhs_ptr, local_size_hypre, NULL, local_values);
+   LinearSystemSetHostValues(*rhs_ptr, local_size_hypre, NULL, local_values);
    HYPRE_IJVectorAssemble(*rhs_ptr);
 
    hypre_TFree(local_values, HYPRE_MEMORY_HOST);
@@ -1905,7 +2073,7 @@ LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
             hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
          if (mat_memory_location != memory_location)
          {
-            hypre_ParCSRMatrixMigrate((hypre_ParCSRMatrix *)par_A, memory_location);
+            hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)par_A, memory_location);
          }
 #endif
          HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
@@ -2263,7 +2431,7 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
 {
    HYPRE_ParVector par_x0 = NULL, par_x = NULL;
    void           *obj_x0 = NULL, *obj_x = NULL;
-   MPI_Comm        log_comm = LinearSystemCommFromVector(x_ptr ? x_ptr : x0_ptr);
+   MPI_Comm        log_comm = hypredrv_IJVectorComm(x_ptr ? x_ptr : x0_ptr);
    /* Reports the current system rather than the next one; clamp so a NULL stats
     * logs system 0 instead of -1. */
    int         ls_id = hypredrv_StatsGetLinearSystemID(stats);
@@ -2427,7 +2595,6 @@ BlockFrobeniusPrepare(MPI_Comm comm, HYPRE_IJMatrix matrix, const IntArray *dofm
       HYPRE_IJMatrixGetObject(matrix, &object);
       local_valid = object != NULL;
    }
-   int global_valid = 0;
    if (!BlockDiagnosticsAgree(
           comm, local_valid, log_object_name, ls_id,
           "block Frobenius diagnostics skipped: matrix or dofmap missing"))
@@ -2647,7 +2814,6 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
       return;
    }
 
-   void               *object            = NULL;
    hypre_ParCSRMatrix *par_matrix        = NULL;
    hypre_CSRMatrix    *diag              = NULL;
    hypre_CSRMatrix    *offd              = NULL;
@@ -2962,7 +3128,7 @@ hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **d
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read end");
 
-   /* TODO: Print how many dofs types we have (min, max, avg, sum) accross ranks
+   /* TODO: Print how many dofs types we have (min, max, avg, sum) across ranks
     */
 }
 
@@ -3029,7 +3195,7 @@ LinearSystemComputeHostNorm(HYPRE_IJVector vec, HYPRE_ParVector par_vec,
    HYPRE_MemoryLocation orig_memloc = hypre_VectorMemoryLocation(seq_vec);
    if (orig_memloc != HYPRE_MEMORY_HOST)
    {
-      HYPRE_IJVectorMigrate(vec, HYPRE_MEMORY_HOST);
+      hypredrv_IJVectorMigrate(vec, HYPRE_MEMORY_HOST);
       seq_vec = hypre_ParVectorLocalVector(par_vec);
       data    = hypre_VectorData(seq_vec);
    }
@@ -3063,7 +3229,7 @@ LinearSystemComputeHostNorm(HYPRE_IJVector vec, HYPRE_ParVector par_vec,
 #if defined(HYPRE_USING_GPU)
    if (orig_memloc != HYPRE_MEMORY_HOST)
    {
-      HYPRE_IJVectorMigrate(vec, orig_memloc);
+      hypredrv_IJVectorMigrate(vec, orig_memloc);
    }
 #endif
 }
@@ -3178,6 +3344,7 @@ hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector vec_xref, HYPRE_IJVector ve
 #if HYPRE_CHECK_MIN_VERSION(22800, 0)
    hypre_ParVectorAxpyz(one, par_x, neg_one, par_xref, par_e);
 #else
+   (void)one;
    hypre_ParVectorCopy(par_x, par_e);
    hypre_ParVectorAxpy(neg_one, par_xref, par_e);
 #endif
@@ -3266,19 +3433,55 @@ hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix mat_A, HYPRE_IJVector ve
                                          HYPRE_IJVector vec_x, const char *norm_type,
                                          double *res_norm)
 {
-   HYPRE_IJVector vec_r = LinearSystemBuildResidual(mat_A, vec_b, vec_x, NULL, NULL);
-   if (!vec_r)
+   HYPRE_IJVector vec_r = NULL;
+
+   hypredrv_LinearSystemComputeResidualNormWork(mat_A, vec_b, vec_x, norm_type, &vec_r,
+                                                res_norm);
+   if (vec_r)
+   {
+      HYPRE_IJVectorDestroy(vec_r);
+   }
+}
+
+/*-----------------------------------------------------------------------------
+ * hypredrv_LinearSystemComputeResidualNormWork
+ *
+ * Same as hypredrv_LinearSystemComputeResidualNorm, but keeps the residual in
+ * *work_ptr (created on first use, laid out like vec_b) so repeated norms of
+ * the same system skip the vector allocation and its validity reductions.
+ * The caller destroys *work_ptr.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_LinearSystemComputeResidualNormWork(HYPRE_IJMatrix mat_A, HYPRE_IJVector vec_b,
+                                             HYPRE_IJVector vec_x, const char *norm_type,
+                                             HYPRE_IJVector *work_ptr, double *res_norm)
+{
+   if (!*work_ptr)
+   {
+      *work_ptr = LinearSystemBuildResidual(mat_A, vec_b, vec_x, NULL, NULL);
+   }
+   else
+   {
+      void *obj_A = NULL, *obj_b = NULL, *obj_x = NULL, *obj_r = NULL;
+
+      HYPRE_IJMatrixGetObject(mat_A, &obj_A);
+      HYPRE_IJVectorGetObject(vec_b, &obj_b);
+      HYPRE_IJVectorGetObject(vec_x, &obj_x);
+      HYPRE_IJVectorGetObject(*work_ptr, &obj_r);
+      HYPRE_ParVectorCopy((HYPRE_ParVector)obj_b, (HYPRE_ParVector)obj_r);
+      HYPRE_ParCSRMatrixMatvec(-1.0, (HYPRE_ParCSRMatrix)obj_A, (HYPRE_ParVector)obj_x,
+                               1.0, (HYPRE_ParVector)obj_r);
+   }
+
+   if (!*work_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       *res_norm = -1.0;
       return;
    }
 
-   /* Compute residual norm */
-   hypredrv_LinearSystemComputeVectorNorm(vec_r, norm_type, res_norm);
-
-   /* Free memory */
-   HYPRE_IJVectorDestroy(vec_r);
+   hypredrv_LinearSystemComputeVectorNorm(*work_ptr, norm_type, res_norm);
 }
 
 /*-----------------------------------------------------------------------------

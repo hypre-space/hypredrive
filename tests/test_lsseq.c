@@ -1,4 +1,5 @@
 #include <mpi.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1786,8 +1787,10 @@ write_lsseq_rows_blob_decoded_size_mismatch(const char *filename)
 }
 
 #if defined(HYPREDRV_USING_ZLIB)
+/* rows_declared != 0 overwrites the decoded size stored in the rows blob's
+ * header, to model a corrupt container. */
 static void
-write_lsseq_zlib_pattern_rows_cols(const char *filename)
+write_lsseq_zlib_pattern_rows_cols(const char *filename, uint64_t rows_declared)
 {
    const char          payload[] = "k=v\n";
    LSSeqHeader         header;
@@ -1823,6 +1826,10 @@ write_lsseq_zlib_pattern_rows_cols(const char *filename)
    hypredrv_compress(COMP_ZLIB, sizeof(rows0), rows0, &zrows_sz, &zrows, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zrows);
+   if (rows_declared)
+   {
+      memcpy(zrows, &rows_declared, sizeof(rows_declared));
+   }
    hypredrv_compress(COMP_ZLIB, sizeof(cols0), cols0, &zcols_sz, &zcols, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(zcols);
@@ -3052,6 +3059,50 @@ test_lsseq_matrix_pattern_and_blob_errors(void)
    ASSERT_NULL(mat);
 }
 
+/* Shrinks one uint64 field of system 0's part-0 metadata by 8 bytes in place. */
+static void
+shrink_sys0_field(const char *filename, size_t field_offset)
+{
+   LSSeqHeader header;
+   uint64_t    size = 0;
+   FILE       *fp   = fopen(filename, "r+b");
+
+   ASSERT_NOT_NULL(fp);
+   ASSERT_EQ_SIZE(fread(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ(fseek(fp, (long)(header.offset_sys_part_meta + field_offset), SEEK_SET), 0);
+   ASSERT_EQ_SIZE(fread(&size, sizeof(size), 1, fp), 1);
+   size -= 8u;
+   ASSERT_EQ(fseek(fp, (long)(header.offset_sys_part_meta + field_offset), SEEK_SET), 0);
+   ASSERT_EQ_SIZE(fwrite(&size, sizeof(size), 1, fp), 1);
+   fclose(fp);
+}
+
+/* A values/RHS slice shorter than nnz (nrows) entries must be rejected rather
+ * than read past. */
+static void
+test_lsseq_short_value_slices_rejected(void)
+{
+   const char    *vals_file = "test_lsseq_short_vals.bin";
+   const char    *rhs_file  = "test_lsseq_short_rhs.bin";
+   HYPRE_IJMatrix mat       = NULL;
+   HYPRE_IJVector rhs       = NULL;
+
+   write_test_container_with_info(vals_file);
+   add_temp_file(vals_file);
+   shrink_sys0_field(vals_file, offsetof(LSSeqSystemPartMeta, values_blob_size));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, vals_file, 0, HYPRE_MEMORY_HOST, &mat));
+   ASSERT_NULL(mat);
+
+   write_test_container_with_info(rhs_file);
+   add_temp_file(rhs_file);
+   shrink_sys0_field(rhs_file, offsetof(LSSeqSystemPartMeta, rhs_blob_size));
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_LSSeqReadRHS(MPI_COMM_SELF, rhs_file, 0, HYPRE_MEMORY_HOST, &rhs));
+   ASSERT_NULL(rhs);
+   hypredrv_ErrorCodeResetAll();
+}
+
 #if defined(HYPREDRV_USING_ZLIB)
 static void
 test_lsseq_zlib_matrix_roundtrip(void)
@@ -3059,7 +3110,7 @@ test_lsseq_zlib_matrix_roundtrip(void)
    const char    *filename = "test_lsseq_zlib_matrix.bin";
    HYPRE_IJMatrix mat       = NULL;
 
-   write_lsseq_zlib_pattern_rows_cols(filename);
+   write_lsseq_zlib_pattern_rows_cols(filename, 0);
    add_temp_file(filename);
 
    hypredrv_ErrorCodeResetAll();
@@ -3068,7 +3119,61 @@ test_lsseq_zlib_matrix_roundtrip(void)
    ASSERT_EQ((int)hypredrv_LinearSystemMatrixGetNumNonzeros(mat), 2);
    HYPRE_IJMatrixDestroy(mat);
 }
+
+/* A blob header declaring more decoded bytes than the pattern metadata implies
+ * is rejected before the decoder allocates that size. */
+static void
+test_lsseq_zlib_blob_declared_size_mismatch(void)
+{
+   const char    *filename = "test_lsseq_zlib_declared_size.bin";
+   HYPRE_IJMatrix mat      = NULL;
+
+   write_lsseq_zlib_pattern_rows_cols(filename, UINT64_C(1) << 31);
+   add_temp_file(filename);
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(
+      hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
+   ASSERT_NULL(mat);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+}
 #endif
+
+/* A part whose row range is inverted wraps when its span is computed (here to
+ * 3 rows against a stored nrows of 2); loading must reject it instead of
+ * sizing buffers from it. */
+static void
+test_lsseq_inverted_part_row_range_rejected(void)
+{
+   const char    *filename = "test_lsseq_inverted_rows.bin";
+   LSSeqHeader    header;
+   LSSeqPartMeta  part;
+   HYPRE_IJMatrix mat = NULL;
+   FILE          *fp  = NULL;
+
+   write_lsseq_info_no_dofmap_timesteps(filename);
+   add_temp_file(filename);
+
+   fp = fopen(filename, "r+b");
+   ASSERT_NOT_NULL(fp);
+   ASSERT_EQ_SIZE(fread(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ(fseek(fp, (long)header.offset_part_meta, SEEK_SET), 0);
+   ASSERT_EQ_SIZE(fread(&part, sizeof(part), 1, fp), 1);
+   part.row_lower = UINT64_MAX;
+   ASSERT_EQ(fseek(fp, (long)header.offset_part_meta, SEEK_SET), 0);
+   ASSERT_EQ_SIZE(fwrite(&part, sizeof(part), 1, fp), 1);
+   ASSERT_EQ(fclose(fp), 0);
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(
+      hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
+   ASSERT_NULL(mat);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+}
 
 static void
 test_lsseq_dofmap_no_flag_and_timestep_modes(void)
@@ -3234,12 +3339,16 @@ test_lsseq_read_matrix_zero_nnz_and_rhs_zero_nrows(void)
    ASSERT_EQ((int)hypredrv_LinearSystemMatrixGetNumNonzeros(mat), 0);
    HYPRE_IJMatrixDestroy(mat);
 
+   /* A part claiming zero rows over the row range [0, 0] is inconsistent (the
+    * packer always writes nrows = row_upper - row_lower + 1) and is rejected. */
    write_lsseq_zero_nrows_rhs(fn_r);
    add_temp_file(fn_r);
    hypredrv_ErrorCodeResetAll();
-   ASSERT_TRUE(hypredrv_LSSeqReadRHS(MPI_COMM_SELF, fn_r, 0, HYPRE_MEMORY_HOST, &rhs));
-   ASSERT_NOT_NULL(rhs);
-   HYPRE_IJVectorDestroy(rhs);
+   ASSERT_FALSE(hypredrv_LSSeqReadRHS(MPI_COMM_SELF, fn_r, 0, HYPRE_MEMORY_HOST, &rhs));
+   ASSERT_NULL(rhs);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
 }
 
 int
@@ -3266,9 +3375,12 @@ main(int argc, char **argv)
    RUN_TEST(test_lsseq_header_shape_and_dimension_limits);
    RUN_TEST(test_lsseq_data_load_info_layout_and_truncation);
    RUN_TEST(test_lsseq_matrix_pattern_and_blob_errors);
+   RUN_TEST(test_lsseq_short_value_slices_rejected);
 #if defined(HYPREDRV_USING_ZLIB)
    RUN_TEST(test_lsseq_zlib_matrix_roundtrip);
+   RUN_TEST(test_lsseq_zlib_blob_declared_size_mismatch);
 #endif
+   RUN_TEST(test_lsseq_inverted_part_row_range_rejected);
    RUN_TEST(test_lsseq_dofmap_no_flag_and_timestep_modes);
    RUN_TEST(test_lsseq_timesteps_read_optional_ids_null);
    RUN_TEST(test_lsseq_read_missing_file_paths);

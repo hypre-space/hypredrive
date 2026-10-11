@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -118,6 +117,18 @@ PrintSystemSelectorDestroy(DumpSelector_args *selector)
    selector->level     = 0;
 }
 
+static void
+PrintSystemSelectorsDestroy(PrintSystem_args *args)
+{
+   for (size_t i = 0; args->selectors && i < args->num_selectors; i++)
+   {
+      PrintSystemSelectorDestroy(&args->selectors[i]);
+   }
+   free(args->selectors);
+   args->selectors     = NULL;
+   args->num_selectors = 0;
+}
+
 void
 hypredrv_PrintSystemDestroyArgs(PrintSystem_args *args)
 {
@@ -128,17 +139,7 @@ hypredrv_PrintSystemDestroyArgs(PrintSystem_args *args)
 
    hypredrv_IntArrayDestroy(&args->ids);
    PrintSystemRangeArrayDestroy(&args->ranges);
-
-   if (args->selectors)
-   {
-      for (size_t i = 0; i < args->num_selectors; i++)
-      {
-         PrintSystemSelectorDestroy(&args->selectors[i]);
-      }
-      free(args->selectors);
-      args->selectors = NULL;
-   }
-   args->num_selectors = 0;
+   PrintSystemSelectorsDestroy(args);
 }
 
 static int
@@ -1083,6 +1084,8 @@ PrintSystemApplySelectors(PrintSystem_args *args, const YAMLnode *child,
       return 0;
    }
 
+   /* A repeated selectors key replaces the earlier list. */
+   PrintSystemSelectorsDestroy(args);
    args->selectors     = selectors;
    args->num_selectors = selector_count;
    seen->selectors     = 1;
@@ -1315,25 +1318,43 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
 }
 
 /* Allocates the next hypre-data/ls_NNNNN directory by scanning for the highest
- * index already present, and reports its path. */
+ * index already present, and reports its path. Rank 0 picks and creates it and
+ * broadcasts the name: ranks scanning on their own could see a directory
+ * another rank had just created and move on to the next index, splitting one
+ * print across two directories. Collective over comm. */
 static void
-PrintDataNextSeriesDir(char *run_dir, size_t run_dir_size)
+PrintDataNextSeriesDir(MPI_Comm comm, char *run_dir, size_t run_dir_size)
 {
-   const char          *root = "hypre-data";
-   HYPREDRV_STAT_STRUCT st;
-   if (HYPREDRV_STAT(root, &st) != 0)
+   int myid = 0;
+   MPI_Comm_rank(comm, &myid);
+   if (!myid)
    {
-      (void)HYPREDRV_MKDIR(root, 0775);
-   }
+      const char          *root = "hypre-data";
+      HYPREDRV_STAT_STRUCT st;
+      if (HYPREDRV_STAT(root, &st) != 0)
+      {
+         (void)HYPREDRV_MKDIR(root, 0775);
+      }
 
-   int max_idx  = PrintSystemFindMaxDumpIndex(root);
-   int next_idx = max_idx + 1;
-   snprintf(run_dir, run_dir_size, "%s/ls_%05d", root, next_idx);
-   /* GCOVR_EXCL_BR_START */
-   if (HYPREDRV_STAT(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      (void)HYPREDRV_MKDIR(run_dir, 0775);
+      int max_idx  = PrintSystemFindMaxDumpIndex(root);
+      int next_idx = max_idx + 1;
+      snprintf(run_dir, run_dir_size, "%s/ls_%05d", root, next_idx);
+      /* GCOVR_EXCL_BR_START */
+      if (HYPREDRV_STAT(run_dir, &st) != 0) /* GCOVR_EXCL_BR_STOP */
+      {
+         (void)HYPREDRV_MKDIR(run_dir, 0775);
+      }
    }
+   MPI_Bcast(run_dir, (int)run_dir_size, MPI_CHAR, 0, comm);
+}
+
+/* Writes "<base>.out" into a MAX_FILENAME_LENGTH buffer, truncating `base` so
+ * the suffix always fits. */
+static void
+PrintDataOutName(char name[MAX_FILENAME_LENGTH], const char *base)
+{
+   (void)snprintf(name, MAX_FILENAME_LENGTH, "%.*s.out",
+                  (int)(MAX_FILENAME_LENGTH - 1 - strlen(".out")), base);
 }
 
 void
@@ -1351,21 +1372,9 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
    char b_name[MAX_FILENAME_LENGTH];
    char d_name[MAX_FILENAME_LENGTH];
 
-   {
-      size_t max_base = sizeof(A_name) - 1u - 4u;
-      int    prec     = (int)max_base;
-      (void)snprintf(A_name, sizeof(A_name), "%.*s.out", prec, A_base);
-   }
-   {
-      size_t max_base = sizeof(b_name) - 1u - 4u;
-      int    prec     = (int)max_base;
-      (void)snprintf(b_name, sizeof(b_name), "%.*s.out", prec, b_base);
-   }
-   {
-      size_t max_base = sizeof(d_name) - 1u - 4u;
-      int    prec     = (int)max_base;
-      (void)snprintf(d_name, sizeof(d_name), "%.*s.out", prec, d_base);
-   }
+   PrintDataOutName(A_name, A_base);
+   PrintDataOutName(b_name, b_base);
+   PrintDataOutName(d_name, d_base);
 
    int use_series_dir = 1;
    if (args)
@@ -1386,7 +1395,7 @@ hypredrv_LinearSystemPrintData(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_
    {
       char run_dir[256];
 
-      PrintDataNextSeriesDir(run_dir, sizeof(run_dir));
+      PrintDataNextSeriesDir(comm, run_dir, sizeof(run_dir));
       snprintf(A_path, sizeof(A_path), "%s/%s", run_dir, A_name);
       snprintf(b_path, sizeof(b_path), "%s/%s", run_dir, b_name);
       snprintf(d_path, sizeof(d_path), "%s/%s", run_dir, d_name);
@@ -1650,24 +1659,6 @@ PrintSystemStageEnabled(const PrintSystem_args *cfg, int stage)
    /* GCOVR_EXCL_BR_STOP */
 }
 
-/* Records why a dump was (or was not) scheduled. Safe to call with no sink, so
- * callers do not have to guard every diagnostic. */
-static void
-PrintSystemSetReason(char *reason, size_t reason_size, const char *fmt, ...)
-{
-   va_list ap;
-
-   /* GCOVR_EXCL_BR_START */
-   if (!reason || reason_size == 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      return;
-   }
-
-   va_start(ap, fmt);
-   vsnprintf(reason, reason_size, fmt, ap);
-   va_end(ap);
-}
-
 /* Preconditions common to every selection type: a usable config and context,
  * with the current stage enabled. */
 static int
@@ -1677,26 +1668,26 @@ PrintSystemDumpGateOpen(const PrintSystem_args *cfg, const PrintSystemContext *c
    /* GCOVR_EXCL_BR_START */
    if (!cfg) /* GCOVR_EXCL_BR_STOP */
    {
-      PrintSystemSetReason(reason, reason_size, "%s",
-                           "missing configuration"); /* GCOVR_EXCL_LINE */
-      return 0;                                      /* GCOVR_EXCL_LINE */
+      hypredrv_FormatReason(reason, reason_size, "%s",
+                            "missing configuration"); /* GCOVR_EXCL_LINE */
+      return 0;                                       /* GCOVR_EXCL_LINE */
    }
    if (!cfg->enabled)
    {
-      PrintSystemSetReason(reason, reason_size, "%s", "print_system disabled");
+      hypredrv_FormatReason(reason, reason_size, "%s", "print_system disabled");
       return 0;
    }
    /* GCOVR_EXCL_BR_START */
    if (!ctx) /* GCOVR_EXCL_BR_STOP */
    {
-      PrintSystemSetReason(reason, reason_size, "%s",
-                           "missing context"); /* GCOVR_EXCL_LINE */
-      return 0;                                /* GCOVR_EXCL_LINE */
+      hypredrv_FormatReason(reason, reason_size, "%s",
+                            "missing context"); /* GCOVR_EXCL_LINE */
+      return 0;                                 /* GCOVR_EXCL_LINE */
    }
    if (!PrintSystemStageEnabled(cfg, ctx->stage))
    {
-      PrintSystemSetReason(reason, reason_size, "stage '%s' not selected",
-                           PrintSystemStageName(ctx->stage));
+      hypredrv_FormatReason(reason, reason_size, "stage '%s' not selected",
+                            PrintSystemStageName(ctx->stage));
       return 0;
    }
 
@@ -1712,13 +1703,13 @@ PrintSystemDescribeMatchedSelector(const DumpSelector_args *selector, size_t ind
 {
    if (PrintSystemBasisUsesThreshold(selector->basis))
    {
-      PrintSystemSetReason(
+      hypredrv_FormatReason(
          reason, reason_size, "selector[%zu] basis=%s metric_value=%.2e threshold=%.2e",
          index, PrintSystemBasisName(selector->basis), metric_value, selector->threshold);
    }
    else
    {
-      PrintSystemSetReason(
+      hypredrv_FormatReason(
          reason, reason_size, "selector[%zu] basis=%s level=%d basis_value=%d", index,
          PrintSystemBasisName(selector->basis), selector->level, basis_value);
    }
@@ -1732,7 +1723,7 @@ PrintSystemAnySelectorMatches(const PrintSystem_args *cfg, const PrintSystemCont
    /* GCOVR_EXCL_BR_START */
    if (!cfg->selectors || cfg->num_selectors == 0) /* GCOVR_EXCL_BR_STOP */
    {
-      PrintSystemSetReason(reason, reason_size, "%s", "selectors list is empty");
+      hypredrv_FormatReason(reason, reason_size, "%s", "selectors list is empty");
       return 0;
    }
 
@@ -1750,8 +1741,8 @@ PrintSystemAnySelectorMatches(const PrintSystem_args *cfg, const PrintSystemCont
       }
    }
 
-   PrintSystemSetReason(reason, reason_size, "no selector matched (count=%zu)",
-                        cfg->num_selectors);
+   hypredrv_FormatReason(reason, reason_size, "no selector matched (count=%zu)",
+                         cfg->num_selectors);
 
    return 0;
 }
@@ -1772,8 +1763,8 @@ PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContex
             (ctx->last_iter >= 0) && ((double)ctx->last_iter >= cfg->threshold);
          /* GCOVR_EXCL_BR_STOP */
 
-         PrintSystemSetReason(reason, reason_size, "last_iter=%d threshold=%.3e",
-                              ctx->last_iter, cfg->threshold);
+         hypredrv_FormatReason(reason, reason_size, "last_iter=%d threshold=%.3e",
+                               ctx->last_iter, cfg->threshold);
          return matched;
       }
 
@@ -1784,8 +1775,8 @@ PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContex
             (ctx->last_setup_time >= 0.0) && (ctx->last_setup_time >= cfg->threshold);
          /* GCOVR_EXCL_BR_STOP */
 
-         PrintSystemSetReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
-                              ctx->last_setup_time, cfg->threshold);
+         hypredrv_FormatReason(reason, reason_size, "last_setup_time=%.3e threshold=%.3e",
+                               ctx->last_setup_time, cfg->threshold);
          return matched;
       }
 
@@ -1796,8 +1787,8 @@ PrintSystemThresholdMatches(const PrintSystem_args *cfg, const PrintSystemContex
             (ctx->last_solve_time >= 0.0) && (ctx->last_solve_time >= cfg->threshold);
          /* GCOVR_EXCL_BR_STOP */
 
-         PrintSystemSetReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
-                              ctx->last_solve_time, cfg->threshold);
+         hypredrv_FormatReason(reason, reason_size, "last_solve_time=%.3e threshold=%.3e",
+                               ctx->last_solve_time, cfg->threshold);
          return matched;
       }
       default:
@@ -1825,7 +1816,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
    switch (cfg->type)
    {
       case PRINT_SYSTEM_TYPE_ALL:
-         PrintSystemSetReason(reason, reason_size, "%s", "type=all");
+         hypredrv_FormatReason(reason, reason_size, "%s", "type=all");
          return 1;
 
       case PRINT_SYSTEM_TYPE_EVERY_N_SYSTEMS:
@@ -1835,8 +1826,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
                        /* GCOVR_EXCL_BR_STOP */
                        ((ctx->system_index % cfg->every) == 0);
 
-         PrintSystemSetReason(reason, reason_size, "system_index=%d every=%d",
-                              ctx->system_index, cfg->every);
+         hypredrv_FormatReason(reason, reason_size, "system_index=%d every=%d",
+                               ctx->system_index, cfg->every);
          return matched;
       }
 
@@ -1847,8 +1838,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
                        /* GCOVR_EXCL_BR_STOP */
                        ((ctx->timestep_index % cfg->every) == 0);
 
-         PrintSystemSetReason(reason, reason_size, "timestep_index=%d every=%d",
-                              ctx->timestep_index, cfg->every);
+         hypredrv_FormatReason(reason, reason_size, "timestep_index=%d every=%d",
+                               ctx->timestep_index, cfg->every);
          return matched;
       }
 
@@ -1856,10 +1847,10 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       {
          int matched = PrintSystemContainsID(cfg->ids, ctx->system_index);
 
-         PrintSystemSetReason(reason, reason_size, "system_index=%d ids_size=%zu",
-                              ctx->system_index,
-                              /* GCOVR_EXCL_BR_START */
-                              cfg->ids ? cfg->ids->size : 0);
+         hypredrv_FormatReason(reason, reason_size, "system_index=%d ids_size=%zu",
+                               ctx->system_index,
+                               /* GCOVR_EXCL_BR_START */
+                               cfg->ids ? cfg->ids->size : 0);
          /* GCOVR_EXCL_BR_STOP */
          return matched;
       }
@@ -1868,8 +1859,8 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
       {
          int matched = PrintSystemContainsRange(&cfg->ranges, ctx->system_index);
 
-         PrintSystemSetReason(reason, reason_size, "system_index=%d ranges_size=%zu",
-                              ctx->system_index, cfg->ranges.size);
+         hypredrv_FormatReason(reason, reason_size, "system_index=%d ranges_size=%zu",
+                               ctx->system_index, cfg->ranges.size);
          return matched;
       }
 
@@ -1885,7 +1876,7 @@ PrintSystemShouldDumpDetailed(const PrintSystem_args *cfg, const PrintSystemCont
          break;
    }
 
-   PrintSystemSetReason(reason, reason_size, "unknown type=%d", cfg->type);
+   hypredrv_FormatReason(reason, reason_size, "unknown type=%d", cfg->type);
 
    return 0;
 }
@@ -2168,9 +2159,40 @@ PrintSystemFindMaxDumpIndex(const char *base_dir)
    return max_idx;
 }
 
-#ifdef _WIN32
 static int PrintSystemRemoveTree(const char *path);
 
+#ifndef _MSC_VER
+/* Removes every entry of `dir`, the open listing of `path`, recursing into
+ * subdirectories, then closes it. Returns 0 if an entry could not be removed. */
+static int
+PrintSystemRemoveEntries(DIR *dir, const char *path)
+{
+   int                  ok    = 1;
+   const struct dirent *entry = NULL;
+   /* GCOVR_EXCL_BR_START */
+   while (ok && (entry = readdir(dir)) != NULL) /* GCOVR_EXCL_BR_STOP */
+   {
+      if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
+      {
+         continue;
+      }
+
+      char child[2 * MAX_FILENAME_LENGTH];
+      /* GCOVR_EXCL_BR_START */
+      if (!PrintSystemPathJoin(child, sizeof(child), path, entry->d_name))
+      /* GCOVR_EXCL_BR_STOP */
+      {
+         ok = 0; /* GCOVR_EXCL_LINE */
+         break;  /* GCOVR_EXCL_LINE */
+      }
+      ok = PrintSystemRemoveTree(child);
+   }
+   closedir(dir);
+   return ok;
+}
+#endif
+
+#ifdef _WIN32
 #ifdef _MSC_VER
 static int
 PrintSystemRemoveTreeWindows(const char *path)
@@ -2246,26 +2268,7 @@ PrintSystemRemoveTreeWindows(const char *path)
       return (remove(path) == 0) || (errno == ENOENT);
    }
 
-   int                  ok    = 1;
-   const struct dirent *entry = NULL;
-   while (ok && (entry = readdir(dir)) != NULL)
-   {
-      if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
-      {
-         continue;
-      }
-
-      char child[2 * MAX_FILENAME_LENGTH];
-      if (!PrintSystemPathJoin(child, sizeof(child), path, entry->d_name))
-      {
-         ok = 0;
-         break;
-      }
-      ok = PrintSystemRemoveTree(child);
-   }
-   closedir(dir);
-
-   if (!ok)
+   if (!PrintSystemRemoveEntries(dir, path))
    {
       return 0;
    }
@@ -2307,31 +2310,8 @@ PrintSystemRemoveTree(const char *path)
       return 0; /* GCOVR_EXCL_LINE */
    }
 
-   int                  ok    = 1;
-   const struct dirent *entry = NULL;
    /* GCOVR_EXCL_BR_START */
-   while (ok && (entry = readdir(dir)) != NULL) /* GCOVR_EXCL_BR_STOP */
-   {
-      if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
-      {
-         continue;
-      }
-
-      char child[2 * MAX_FILENAME_LENGTH];
-      /* GCOVR_EXCL_BR_START */
-      if (!PrintSystemPathJoin(child, sizeof(child), path, entry->d_name))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         ok = 0; /* GCOVR_EXCL_LINE */
-         break;  /* GCOVR_EXCL_LINE */
-      }
-
-      ok = PrintSystemRemoveTree(child);
-   }
-
-   closedir(dir);
-   /* GCOVR_EXCL_BR_START */
-   if (!ok) /* GCOVR_EXCL_BR_STOP */
+   if (!PrintSystemRemoveEntries(dir, path)) /* GCOVR_EXCL_BR_STOP */
    {
       return 0; /* GCOVR_EXCL_LINE */
    }

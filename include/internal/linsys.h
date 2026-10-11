@@ -11,6 +11,7 @@
 #include <stddef.h>
 #include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
+#include "HYPRE_parcsr_mv.h"
 #include "HYPRE_utilities.h"
 #include "internal/compatibility.h"
 #include "internal/containers.h"
@@ -225,6 +226,16 @@ void hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const
                                            double *);
 void hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector,
                                               HYPRE_IJVector, const char *, double *);
+MPI_Comm  hypredrv_IJMatrixComm(HYPRE_IJMatrix);
+MPI_Comm  hypredrv_IJVectorComm(HYPRE_IJVector);
+HYPRE_Int hypredrv_ParCSRMatrixMigrate(HYPRE_ParCSRMatrix, HYPRE_MemoryLocation);
+HYPRE_Int hypredrv_IJMatrixMigrate(HYPRE_IJMatrix, HYPRE_MemoryLocation);
+HYPRE_Int hypredrv_IJVectorMigrate(HYPRE_IJVector, HYPRE_MemoryLocation);
+MPI_Comm  hypredrv_IJSystemComm(HYPRE_IJMatrix A, HYPRE_IJMatrix M, HYPRE_IJVector b,
+                                HYPRE_IJVector x);
+void      hypredrv_LinearSystemComputeResidualNormWork(HYPRE_IJMatrix, HYPRE_IJVector,
+                                                       HYPRE_IJVector, const char *,
+                                                       HYPRE_IJVector *, double *);
 void hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm, HYPRE_IJMatrix, HYPRE_IJVector,
                                                 HYPRE_IJVector, const IntArray *,
                                                 const DofLabelMap *, const char *, int);
@@ -248,5 +259,65 @@ void hypredrv_IJVectorReadMultipartBinary(const char *, MPI_Comm, uint64_t,
                                           HYPRE_MemoryLocation, HYPRE_IJVector *);
 void hypredrv_IJMatrixReadMultipartBinary(const char *, MPI_Comm, uint64_t,
                                           HYPRE_MemoryLocation, HYPRE_IJMatrix *);
+
+/* One rank-local matrix part in the multipart part layout: `nnz` row and column
+ * indices of `index_size` (4 or 8) bytes and `nnz` values of `value_size` (4 or
+ * 8) bytes. The builder may convert the arrays in place; `label` names the part
+ * in error messages. */
+typedef struct
+{
+   uint64_t    nrows;
+   uint64_t    nnz;
+   uint64_t    index_size;
+   uint64_t    value_size;
+   void       *rows;
+   void       *cols;
+   void       *vals;
+   const char *label;
+} hypredrv_IJMatrixMemPart;
+
+/* Supplies rank-local matrix part p to hypredrv_IJMatrixBuildFromSource. `load`
+ * always fills the metadata (nrows, nnz, widths, label) and allocates (malloc)
+ * the index arrays when `want` has HYPREDRV_PART_INDICES and the values when
+ * it has HYPREDRV_PART_VALUES; the builder frees them. A values-only request
+ * may receive a part whose indices are already loaded. Returns 0 with the
+ * error state set on failure. */
+enum
+{
+   HYPREDRV_PART_INDICES = 1,
+   HYPREDRV_PART_VALUES  = 2,
+};
+typedef struct
+{
+   void    *ctx;
+   uint32_t nparts;
+   int (*load)(void *ctx, uint32_t p, int want, hypredrv_IJMatrixMemPart *part);
+} hypredrv_IJMatrixPartSource;
+
+void hypredrv_IJMatrixBuildFromSource(MPI_Comm, const hypredrv_IJMatrixPartSource *,
+                                      HYPRE_MemoryLocation, HYPRE_IJMatrix *);
+
+/* One rank-local vector part: `nrows` values of `value_size` (4 or 8) bytes,
+ * convertible in place; `label` names it in error messages. */
+typedef struct
+{
+   uint64_t    nrows;
+   uint64_t    value_size;
+   void       *vals;
+   const char *label;
+} hypredrv_IJVectorMemPart;
+
+/* Supplies rank-local vector part p to hypredrv_IJVectorBuildFromSource: `load`
+ * always fills nrows, value_size and label, and allocates (malloc) the values
+ * when `want_values` is set; the builder frees them. Returns 0 on failure. */
+typedef struct
+{
+   void    *ctx;
+   uint32_t nparts;
+   int (*load)(void *ctx, uint32_t p, int want_values, hypredrv_IJVectorMemPart *part);
+} hypredrv_IJVectorPartSource;
+
+void hypredrv_IJVectorBuildFromSource(MPI_Comm, const hypredrv_IJVectorPartSource *,
+                                      HYPRE_MemoryLocation, HYPRE_IJVector *);
 
 #endif /* LINSYS_HEADER */
