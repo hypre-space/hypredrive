@@ -1,3 +1,4 @@
+#include <math.h>
 #include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -391,11 +392,120 @@ test_IntArrayParRead_ascii(void)
    cleanup_temp_files();
 }
 
+typedef struct
+{
+   int fail_values;
+   int invalid_metadata;
+   int grow_values;
+   int nonfinite;
+   int empty_part;
+} VectorSourceFixture;
+
+static int
+load_vector_source_fixture(void *ctx, uint32_t p, int want_values,
+                           hypredrv_IJVectorMemPart *part)
+{
+   VectorSourceFixture *fixture = (VectorSourceFixture *)ctx;
+   part->nrows                  = fixture->empty_part && p == 1 ? 0 : 1;
+   part->value_size             = sizeof(double);
+   part->label                  = NULL;
+   if (fixture->fail_values == want_values)
+   {
+      return 0;
+   }
+   if (fixture->invalid_metadata == 1)
+   {
+      part->value_size = 3;
+   }
+   else if (fixture->invalid_metadata == 2)
+   {
+      part->nrows = UINT64_MAX;
+   }
+   if (want_values)
+   {
+      double value = fixture->nonfinite ? NAN : 3.0 + p;
+      part->nrows += fixture->grow_values;
+      part->vals = malloc(sizeof(value));
+      ASSERT_NOT_NULL(part->vals);
+      memcpy(part->vals, &value, sizeof(value));
+   }
+   return 1;
+}
+
+static void
+test_vector_source_rejects_failed_and_changed_parts(void)
+{
+   VectorSourceFixture         fixture = {0};
+   hypredrv_IJVectorPartSource source  = {&fixture, 1, load_vector_source_fixture};
+   HYPRE_IJVector              vec     = NULL;
+   for (int pass = 0; pass < 2; pass++)
+   {
+      fixture.fail_values = pass;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_IJVectorBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &vec);
+      ASSERT_NULL(vec);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   }
+   fixture.fail_values = -1;
+   for (int invalid = 1; invalid <= 2; invalid++)
+   {
+      fixture.invalid_metadata = invalid;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_IJVectorBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &vec);
+      ASSERT_NULL(vec);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   }
+   fixture.invalid_metadata = 0;
+   fixture.grow_values      = 1;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+
+   fixture.grow_values = 0;
+   fixture.nonfinite   = 1;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_IJVectorBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NULL(vec);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+}
+
+static void
+test_vector_source_empty_part_and_communicator(void)
+{
+   VectorSourceFixture         fixture = {0};
+   hypredrv_IJVectorPartSource source  = {&fixture, 2, load_vector_source_fixture};
+   HYPRE_IJVector              vec     = NULL;
+   HYPRE_BigInt                index   = 0;
+   HYPRE_Complex               value   = 0;
+   fixture.fail_values                 = -1;
+   fixture.empty_part                  = 1;
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_IJVectorComm(NULL) == MPI_COMM_NULL);
+   hypredrv_IJVectorBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &vec);
+   ASSERT_NOT_NULL(vec);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_TRUE(hypredrv_IJVectorComm(vec) == MPI_COMM_SELF);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(vec, 1, &index, &value), 0);
+   ASSERT_EQ_DOUBLE((double)value, 3.0, 1.0e-12);
+   HYPRE_IJVectorDestroy(vec);
+   vec = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 0, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_TRUE(hypredrv_IJVectorComm(vec) == MPI_COMM_SELF);
+   HYPRE_IJVectorDestroy(vec);
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
    TEST_HYPRE_INIT();
+
+   RUN_TEST(test_vector_source_rejects_failed_and_changed_parts);
+   RUN_TEST(test_vector_source_empty_part_and_communicator);
 
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_success);
    RUN_TEST(test_hypredrv_IJVectorReadMultipartBinary_invalid_coef_dtype);

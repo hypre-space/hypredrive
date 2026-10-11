@@ -12,6 +12,10 @@
 
 #include "HYPRE_IJ_mv.h"
 #include "test_helpers.h"
+#ifdef HYPRE_USING_GPU
+#include "_hypre_parcsr_mv.h"
+#include "internal/linsys.h"
+#endif
 
 static inline HYPRE_IJMatrix
 create_test_ijmatrix_1x1(double diag)
@@ -50,7 +54,19 @@ get_test_ijmatrix_1x1(HYPRE_IJMatrix mat)
    HYPRE_Int     ncols = 1;
    HYPRE_BigInt  index = 0;
    HYPRE_Complex value = 0.0;
+#ifdef HYPRE_USING_GPU
+   /* GPU builds may hold the matrix in device memory, which GetValues cannot
+    * read in older hypre: read it on the host, then move it back */
+   void *obj = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixGetObject(mat, &obj), 0);
+   HYPRE_MemoryLocation location =
+      hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)obj);
+   ASSERT_EQ(hypredrv_IJMatrixMigrate(mat, HYPRE_MEMORY_HOST), 0);
+#endif
    ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 1, &ncols, &index, &index, &value), 0);
+#ifdef HYPRE_USING_GPU
+   ASSERT_EQ(hypredrv_IJMatrixMigrate(mat, location), 0);
+#endif
    return (double)value;
 }
 
