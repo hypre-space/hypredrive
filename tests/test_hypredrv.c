@@ -1,7 +1,6 @@
 #include <limits.h>
 #include <mpi.h>
 #include <stdbool.h>
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -118,24 +117,6 @@ parse_yaml_into_obj(HYPREDRV_t obj, char *yaml_config)
    char *argv[] = {yaml_config};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
    ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
-}
-
-static void
-parse_yaml_file_into_obj(HYPREDRV_t obj, const char *yaml_config, const char *tmp_name)
-{
-   char *tmp_yaml = strdup(tmp_name);
-   ASSERT_NOT_NULL(tmp_yaml);
-
-   FILE *fp = fopen(tmp_yaml, "w");
-   ASSERT_NOT_NULL(fp);
-   ASSERT_TRUE(fputs(yaml_config, fp) >= 0);
-   fclose(fp);
-
-   char *argv[] = {tmp_yaml};
-   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
-   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_NONE);
-   remove(tmp_yaml);
-   free(tmp_yaml);
 }
 
 static void
@@ -389,32 +370,6 @@ count_substr(const char *haystack, const char *needle)
    }
 
    return count;
-}
-
-static bool
-find_prefixed_entry(const char *dir_path, const char *prefix, char *out_name,
-                    size_t out_size)
-{
-   DIR *dir = opendir(dir_path);
-   if (!dir)
-   {
-      return false;
-   }
-
-   bool                found = false;
-   struct dirent *entry = NULL;
-   while ((entry = readdir(dir)) != NULL)
-   {
-      if (!strncmp(entry->d_name, prefix, strlen(prefix)))
-      {
-         snprintf(out_name, out_size, "%s", entry->d_name);
-         found = true;
-         break;
-      }
-   }
-
-   closedir(dir);
-   return found;
 }
 
 static bool
@@ -1364,6 +1319,32 @@ run_linear_system_build_trace_capture(void *context)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+/* A failing step inside HYPREDRV_LinearSystemBuild is reported to the caller
+ * as an error code; the library itself does not abort the run. */
+static void
+test_HYPREDRV_LinearSystemBuild_missing_matrix_returns_error(void)
+{
+   reset_state();
+
+   char yaml_config[] = "general:\n"
+                        "  statistics: off\n"
+                        "linear_system:\n"
+                        "  matrix_filename: no-such-dir/no-such-matrix\n"
+                        "solver: pcg\n"
+                        "preconditioner: amg\n";
+   HYPREDRV_t obj = create_initialized_obj();
+   parse_yaml_into_obj(obj, yaml_config);
+
+   uint32_t code = HYPREDRV_LinearSystemBuild(obj);
+   ASSERT_TRUE(code != ERROR_NONE);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ErrorMsgClear();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 static void
 test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate(void)
 {
@@ -1396,7 +1377,9 @@ run_eigspec_trace_capture(void *context)
       "  statistics: off\n"
       "linear_system:\n"
       "  eigspec:\n"
-      "    enable: off\n";
+      "    enable: off\n"
+      "solver: pcg\n"
+      "preconditioner: amg\n";
    parse_yaml_into_obj(obj, yaml_config);
 #endif
 
@@ -2871,7 +2854,7 @@ struct LinearSetupCaptureContext
    HYPREDRV_t obj;
 };
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 run_linear_setup_for_capture(void *context)
 {
    struct LinearSetupCaptureContext *setup_context =
@@ -2881,7 +2864,7 @@ run_linear_setup_for_capture(void *context)
    ASSERT_EQ(HYPREDRV_AnnotateEnd(setup_context->obj, "system", -1), ERROR_NONE);
 }
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 park_mgr_component_reuse_handles(HYPREDRV_t obj)
 {
    ASSERT_EQ(HYPREDRV_AnnotateBegin(obj, "system", -1), ERROR_NONE);
@@ -2897,7 +2880,7 @@ struct SetPreconVariantCaptureContext
    int        variant_idx;
 };
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 set_precon_variant_for_capture(void *context)
 {
    struct SetPreconVariantCaptureContext *variant_context =
@@ -2913,7 +2896,7 @@ struct SetPreconPresetCaptureContext
    const char *preset;
 };
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 set_precon_preset_for_capture(void *context)
 {
    struct SetPreconPresetCaptureContext *preset_context =
@@ -2930,12 +2913,15 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
    return;
 #else
    reset_state();
-   setenv("HYPREDRV_LOG_LEVEL", "2", 1);
+   /* The per-component setup-reuse lines asserted below are logged at level 4. */
+   setenv("HYPREDRV_LOG_LEVEL", "4", 1);
    hypredrv_LogInitializeFromEnv();
 
    HYPREDRV_t obj = create_initialized_obj();
    ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
 
+   /* Rebuild everything at system 0 and reuse at system 1, so the second setup
+    * keeps the outer MGR and reruns setup on the cached component handles. */
    char yaml_config[] =
       "general:\n"
       "  statistics: off\n"
@@ -2947,7 +2933,7 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "    max_iter: 5\n"
       "preconditioner:\n"
       "  reuse:\n"
-      "    linear_system_ids: [1]\n"
+      "    linear_system_ids: [0]\n"
       "  mgr:\n"
       "    max_iter: 1\n"
       "    print_level: 0\n"
@@ -2958,12 +2944,12 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "          amg:\n"
       "            max_iter: 1\n"
       "          reuse:\n"
-      "            linear_system_ids: [1]\n"
+      "            linear_system_ids: [0]\n"
       "        g_relaxation:\n"
       "          ilu:\n"
       "            max_iter: 1\n"
       "          reuse:\n"
-      "            linear_system_ids: [1]\n"
+      "            linear_system_ids: [0]\n"
       "        restriction_type: injection\n"
       "        prolongation_type: injection\n"
       "        coarse_level_type: rap\n"
@@ -2971,7 +2957,7 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
       "      amg:\n"
       "        max_iter: 1\n"
       "      reuse:\n"
-      "        linear_system_ids: [1]\n";
+      "        linear_system_ids: [0]\n";
 
    parse_yaml_into_obj(obj, yaml_config);
    ASSERT_EQ(HYPREDRV_LinearSystemSetContiguousDofmap(obj, 1, 2), ERROR_NONE);
@@ -3000,7 +2986,7 @@ test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles(void)
    HYPRE_Solver c0     = state->iargs->precon.mgr.csolver;
 
    struct LinearSetupCaptureContext setup_context = {obj};
-   char                             output[4096];
+   char                             output[65536];
    capture_stderr_output(run_linear_setup_for_capture, &setup_context, output,
                          sizeof(output));
 
@@ -4910,8 +4896,6 @@ test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref(void)
    HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
    attach_library_scalar_system(obj, mat_A, vec_b);
 
-   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
-
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
@@ -5633,6 +5617,7 @@ run_hypredrv_lifecycle_and_guards(void)
       test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);
    RUN_TEST(test_HYPREDRV_log_level_boundary_api_traces);
    RUN_TEST(test_HYPREDRV_log_level_precon_variant_decisions);
+   RUN_TEST(test_HYPREDRV_LinearSystemBuild_missing_matrix_returns_error);
    RUN_TEST(test_HYPREDRV_log_level_avoids_linear_system_ready_duplicate);
    RUN_TEST(test_HYPREDRV_log_level_eigenspectrum_trace_paths);
    RUN_TEST(test_HYPREDRV_Finalize_auto_destroys_live_objects);

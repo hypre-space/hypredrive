@@ -232,6 +232,92 @@ test_mgr_nested_yaml_coarsest_nested_krylov_mgr_precon_inline(void)
    hypredrv_InputArgsDestroy(&iargs);
 }
 
+/* An MGR used as a nested Krylov's preconditioner owns its own nested Krylov
+ * args (here at its coarsest level); destroying the outer configuration must
+ * free them, which the ASan builds check through LeakSanitizer. */
+static void
+test_mgr_nested_yaml_nested_mgr_coarsest_krylov_freed(void)
+{
+   const char yaml_text[] =
+      "solver:\n"
+      "  fgmres:\n"
+      "    max_iter: 10\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation:\n"
+      "          gmres:\n"
+      "            max_iter: 2\n"
+      "            preconditioner:\n"
+      "              mgr:\n"
+      "                coarsest_level:\n"
+      "                  gmres:\n"
+      "                    max_iter: 1\n";
+
+   input_args *iargs = parse_config(yaml_text);
+   ASSERT_NOT_NULL(iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   NestedKrylov_args *outer = iargs->precon.mgr.level[0].f_relaxation.krylov;
+   ASSERT_NOT_NULL(outer);
+   ASSERT_EQ(outer->precon_method, PRECON_MGR);
+   ASSERT_NOT_NULL(outer->precon.mgr.coarsest_level.krylov);
+
+   hypredrv_InputArgsDestroy(&iargs);
+}
+
+/* A repeated relaxation key replaces the earlier one (last wins); what the
+ * earlier occurrence allocated (nested Krylov or MGR, reuse settings) must be
+ * released, which the ASan builds check through LeakSanitizer. */
+static void
+test_mgr_nested_yaml_repeated_relaxation_keys(void)
+{
+   const char yaml_text[] =
+      "solver:\n"
+      "  pcg:\n"
+      "    max_iter: 10\n"
+      "preconditioner:\n"
+      "  mgr:\n"
+      "    level:\n"
+      "      0:\n"
+      "        f_dofs: [0]\n"
+      "        f_relaxation:\n"
+      "          gmres:\n"
+      "            max_iter: 2\n"
+      "          reuse: always\n"
+      "        f_relaxation: jacobi\n"
+      "        g_relaxation:\n"
+      "          gmres:\n"
+      "            max_iter: 2\n"
+      "          reuse: always\n"
+      "        g_relaxation: none\n"
+      "      1:\n"
+      "        f_dofs: [1]\n"
+      "        f_relaxation:\n"
+      "          mgr:\n"
+      "            level:\n"
+      "              0:\n"
+      "                f_dofs: [0]\n"
+      "        f_relaxation: jacobi\n";
+
+   input_args *iargs = parse_config(yaml_text);
+   ASSERT_NOT_NULL(iargs);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   for (int lvl = 0; lvl < 2; lvl++)
+   {
+      ASSERT_FALSE(iargs->precon.mgr.level[lvl].f_relaxation.use_krylov);
+      ASSERT_NULL(iargs->precon.mgr.level[lvl].f_relaxation.krylov);
+      ASSERT_NULL(iargs->precon.mgr.level[lvl].f_relaxation.mgr);
+      ASSERT_FALSE(iargs->precon.mgr.level[lvl].f_relaxation.reuse.present);
+   }
+   ASSERT_FALSE(iargs->precon.mgr.level[0].g_relaxation.use_krylov);
+   ASSERT_NULL(iargs->precon.mgr.level[0].g_relaxation.krylov);
+   ASSERT_FALSE(iargs->precon.mgr.level[0].g_relaxation.reuse.present);
+
+   hypredrv_InputArgsDestroy(&iargs);
+}
+
 static void
 test_mgr_nested_yaml_scalar_stationary_precon(void)
 {
@@ -277,6 +363,8 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_nested_yaml_frelax_nested_krylov_mgr_precon_inline);
    RUN_TEST(test_mgr_nested_yaml_coarsest_nested_krylov_mgr_precon_inline);
    RUN_TEST(test_mgr_nested_yaml_scalar_stationary_precon);
+   RUN_TEST(test_mgr_nested_yaml_repeated_relaxation_keys);
+   RUN_TEST(test_mgr_nested_yaml_nested_mgr_coarsest_krylov_freed);
 
    MPI_Finalize();
    return 0;

@@ -241,11 +241,59 @@ void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
    (sizeof(MGRlvl_field_offset_map) / sizeof(MGRlvl_field_offset_map[0]))
 #define MGR_NUM_FIELDS (sizeof(MGR_field_offset_map) / sizeof(MGR_field_offset_map[0]))
 
-/* Define the prefix list */
-#define GENERATE_PREFIXED_LIST_MGR                                  \
-   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRcls)        \
-      hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRfrlx)    \
-         hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGRgrlx) \
+/* Frees what a component's args own (nested Krylov and reuse arguments, and a
+ * nested MGR for F-relaxation) and clears those fields. The Krylov args go with
+ * the configuration of their own preconditioner: hypredrv_NestedKrylovDestroy
+ * only tears down runtime objects, since cached solvers are rebuilt from it. */
+static void
+MGRNestedKrylovRelease(NestedKrylov_args **krylov, int *use_krylov)
+{
+   if (*krylov)
+   {
+      hypredrv_NestedKrylovDestroy(*krylov);
+      hypredrv_PreconArgsDestroyOwnedConfig((*krylov)->precon_method, &(*krylov)->precon);
+      free(*krylov);
+      *krylov = NULL;
+   }
+   *use_krylov = 0;
+}
+
+static void
+hypredrv_MGRclsReleaseArgs(MGRcls_args *args)
+{
+   hypredrv_MGRComponentReuseDestroyArgs(&args->reuse);
+   MGRNestedKrylovRelease(&args->krylov, &args->use_krylov);
+}
+
+static void
+hypredrv_MGRgrlxReleaseArgs(MGRgrlx_args *args)
+{
+   hypredrv_MGRComponentReuseDestroyArgs(&args->reuse);
+   MGRNestedKrylovRelease(&args->krylov, &args->use_krylov);
+}
+
+static void
+hypredrv_MGRfrlxReleaseArgs(MGRfrlx_args *args)
+{
+   hypredrv_MGRComponentReuseDestroyArgs(&args->reuse);
+   if (args->mgr)
+   {
+      hypredrv_MGRDestroyNestedSolverArgs(args->mgr);
+      free(args->mgr);
+      args->mgr = NULL;
+   }
+   MGRNestedKrylovRelease(&args->krylov, &args->use_krylov);
+}
+
+/* Define the prefix list. The components own memory, so their SetArgs release
+ * what a repeated key's earlier occurrence allocated. */
+#define GENERATE_PREFIXED_LIST_MGR                               \
+   hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH(       \
+      MGRcls, DEFINE_SET_ARGS_RELEASING_FUNC)                    \
+      hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH(    \
+         MGRfrlx, DEFINE_SET_ARGS_RELEASING_FUNC)                \
+         hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH( \
+            MGRgrlx, DEFINE_SET_ARGS_RELEASING_FUNC)             \
             GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
 /* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
@@ -854,11 +902,8 @@ MGRgrlxApplyTypeDefaults(void *vargs, HYPRE_Int old_type)
 const char *
 hypredrv_MGRLogObjectName(const Stats *stats)
 {
-#if defined(_MSC_VER)
-   static __declspec(thread) char buf[32];
-#else
-   static __thread char buf[32];
-#endif
+   /* Shared buffer: the library keeps global state and is not thread-safe. */
+   static char buf[32];
    return hypredrv_StatsGetLogObjectName(stats, buf, sizeof(buf));
 }
 
@@ -1229,16 +1274,16 @@ hypredrv_MGRclsGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+      static StrIntMap map[] = {
+         {"def", -1},
+         {"amg", 0},
+         {"spdirect", 29},
+         {"ilu", 32},
+         {"fsai", 33},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      static StrIntMap map[] = {
-         {"def", -1}, {"amg", 0},   {"spdirect", 29},
-         {"ilu", 32}, {"fsai", 33}, {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
-      };
-#else
-      static StrIntMap map[] = {
-         {"def", -1}, {"amg", 0}, {"spdirect", 29}, {"ilu", 32}, {"fsai", 33},
-      };
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
 #endif
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1261,29 +1306,26 @@ hypredrv_MGRfrlxGetValidValues(const char *key)
    }
    else if (!strcmp(key, "type"))
    {
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
       static StrIntMap map[] = {
-         {"", -1},          {"none", -1},
-         {"single", 7},     {"jacobi", 7},
-         {"l1-jacobi", 18}, {"v(1,0)", 1},
-         {"amg", 2},        {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-         {"chebyshev", 16}, {"ilu", 32},
-         {"ge", 9},         {"spdirect", 29},
-         {"ge-piv", 99},    {"ge-inv", 199},
-         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
-      };
-#else
-      static StrIntMap map[] = {
-         {"", -1},          {"none", -1},
-         {"single", 7},     {"jacobi", 7},
-         {"l1-jacobi", 18}, {"v(1,0)", 1},
-         {"amg", 2},        {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
-         {"chebyshev", 16}, {"ilu", 32},
-         {"ge", 9},         {"spdirect", 29},
-         {"ge-piv", 99},    {"ge-inv", 199},
+         {"", -1},
+         {"none", -1},
+         {"single", 7},
+         {"jacobi", 7},
+         {"l1-jacobi", 18},
+         {"v(1,0)", 1},
+         {"amg", 2},
+         {"mgr", MGR_FRLX_TYPE_NESTED_MGR},
+         {"chebyshev", 16},
+         {"ilu", 32},
+         {"ge", 9},
+         {"spdirect", 29},
+         {"ge-piv", 99},
+         {"ge-inv", 199},
          {"fsai", 33},
-      };
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
 #endif
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1302,28 +1344,30 @@ hypredrv_MGRgrlxGetValidValues(const char *key)
 {
    if (!strcmp(key, "type"))
    {
+      static StrIntMap map[] = {
+         {"", -1},
+         {"none", -1},
+         {"blk-jacobi", 0},
+         {"blk-gs", 1},
+         {"mixed-gs", 2},
+         {"amg", 20},
+         {"h-fgs", 3},
+         {"h-bgs", 4},
+         {"ch-gs", 5},
+         {"h-ssor", 6},
+         {"euclid", 8},
+         {"2stg-fgs", 11},
+         {"2stg-bgs", 12},
+         {"l1-hfgs", 13},
+         {"l1-hbgs", 14},
+         {"ilu", 16},
+         {"spdirect", 29},
+         {"l1-hsgs", 88},
+         {"fsai", 33},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      static StrIntMap map[] = {
-         {"", -1},          {"none", -1},
-         {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2},   {"amg", 20},
-         {"h-fgs", 3},      {"h-bgs", 4},
-         {"ch-gs", 5},      {"h-ssor", 6},
-         {"euclid", 8},     {"2stg-fgs", 11},
-         {"2stg-bgs", 12},  {"l1-hfgs", 13},
-         {"l1-hbgs", 14},   {"ilu", 16},
-         {"spdirect", 29},  {"l1-hsgs", 88},
-         {"fsai", 33},      {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
-      };
-#else
-      static StrIntMap map[] = {
-         {"", -1},         {"none", -1},    {"blk-jacobi", 0}, {"blk-gs", 1},
-         {"mixed-gs", 2},  {"amg", 20},     {"h-fgs", 3},      {"h-bgs", 4},
-         {"ch-gs", 5},     {"h-ssor", 6},   {"euclid", 8},     {"2stg-fgs", 11},
-         {"2stg-bgs", 12}, {"l1-hfgs", 13}, {"l1-hbgs", 14},   {"ilu", 16},
-         {"spdirect", 29}, {"l1-hsgs", 88}, {"fsai", 33},
-      };
+         {"schwarz", MGR_SOLVER_TYPE_SCHWARZ},
 #endif
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1375,18 +1419,15 @@ hypredrv_MGRlvlGetValidValues(const char *key)
    }
    if (!strcmp(key, "restriction_type"))
    {
+      static StrIntMap map[] = {
+         {"injection", 0},   {"jacobi", 2},
+         {"approx-inv", 3},
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)
-      static StrIntMap map[] = {
-         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},
-         {"air_1", 4},     {"air_1.5", 5},   {"blk-jacobi", 12},
-         {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
-      };
-#else
-      static StrIntMap map[] = {
-         {"injection", 0}, {"jacobi", 2},    {"approx-inv", 3},        {"blk-jacobi", 12},
-         {"cpr-like", 13}, {"columped", 14}, {"columped-partial", 15},
-      };
+         {"air_1", 4},       {"air_1.5", 5},
 #endif
+         {"blk-jacobi", 12}, {"cpr-like", 13},
+         {"columped", 14},   {"columped-partial", 15},
+      };
 
       return STR_INT_MAP_ARRAY_CREATE(map);
    }
@@ -1435,9 +1476,7 @@ MGRHasMatchedSchurGMRES1AtDepth(const MGR_args *args, int depth)
       return 0;
    }
 
-   HYPRE_Int fine_levels = args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS
-                              ? args->num_levels - 1
-                              : 0;
+   HYPRE_Int fine_levels = hypredrv_MGRNumFineLevels(args);
    for (HYPRE_Int level = 0; level < fine_levels; level++)
    {
       if (args->level[level].matched_f_backsolve == 2)
@@ -1564,11 +1603,13 @@ MGRMarkLevelComponentNodes(MGR_args *args, YAMLnode *grandchild, int lvl)
    }
 }
 
-static void
+/* Parses the `level` mapping and returns the number of fine levels defined. */
+static HYPRE_Int
 MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
 {
-   uint32_t seen_levels = 0;
-   int      max_lvl     = -1;
+   HYPRE_Int num_fine    = 0;
+   uint32_t  seen_levels = 0;
+   int       max_lvl     = -1;
    YAML_NODE_SET_VALID(child);
    YAML_NODE_ITERATE(child, grandchild)
    {
@@ -1600,8 +1641,8 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
          grandchild->valid = YAML_NODE_UNEXPECTED_VAL;
          continue;
       }
-      /* Reject duplicate level indices, which would double-count num_levels. */
-      if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1 && (seen_levels & (1u << (unsigned)lvl)))
+      /* Reject duplicate level indices, which would double-count levels. */
+      if (seen_levels & (1u << (unsigned)lvl))
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
          hypredrv_ErrorMsgAdd("Duplicate MGR level index %d", lvl);
@@ -1609,32 +1650,25 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
          continue;
       }
 
-      if (lvl >= 0 && lvl < MAX_MGR_LEVELS - 1)
+      seen_levels |= (1u << (unsigned)lvl);
+      if (lvl > max_lvl)
       {
-         seen_levels |= (1u << (unsigned)lvl);
-         if (lvl > max_lvl)
-         {
-            max_lvl = lvl;
-         }
-         MGRMarkLevelComponentNodes(args, grandchild, lvl);
+         max_lvl = lvl;
+      }
+      MGRMarkLevelComponentNodes(args, grandchild, lvl);
 
-         args->num_levels++;
-         YAML_NODE_SET_VALID(grandchild);
-      }
-      else
-      {
-         YAML_NODE_SET_INVALID_KEY(grandchild);
-      }
+      num_fine++;
+      YAML_NODE_SET_VALID(grandchild);
    }
 
    /* Consumption iterates fine levels densely over [0, num_levels-1), so the
     * configured level indices must be contiguous starting at 0. Reject gaps
     * (e.g. "0:" and "5:") which would otherwise silently process
-    * default-initialized levels in place of the intended configuration. */
+    * default-initialized levels in place of the intended configuration.
+    * Indices are at most MAX_MGR_LEVELS - 2, so the shift below fits. */
    if (max_lvl >= 0)
    {
-      uint32_t expected =
-         (max_lvl >= 31) ? 0xFFFFFFFFu : ((1u << (unsigned)(max_lvl + 1)) - 1u);
+      uint32_t expected = (1u << (unsigned)(max_lvl + 1)) - 1u;
       if (seen_levels != expected)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
@@ -1643,34 +1677,53 @@ MGRSetLevelArgsFromYAML(MGR_args *args, YAMLnode *child)
                               max_lvl);
       }
    }
+
+   return num_fine;
 }
 
 void
 hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
-   MGR_args *args = (MGR_args *)vargs;
+   MGR_args *args            = (MGR_args *)vargs;
+   HYPRE_Int derived_levels  = 0; /* from `level` and `coarsest_level` entries */
+   int       explicit_levels = 0; /* `num_levels` key present */
    YAML_NODE_ITERATE(parent, child)
    {
       if (!strcmp(child->key, "level"))
       {
-         MGRSetLevelArgsFromYAML(args, child);
+         derived_levels += MGRSetLevelArgsFromYAML(args, child);
       }
       else if (!strcmp(child->key, "coarsest_level"))
       {
-         args->num_levels++;
+         derived_levels++;
          YAML_NODE_SET_VALID(child);
          hypredrv_MGRclsSetArgsFromYAML(&args->coarsest_level, child);
       }
       else
       {
+         explicit_levels |= !strcmp(child->key, "num_levels");
          YAML_NODE_VALIDATE(child, hypredrv_MGRGetValidKeys, hypredrv_MGRGetValidValues);
          YAML_NODE_SET_FIELD(child, args, hypredrv_MGRSetFieldByName);
       }
    }
+
+   /* Level entries define the hierarchy; an explicit num_levels may only
+    * restate that count, regardless of where it appears in the mapping. */
+   if (derived_levels > 0)
+   {
+      if (explicit_levels && args->num_levels != derived_levels)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("MGR num_levels (%d) conflicts with the %d levels defined "
+                              "by level/coarsest_level; omit num_levels",
+                              (int)args->num_levels, (int)derived_levels);
+      }
+      args->num_levels = derived_levels;
+   }
    if (args->num_levels < 0 || args->num_levels > MAX_MGR_LEVELS)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("MGR num_levels must be between 1 and %d (got %d)",
+      hypredrv_ErrorMsgAdd("MGR num_levels must be between 0 and %d (got %d)",
                            MAX_MGR_LEVELS, (int)args->num_levels);
    }
 }
@@ -1712,41 +1765,9 @@ hypredrv_MGRDestroyNestedSolverArgs(MGR_args *args)
 
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
-      hypredrv_MGRComponentReuseDestroyArgs(&args->level[i].f_relaxation.reuse);
-      hypredrv_MGRComponentReuseDestroyArgs(&args->level[i].g_relaxation.reuse);
-
-      if (args->level[i].f_relaxation.mgr)
-      {
-         hypredrv_MGRDestroyNestedSolverArgs(args->level[i].f_relaxation.mgr);
-         free(args->level[i].f_relaxation.mgr);
-         args->level[i].f_relaxation.mgr = NULL;
-      }
-
-      if (args->level[i].f_relaxation.krylov)
-      {
-         hypredrv_NestedKrylovDestroy(args->level[i].f_relaxation.krylov);
-         free(args->level[i].f_relaxation.krylov);
-         args->level[i].f_relaxation.krylov     = NULL;
-         args->level[i].f_relaxation.use_krylov = 0;
-      }
-
-      if (args->level[i].g_relaxation.krylov)
-      {
-         hypredrv_NestedKrylovDestroy(args->level[i].g_relaxation.krylov);
-         free(args->level[i].g_relaxation.krylov);
-         args->level[i].g_relaxation.krylov     = NULL;
-         args->level[i].g_relaxation.use_krylov = 0;
-      }
+      hypredrv_MGRfrlxReleaseArgs(&args->level[i].f_relaxation);
+      hypredrv_MGRgrlxReleaseArgs(&args->level[i].g_relaxation);
    }
-
-   if (args->coarsest_level.krylov)
-   {
-      hypredrv_NestedKrylovDestroy(args->coarsest_level.krylov);
-      free(args->coarsest_level.krylov);
-      args->coarsest_level.krylov     = NULL;
-      args->coarsest_level.use_krylov = 0;
-   }
-
-   hypredrv_MGRComponentReuseDestroyArgs(&args->coarsest_level.reuse);
+   hypredrv_MGRclsReleaseArgs(&args->coarsest_level);
 }
 /* GCOVR_EXCL_BR_STOP */

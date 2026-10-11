@@ -3704,6 +3704,93 @@ test_PreconSetup_mgr_scaled_frelax_repeated(void)
 }
 #endif
 
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+/* Applies MGR with one managed AMG F sweep, with or without symmetric diagonal
+ * scaling, to a 4x4 SPD system with a non-uniform diagonal; x gets the result. */
+static void
+precon_test_apply_scaled_frelax(int scaled, double x[4])
+{
+   precon_args args;
+   hypredrv_PreconSetDefaultArgs(&args);
+   hypredrv_MGRSetDefaultArgs(&args.mgr);
+   args.mgr.num_levels                                       = 2;
+   args.mgr.level[0].f_dofs.size                             = 1;
+   args.mgr.level[0].f_dofs.data[0]                          = 0;
+   args.mgr.level[0].f_relaxation.type                       = 2;
+   args.mgr.level[0].f_relaxation.symmetric_diagonal_scaling = scaled;
+   args.mgr.level[0].f_relaxation.amg.max_iter               = 1;
+   args.mgr.level[0].g_relaxation.type                       = -1;
+   args.mgr.coarsest_level.type                              = 0;
+   args.mgr.coarsest_level.amg.max_iter                      = 1;
+
+   IntArray *dofmap = NULL;
+   const int map[4] = {0, 1, 0, 1};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 4, map, &dofmap);
+   ASSERT_NOT_NULL(dofmap);
+
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 3, 0, 3, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   HYPRE_Int    ncols[4]   = {4, 4, 4, 4};
+   HYPRE_BigInt rows[4]    = {0, 1, 2, 3};
+   HYPRE_BigInt cols[16]   = {0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3};
+   double       values[16] = {4.0, 1.0, 1.0, 1.0, 1.0, 9.0, 1.0, 1.0,
+                              1.0, 1.0, 16.0, 1.0, 1.0, 1.0, 1.0, 25.0};
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, 4, ncols, rows, cols, values), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+
+   HYPRE_IJVector vec[2] = {NULL, NULL};
+   const double   init[2][4] = {{1.0, 2.0, 3.0, 4.0}, {0.0, 0.0, 0.0, 0.0}};
+   for (int v = 0; v < 2; v++)
+   {
+      ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 3, &vec[v]), 0);
+      ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec[v], HYPRE_PARCSR), 0);
+      ASSERT_EQ(HYPRE_IJVectorInitialize(vec[v]), 0);
+      ASSERT_EQ(HYPRE_IJVectorSetValues(vec[v], 4, rows, init[v]), 0);
+      ASSERT_EQ(HYPRE_IJVectorAssemble(vec[v]), 0);
+   }
+
+   HYPRE_Precon precon = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_PreconCreate(PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_PreconSetup(PRECON_MGR, precon, mat);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_PreconApply(PRECON_MGR, precon, mat, vec[0], vec[1]);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(HYPRE_IJVectorGetValues(vec[1], 4, rows, x), 0);
+
+   hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
+   for (int v = 0; v < 2; v++)
+   {
+      HYPRE_IJVectorDestroy(vec[v]);
+   }
+   HYPRE_IJMatrixDestroy(mat);
+   hypredrv_IntArrayDestroy(&dofmap);
+}
+
+/* Here AMG solves the 2x2 F block exactly, so the symmetric diagonal scaling
+ * must map the right-hand side and correction back to the unscaled result. */
+static void
+test_PreconApply_mgr_scaled_frelax_matches_unscaled(void)
+{
+   TEST_HYPRE_INIT();
+
+   double x_plain[4]  = {0.0, 0.0, 0.0, 0.0};
+   double x_scaled[4] = {0.0, 0.0, 0.0, 0.0};
+   precon_test_apply_scaled_frelax(0, x_plain);
+   precon_test_apply_scaled_frelax(1, x_scaled);
+   for (int i = 0; i < 4; i++)
+   {
+      ASSERT_TRUE(x_plain[i] != 0.0);
+      ASSERT_EQ_DOUBLE(x_scaled[i], x_plain[i], 1.0e-12 * fabs(x_plain[i]));
+   }
+
+   TEST_HYPRE_FINALIZE();
+}
+#endif
+
 static void
 test_MGRMatchedSchur_depth_cap(void)
 {
@@ -4721,6 +4808,41 @@ test_MGRSetArgsFromYAML_rejects_wrapped_level_index(void)
    hypredrv_YAMLnodeDestroy(root);
 }
 
+/* num_levels derives from level/coarsest_level entries regardless of key
+ * order; an explicit num_levels may only restate that count. */
+static void
+test_MGRSetArgsFromYAML_num_levels_independent_of_key_order(void)
+{
+   for (int before = 0; before < 2; before++)
+   {
+      for (int consistent = 0; consistent < 2; consistent++)
+      {
+         MGR_args mgr;
+         hypredrv_MGRSetDefaultArgs(&mgr);
+         YAMLnode   *root    = hypredrv_YAMLnodeCreate("mgr", "", 0);
+         const char *nlevels = consistent ? "2" : "3";
+         if (before)
+         {
+            add_child(root, "num_levels", nlevels, 1);
+         }
+         YAMLnode *levels = add_child(root, "level", "", 1);
+         add_child(levels, "0", "", 2);
+         add_child(root, "coarsest_level", "amg", 1);
+         if (!before)
+         {
+            add_child(root, "num_levels", nlevels, 1);
+         }
+
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_MGRSetArgsFromYAML(&mgr, root);
+         ASSERT_EQ(hypredrv_ErrorCodeActive() ? 1 : 0, consistent ? 0 : 1);
+         ASSERT_EQ(mgr.num_levels, 2);
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_YAMLnodeDestroy(root);
+      }
+   }
+}
+
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
 static void
 test_MGRCreate_replaces_cached_coarse_solver_type(void)
@@ -4961,7 +5083,7 @@ test_PreconCreate_mgr_coarsest_level_krylov_nested(void)
 #endif
 }
 
-static void
+static HYPREDRV_MAYBE_UNUSED void
 precon_test_configure_compacted_coarse_mgr(precon_args *args, HYPRE_Int coarse_type)
 {
    hypredrv_PreconSetDefaultArgs(args);
@@ -5438,7 +5560,7 @@ test_MGRComponentReuseSetupMode_nested_shape_unsupported(void)
 }
 
 static void
-test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
+test_MGRSelectCachedSolversToKeep_static_schedule(void)
 {
 #if !HYPRE_CHECK_MIN_VERSION(21900, 0)
    return;
@@ -5457,16 +5579,12 @@ test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags(void)
    precon_test_set_static_mgr_component_reuse(&mgr.coarsest_level.reuse, 1);
 
 #if !HYPRE_CHECK_MIN_VERSION(30100, 50)
-   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 0);
    hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
    ASSERT_EQ(mgr.keep_frelax[0], 0);
    ASSERT_EQ(mgr.keep_grelax[0], 0);
    ASSERT_EQ(mgr.keep_csolver, 0);
    return;
 #endif
-
-   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 1), 1);
-   ASSERT_EQ(hypredrv_MGRComponentReuseShouldKeepOuter(&mgr, NULL, NULL, 2), 0);
 
    hypredrv_MGRSelectCachedSolversToKeep(&mgr, NULL, NULL, 1);
    ASSERT_EQ(mgr.keep_frelax[0], 1);
@@ -7646,6 +7764,7 @@ main(int argc, char **argv)
 #endif
 #if HYPRE_CHECK_MIN_VERSION(30100, 5)
    RUN_TEST(test_PreconSetup_mgr_scaled_frelax_repeated);
+   RUN_TEST(test_PreconApply_mgr_scaled_frelax_matches_unscaled);
 #endif
    RUN_TEST(test_MGRMatchedSchur_depth_cap);
    RUN_TEST(test_MGRCreate_interp_weight_and_block_interp_validation);
@@ -7654,6 +7773,7 @@ main(int argc, char **argv)
    RUN_TEST(test_MGRCreate_coarsest_level_fsai_destroyed);
    RUN_TEST(test_MGRCreate_rejects_out_of_range_level_count);
    RUN_TEST(test_MGRSetArgsFromYAML_rejects_wrapped_level_index);
+   RUN_TEST(test_MGRSetArgsFromYAML_num_levels_independent_of_key_order);
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
    RUN_TEST(test_MGRCreate_replaces_cached_coarse_solver_type);
 #endif
@@ -7675,7 +7795,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconDestroy_mgr_csolver_destroy_branches);
    RUN_TEST(test_MGRComponentReuseSetupMode_policy_shape_and_selector_paths);
    RUN_TEST(test_MGRComponentReuseSetupMode_nested_shape_unsupported);
-   RUN_TEST(test_MGRComponentReuseShouldKeepOuter_and_SelectKeepFlags);
+   RUN_TEST(test_MGRSelectCachedSolversToKeep_static_schedule);
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
    RUN_TEST(test_MGRRefreshComponentsForSetup_rebuilds_fsai_handles);
 #endif

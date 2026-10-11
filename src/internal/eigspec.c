@@ -131,7 +131,7 @@ extern void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda, double *
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
 {
    void              *obj_A = NULL;
@@ -143,7 +143,7 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
    par_A = (HYPRE_ParCSRMatrix)obj_A;
 
    /* Ensure on host memory for CPU LAPACK */
-   hypre_ParCSRMatrixMigrate(par_A, HYPRE_MEMORY_HOST);
+   hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)par_A, HYPRE_MEMORY_HOST);
 
    HYPRE_ParCSRMatrixGetDims(par_A, &nrows, &ncols);
    if (nrows != ncols)
@@ -213,6 +213,21 @@ hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
    return hypredrv_ErrorCodeGet();
 }
 
+/* Closes an eigenspectrum output file, reporting any write error (e.g. a full
+ * disk) that stdio deferred until the final flush. */
+static uint32_t
+EigspecCloseOutput(FILE *fp, const char *path)
+{
+   int ok = !ferror(fp);
+   ok     = (fclose(fp) == 0) && ok;
+   if (!ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("Could not write '%s'", path);
+   }
+   return hypredrv_ErrorCodeGet();
+}
+
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
@@ -242,15 +257,14 @@ hypredrv_WriteValuesASCII(const char *prefix, int n, const double *wr, const dou
          fprintf(fp, "%.17g\n", wr[i]);
       }
    }
-   fclose(fp);
-   return hypredrv_ErrorCodeGet();
+   return EigspecCloseOutput(fp, path);
 }
 
 /*-----------------------------------------------------------------------------
  * Write vectors in row major format
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_WriteRealVectorsBin(const char *prefix, int n, const double *vecs_cm)
 {
    char  path[MAX_FILENAME_LENGTH];
@@ -264,25 +278,18 @@ hypredrv_WriteRealVectorsBin(const char *prefix, int n, const double *vecs_cm)
       return hypredrv_ErrorCodeGet();
    }
 
-   /* Convert column-major eigenvectors (each column is a vector) to row-major rows */
-   for (int ev = 0; ev < n; ev++)
-   {
-      for (int i = 0; i < n; i++)
-      {
-         double v = vecs_cm[i + ev * n];
-         fwrite(&v, sizeof(double), 1, fp);
-      }
-   }
+   /* One eigenvector per row: column ev of the column-major array is already
+    * contiguous, so the file is the array in memory order. */
+   fwrite(vecs_cm, sizeof(double), (size_t)n * (size_t)n, fp);
 
-   fclose(fp);
-   return hypredrv_ErrorCodeGet();
+   return EigspecCloseOutput(fp, path);
 }
 
 /*-----------------------------------------------------------------------------
  * Write vectors in row major format
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_WriteComplexVectorsBin(const char *prefix, int n, const double *VR_cm,
                                 const double *wi)
 {
@@ -344,14 +351,13 @@ hypredrv_WriteComplexVectorsBin(const char *prefix, int n, const double *VR_cm,
       }
    }
 
-   fclose(fp);
-   return hypredrv_ErrorCodeGet();
+   return EigspecCloseOutput(fp, path);
 }
 
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_EigSpecComputeGeneral(int n, double *A_cm, int want_vectors, double **wr_out,
                                double **wi_out, double **vecs_cm_out)
 {

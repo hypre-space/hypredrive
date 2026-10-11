@@ -350,8 +350,6 @@ test_LogObjectNameHelpers_null_inputs(void)
    char name[32] = "";
    ASSERT_NULL(hypredrv_FormatLogObjectId(0, name, sizeof(name)));
    ASSERT_NULL(hypredrv_ResolveLogObjectName(NULL, name, sizeof(name)));
-   ASSERT_FALSE(hypredrv_PushDefaultLogObjectName(NULL, name, sizeof(name)));
-   hypredrv_PopDefaultLogObjectName(NULL, name, true);
    ASSERT_STREQ(hypredrv_FormatLogObjectId(7, name, sizeof(name)), "obj-7");
 }
 

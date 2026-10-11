@@ -12,7 +12,6 @@
 #include "internal/krylov.h"
 #include "logging.h"
 
-#include <stdarg.h>
 #include <stdio.h>
 
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
@@ -168,6 +167,25 @@ PreconOpsLookup(precon_t method)
    return &precon_ops[method];
 }
 
+/* Reports a preconditioner whose hypre entry points are not compiled in. */
+static void
+PreconReportUnavailable(precon_t method)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   if (method == PRECON_MGR)
+   {
+      hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
+   }
+   else if (method == PRECON_ILU)
+   {
+      hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
+   }
+   else if (method == PRECON_FSAI)
+   {
+      hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
+   }
+}
+
 void
 hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
                             HYPRE_PtrToParSolverFcn *solve)
@@ -296,23 +314,10 @@ hypredrv_PreconArgsDestroyOwnedConfig(precon_t method, precon_args *args)
       return;
    }
 
-   switch (method)
+   /* Only MGR owns nested configuration (its nested Krylov/MGR arguments). */
+   if (method == PRECON_MGR)
    {
-      case PRECON_MGR:
-         hypredrv_MGRDestroyNestedSolverArgs(&args->mgr);
-         break;
-
-      case PRECON_BOOMERAMG:
-      case PRECON_ILU:
-      case PRECON_FSAI:
-      case PRECON_AMS:
-      case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-#endif
-      case PRECON_NONE:
-      default:
-         break;
+      hypredrv_MGRDestroyNestedSolverArgs(&args->mgr);
    }
 }
 
@@ -324,24 +329,11 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
       return;
    }
 
-   switch (method)
+   /* Only MGR keeps runtime state (cached component solvers) in its args. */
+   if (method == PRECON_MGR)
    {
-      case PRECON_MGR:
-         hypredrv_MGRDestroyCachedSolvers(&args->mgr, 0);
-         hypredrv_MGRForgetCachedSolvers(&args->mgr);
-         break;
-
-      case PRECON_BOOMERAMG:
-      case PRECON_ILU:
-      case PRECON_FSAI:
-      case PRECON_AMS:
-      case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-#endif
-      case PRECON_NONE:
-      default:
-         break;
+      hypredrv_MGRDestroyCachedSolvers(&args->mgr, 0);
+      hypredrv_MGRForgetCachedSolvers(&args->mgr);
    }
 }
 
@@ -377,7 +369,7 @@ MGRHasConfiguredComponentReuse(const MGR_args *args)
       return 1;
    }
 
-   int max_levels = (args->num_levels > 0) ? (args->num_levels - 1) : 0;
+   int max_levels = hypredrv_MGRNumFineLevels(args);
    for (int i = 0; i < max_levels; i++)
    {
       const MGRlvl_args *level_args = &args->level[i];
@@ -418,23 +410,8 @@ PreconHasConfiguredComponentReuse(precon_t method, const precon_args *args)
       return 0;
    }
 
-   switch (method)
-   {
-      case PRECON_MGR:
-         return MGRHasConfiguredComponentReuse(&args->mgr);
-
-      case PRECON_BOOMERAMG:
-      case PRECON_ILU:
-      case PRECON_FSAI:
-      case PRECON_AMS:
-      case PRECON_ADS:
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case PRECON_SCHWARZ:
-#endif
-      case PRECON_NONE:
-      default:
-         return 0;
-   }
+   /* Component reuse is an MGR feature. */
+   return (method == PRECON_MGR) ? MGRHasConfiguredComponentReuse(&args->mgr) : 0;
 }
 
 /*-----------------------------------------------------------------------------
@@ -595,23 +572,6 @@ PreconNestedKrylovMGRSupportsDevice(const NestedKrylov_args *args, char *reason,
                                          depth + 1);
 }
 
-/* Records why a configuration cannot run on the device. Safe to call with no
- * sink, so callers do not have to guard every diagnostic. */
-static void
-PreconSetDeviceReason(char *reason, size_t reason_size, const char *fmt, ...)
-{
-   va_list ap;
-
-   if (!reason || reason_size == 0)
-   {
-      return;
-   }
-
-   va_start(ap, fmt);
-   vsnprintf(reason, reason_size, fmt, ap);
-   va_end(ap);
-}
-
 static int
 PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason_size,
                                int depth)
@@ -623,12 +583,12 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
 
    if (args->interp_sweeps > 0)
    {
-      PreconSetDeviceReason(reason, reason_size,
+      hypredrv_FormatReason(reason, reason_size,
                             "MGR P2 interpolation refinement is currently CPU-only");
       return 0;
    }
 
-   int fine_levels = args->num_levels > 0 ? args->num_levels - 1 : 0;
+   int fine_levels = hypredrv_MGRNumFineLevels(args);
    for (int level = 0; level < fine_levels; level++)
    {
       const MGRfrlx_args *frelax = &args->level[level].f_relaxation;
@@ -636,7 +596,7 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
 
       if (args->level[level].matched_f_backsolve)
       {
-         PreconSetDeviceReason(
+         hypredrv_FormatReason(
             reason, reason_size, "MGR level %d matched %s is currently CPU-only", level,
             args->level[level].matched_f_backsolve == 2 ? "Schur GMRES(1)"
                                                         : "F backsolve");
@@ -644,14 +604,14 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
       }
       if (args->level[level].matched_q)
       {
-         PreconSetDeviceReason(
+         hypredrv_FormatReason(
             reason, reason_size, "MGR level %d matched %s Q is currently CPU-only", level,
             args->level[level].matched_q == 2 ? "adaptive FSAI" : "sparse");
          return 0;
       }
       if (frelax->symmetric_diagonal_scaling)
       {
-         PreconSetDeviceReason(
+         hypredrv_FormatReason(
             reason, reason_size,
             "MGR level %d symmetric diagonal F-solver scaling is CPU-only", level);
          return 0;
@@ -659,14 +619,14 @@ PreconMGRSupportsDeviceAtDepth(const MGR_args *args, char *reason, size_t reason
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
       if (frelax->type == MGR_SOLVER_TYPE_SCHWARZ)
       {
-         PreconSetDeviceReason(reason, reason_size,
+         hypredrv_FormatReason(reason, reason_size,
                                "MGR level %d Schwarz F-relaxation is not ported to GPUs",
                                level);
          return 0;
       }
       if (grelax->type == MGR_SOLVER_TYPE_SCHWARZ)
       {
-         PreconSetDeviceReason(
+         hypredrv_FormatReason(
             reason, reason_size,
             "MGR level %d Schwarz global relaxation is not ported to GPUs", level);
          return 0;
@@ -701,7 +661,7 @@ hypredrv_PreconSupportsDevice(precon_t precon_method, const precon_args *args,
       int interp_type = args->amg.interpolation.prolongation_type;
       if (interp_type == 8 || interp_type == 9)
       {
-         PreconSetDeviceReason(reason, reason_size,
+         hypredrv_FormatReason(reason, reason_size,
                                "BoomerAMG interpolation type %d is not ported to GPUs",
                                interp_type);
          return 0;
@@ -798,7 +758,6 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    void              *vA    = NULL;
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   /* GCOVR_EXCL_BR_LINE */
    if (precon_method == PRECON_NONE) /* GCOVR_EXCL_BR_LINE */
    {
       return;
@@ -833,19 +792,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
    if (!ops || !ops->setup)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      if (precon_method == PRECON_MGR)
-      {
-         hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_ILU)
-      {
-         hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_FSAI)
-      {
-         hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-      }
+      PreconReportUnavailable(precon_method);
       return;
    }
 
@@ -918,25 +865,11 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
    if (!ops || !ops->solve)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      if (precon_method == PRECON_MGR)
-      {
-         hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_ILU)
-      {
-         hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-      }
-      else if (precon_method == PRECON_FSAI)
-      {
-         hypredrv_ErrorMsgAdd("FSAI requires hypre >= 2.25.0");
-      }
+      PreconReportUnavailable(precon_method);
       return;
    }
 
    ops->solve(prec, par_A, par_b, par_x);
-
-   // StatsTimerStop("prec_apply");
 }
 
 static void
@@ -953,7 +886,6 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_s
    {
       return;
    }
-   /* GCOVR_EXCL_BR_LINE */
    if (!solver_ptr || !*solver_ptr) /* GCOVR_EXCL_BR_LINE */
    {
       /* Outer MGR solver was never created (e.g. early failure in MGRCreate).
@@ -968,31 +900,8 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_s
       return;
    }
 
-   int destroy_parent_first = precon_was_setup;
-#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5) && \
-   !HYPRE_CHECK_MIN_VERSION(30100, 28)
-   /* These development builds destroy installed level solvers even when MGR
-    * setup has not run. Reclaiming cached handles first leaves dangling solver
-    * pointers in the parent, which then destroys them a second time. */
-   destroy_parent_first = 1;
-#endif
-
-   if (!destroy_parent_first)
-   {
-      /* Setup was never called, so refreshed handles may still be owned by
-       * hypredrive only. Reclaim them before destroying the outer MGR object. */
-      hypredrv_MGRDestroyCachedSolvers(mgr, 0);
-      HYPRE_MGRDestroy(*solver_ptr);
-      *solver_ptr = NULL;
-   }
-   else
-   {
-      HYPRE_MGRDestroy(*solver_ptr);
-      *solver_ptr = NULL;
-      /* Parent MGR is gone; clear any preserved cached-handle state without
-       * destroying parent-owned internals a second time. */
-      hypredrv_MGRDestroyCachedSolvers(mgr, 1);
-   }
+   hypredrv_MGRDestroyWithCachedSolvers(mgr, *solver_ptr, precon_was_setup);
+   *solver_ptr = NULL;
 
    if (mgr->point_marker_data)
    {
@@ -1022,7 +931,6 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
       hypredrv_StatsGetLogObjectName(stats, obj_name_buf, sizeof(obj_name_buf));
 
    HYPRE_Precon precon = *precon_ptr;
-   /* GCOVR_EXCL_BR_LINE */
    if (!precon) /* GCOVR_EXCL_BR_LINE */
    {
       /* GCOVR_EXCL_START */

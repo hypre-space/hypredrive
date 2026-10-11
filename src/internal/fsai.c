@@ -71,15 +71,15 @@ hypredrv_FSAICreate(const FSAI_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_FSAICreate(&precon);
 
    HYPRE_FSAISetAlgoType(precon, args->algo_type);
-#if HYPRE_CHECK_MIN_VERSION(23000, 0)
-   HYPRE_FSAISetLocalSolveType(precon, args->ls_type);
    HYPRE_FSAISetMaxSteps(precon, args->max_steps);
    HYPRE_FSAISetMaxStepSize(precon, args->max_step_size);
+   HYPRE_FSAISetEigMaxIters(precon, args->eig_max_iters);
+   HYPRE_FSAISetKapTolerance(precon, args->kap_tolerance);
+#if HYPRE_CHECK_MIN_VERSION(23000, 0)
+   HYPRE_FSAISetLocalSolveType(precon, args->ls_type);
    HYPRE_FSAISetMaxNnzRow(precon, args->max_nnz_row);
    HYPRE_FSAISetNumLevels(precon, args->num_levels);
-   HYPRE_FSAISetEigMaxIters(precon, args->eig_max_iters);
    HYPRE_FSAISetThreshold(precon, args->threshold);
-   HYPRE_FSAISetKapTolerance(precon, args->kap_tolerance);
 #endif
    HYPRE_FSAISetMaxIterations(precon, args->max_iter);
    HYPRE_FSAISetTolerance(precon, args->tolerance);

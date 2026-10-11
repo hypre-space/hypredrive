@@ -1591,6 +1591,16 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             ARGS "examples/ex1.yml" "--args" "solver:pcg:max_iter" "5"
             REQUIRE_CONTAINS "max_iter: 5"
         )
+
+        # Library calls return errors; the CLI turns them into an error report
+        # and a failing exit through HYPREDRV_SAFE_CALL.
+        add_executable_test(hypredrive_cli_error_aborts hypredrive-cli 1
+            ARGS "examples/ex1.yml" "--args" "--linear_system:matrix_filename"
+                 "data/no-such-dir/no-such-matrix"
+            FAIL_REGULAR_EXPRESSION "^$"
+        )
+        set_tests_properties(hypredrive_cli_error_aborts PROPERTIES
+            PASS_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!.*Invalid filename")
     else()
         message(STATUS "Skipping hypredrive integration tests (requires hypre >= 2.19.0).")
     endif()

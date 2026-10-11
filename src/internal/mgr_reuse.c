@@ -1056,6 +1056,8 @@ MGRRefreshGRelaxAtLevel(MGR_args *args, HYPRE_Solver mgr_solver, int active_lvl,
       HYPRE_MGRSetGlobalSmootherAtLevel(
          mgr_solver, (HYPRE_Solver)level_args->g_relaxation.krylov, active_lvl);
       MGRSetComponentSetupReuse((HYPRE_Solver)level_args->g_relaxation.krylov, 0);
+#else
+      (void)mgr_solver;
 #endif
       return;
    }
@@ -1130,35 +1132,6 @@ MGRComponentRefresh(MGR_args *args, HYPRE_Solver precon, const MGRComponentRef *
          MGRRefreshCoarseSolver(args, precon);
          break;
    }
-}
-
-int
-hypredrv_MGRComponentReuseShouldKeepOuter(const MGR_args *args,
-                                          const IntArray *timestep_starts,
-                                          const Stats *stats, int next_ls_id)
-{
-   if (!args || !MGRManagedRefreshShapeSupported(args))
-   {
-      return 0;
-   }
-#if !HYPRE_CHECK_MIN_VERSION(30100, 50)
-   return 0;
-#endif
-
-   MGRComponentRef refs[MGR_MAX_COMPONENT_REFS];
-   int             num_refs = MGRListComponents(args, refs);
-
-   for (int n = 0; n < num_refs; n++)
-   {
-      if (MGRComponentUsesManagedHandle(args, &refs[n]) &&
-          MGRComponentReuseShouldKeep(MGRComponentReuseArgsConst(args, &refs[n]),
-                                      timestep_starts, stats, next_ls_id))
-      {
-         return 1;
-      }
-   }
-
-   return 0;
 }
 
 /*--------------------------------------------------------------------------
@@ -1378,16 +1351,6 @@ MGRLegacyPostDestroyNeedsFRelaxReclaim(void)
 #endif
 }
 
-static int
-MGRPostDestroyNeedsUserSolverReclaim(void)
-{
-#if HYPRE_RELEASE_NUMBER_GT(30100)
-   return 1;
-#else
-   return 0;
-#endif
-}
-
 static void
 MGRResetCachedSolverKeepFlags(MGR_args *args)
 {
@@ -1411,9 +1374,7 @@ hypredrv_MGRCountCachedSolvers(const MGR_args *args, int *num_frelax, int *num_g
 
    if (args)
    {
-      int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                          ? (args->num_levels - 1)
-                          : 0;
+      int max_levels = hypredrv_MGRNumFineLevels(args);
       for (int i = 0; i < max_levels; i++)
       {
          frelax += (args->frelax[i] != NULL);
@@ -1446,9 +1407,7 @@ hypredrv_MGRCountKeepFlags(const MGR_args *args, int *num_frelax, int *num_grela
 
    if (args)
    {
-      int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                          ? (args->num_levels - 1)
-                          : 0;
+      int max_levels = hypredrv_MGRNumFineLevels(args);
       for (int i = 0; i < max_levels; i++)
       {
          frelax += (args->keep_frelax[i] != 0);
@@ -1579,7 +1538,6 @@ hypredrv_MGRSelectCachedSolversToKeep(MGR_args *args, const IntArray *timestep_s
 typedef struct
 {
    int destroy_handles;
-   int destroy_managed_detached;
    int first_active_level;
    int legacy_grelax_reclaim;
    int hypre_destroyed;
@@ -1589,9 +1547,8 @@ typedef struct
 static int
 MGRDetachedReclaimAllowed(const MGRDestroyPolicy *policy, int level, int legacy_gate)
 {
-   return (
-      policy->destroy_managed_detached || policy->destroy_handles ||
-      (policy->hypre_destroyed && legacy_gate && level == policy->first_active_level));
+   return (!policy->hypre_destroyed || policy->destroy_handles ||
+           (legacy_gate && level == policy->first_active_level));
 }
 
 static void
@@ -1683,8 +1640,6 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
    }
 
    policy.destroy_handles = MGRDestroyCachedSolversExplicitly();
-   policy.destroy_managed_detached =
-      !hypre_destroyed || MGRPostDestroyNeedsUserSolverReclaim();
    policy.first_active_level =
       (args->num_active_levels > 0) ? (int)args->active_level_map[0] : -1;
    policy.legacy_grelax_reclaim = MGRLegacyPostDestroyNeedsGRelaxReclaim();
@@ -1692,9 +1647,7 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
 
    MGRDestroyCachedCoarsestSolver(args, &policy);
 
-   max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                   ? (args->num_levels - 1)
-                   : 0;
+   max_levels = hypredrv_MGRNumFineLevels(args);
    for (int i = 0; i < max_levels; i++)
    {
       MGRDestroyCachedFRelax(args, i, &policy);
@@ -1702,6 +1655,46 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
    }
 
    MGRResetCachedSolverKeepFlags(args);
+}
+
+/*-----------------------------------------------------------------------------
+ * Destroy an MGR handle together with the component solvers cached in args,
+ * in the order required by the linked hypre. Without setup, cached handles may
+ * be owned by hypredrive only and are reclaimed before the parent; after setup
+ * (or on hypre builds that always destroy installed level solvers) the parent
+ * goes first and only the cached-handle state is cleared afterwards.
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_MGRDestroyWithCachedSolvers(MGR_args *args, HYPRE_Solver solver, int was_setup)
+{
+   int destroy_parent_first = was_setup;
+#if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5) && \
+   !HYPRE_CHECK_MIN_VERSION(30100, 28)
+   /* These development builds destroy installed level solvers even when MGR
+    * setup has not run. Reclaiming cached handles first leaves dangling solver
+    * pointers in the parent, which then destroys them a second time. */
+   destroy_parent_first = 1;
+#endif
+
+   if (!destroy_parent_first)
+   {
+      hypredrv_MGRDestroyCachedSolvers(args, 0);
+      if (solver)
+      {
+         HYPRE_MGRDestroy(solver);
+      }
+   }
+   else
+   {
+      if (solver)
+      {
+         HYPRE_MGRDestroy(solver);
+      }
+      /* Parent MGR is gone; clear any preserved cached-handle state without
+       * destroying parent-owned internals a second time. */
+      hypredrv_MGRDestroyCachedSolvers(args, 1);
+   }
 }
 
 void
@@ -1712,9 +1705,7 @@ hypredrv_MGRForgetCachedSolvers(MGR_args *args)
       return;
    }
 
-   int max_levels = (args->num_levels > 0 && args->num_levels <= MAX_MGR_LEVELS)
-                       ? (int)args->num_levels - 1
-                       : 0;
+   int max_levels = hypredrv_MGRNumFineLevels(args);
    for (int i = 0; i < max_levels; i++)
    {
       if (args->level[i].f_relaxation.type == 2)
