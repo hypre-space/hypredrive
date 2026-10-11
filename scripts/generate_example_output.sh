@@ -38,9 +38,9 @@ generate_output() {
 
     # Generate output
     CMD="${RUN} ${DRIVER} ${EXAMPLE_FILE}"
-    cd ${HYPREDRIVE_DIR}
+    cd "${HYPREDRIVE_DIR}" || exit 1
     eval ${CMD} > ${CWD}/hypredrive.temp.out
-    cd ${CWD}
+    cd "${CWD}" || exit 1
 
     # Postprocess the output file
     sed -r '

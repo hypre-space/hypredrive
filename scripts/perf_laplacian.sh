@@ -548,13 +548,11 @@ setup_flamegraph() {
 build_version() {
   local version="$1"
   local build_dir="${ROOT_DIR}/build-${version}"
-  local need_rebuild=0
 
   if [[ -x "${build_dir}/laplacian" ]]; then
     if [[ "${CALIPER_ENABLED}" -eq 1 ]]; then
       if ! grep -q "HYPREDRV_ENABLE_CALIPER:BOOL=ON" "${build_dir}/CMakeCache.txt" 2>/dev/null; then
         echo "==> Build exists for ${version} but without Caliper, rebuilding"
-        need_rebuild=1
       else
         echo "==> Build exists for ${version}, skipping"
         return

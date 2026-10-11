@@ -14,6 +14,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* Process-global MPI ownership matches the current Python bridge policy. It is
  * suitable for one Julia runtime per process; do not mix independent MPI owners

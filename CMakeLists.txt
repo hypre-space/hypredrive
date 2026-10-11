@@ -389,6 +389,11 @@ if(_hypredrv_object_link_libraries AND
     target_link_libraries(HYPREDRV_objects
         PRIVATE ${_hypredrv_object_link_libraries})
 endif()
+# The library sources are kept -Wall -Wextra clean on every supported hypre
+# version; enable the warnings for them (not for consumers) so regressions
+# surface, and become errors under CMAKE_COMPILE_WARNING_AS_ERROR.
+target_compile_options(HYPREDRV_objects PRIVATE
+    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
 if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_EXPORTS)
 else()
@@ -553,12 +558,6 @@ if(HYPREDRV_ENABLE_JULIA)
     add_subdirectory(interfaces/julia)
 endif()
 
-# C++ interface (optional)
-if(HYPREDRV_ENABLE_CPP)
-    enable_language(CXX)
-    add_subdirectory(interfaces/cpp)
-endif()
-
 # Installation and package configuration
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Install.cmake)
 
@@ -578,6 +577,13 @@ endif()
 
 # Documentation support (optional)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)
+
+# C++ interface (optional). Added after the testing setup so its tests receive
+# the shared runtime environment from hypredrv_append_test_environment.
+if(HYPREDRV_ENABLE_CPP)
+    enable_language(CXX)
+    add_subdirectory(interfaces/cpp)
+endif()
 
 # Add examples
 if(HYPREDRV_ENABLE_EXAMPLES)

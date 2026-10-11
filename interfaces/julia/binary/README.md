@@ -11,18 +11,21 @@ Release artifacts are intentionally bound before tagging:
 1. Run the `Julia Artifacts` workflow manually on the release branch.
 2. Set `update_artifacts_toml=true`.
 3. Set `release_tag` to the tag that will be created.
-4. Let the workflow commit `interfaces/julia/Artifacts.toml`.
-5. Create the release tag from that commit.
+4. Let the workflow commit `interfaces/julia/Artifacts.toml` and stage the
+   same five tarballs on a draft release for that tag.
+5. Create the release tag from that commit, then publish the draft release.
 
-The tag workflow verifies that `Artifacts.toml` already references the tag URL
-before uploading assets. A tag pushed before the manual binding commit is
-expected to fail rather than ship an empty artifact table. The verification is
-tag-exact, so bindings for a different release tag are rejected.
+The tarball builds are not byte-reproducible, so the tag workflow never uploads
+its own rebuild. It downloads the assets of the release for the tag and checks
+each one's sha256 and git-tree-sha1 against `Artifacts.toml`, failing if any is
+missing or differs. It also verifies that `Artifacts.toml` references the exact
+tag URL; a tag pushed before the manual binding commit is expected to fail
+rather than ship an empty artifact table.
 
 `bind_artifact.jl` derives the artifact name from `src/artifacts.jl` so the
-loader and maintainer tooling have a single source of truth. The tag workflow
-uploads all five tarballs to the GitHub Release; the manual binding workflow
-writes all five platform entries into `Artifacts.toml` before the tag is made.
+loader and maintainer tooling have a single source of truth. The manual binding
+workflow writes all five platform entries into `Artifacts.toml` and uploads the
+tarballs it bound; the tag workflow only verifies them.
 
 If a platform binding already exists, `bind_artifact.jl` refuses to overwrite it
 unless `HYPREDRV_ARTIFACT_REPLACE=1` is set. The release workflow sets this only

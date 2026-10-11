@@ -35,9 +35,7 @@ if(HYPREDRV_ENABLE_TESTING)
     target_link_libraries(test_cpp_interface PRIVATE HYPREDRV::CXX)
     add_test(NAME cpp_interface_serial COMMAND test_cpp_interface)
     set_tests_properties(cpp_interface_serial PROPERTIES LABELS "cpp;interface;unit")
-    if(COMMAND hypredrv_append_test_environment)
-        hypredrv_append_test_environment(cpp_interface_serial)
-    endif()
+    hypredrv_append_test_environment(cpp_interface_serial)
 
     if(MPIEXEC_EXECUTABLE)
         add_test(NAME cpp_interface_mpi_2proc
@@ -48,9 +46,7 @@ if(HYPREDRV_ENABLE_TESTING)
         set_tests_properties(cpp_interface_mpi_2proc PROPERTIES
             LABELS "cpp;interface;unit"
             RUN_SERIAL TRUE)
-        if(COMMAND hypredrv_append_test_environment)
-            hypredrv_append_test_environment(cpp_interface_mpi_2proc)
-        endif()
+        hypredrv_append_test_environment(cpp_interface_mpi_2proc)
     endif()
 
     add_test(NAME cpp_api_coverage
@@ -65,9 +61,7 @@ if(HYPREDRV_ENABLE_TESTING)
                  COMMAND laplacian-cpp -n 8 8 8 -a --solver:pcg:relative_tol 1.0e-2)
         set_tests_properties(cpp_laplacian_args PROPERTIES
             LABELS "cpp;example")
-        if(COMMAND hypredrv_append_test_environment)
-            hypredrv_append_test_environment(cpp_laplacian_args)
-        endif()
+        hypredrv_append_test_environment(cpp_laplacian_args)
     endif()
 
     set(_hypredrv_cpp_test_deps test_cpp_interface)
