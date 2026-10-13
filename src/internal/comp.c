@@ -852,6 +852,78 @@ SliceStreamRefill(hypredrv_SliceStream *st, const hypredrv_SliceSource *src)
    return n;
 }
 
+#ifdef HYPREDRV_USING_ZSTD
+static size_t
+SliceStreamDecodeZstd(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
+                      unsigned char *target, size_t avail)
+{
+   for (;;)
+   {
+      if (st->zin.pos == st->zin.size && st->in_fed < st->payload)
+      {
+         size_t got = SliceStreamRefill(st, src);
+         if (got == 0) /* GCOVR_EXCL_BR_LINE */
+         {
+            return 0; /* source read failed */
+         }
+         st->zin = (ZSTD_inBuffer){st->input, got, 0};
+      }
+      ZSTD_outBuffer o   = {target, avail, 0};
+      size_t         ret = ZSTD_decompressStream(st->zstd, &o, &st->zin);
+      /* GCOVR_EXCL_BR_START */
+      if (ZSTD_isError(ret))
+      {
+         return 0;
+      }
+      /* Retry only when an input chunk ran out before any output. */
+      if (o.pos > 0 || st->zin.pos < st->zin.size || st->in_fed == st->payload)
+      {
+         return o.pos;
+      }
+      /* GCOVR_EXCL_BR_STOP */
+   }
+}
+#endif
+
+#ifdef HYPREDRV_USING_ZLIB
+static size_t
+SliceStreamDecodeZlib(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
+                      unsigned char *target, size_t avail)
+{
+   /* zlib counts bytes in uInt: cap each output request (input chunks are
+    * already small) so slices larger than 4 GiB still decode. */
+   const uInt out_chunk = (avail > UINT_MAX) ? UINT_MAX : (uInt)avail;
+   for (;;)
+   {
+      if (st->zs.avail_in == 0 && st->in_fed < st->payload)
+      {
+         size_t got = SliceStreamRefill(st, src);
+         if (got == 0) /* GCOVR_EXCL_BR_LINE */
+         {
+            return 0; /* source read failed */
+         }
+         st->zs.next_in  = st->input;
+         st->zs.avail_in = (uInt)got;
+      }
+      st->zs.next_out  = target;
+      st->zs.avail_out = out_chunk;
+      int    ret       = inflate(&st->zs, Z_NO_FLUSH);
+      size_t produced  = out_chunk - st->zs.avail_out;
+      /* GCOVR_EXCL_BR_START */
+      if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR)
+      {
+         return 0;
+      }
+      if (produced > 0 || ret == Z_STREAM_END || st->zs.avail_in > 0 ||
+          st->in_fed == st->payload)
+      {
+         return produced;
+      }
+      /* GCOVR_EXCL_BR_STOP */
+   }
+}
+#endif
+
 /* Decodes up to `avail` bytes into `target`; returns the count (0 = no progress). */
 static size_t
 SliceStreamDecode(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
@@ -860,67 +932,13 @@ SliceStreamDecode(hypredrv_SliceStream *st, const hypredrv_SliceSource *src,
 #ifdef HYPREDRV_USING_ZSTD
    if (st->algo == COMP_ZSTD)
    {
-      for (;;)
-      {
-         if (st->zin.pos == st->zin.size && st->in_fed < st->payload)
-         {
-            size_t got = SliceStreamRefill(st, src);
-            if (got == 0) /* GCOVR_EXCL_BR_LINE */
-            {
-               return 0; /* source read failed */
-            }
-            st->zin = (ZSTD_inBuffer){st->input, got, 0};
-         }
-         ZSTD_outBuffer o   = {target, avail, 0};
-         size_t         ret = ZSTD_decompressStream(st->zstd, &o, &st->zin);
-         /* GCOVR_EXCL_BR_START */
-         if (ZSTD_isError(ret))
-         {
-            return 0;
-         }
-         /* Retry only when an input chunk ran out before any output. */
-         if (o.pos > 0 || st->zin.pos < st->zin.size || st->in_fed == st->payload)
-         {
-            return o.pos;
-         }
-         /* GCOVR_EXCL_BR_STOP */
-      }
+      return SliceStreamDecodeZstd(st, src, target, avail);
    }
 #endif
 #ifdef HYPREDRV_USING_ZLIB
    if (st->algo == COMP_ZLIB)
    {
-      /* zlib counts bytes in uInt: cap each output request (input chunks are
-       * already small) so slices larger than 4 GiB still decode. */
-      const uInt out_chunk = (avail > UINT_MAX) ? UINT_MAX : (uInt)avail;
-      for (;;)
-      {
-         if (st->zs.avail_in == 0 && st->in_fed < st->payload)
-         {
-            size_t got = SliceStreamRefill(st, src);
-            if (got == 0) /* GCOVR_EXCL_BR_LINE */
-            {
-               return 0; /* source read failed */
-            }
-            st->zs.next_in  = st->input;
-            st->zs.avail_in = (uInt)got;
-         }
-         st->zs.next_out  = target;
-         st->zs.avail_out = out_chunk;
-         int    ret       = inflate(&st->zs, Z_NO_FLUSH);
-         size_t produced  = out_chunk - st->zs.avail_out;
-         /* GCOVR_EXCL_BR_START */
-         if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR)
-         {
-            return 0;
-         }
-         if (produced > 0 || ret == Z_STREAM_END || st->zs.avail_in > 0 ||
-             st->in_fed == st->payload)
-         {
-            return produced;
-         }
-         /* GCOVR_EXCL_BR_STOP */
-      }
+      return SliceStreamDecodeZlib(st, src, target, avail);
    }
 #endif
    (void)st;
