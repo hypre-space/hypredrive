@@ -1412,7 +1412,7 @@ figure above and the reference output included below.
                            0: none
                            1: ASCII VTK
                            2: binary VTK
-    -v|--verbose <n>  : Verbosity bitset (0)
+    -v|--verbose <n>  : Verbosity bitset (3)
                            0x1: Library info and linear solver statistics
                            0x2: System info
                            0x4: Print linear system matrices
@@ -1833,7 +1833,9 @@ Reproducible Run
     -L <Lx> <Ly> <Lz> : Domain lengths (default: 1 1 1)
     -rho <val>        : Density (default: 1)
     -cp <val>         : Heat capacity (default: 1)
-    -dt <val>         : Time step (default: 1e-2)
+    -dt <val>         : Initial time step (default: 1e-2)
+                        (doubled after a step whose Newton loop needs
+                        one iteration; -adt adds further adaptation)
     -tf <val>         : Final time (default: 1.0)
     -k0 <val>         : Base conductivity (default: 1)
     -beta <val>       : Conductivity exponent (default: 0 = linear)
@@ -2753,6 +2755,8 @@ time stepping, partitioning, and visualization.
      -L <Lx> <Ly>      : Physical dimensions (1 1)
      -Re <val>         : Reynolds number (100.0)
      -dt <val>         : Initial time step size (1)
+                         (doubled after a step whose Newton loop needs
+                         one iteration; -adt adds further adaptation)
      -tf <val>         : Final simulation time (50)
      -ntol <val>       : Non-linear solver tolerance (1.0e-6)
      -adt              : Enable simple adaptive time stepping
@@ -2763,7 +2767,7 @@ time stepping, partitioning, and visualization.
                             Any nonzero value enables visualization
                             Bit 2 (0x2): ASCII (1) or binary (0)
                             Bit 3 (0x4): All timesteps (1) or last only (0)
-     -v|--verbose <n>  : Verbosity bitset (0)
+     -v|--verbose <n>  : Verbosity bitset (3)
                             0x1: Linear solver statistics
                             0x2: Library information
                             0x4: Linear system printing

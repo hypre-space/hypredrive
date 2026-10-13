@@ -226,8 +226,8 @@ int     WriteVTKsolutionVector(DistMesh2D *, LidCavityParams *, HYPRE_Real *, Gh
                                int);
 void    GetVTKBaseName(LidCavityParams *, char *, size_t);
 void    GetVTKDataDir(LidCavityParams *, char *, size_t);
-void    WritePVDCollectionFromStats(HYPREDRV_t, LidCavityParams *, int, double);
-void    UpdateTimeStep(LidCavityParams *, int, HYPRE_Real);
+void WritePVDCollectionFromStats(HYPREDRV_t, LidCavityParams *, int, const double *, int);
+void UpdateTimeStep(LidCavityParams *, int, HYPRE_Real);
 
 /*--------------------------------------------------------------------------
  * Print usage info
@@ -249,6 +249,8 @@ PrintUsage(void)
    printf("  -L <Lx> <Ly>      : Physical dimensions (1 1)\n");
    printf("  -Re <val>         : Reynolds number (100.0)\n");
    printf("  -dt <val>         : Initial time step size (1)\n");
+   printf("                      (doubled after a step whose Newton loop needs\n");
+   printf("                      one iteration; -adt adds further adaptation)\n");
    printf("  -tf <val>         : Final simulation time (50)\n");
    printf("  -ntol <val>       : Non-linear solver tolerance (1.0e-6)\n");
    printf("  -adt              : Enable simple adaptive time stepping\n");
@@ -265,7 +267,7 @@ PrintUsage(void)
    printf("                         Bit 2 (0x2): ASCII (1) or binary (0)\n");
    printf("                         Bit 3 (0x4): All timesteps (1) or last only (0)\n");
    printf("                         Examples: 1=binary last, 4=binary all\n");
-   printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
+   printf("  -v|--verbose <n>  : Verbosity bitset (3)\n");
    printf("                         0x1: Library info and linear solver statistics\n");
    printf("                         0x2: System info\n");
    printf("                         0x4: Print linear system matrices\n");
@@ -273,6 +275,15 @@ PrintUsage(void)
    printf("\n");
 
    return 0;
+}
+
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -307,7 +318,8 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -353,11 +365,13 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       }
       else if (!strcmp(argv[i], "-Re"))
       {
-         if (++i < argc) params->Re = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->Re = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-dt"))
       {
-         if (++i < argc) params->dt = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->dt = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-adt"))
       {
@@ -365,7 +379,8 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       }
       else if (!strcmp(argv[i], "-cfl") || !strcmp(argv[i], "--max-cfl"))
       {
-         if (++i < argc) params->max_cfl = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->max_cfl = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-reg") || !strcmp(argv[i], "--regularize"))
       {
@@ -373,34 +388,35 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       }
       else if (!strcmp(argv[i], "-disc") || !strcmp(argv[i], "--discretization"))
       {
-         if (++i < argc)
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         if (!strcmp(argv[++i], "q1q1"))
          {
-            if (!strcmp(argv[i], "q1q1"))
-            {
-               params->disc = 0;
-            }
-            else if (!strcmp(argv[i], "q2q1"))
-            {
-               params->disc = 1;
-            }
-            else
-            {
-               if (!myid) printf("Error: unknown discretization '%s'\n", argv[i]);
-               return 1;
-            }
+            params->disc = 0;
+         }
+         else if (!strcmp(argv[i], "q2q1"))
+         {
+            params->disc = 1;
+         }
+         else
+         {
+            if (!myid) printf("Error: unknown discretization '%s'\n", argv[i]);
+            return 1;
          }
       }
       else if (!strcmp(argv[i], "-br") || !strcmp(argv[i], "--batch-rows"))
       {
-         if (++i < argc) params->max_rows_per_call = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->max_rows_per_call = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-tf") || !strcmp(argv[i], "--final-time"))
       {
-         if (++i < argc) params->final_time = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->final_time = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-ntol") || !strcmp(argv[i], "--newton-tol"))
       {
-         if (++i < argc) params->newton_tol = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->newton_tol = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-vis") || !strcmp(argv[i], "--visualize"))
       {
@@ -416,23 +432,47 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!myid) PrintUsage();
          return 2;
       }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
+      }
    }
 
    /* Checks */
+   if (params->max_rows_per_call < 1 || !(params->dt > 0.0) || !(params->Re > 0.0))
+   {
+      if (!myid) printf("Error: require -br >= 1, -dt > 0 and -Re > 0\n");
+      return 1;
+   }
+   for (int d = 0; d < 2; d++)
+   {
+      if (params->P[d] < 1 || params->N[d] < 2 || !(params->L[d] > 0.0))
+      {
+         if (!myid)
+            printf(
+               "Error: -P entries must be >= 1, -n entries >= 2 and -L entries > 0\n");
+         return 1;
+      }
+   }
+
    if (params->P[0] * params->P[1] != num_procs)
    {
       if (!myid)
       {
          printf("Error: Number of processes (%d) must match processor grid "
-                "dimensions (%d x %d = %d)\n",
-                num_procs, params->P[0], params->P[1], params->P[0] * params->P[1]);
+                "dimensions (%lld x %lld = %lld)\n",
+                num_procs, (long long)params->P[0], (long long)params->P[1],
+                (long long)(params->P[0] * params->P[1]));
       }
       return 1;
    }
@@ -444,9 +484,9 @@ ParseArguments(int argc, char *argv[], LidCavityParams *params, int myid, int nu
       {
          if (!myid)
          {
-            printf("Error: %s grid dimension (N = %d) must be larger than the "
-                   "number of ranks (P = %d)\n",
-                   name[d], params->N[d], params->P[d]);
+            printf("Error: %s grid dimension (N = %lld) must be larger than the "
+                   "number of ranks (P = %lld)\n",
+                   name[d], (long long)params->N[d], (long long)params->P[d]);
          }
          return 1;
       }
@@ -629,13 +669,9 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
    int ny   = mesh->nlocal[1];
    int reqc = 0;
 
-   // Post Recvs (Tag = my_dir_index)
-   // We expect neighbor to send with Tag = my_dir_index (their dest index relative to
-   // them? No). P0 recv from P1 (Right). P1 sends to P0 (Left). Scheme: Send Tag =
-   // Dest_Direction. P1 sends to P0 (Left=0). Tag=0. P0 recvs from P1 (Right=1). Expect
-   // Tag=0.
-
-   // Recv logic:
+   /* Directions: 0 left, 1 right, 2 down, 3 up, 4 down-left, 5 up-right, 6 up-left,
+      7 down-right. A message's tag is the sender's direction as seen by the
+      receiver, so the buffer from direction q arrives with tag q. */
    if (mesh->nbrs[0] != MPI_PROC_NULL)
       MPI_Irecv(g->recv_bufs[0], ny * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm,
                 &g->reqs[reqc++]);
@@ -662,9 +698,7 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
       MPI_Irecv(g->recv_bufs[7], 3, MPI_DOUBLE, mesh->nbrs[7], 7, mesh->cart_comm,
                 &g->reqs[reqc++]);
 
-   /* Pack and Send (Tag = My Direction relative to neighbor) */
-
-   // Send logic:
+   /* Pack and send each boundary slab, tagged with our direction from the neighbor */
    if (mesh->nbrs[0] != MPI_PROC_NULL)
    {
       for (int j = 0; j < ny; j++)
@@ -674,9 +708,6 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
          g->send_bufs[0][3 * j + 1] = vec[idx + 1];
          g->send_bufs[0][3 * j + 2] = vec[idx + 2];
       }
-      // Send to Left (0). But neighbor P_left receives from Right (1).
-      // If neighbor expects Tag 1, I must send Tag 1.
-      // Neighbor P_left: MPI_Irecv(..., P_me, 1) -> Expects Tag 1.
       MPI_Isend(g->send_bufs[0], ny * 3, MPI_DOUBLE, mesh->nbrs[0], 1, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
@@ -689,7 +720,6 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
          g->send_bufs[1][3 * j + 1] = vec[idx + 1];
          g->send_bufs[1][3 * j + 2] = vec[idx + 2];
       }
-      // Send to Right (1). Neighbor P_right receives from Left (0). Expects Tag 0.
       MPI_Isend(g->send_bufs[1], ny * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
@@ -702,7 +732,6 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
          g->send_bufs[2][3 * i + 1] = vec[idx + 1];
          g->send_bufs[2][3 * i + 2] = vec[idx + 2];
       }
-      // Send to Bottom (2). Neighbor P_down receives from Top (3). Expects Tag 3.
       MPI_Isend(g->send_bufs[2], nx * 3, MPI_DOUBLE, mesh->nbrs[2], 3, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
@@ -715,13 +744,10 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
          g->send_bufs[3][3 * i + 1] = vec[idx + 1];
          g->send_bufs[3][3 * i + 2] = vec[idx + 2];
       }
-      // Send to Top (3). Neighbor P_up receives from Bottom (2). Expects Tag 2.
       MPI_Isend(g->send_bufs[3], nx * 3, MPI_DOUBLE, mesh->nbrs[3], 2, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
 
-   // Diagonals
-   // 4: Down-Left. Opp: Up-Right (5). Send Tag 5.
    if (mesh->nbrs[4] != MPI_PROC_NULL)
    {
       int idx            = (0 * nx + 0) * 3;
@@ -731,7 +757,6 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
       MPI_Isend(g->send_bufs[4], 3, MPI_DOUBLE, mesh->nbrs[4], 5, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
-   // 5: Up-Right. Opp: Down-Left (4). Send Tag 4.
    if (mesh->nbrs[5] != MPI_PROC_NULL)
    {
       int idx            = ((ny - 1) * nx + (nx - 1)) * 3;
@@ -741,7 +766,6 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
       MPI_Isend(g->send_bufs[5], 3, MPI_DOUBLE, mesh->nbrs[5], 4, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
-   // 6: Up-Left. Opp: Down-Right (7). Send Tag 7.
    if (mesh->nbrs[6] != MPI_PROC_NULL)
    {
       int idx            = ((ny - 1) * nx + 0) * 3;
@@ -751,7 +775,6 @@ ExchangeVectorGhosts(DistMesh2D *mesh, double *vec, GhostData *g)
       MPI_Isend(g->send_bufs[6], 3, MPI_DOUBLE, mesh->nbrs[6], 7, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
-   // 7: Down-Right. Opp: Up-Left (6). Send Tag 6.
    if (mesh->nbrs[7] != MPI_PROC_NULL)
    {
       int idx            = (0 * nx + (nx - 1)) * 3;
@@ -909,10 +932,9 @@ Q2Q1PreDof(const DistMesh2D *mesh, const Q2Q1Ctx *ctx, HYPRE_Int gpx, HYPRE_Int 
    return q2q1_block_offset(mesh, ctx, bx, by) + 2 * wvx * wvy + lpi;
 }
 
-int
+static int
 CreateQ2Q1Ctx(DistMesh2D *mesh, LidCavityParams *params, Q2Q1Ctx **ctx_ptr)
 {
-   Q2Q1Ctx  *ctx = (Q2Q1Ctx *)calloc(1, sizeof(Q2Q1Ctx));
    HYPRE_Int npx = params->N[0], npy = params->N[1];
 
    if (mesh->pdims[0] >= 64 || mesh->pdims[1] >= 64)
@@ -921,6 +943,7 @@ CreateQ2Q1Ctx(DistMesh2D *mesh, LidCavityParams *params, Q2Q1Ctx **ctx_ptr)
              "dimension\n");
       return 1;
    }
+   Q2Q1Ctx *ctx = (Q2Q1Ctx *)calloc(1, sizeof(Q2Q1Ctx));
 
    ctx->nvx   = 2 * npx - 1;
    ctx->nvy   = 2 * npy - 1;
@@ -963,7 +986,7 @@ CreateQ2Q1Ctx(DistMesh2D *mesh, LidCavityParams *params, Q2Q1Ctx **ctx_ptr)
    return 0;
 }
 
-int
+static int
 DestroyQ2Q1Ctx(Q2Q1Ctx **ctx_ptr)
 {
    Q2Q1Ctx *ctx = *ctx_ptr;
@@ -982,7 +1005,7 @@ DestroyQ2Q1Ctx(Q2Q1Ctx **ctx_ptr)
 /* Exchange the halo lines needed by the Q2-Q1 element loop: every rank sends
    its first owned velocity/pressure column, row, and corner values to its
    left, bottom, and bottom-left neighbors. MPI_PROC_NULL neighbors no-op. */
-int
+static int
 Q2Q1ExchangeHalo(DistMesh2D *mesh, Q2Q1Ctx *ctx, double *u, double *halo_col,
                  double *halo_row, double halo_cor[3])
 {
@@ -1103,6 +1126,55 @@ q2_shape_1d(const HYPRE_Real xi, HYPRE_Real L[3], HYPRE_Real dL[3])
 }
 
 /*--------------------------------------------------------------------------
+ * Lid velocity at x in [0, 1]: 1, or with -reg the profile [1 - (2x-1)^16]^2,
+ * which is 1 mid-lid and vanishes smoothly at the corners.
+ *--------------------------------------------------------------------------*/
+static HYPRE_Real
+LidVelocity(const LidCavityParams *params, HYPRE_Real x)
+{
+   if (!params->regularize_bc)
+   {
+      return 1.0;
+   }
+   HYPRE_Real xi   = 2.0 * x - 1.0;
+   HYPRE_Real xi16 = xi * xi; /* xi^2 */
+   xi16 *= xi16;              /* xi^4 */
+   xi16 *= xi16;              /* xi^8 */
+   xi16 *= xi16;              /* xi^16 */
+   return (1.0 - xi16) * (1.0 - xi16);
+}
+
+/*--------------------------------------------------------------------------
+ * Assembles the Newton system, stores ||R||_2 in *res_norm and hands J and R
+ * to the caller.
+ *--------------------------------------------------------------------------*/
+static int
+NewtonSystemFinish(HYPREDRV_t hypredrv, HYPRE_IJMatrix A, HYPRE_IJVector b,
+                   HYPRE_IJMatrix *J_ptr, HYPRE_IJVector *R_ptr, HYPRE_Real *res_norm)
+{
+   HYPRE_IJMatrixAssemble(A);
+   HYPRE_IJVectorAssemble(b);
+
+#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22600
+   HYPRE_IJVectorInnerProd(b, b, res_norm);
+#else
+   void           *b_obj = NULL;
+   HYPRE_ParVector b_par = NULL;
+   HYPRE_IJVectorGetObject(b, &b_obj);
+   b_par = (HYPRE_ParVector)b_obj;
+   HYPRE_ParVectorInnerProd(b_par, b_par, res_norm);
+#endif
+   *res_norm = sqrt(*res_norm);
+
+   *J_ptr = A;
+   *R_ptr = b;
+
+   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
+
+   return 0;
+}
+
+/*--------------------------------------------------------------------------
  * Q2-Q1 (Taylor-Hood) Newton system.
  *
  * The pressure grid has N[0] x N[1] nodes (the -n option) and the velocity
@@ -1115,7 +1187,7 @@ q2_shape_1d(const HYPRE_Real xi, HYPRE_Real L[3], HYPRE_Real dL[3])
 static const HYPRE_Real gauss3_x[3] = {-0.7745966692414834, 0.0, 0.7745966692414834};
 static const HYPRE_Real gauss3_w[3] = {5.0 / 9.0, 8.0 / 9.0, 5.0 / 9.0};
 
-int
+static int
 BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
                       LidCavityParams *params, HYPRE_Real *u_prev_time,
                       HYPRE_Real *u_current_iter, HYPRE_IJMatrix *J_ptr,
@@ -1373,20 +1445,7 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
 
             if (boundary_type == 2 && c == 0)
             {
-               if (params->regularize_bc)
-               {
-                  HYPRE_Real x_norm = (HYPRE_Real)gx / (nvx - 1);
-                  HYPRE_Real xi     = 2.0 * x_norm - 1.0;
-                  HYPRE_Real xi16   = xi * xi;
-                  xi16 *= xi16;
-                  xi16 *= xi16;
-                  xi16 *= xi16;
-                  u_bc = (1.0 - xi16) * (1.0 - xi16);
-               }
-               else
-               {
-                  u_bc = 1.0;
-               }
+               u_bc = LidVelocity(params, (HYPRE_Real)gx / (nvx - 1));
             }
 
             HYPRE_Real val_vector = u_bc - u_current_iter[2 * lvi + c];
@@ -1397,32 +1456,13 @@ BuildNewtonSystemQ2Q1(HYPREDRV_t hypredrv, DistMesh2D *mesh, Q2Q1Ctx *ctx,
       }
    }
 
-   HYPRE_IJMatrixAssemble(A);
-   HYPRE_IJVectorAssemble(b);
-
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22600
-   HYPRE_IJVectorInnerProd(b, b, res_norm);
-#else
-   void           *b_obj = NULL;
-   HYPRE_ParVector b_par = NULL;
-   HYPRE_IJVectorGetObject(b, &b_obj);
-   b_par = (HYPRE_ParVector)b_obj;
-   HYPRE_ParVectorInnerProd(b_par, b_par, res_norm);
-#endif
-   *res_norm = sqrt(*res_norm);
-
-   *J_ptr = A;
-   *R_ptr = b;
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
-
-   return 0;
+   return NewtonSystemFinish(hypredrv, A, b, J_ptr, R_ptr, res_norm);
 }
 
 /*--------------------------------------------------------------------------
  * Component norms for the Q2-Q1 block dof layout
  *--------------------------------------------------------------------------*/
-void
+static void
 ComputeComponentNormsQ2Q1(HYPRE_IJVector b, Q2Q1Ctx *ctx, double *norm_u, double *norm_v,
                           double *norm_p)
 {
@@ -1464,7 +1504,7 @@ get_global_coords(HYPRE_BigInt global_node_idx, DistMesh2D *mesh, HYPRE_BigInt g
    gcoords[1] = local_y + mesh->pstarts[1][mesh->coords[1]];
 }
 
-void
+static void
 ComputeComponentNorms(HYPRE_IJVector b, HYPRE_Int local_size, double *norm_u,
                       double *norm_v, double *norm_p)
 {
@@ -1523,7 +1563,7 @@ DiscretizationDefaultConfig(const LidCavityParams *params)
    return params->disc ? default_config_q2q1 : default_config;
 }
 
-int
+static int
 DiscretizationCreate(LidCavityParams *params, DistMesh2D *mesh, Discretization **disc_ptr)
 {
    Discretization *disc = (Discretization *)calloc(1, sizeof(Discretization));
@@ -1564,7 +1604,7 @@ DiscretizationCreate(LidCavityParams *params, DistMesh2D *mesh, Discretization *
    return 0;
 }
 
-int
+static int
 DiscretizationDestroy(Discretization **disc_ptr)
 {
    Discretization *disc = *disc_ptr;
@@ -1580,7 +1620,7 @@ DiscretizationDestroy(Discretization **disc_ptr)
 }
 
 /* Make the off-rank solution values needed by the element loops available */
-int
+static int
 DiscretizationExchangeGhosts(Discretization *disc, double *u, int which)
 {
    if (disc->params->disc)
@@ -1600,7 +1640,7 @@ DiscretizationExchangeGhosts(Discretization *disc, double *u, int which)
 }
 
 /* Assemble the Newton system J ΔU = -R for the selected discretization */
-int
+static int
 DiscretizationBuildNewtonSystem(Discretization *disc, HYPREDRV_t hypredrv,
                                 HYPRE_Real *u_old, HYPRE_Real *u_now, HYPRE_IJMatrix *A,
                                 HYPRE_IJVector *b, HYPRE_Real *res_norm)
@@ -1615,7 +1655,7 @@ DiscretizationBuildNewtonSystem(Discretization *disc, HYPREDRV_t hypredrv,
 }
 
 /* Tell hypredrive about the dof types of the selected discretization */
-int
+static int
 DiscretizationSetDofData(Discretization *disc, HYPREDRV_t hypredrv)
 {
    if (disc->params->disc)
@@ -1634,7 +1674,7 @@ DiscretizationSetDofData(Discretization *disc, HYPREDRV_t hypredrv)
 /* Register null space modes, if any; must be called after the matrix is set.
    The Q2-Q1 pressure is not pinned, so hypredrive projects out its constant
    mode, fixing the pressure gauge. Q1-Q1 pins the pressure instead. */
-int
+static int
 DiscretizationSetNullSpace(Discretization *disc, HYPREDRV_t hypredrv)
 {
    if (disc->params->disc)
@@ -1646,7 +1686,7 @@ DiscretizationSetNullSpace(Discretization *disc, HYPREDRV_t hypredrv)
 }
 
 /* L2 norms of the (u, v, p) components of a vector */
-void
+static void
 DiscretizationComputeNorms(Discretization *disc, HYPRE_IJVector b, double *norm_u,
                            double *norm_v, double *norm_p)
 {
@@ -1664,7 +1704,7 @@ DiscretizationComputeNorms(Discretization *disc, HYPRE_IJVector b, double *norm_
    solution observable comparable between discretizations at matched velocity
    grids: Q2-Q1 with an N x N pressure grid and Q1-Q1 with (2N-1) x (2N-1)
    nodes share the same velocity grid */
-double
+static double
 DiscretizationKineticEnergy(Discretization *disc, const double *u)
 {
    DistMesh2D *mesh      = disc->mesh;
@@ -1696,7 +1736,7 @@ DiscretizationKineticEnergy(Discretization *disc, const double *u)
 
 /*--------------------------------------------------------------------------
  * Compute divergence of velocity field: div(u) = du/dx + dv/dy
- * Uses central differences with ghost data from all neighbors.
+ * Uses central differences; ghost must hold the exchanged halo of u_vec.
  * Returns divergence at local nodes (caller must free the returned array).
  *--------------------------------------------------------------------------*/
 double *
@@ -1705,15 +1745,12 @@ ComputeDivergence(DistMesh2D *mesh, LidCavityParams *params, double *u_vec,
 {
    int            nx      = mesh->nlocal[0];
    int            ny      = mesh->nlocal[1];
-   int           *gdims   = mesh->gdims;
-   int           *p       = mesh->coords;
+   HYPRE_Int     *gdims   = mesh->gdims;
+   HYPRE_Int     *p       = mesh->coords;
    HYPRE_BigInt **pstarts = mesh->pstarts;
 
    double hx = params->L[0] / (gdims[0] - 1);
    double hy = params->L[1] / (gdims[1] - 1);
-
-   /* Exchange ghost data with all neighbors */
-   ExchangeVectorGhosts(mesh, u_vec, ghost);
 
    /* Allocate divergence array for local nodes */
    double *div_u = (double *)calloc((size_t)(nx * ny), sizeof(double));
@@ -1929,11 +1966,8 @@ BuildNewtonSystem(HYPREDRV_t hypredrv, DistMesh2D *mesh, LidCavityParams *params
                }
             }
 
-            /* Gather current solution DOFs for element */
-            // Note: node_gid is global, but u_current_iter is local
-            // We can only access nodes owned by this process
-            // For now, assume all nodes in elements we process are owned (or use 0 for
-            // ghost nodes)
+            /* Gather the element's current and previous solution values: owned nodes
+               from the local arrays, the others from the exchanged ghost buffers */
             HYPRE_BigInt local_node_idx = node_gid[a] - node_ilower;
             if (local_node_idx >= 0 && local_node_idx < (HYPRE_BigInt)mesh->local_size)
             {
@@ -1947,7 +1981,6 @@ BuildNewtonSystem(HYPREDRV_t hypredrv, DistMesh2D *mesh, LidCavityParams *params
             }
             else
             {
-               // Ghost node - lookup in ghost data
                int     lx    = (int)(ng[a][0] - pstarts[0][p[0]]);
                int     ly    = (int)(ng[a][1] - pstarts[1][p[1]]);
                int     nx    = (int)mesh->nlocal[0];
@@ -2205,23 +2238,11 @@ BuildNewtonSystem(HYPREDRV_t hypredrv, DistMesh2D *mesh, LidCavityParams *params
          HYPRE_Int is_dirichlet[12] = {0};
          for (int a = 0; a < 4; a++)
          {
-            HYPRE_BigInt gx_local    = ng[a][0];
-            HYPRE_BigInt gy_local    = ng[a][1];
-            HYPRE_Int    on_boundary = 0;
-            HYPRE_Real   u_bc        = 0.0;
-            HYPRE_Real   v_bc        = 0.0;
-            (void)u_bc; /* Reserved for future use */
-            (void)v_bc; /* Reserved for future use */
-
-            if (gy_local == gdims[1] - 1 && gx_local != 0 && gx_local != gdims[0] - 1)
-            {
-               on_boundary = 1; // Lid: u = 1, v = 0
-               u_bc        = 1.0;
-            }
-            else if (gx_local == 0 || gx_local == gdims[0] - 1 || gy_local == 0)
-            {
-               on_boundary = 1; // Wall: u = 0, v = 0
-            }
+            HYPRE_BigInt gx_local = ng[a][0];
+            HYPRE_BigInt gy_local = ng[a][1];
+            /* Lid (u = 1, v = 0) and walls (u = v = 0) both fix the velocity */
+            HYPRE_Int on_boundary = gx_local == 0 || gx_local == gdims[0] - 1 ||
+                                    gy_local == 0 || gy_local == gdims[1] - 1;
 
             if (gx_local == 0 && gy_local == 0)
             {
@@ -2348,23 +2369,7 @@ BuildNewtonSystem(HYPREDRV_t hypredrv, DistMesh2D *mesh, LidCavityParams *params
 
             if (boundary_type == 2 && j == 0) // Lid, u-component
             {
-               if (params->regularize_bc)
-               {
-                  // Regularized lid BC: u(x) = [1 - (2x-1)^(2n)]^2 with n=8
-                  // Flatter profile in center, steeper near corners
-                  // u(0) = 0, u(0.5) = 1, u(1) = 0
-                  HYPRE_Real x_norm = (HYPRE_Real)gcoords[0] / (gdims[0] - 1);
-                  HYPRE_Real xi     = 2.0 * x_norm - 1.0; // Map [0,1] to [-1,1]
-                  HYPRE_Real xi16   = xi * xi;            // xi^2
-                  xi16 *= xi16;                           // xi^4
-                  xi16 *= xi16;                           // xi^8
-                  xi16 *= xi16;                           // xi^16
-                  u_bc = (1.0 - xi16) * (1.0 - xi16);
-               }
-               else
-               {
-                  u_bc = 1.0; // Classic BC: u = 1 on entire lid
-               }
+               u_bc = LidVelocity(params, (HYPRE_Real)gcoords[0] / (gdims[0] - 1));
             }
 
             // Convert global node ID to local index for accessing u_current_iter
@@ -2384,27 +2389,7 @@ BuildNewtonSystem(HYPREDRV_t hypredrv, DistMesh2D *mesh, LidCavityParams *params
    }
 
    /* Finalize assembly after all values (including Dirichlet rows) are set */
-   HYPRE_IJMatrixAssemble(A);
-   HYPRE_IJVectorAssemble(b);
-
-   /* Compute current residual */
-#if HYPREDRV_HYPRE_RELEASE_NUMBER >= 22600
-   HYPRE_IJVectorInnerProd(b, b, res_norm);
-#else
-   void           *b_obj = NULL;
-   HYPRE_ParVector b_par = NULL;
-   HYPRE_IJVectorGetObject(b, &b_obj);
-   b_par = (HYPRE_ParVector)b_obj;
-   HYPRE_ParVectorInnerProd(b_par, b_par, res_norm);
-#endif
-   *res_norm = sqrt(*res_norm);
-
-   *J_ptr = A;
-   *R_ptr = b;
-
-   HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
-
-   return 0;
+   return NewtonSystemFinish(hypredrv, A, b, J_ptr, R_ptr, res_norm);
 }
 
 /*--------------------------------------------------------------------------
@@ -2449,159 +2434,21 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    int nxg = nx + ofi;
    int nyg = ny + ofj;
 
-   /* Allocate VTK ghost buffers (vectors: 3 doubles per point) */
-   double *vtk_ghost[8];
-   for (int i = 0; i < 8; i++) vtk_ghost[i] = NULL;
-   if (mesh->nbrs[0] != MPI_PROC_NULL)
-      vtk_ghost[0] = (double *)calloc((size_t)(ny * 3), sizeof(double)); /* left  face */
-   if (mesh->nbrs[1] != MPI_PROC_NULL)
-      vtk_ghost[1] =
-         (double *)calloc((size_t)(ny * 3), sizeof(double)); /* right face send */
-   if (mesh->nbrs[2] != MPI_PROC_NULL)
-      vtk_ghost[2] = (double *)calloc((size_t)(nx * 3), sizeof(double)); /* down  face */
-   if (mesh->nbrs[3] != MPI_PROC_NULL)
-      vtk_ghost[3] =
-         (double *)calloc((size_t)(nx * 3), sizeof(double)); /* up    face send */
-   if (mesh->nbrs[4] != MPI_PROC_NULL)
-      vtk_ghost[4] = (double *)calloc(3, sizeof(double)); /* left-down corner */
-   if (mesh->nbrs[5] != MPI_PROC_NULL)
-      vtk_ghost[5] = (double *)calloc(3, sizeof(double)); /* right-up  corner send */
-   if (mesh->nbrs[6] != MPI_PROC_NULL)
-      vtk_ghost[6] = (double *)calloc(3, sizeof(double)); /* left-up corner */
-   if (mesh->nbrs[7] != MPI_PROC_NULL)
-      vtk_ghost[7] = (double *)calloc(3, sizeof(double)); /* right-down  corner send */
-
-   /* Fill send buffers and post Irecvs */
-   MPI_Request reqs[16];
-   int         reqc = 0;
-
-   /* X-direction faces */
-   if (mesh->nbrs[1] != MPI_PROC_NULL)
-   {
-      for (int j = 0; j < ny; j++)
-      {
-         int nidx              = j * nx + (nx - 1);
-         int off               = j * 3;
-         vtk_ghost[1][off + 0] = sol_data[3 * nidx + 0];
-         vtk_ghost[1][off + 1] = sol_data[3 * nidx + 1];
-         vtk_ghost[1][off + 2] = sol_data[3 * nidx + 2];
-      }
-      MPI_Isend(vtk_ghost[1], ny * 3, MPI_DOUBLE, mesh->nbrs[1], 0, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-   if (mesh->nbrs[0] != MPI_PROC_NULL)
-   {
-      MPI_Irecv(vtk_ghost[0], ny * 3, MPI_DOUBLE, mesh->nbrs[0], 0, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-
-   /* Y-direction faces */
-   if (mesh->nbrs[3] != MPI_PROC_NULL)
-   {
-      for (int i = 0; i < nx; i++)
-      {
-         int nidx              = (ny - 1) * nx + i;
-         int off               = i * 3;
-         vtk_ghost[3][off + 0] = sol_data[3 * nidx + 0];
-         vtk_ghost[3][off + 1] = sol_data[3 * nidx + 1];
-         vtk_ghost[3][off + 2] = sol_data[3 * nidx + 2];
-      }
-      MPI_Isend(vtk_ghost[3], nx * 3, MPI_DOUBLE, mesh->nbrs[3], 1, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-   if (mesh->nbrs[2] != MPI_PROC_NULL)
-   {
-      MPI_Irecv(vtk_ghost[2], nx * 3, MPI_DOUBLE, mesh->nbrs[2], 1, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-
-   /* Corners */
-   if (mesh->nbrs[5] != MPI_PROC_NULL)
-   {
-      int nidx        = (ny - 1) * nx + (nx - 1);
-      vtk_ghost[5][0] = sol_data[3 * nidx + 0];
-      vtk_ghost[5][1] = sol_data[3 * nidx + 1];
-      vtk_ghost[5][2] = sol_data[3 * nidx + 2];
-      MPI_Isend(vtk_ghost[5], 3, MPI_DOUBLE, mesh->nbrs[5], 2, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-   if (mesh->nbrs[4] != MPI_PROC_NULL)
-   {
-      MPI_Irecv(vtk_ghost[4], 3, MPI_DOUBLE, mesh->nbrs[4], 2, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-   if (mesh->nbrs[6] != MPI_PROC_NULL)
-   {
-      int nidx        = (ny - 1) * nx;
-      vtk_ghost[6][0] = sol_data[3 * nidx + 0];
-      vtk_ghost[6][1] = sol_data[3 * nidx + 1];
-      vtk_ghost[6][2] = sol_data[3 * nidx + 2];
-      MPI_Isend(vtk_ghost[6], 3, MPI_DOUBLE, mesh->nbrs[6], 3, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-   if (mesh->nbrs[7] != MPI_PROC_NULL)
-   {
-      MPI_Irecv(vtk_ghost[7], 3, MPI_DOUBLE, mesh->nbrs[7], 3, mesh->cart_comm,
-                &reqs[reqc++]);
-   }
-
-   /* Build extended data including negative-face ghosts */
+   /* Owned nodes plus the left, bottom and lower-left ghost values, so that
+      neighboring pieces share their seam nodes (3 values per node) */
+   ExchangeVectorGhosts(mesh, sol_data, ghost);
    double *ext = (double *)calloc((size_t)(nxg * nyg * 3), sizeof(double));
    for (int j = 0; j < ny; j++)
    {
-      for (int i = 0; i < nx; i++)
-      {
-         int ig = i + ofi, jg = j + ofj;
-         int idx_e      = (jg * nxg + ig) * 3;
-         int nidx       = j * nx + i;
-         ext[idx_e + 0] = sol_data[3 * nidx + 0];
-         ext[idx_e + 1] = sol_data[3 * nidx + 1];
-         ext[idx_e + 2] = sol_data[3 * nidx + 2];
-      }
+      memcpy(&ext[((j + ofj) * nxg + ofi) * 3], &sol_data[j * nx * 3],
+             (size_t)nx * 3 * sizeof(double));
+      if (ofi)
+         memcpy(&ext[(j + ofj) * nxg * 3], &ghost->recv_bufs[0][j * 3],
+                3 * sizeof(double));
    }
-
-   /* Finish comms before using ghost buffers */
-   if (reqc > 0)
-   {
-      MPI_Status *statuses = (MPI_Status *)malloc((size_t)reqc * sizeof(MPI_Status));
-      MPI_Waitall(reqc, reqs, statuses);
-      free(statuses);
-   }
-
-   /* Insert faces */
-   if (mesh->nbrs[0] != MPI_PROC_NULL)
-   {
-      for (int j = 0; j < ny; j++)
-      {
-         int jg       = j + ofj;
-         int src      = j * 3;
-         int dst      = (jg * nxg + 0) * 3;
-         ext[dst + 0] = vtk_ghost[0][src + 0];
-         ext[dst + 1] = vtk_ghost[0][src + 1];
-         ext[dst + 2] = vtk_ghost[0][src + 2];
-      }
-   }
-   if (mesh->nbrs[2] != MPI_PROC_NULL)
-   {
-      for (int i = 0; i < nx; i++)
-      {
-         int ig       = i + ofi;
-         int src      = i * 3;
-         int dst      = (0 * nxg + ig) * 3;
-         ext[dst + 0] = vtk_ghost[2][src + 0];
-         ext[dst + 1] = vtk_ghost[2][src + 1];
-         ext[dst + 2] = vtk_ghost[2][src + 2];
-      }
-   }
-
-   /* Insert corners */
-   if (mesh->nbrs[4] != MPI_PROC_NULL) /* left-down */
-   {
-      int dst      = (0 * nxg + 0) * 3;
-      ext[dst + 0] = vtk_ghost[4][0];
-      ext[dst + 1] = vtk_ghost[4][1];
-      ext[dst + 2] = vtk_ghost[4][2];
-   }
+   if (ofj) memcpy(&ext[ofi * 3], ghost->recv_bufs[2], (size_t)nx * 3 * sizeof(double));
+   if (mesh->nbrs[4] != MPI_PROC_NULL)
+      memcpy(ext, ghost->recv_bufs[4], 3 * sizeof(double));
 
    /* Create data directory if it doesn't exist (all ranks) */
    char data_dir[256];
@@ -2643,7 +2490,7 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
    WriteCoordArray(fp, "z", 0.0, 0.0, 1);
    fprintf(fp, "      </Coordinates>\n");
 
-   /* Compute divergence on local nodes using proper MPI ghost exchange */
+   /* Divergence on local nodes (ghost holds the sol_data halo exchanged above) */
    double *div_local = ComputeDivergence(mesh, params, sol_data, ghost);
 
    /* Expand divergence to extended grid (including VTK overlap ghosts) */
@@ -2783,9 +2630,6 @@ WriteVTKsolutionVector(DistMesh2D *mesh, LidCavityParams *params, HYPRE_Real *so
 
    /* PVD file (rank 0) - handled by WritePVDCollection at the end */
 
-   /* Cleanup */
-   for (int i = 0; i < 8; i++)
-      if (vtk_ghost[i]) free(vtk_ghost[i]);
    free(ext);
 
    return 0;
@@ -2821,7 +2665,7 @@ GetVTKDataDir(LidCavityParams *params, char *buf, size_t bufsize)
  *--------------------------------------------------------------------------*/
 void
 WritePVDCollectionFromStats(HYPREDRV_t hypredrv, LidCavityParams *params, int num_procs,
-                            double final_time)
+                            const double *step_times, int num_recorded)
 {
    int num_steps = 0;
    HYPREDRV_StatsLevelGetCount(hypredrv, 0, &num_steps);
@@ -2845,9 +2689,6 @@ WritePVDCollectionFromStats(HYPREDRV_t hypredrv, LidCavityParams *params, int nu
    /* Check if all timesteps should be included (bit 3: 0x4) */
    int write_all = (params->visualize & 0x4) != 0;
 
-   /* Compute time per step (approximate - assumes uniform dt) */
-   double dt_approx = final_time / num_steps;
-
    /* Determine which timesteps to include in PVD */
    int start_idx = write_all ? 0 : (num_steps - 1); /* All timesteps or only last */
    int end_idx   = num_steps;
@@ -2857,13 +2698,16 @@ WritePVDCollectionFromStats(HYPREDRV_t hypredrv, LidCavityParams *params, int nu
       int timestep_id;
       HYPREDRV_StatsLevelGetEntry(hypredrv, 0, i, &timestep_id, NULL, NULL, NULL, NULL);
 
-      double sim_time = timestep_id * dt_approx;
+      /* timestep_id is 1-indexed, file names are 0-indexed */
+      int file_idx = timestep_id - 1;
+      if (file_idx < 0 || file_idx >= num_recorded) continue;
+      double sim_time = step_times[file_idx];
 
       for (int r = 0; r < num_procs; r++)
       {
          char vtr_file[512];
-         snprintf(vtr_file, sizeof(vtr_file), "%s/step_%05d_%d.vtr", data_dir,
-                  timestep_id - 1, r);
+         snprintf(vtr_file, sizeof(vtr_file), "%s/step_%05d_%d.vtr", data_dir, file_idx,
+                  r);
 
          fprintf(fp,
                  "    <DataSet timestep=\"%g\" group=\"\" part=\"%d\" file=\"%s\"/>\n",
@@ -2942,10 +2786,11 @@ main(int argc, char *argv[])
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &num_procs);
 
-   if (ParseArguments(argc, argv, &params, myid, num_procs))
+   int parse = ParseArguments(argc, argv, &params, myid, num_procs);
+   if (parse)
    {
       MPI_Finalize();
-      return 1;
+      return (parse == 2) ? 0 : 1; /* 2: help was printed */
    }
 
 #if HYPREDRV_HYPRE_RELEASE_NUMBER < 30100
@@ -3006,12 +2851,17 @@ main(int argc, char *argv[])
       {
          printf("Visualization:           disabled\n");
       }
-      printf("Verbosity level:         0x%x\n", params.verbose);
+      printf("Verbosity level:         0x%llx\n", (long long)params.verbose);
       printf("=====================================================\n\n");
    }
 
    /* Initialize hypredrive library and create main object */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
 
    /* Print library info if requested */
    if (params.verbose & 0x1)
@@ -3063,8 +2913,10 @@ main(int argc, char *argv[])
    }
    HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorSet(hypredrv, 2, vec_s));
 
-   double current_time = 0.0;
-   int    newton_iter, t_step = 0;
+   double  current_time = 0.0;
+   double *step_times   = NULL;
+   int     step_cap     = 0;
+   int     newton_iter, t_step = 0;
 
    /* Time solver loop */
    for (t_step = 0; current_time < params.final_time; ++t_step)
@@ -3074,6 +2926,21 @@ main(int argc, char *argv[])
          params.dt = params.final_time - current_time;
       }
       current_time += params.dt;
+
+      /* Record each step's physical time for the PVD collection (dt may vary) */
+      if (t_step >= step_cap)
+      {
+         step_cap      = step_cap ? 2 * step_cap : 64;
+         double *grown = (double *)realloc(step_times, (size_t)step_cap * sizeof(double));
+         if (!grown)
+         {
+            fprintf(stderr, "[rank %d] Error: cannot record %d time steps\n", myid,
+                    step_cap);
+            MPI_Abort(MPI_COMM_WORLD, -1);
+         }
+         step_times = grown;
+      }
+      step_times[t_step] = current_time;
 
       /* Begin timestep annotation (level 0) - stats accumulated automatically */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(hypredrv, 0, "timestep", t_step));
@@ -3112,13 +2979,6 @@ main(int argc, char *argv[])
                HYPREDRV_AnnotateLevelEnd(hypredrv, 1, "newton", newton_iter));
             break;
          }
-
-#if defined(HYPRE_USING_GPU)
-         if (!myid && (params.verbose > 0)) printf("Migrating linear system to GPU...");
-         HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
-         HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
-         if (!myid && (params.verbose > 0)) printf(" Done!\n");
-#endif
 
          /* Tell hypredrv about the dof types and null space modes */
          DiscretizationSetDofData(disc, hypredrv);
@@ -3187,6 +3047,9 @@ main(int argc, char *argv[])
          int write_all        = (params.visualize & 0x4) != 0;
          if (write_all || is_last_timestep)
          {
+            /* Re-fetch: a Newton pass that hit the iteration cap corrected (and,
+             * on GPUs, migrated) the state after u_now was taken. */
+            HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorGetValues(hypredrv, 0, &u_now));
             WriteVTKsolutionVector(mesh, &params, u_now, disc->g_u_k, t_step + 1);
          }
       }
@@ -3219,14 +3082,18 @@ main(int argc, char *argv[])
 
    if (!myid && params.visualize)
    {
-      WritePVDCollectionFromStats(hypredrv, &params, num_procs, params.final_time);
+      WritePVDCollectionFromStats(hypredrv, &params, num_procs, step_times, t_step);
    }
+   free(step_times);
 
    if (!myid && (params.verbose & 0x1)) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));
    if (params.verbose & 0x2) HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
 
    return 0;

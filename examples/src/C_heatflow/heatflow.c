@@ -96,9 +96,6 @@ typedef struct
    HYPRE_Int  max_iters;
    HYPRE_Real tol;  /* absolute update tolerance on ||Δ||_inf */
    HYPRE_Real rtol; /* residual tolerance on ||R||_2 */
-   HYPRE_Real damping;
-   HYPRE_Real ls_min; /* minimum damping */
-   HYPRE_Real ls_max; /* maximum damping */
 } NewtonParams;
 
 typedef struct
@@ -126,14 +123,27 @@ typedef struct
 } HeatParams;
 
 /*--------------------------------------------------------------------------
- * Ghost Data struct for parallel communication (like lidcavity)
+ * Ghosted copy of a nodal scalar field: this rank's nodes plus a one-node halo
+ * from the (up to) 26 neighbors. Halo entries on the domain boundary stay zero.
+ * Neighbor directions are numbered q = (dz+1)*9 + (dy+1)*3 + (dx+1), q != 13.
  *--------------------------------------------------------------------------*/
 typedef struct
 {
-   double     *recv_bufs[26]; /* up to 26 neighbors in 3D */
-   double     *send_bufs[26];
+   int         n[3];       /* owned nodes per direction */
+   double     *ext;        /* (n[0]+2) x (n[1]+2) x (n[2]+2) values, x fastest */
+   int         nbrs[27];   /* neighbor rank, or MPI_PROC_NULL */
+   int         counts[27]; /* values exchanged with each neighbor */
+   double     *send_bufs[27];
+   double     *recv_bufs[27];
    MPI_Request reqs[52];
 } GhostData3D;
+
+/* Ghosted value at local node (i,j,k); each index may be -1 or n (halo) */
+static inline double
+GhostAt(const GhostData3D *g, int i, int j, int k)
+{
+   return g->ext[((k + 1) * (g->n[1] + 2) + (j + 1)) * (g->n[0] + 2) + (i + 1)];
+}
 
 typedef struct
 {
@@ -166,21 +176,20 @@ int  DestroyDistMesh(DistMesh **);
 int  CreateGhostData3D(DistMesh *, GhostData3D **);
 int  DestroyGhostData3D(GhostData3D **);
 int  ExchangeScalarGhosts(DistMesh *, double *, GhostData3D *);
-int  BuildNonlinearSystem_Heat(HYPREDRV_t, DistMesh *, HeatParams *, const HYPRE_Real *,
-                               const HYPRE_Real *, HYPRE_IJMatrix *, HYPRE_IJVector *,
-                               double *, double, GhostData3D *, GhostData3D *);
+int  BuildNonlinearSystem_Heat(HYPREDRV_t, DistMesh *, HeatParams *, HYPRE_IJMatrix *,
+                               HYPRE_IJVector *, double *, double, GhostData3D *,
+                               GhostData3D *);
 int  WriteVTKsolutionScalar(DistMesh *, HeatParams *, HYPRE_Real *, GhostData3D *, int,
                             double);
 void GetVTKBaseName(HeatParams *, char *, size_t);
 void GetVTKDataDir(HeatParams *, char *, size_t);
-void WritePVDCollectionFromStats(HYPREDRV_t, HeatParams *, int, double);
+void WritePVDCollectionFromStats(HYPREDRV_t, HeatParams *, int, const double *, int);
 void UpdateTimeStep(HeatParams *, int);
 static HYPRE_Real MMS_ExactSolution(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z,
                                     HYPRE_Real t, HeatParams *p);
 static HYPRE_Real MMS_SourceTerm(HYPRE_Real x, HYPRE_Real y, HYPRE_Real z, HYPRE_Real t,
                                  HeatParams *p);
 /* static const char *HeatOutDir(void); */ /* Reserved for future use */
-static void EnsureDir(const char *path);
 static void ProjectDirichlet(DistMesh *, HeatParams *, HYPRE_Real *);
 static void InitializeTemperatureField(DistMesh *, HeatParams *, HYPRE_Real *);
 static void q1_shape_ref(HYPRE_Real, HYPRE_Real, HYPRE_Real, HYPRE_Real N[8],
@@ -251,10 +260,12 @@ PrintUsage(void)
    printf("  -L <Lx> <Ly> <Lz> : Domain lengths (default: 1 1 1)\n");
    printf("  -rho <val>        : Density (default: 1)\n");
    printf("  -cp <val>         : Heat capacity (default: 1)\n");
-   printf("  -dt <val>         : Time step (default: 1e-2)\n");
+   printf("  -dt <val>         : Initial time step (default: 1e-2)\n");
+   printf("                      (doubled after a step whose Newton loop needs\n");
+   printf("                      one iteration; -adt adds further adaptation)\n");
    printf("  -tf <val>         : Final time (default: 1.0)\n");
    printf("  -k0 <val>         : Base conductivity (default: 1)\n");
-   printf("  -beta <val>       : Conductivity exponent (default: 1)\n");
+   printf("  -beta <val>       : Conductivity exponent (default: 0 = linear)\n");
    printf("  -br <n>           : Batch rows per IJ call (default: 128)\n");
    printf("  -adt              : Enable adaptive time stepping\n");
    printf("  -cfl <val>        : Maximum CFL for adaptive time stepping (0=no limit)\n");
@@ -274,6 +285,15 @@ PrintUsage(void)
    printf("                         0x4: Print linear system matrices\n");
    printf("  -h|--help         : This help\n\n");
    return 0;
+}
+
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
 }
 
 int
@@ -305,9 +325,6 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
    p->newton.max_iters  = 20;
    p->newton.tol        = 1e-5;
    p->newton.rtol       = 1e-5;
-   p->newton.damping    = 1.0;
-   p->newton.ls_min     = 1e-2;
-   p->newton.ls_max     = 1.0;
    p->yaml_file         = NULL;
    p->hypredrv_argc     = 0;
    p->hypredrv_argv     = NULL;
@@ -316,7 +333,8 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) p->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         p->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -326,38 +344,47 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
       }
       else if (!strcmp(argv[i], "-n"))
       {
+         if (MissingValues(argc, argv, i, 3, myid)) return 1;
          for (int j = 0; j < 3; j++) p->N[j] = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-P"))
       {
+         if (MissingValues(argc, argv, i, 3, myid)) return 1;
          for (int j = 0; j < 3; j++) p->P[j] = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-L"))
       {
+         if (MissingValues(argc, argv, i, 3, myid)) return 1;
          for (int j = 0; j < 3; j++) p->L[j] = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-rho"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->rho = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-cp"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->cp = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-dt"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->dt = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-tf"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->tf = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-k0"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->k0 = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-beta"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->beta = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-adt"))
@@ -366,35 +393,28 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
       }
       else if (!strcmp(argv[i], "-cfl") || !strcmp(argv[i], "--max-cfl"))
       {
-         if (++i < argc) p->max_cfl = atof(argv[i]);
-      }
-      else if (!strcmp(argv[i], "-ls_min"))
-      {
-         p->newton.ls_min = atof(argv[++i]);
-      }
-      else if (!strcmp(argv[i], "-ls_max"))
-      {
-         p->newton.ls_max = atof(argv[++i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         p->max_cfl = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-br") || !strcmp(argv[i], "--batch-rows"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->max_rows_per_call = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-nw_max"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->newton.max_iters = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-nw_tol"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->newton.tol = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-nw_rtol"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->newton.rtol = atof(argv[++i]);
-      }
-      else if (!strcmp(argv[i], "-nw_w"))
-      {
-         p->newton.damping = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-vis") || !strcmp(argv[i], "--visualize"))
       {
@@ -409,6 +429,7 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
          p->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
@@ -416,12 +437,39 @@ ParseArguments(int argc, char *argv[], HeatParams *p, int myid, int nprocs)
          if (!myid) PrintUsage();
          return 2;
       }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
+      }
    }
 
    if (p->hypredrv_argc && !p->yaml_file)
    {
       if (!myid) printf("Error: -a/--args requires a YAML configuration file (-i)\n");
       return 1;
+   }
+
+   if (p->max_rows_per_call < 1 || !(p->dt > 0.0))
+   {
+      if (!myid) printf("Error: require -br >= 1 and -dt > 0\n");
+      return 1;
+   }
+   if (!(p->rho > 0.0) || !(p->cp > 0.0) || !(p->k0 > 0.0))
+   {
+      if (!myid) printf("Error: require -rho > 0, -cp > 0 and -k0 > 0\n");
+      return 1;
+   }
+   for (int d = 0; d < 3; d++)
+   {
+      if (p->P[d] < 1 || p->N[d] < 2 || !(p->L[d] > 0.0))
+      {
+         if (!myid)
+            printf(
+               "Error: -P entries must be >= 1, -n entries >= 2 and -L entries > 0\n");
+         return 1;
+      }
    }
 
    if (p->P[0] * p->P[1] * p->P[2] != nprocs)
@@ -575,175 +623,71 @@ DestroyDistMesh(DistMesh **pm)
 }
 
 /*--------------------------------------------------------------------------
- * Ghost Data functions for 3D scalar fields
- * 26-neighbor exchange (Faces + Edges + Corners)
- * Buffer Index Mapping: idx = (dz+1)*9 + (dy+1)*3 + (dx+1)
- * Skips idx=13 (center).
+ * Ghost exchange for 3D nodal scalar fields
  *--------------------------------------------------------------------------*/
-#define NBR_IDX(dx, dy, dz) ((dz + 1) * 9 + (dy + 1) * 3 + (dx + 1))
+
+/* Local index range [lo, hi) along one direction of the slab exchanged with the
+   neighbor at offset d in {-1,0,1}: owned nodes to send, halo nodes to receive */
+static void
+SlabRange(int d, int n, int is_send, int *lo, int *hi)
+{
+   if (d == 0)
+   {
+      *lo = 0;
+      *hi = n;
+      return;
+   }
+   *lo = (d < 0) ? (is_send ? 0 : -1) : (is_send ? n - 1 : n);
+   *hi = *lo + 1;
+}
+
+/* Pack (is_send) or unpack the slab for neighbor direction q */
+static void
+SlabCopy(GhostData3D *g, int q, int is_send, double *buf)
+{
+   int d[3] = {q % 3 - 1, (q / 3) % 3 - 1, q / 9 - 1};
+   int lo[3], hi[3], m = 0;
+   for (int t = 0; t < 3; t++) SlabRange(d[t], g->n[t], is_send, &lo[t], &hi[t]);
+   for (int k = lo[2]; k < hi[2]; k++)
+      for (int j = lo[1]; j < hi[1]; j++)
+         for (int i = lo[0]; i < hi[0]; i++)
+         {
+            double *v =
+               &g->ext[((k + 1) * (g->n[1] + 2) + (j + 1)) * (g->n[0] + 2) + (i + 1)];
+            if (is_send) buf[m++] = *v;
+            else *v = buf[m++];
+         }
+}
 
 int
 CreateGhostData3D(DistMesh *mesh, GhostData3D **ghost_ptr)
 {
-   GhostData3D *g  = (GhostData3D *)calloc(1, sizeof(GhostData3D));
-   int          nx = mesh->nlocal[0];
-   int          ny = mesh->nlocal[1];
-   int          nz = mesh->nlocal[2];
+   GhostData3D *g = (GhostData3D *)calloc(1, sizeof(GhostData3D));
+   for (int t = 0; t < 3; t++) g->n[t] = (int)mesh->nlocal[t];
+   g->ext = (double *)calloc((size_t)(g->n[0] + 2) * (size_t)(g->n[1] + 2) *
+                                (size_t)(g->n[2] + 2),
+                             sizeof(double));
 
-   int *pd = mesh->pdims;
-   int *cd = mesh->coords;
+   for (int q = 0; q < 27; q++)
+   {
+      int d[3] = {q % 3 - 1, (q / 3) % 3 - 1, q / 9 - 1};
+      int nc[3], inside = (q != 13);
+      g->nbrs[q] = MPI_PROC_NULL;
+      for (int t = 0; t < 3; t++)
+      {
+         nc[t] = (int)mesh->coords[t] + d[t];
+         if (nc[t] < 0 || nc[t] >= mesh->pdims[t]) inside = 0;
+      }
+      if (!inside) continue;
 
-   for (int i = 0; i < 26; i++)
-   {
-      g->recv_bufs[i] = NULL;
-      g->send_bufs[i] = NULL;
-   }
-
-   /* Complete 26-neighbor ghost exchange for 3D multi-axis partitioning.
-    * Buffer layout:
-    *   0-5:   6 faces   (x-, x+, y-, y+, z-, z+)
-    *   6-17:  12 edges  (xy+, xy-, x+y-, x-y+, xz+, xz-, x+z-, x-z+, yz+, yz-, y+z-,
-    * y-z+) 18-25: 8 corners (+++, ++-, +-+, +--, -++, -+-, --+, ---)
-    */
-
-   /* Faces: 0=x-, 1=x+, 2=y-, 3=y+, 4=z-, 5=z+ */
-   if (cd[0] > 0)
-   {
-      g->recv_bufs[0] = (double *)calloc((size_t)(ny * nz), sizeof(double));
-      g->send_bufs[0] = (double *)calloc((size_t)(ny * nz), sizeof(double));
-   }
-   if (cd[0] < pd[0] - 1)
-   {
-      g->recv_bufs[1] = (double *)calloc((size_t)(ny * nz), sizeof(double));
-      g->send_bufs[1] = (double *)calloc((size_t)(ny * nz), sizeof(double));
-   }
-   if (cd[1] > 0)
-   {
-      g->recv_bufs[2] = (double *)calloc((size_t)(nx * nz), sizeof(double));
-      g->send_bufs[2] = (double *)calloc((size_t)(nx * nz), sizeof(double));
-   }
-   if (cd[1] < pd[1] - 1)
-   {
-      g->recv_bufs[3] = (double *)calloc((size_t)(nx * nz), sizeof(double));
-      g->send_bufs[3] = (double *)calloc((size_t)(nx * nz), sizeof(double));
-   }
-   if (cd[2] > 0)
-   {
-      g->recv_bufs[4] = (double *)calloc((size_t)(nx * ny), sizeof(double));
-      g->send_bufs[4] = (double *)calloc((size_t)(nx * ny), sizeof(double));
-   }
-   if (cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[5] = (double *)calloc((size_t)(nx * ny), sizeof(double));
-      g->send_bufs[5] = (double *)calloc((size_t)(nx * ny), sizeof(double));
-   }
-
-   /* Edges along z (xy combinations): 6=x+y+, 7=x-y-, 8=x+y-, 9=x-y+ */
-   if (cd[0] < pd[0] - 1 && cd[1] < pd[1] - 1)
-   {
-      g->recv_bufs[6] = (double *)calloc((size_t)nz, sizeof(double));
-      g->send_bufs[6] = (double *)calloc((size_t)nz, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[1] > 0)
-   {
-      g->recv_bufs[7] = (double *)calloc((size_t)nz, sizeof(double));
-      g->send_bufs[7] = (double *)calloc((size_t)nz, sizeof(double));
-   }
-   if (cd[0] < pd[0] - 1 && cd[1] > 0)
-   {
-      g->recv_bufs[8] = (double *)calloc((size_t)nz, sizeof(double));
-      g->send_bufs[8] = (double *)calloc((size_t)nz, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[1] < pd[1] - 1)
-   {
-      g->recv_bufs[9] = (double *)calloc((size_t)nz, sizeof(double));
-      g->send_bufs[9] = (double *)calloc((size_t)nz, sizeof(double));
-   }
-
-   /* Edges along y (xz combinations): 10=x+z+, 11=x-z-, 12=x+z-, 13=x-z+ */
-   if (cd[0] < pd[0] - 1 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[10] = (double *)calloc((size_t)ny, sizeof(double));
-      g->send_bufs[10] = (double *)calloc((size_t)ny, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[2] > 0)
-   {
-      g->recv_bufs[11] = (double *)calloc((size_t)ny, sizeof(double));
-      g->send_bufs[11] = (double *)calloc((size_t)ny, sizeof(double));
-   }
-   if (cd[0] < pd[0] - 1 && cd[2] > 0)
-   {
-      g->recv_bufs[12] = (double *)calloc((size_t)ny, sizeof(double));
-      g->send_bufs[12] = (double *)calloc((size_t)ny, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[13] = (double *)calloc((size_t)ny, sizeof(double));
-      g->send_bufs[13] = (double *)calloc((size_t)ny, sizeof(double));
-   }
-
-   /* Edges along x (yz combinations): 14=y+z+, 15=y-z-, 16=y+z-, 17=y-z+ */
-   if (cd[1] < pd[1] - 1 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[14] = (double *)calloc((size_t)nx, sizeof(double));
-      g->send_bufs[14] = (double *)calloc((size_t)nx, sizeof(double));
-   }
-   if (cd[1] > 0 && cd[2] > 0)
-   {
-      g->recv_bufs[15] = (double *)calloc((size_t)nx, sizeof(double));
-      g->send_bufs[15] = (double *)calloc((size_t)nx, sizeof(double));
-   }
-   if (cd[1] < pd[1] - 1 && cd[2] > 0)
-   {
-      g->recv_bufs[16] = (double *)calloc((size_t)nx, sizeof(double));
-      g->send_bufs[16] = (double *)calloc((size_t)nx, sizeof(double));
-   }
-   if (cd[1] > 0 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[17] = (double *)calloc((size_t)nx, sizeof(double));
-      g->send_bufs[17] = (double *)calloc((size_t)nx, sizeof(double));
-   }
-
-   /* Corners: 18=+++, 19=++-, 20=+-+, 21=+--, 22=-++, 23=-+-, 24=--+, 25=--- */
-   if (cd[0] < pd[0] - 1 && cd[1] < pd[1] - 1 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[18] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[18] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] < pd[0] - 1 && cd[1] < pd[1] - 1 && cd[2] > 0)
-   {
-      g->recv_bufs[19] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[19] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] < pd[0] - 1 && cd[1] > 0 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[20] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[20] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] < pd[0] - 1 && cd[1] > 0 && cd[2] > 0)
-   {
-      g->recv_bufs[21] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[21] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[1] < pd[1] - 1 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[22] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[22] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[1] < pd[1] - 1 && cd[2] > 0)
-   {
-      g->recv_bufs[23] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[23] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[1] > 0 && cd[2] < pd[2] - 1)
-   {
-      g->recv_bufs[24] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[24] = (double *)calloc(1, sizeof(double));
-   }
-   if (cd[0] > 0 && cd[1] > 0 && cd[2] > 0)
-   {
-      g->recv_bufs[25] = (double *)calloc(1, sizeof(double));
-      g->send_bufs[25] = (double *)calloc(1, sizeof(double));
+      MPI_Cart_rank(mesh->cart_comm, nc, &g->nbrs[q]);
+      g->counts[q] = 1;
+      for (int t = 0; t < 3; t++)
+      {
+         if (d[t] == 0) g->counts[q] *= g->n[t];
+      }
+      g->send_bufs[q] = (double *)malloc((size_t)g->counts[q] * sizeof(double));
+      g->recv_bufs[q] = (double *)malloc((size_t)g->counts[q] * sizeof(double));
    }
 
    *ghost_ptr = g;
@@ -755,470 +699,48 @@ DestroyGhostData3D(GhostData3D **ghost_ptr)
 {
    GhostData3D *g = *ghost_ptr;
    if (!g) return 0;
-   for (int i = 0; i < 26; i++)
+   for (int q = 0; q < 27; q++)
    {
-      if (g->recv_bufs[i]) free(g->recv_bufs[i]);
-      if (g->send_bufs[i]) free(g->send_bufs[i]);
+      free(g->recv_bufs[q]);
+      free(g->send_bufs[q]);
    }
+   free(g->ext);
    free(g);
    *ghost_ptr = NULL;
    return 0;
 }
 
+/* Load vec (this rank's nodes, x fastest) into g and fill the halo */
 int
 ExchangeScalarGhosts(DistMesh *mesh, double *vec, GhostData3D *g)
 {
-   int nx   = mesh->nlocal[0];
-   int ny   = mesh->nlocal[1];
-   int nz   = mesh->nlocal[2];
+   int nx = g->n[0], ny = g->n[1], nz = g->n[2];
    int reqc = 0;
 
-   int *cd = mesh->coords;
-
-/* Helper macro to get local index */
-#define IDX(i, j, k) ((k) * ny * nx + (j) * nx + (i))
-
-   /* ===== FACES (0-5) ===== */
-   /* 0: x- face */
-   if (g->recv_bufs[0])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1], cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[0], ny * nz, MPI_DOUBLE, src, 0, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[0])
-   {
-      for (int k = 0; k < nz; k++)
-         for (int j = 0; j < ny; j++) g->send_bufs[0][k * ny + j] = vec[IDX(0, j, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1], cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[0], ny * nz, MPI_DOUBLE, dst, 1, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 1: x+ face */
-   if (g->recv_bufs[1])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1], cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[1], ny * nz, MPI_DOUBLE, src, 1, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[1])
-   {
-      for (int k = 0; k < nz; k++)
-         for (int j = 0; j < ny; j++)
-            g->send_bufs[1][k * ny + j] = vec[IDX(nx - 1, j, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1], cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[1], ny * nz, MPI_DOUBLE, dst, 0, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 2: y- face */
-   if (g->recv_bufs[2])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] - 1, cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[2], nx * nz, MPI_DOUBLE, src, 2, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[2])
-   {
-      for (int k = 0; k < nz; k++)
-         for (int i = 0; i < nx; i++) g->send_bufs[2][k * nx + i] = vec[IDX(i, 0, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] - 1, cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[2], nx * nz, MPI_DOUBLE, dst, 3, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 3: y+ face */
-   if (g->recv_bufs[3])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] + 1, cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[3], nx * nz, MPI_DOUBLE, src, 3, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[3])
-   {
-      for (int k = 0; k < nz; k++)
-         for (int i = 0; i < nx; i++)
-            g->send_bufs[3][k * nx + i] = vec[IDX(i, ny - 1, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] + 1, cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[3], nx * nz, MPI_DOUBLE, dst, 2, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 4: z- face */
-   if (g->recv_bufs[4])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1], cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[4], nx * ny, MPI_DOUBLE, src, 4, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[4])
-   {
+   for (int k = 0; k < nz; k++)
       for (int j = 0; j < ny; j++)
-         for (int i = 0; i < nx; i++) g->send_bufs[4][j * nx + i] = vec[IDX(i, j, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1], cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[4], nx * ny, MPI_DOUBLE, dst, 5, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 5: z+ face */
-   if (g->recv_bufs[5])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1], cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[5], nx * ny, MPI_DOUBLE, src, 5, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[5])
-   {
-      for (int j = 0; j < ny; j++)
-         for (int i = 0; i < nx; i++)
-            g->send_bufs[5][j * nx + i] = vec[IDX(i, j, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1], cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[5], nx * ny, MPI_DOUBLE, dst, 4, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
+         memcpy(&g->ext[((k + 1) * (ny + 2) + (j + 1)) * (nx + 2) + 1],
+                &vec[(k * ny + j) * nx], (size_t)nx * sizeof(double));
 
-   /* ===== EDGES ALONG Z (6-9): xy combinations ===== */
-   /* 6: x+y+ edge */
-   if (g->recv_bufs[6])
+   /* The neighbor in direction q sends with tag 26 - q (its direction to us) */
+   for (int q = 0; q < 27; q++)
    {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] + 1, cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[6], nz, MPI_DOUBLE, src, 6, mesh->cart_comm,
+      if (g->nbrs[q] == MPI_PROC_NULL) continue;
+      MPI_Irecv(g->recv_bufs[q], g->counts[q], MPI_DOUBLE, g->nbrs[q], 26 - q,
+                mesh->cart_comm, &g->reqs[reqc++]);
+   }
+   for (int q = 0; q < 27; q++)
+   {
+      if (g->nbrs[q] == MPI_PROC_NULL) continue;
+      SlabCopy(g, q, 1, g->send_bufs[q]);
+      MPI_Isend(g->send_bufs[q], g->counts[q], MPI_DOUBLE, g->nbrs[q], q, mesh->cart_comm,
                 &g->reqs[reqc++]);
    }
-   if (g->send_bufs[6])
-   {
-      for (int k = 0; k < nz; k++) g->send_bufs[6][k] = vec[IDX(nx - 1, ny - 1, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] + 1, cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[6], nz, MPI_DOUBLE, dst, 7, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 7: x-y- edge */
-   if (g->recv_bufs[7])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] - 1, cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[7], nz, MPI_DOUBLE, src, 7, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[7])
-   {
-      for (int k = 0; k < nz; k++) g->send_bufs[7][k] = vec[IDX(0, 0, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] - 1, cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[7], nz, MPI_DOUBLE, dst, 6, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 8: x+y- edge */
-   if (g->recv_bufs[8])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] - 1, cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[8], nz, MPI_DOUBLE, src, 8, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[8])
-   {
-      for (int k = 0; k < nz; k++) g->send_bufs[8][k] = vec[IDX(nx - 1, 0, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] - 1, cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[8], nz, MPI_DOUBLE, dst, 9, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 9: x-y+ edge */
-   if (g->recv_bufs[9])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] + 1, cd[2]}, &src);
-      MPI_Irecv(g->recv_bufs[9], nz, MPI_DOUBLE, src, 9, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[9])
-   {
-      for (int k = 0; k < nz; k++) g->send_bufs[9][k] = vec[IDX(0, ny - 1, k)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] + 1, cd[2]}, &dst);
-      MPI_Isend(g->send_bufs[9], nz, MPI_DOUBLE, dst, 8, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
+   MPI_Waitall(reqc, g->reqs, MPI_STATUSES_IGNORE);
 
-   /* ===== EDGES ALONG Y (10-13): xz combinations ===== */
-   /* 10: x+z+ edge */
-   if (g->recv_bufs[10])
+   for (int q = 0; q < 27; q++)
    {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1], cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[10], ny, MPI_DOUBLE, src, 10, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[10])
-   {
-      for (int j = 0; j < ny; j++) g->send_bufs[10][j] = vec[IDX(nx - 1, j, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1], cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[10], ny, MPI_DOUBLE, dst, 11, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 11: x-z- edge */
-   if (g->recv_bufs[11])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1], cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[11], ny, MPI_DOUBLE, src, 11, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[11])
-   {
-      for (int j = 0; j < ny; j++) g->send_bufs[11][j] = vec[IDX(0, j, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1], cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[11], ny, MPI_DOUBLE, dst, 10, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 12: x+z- edge */
-   if (g->recv_bufs[12])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1], cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[12], ny, MPI_DOUBLE, src, 12, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[12])
-   {
-      for (int j = 0; j < ny; j++) g->send_bufs[12][j] = vec[IDX(nx - 1, j, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1], cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[12], ny, MPI_DOUBLE, dst, 13, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 13: x-z+ edge */
-   if (g->recv_bufs[13])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1], cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[13], ny, MPI_DOUBLE, src, 13, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[13])
-   {
-      for (int j = 0; j < ny; j++) g->send_bufs[13][j] = vec[IDX(0, j, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1], cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[13], ny, MPI_DOUBLE, dst, 12, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-
-   /* ===== EDGES ALONG X (14-17): yz combinations ===== */
-   /* 14: y+z+ edge */
-   if (g->recv_bufs[14])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] + 1, cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[14], nx, MPI_DOUBLE, src, 14, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[14])
-   {
-      for (int i = 0; i < nx; i++) g->send_bufs[14][i] = vec[IDX(i, ny - 1, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] + 1, cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[14], nx, MPI_DOUBLE, dst, 15, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 15: y-z- edge */
-   if (g->recv_bufs[15])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] - 1, cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[15], nx, MPI_DOUBLE, src, 15, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[15])
-   {
-      for (int i = 0; i < nx; i++) g->send_bufs[15][i] = vec[IDX(i, 0, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] - 1, cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[15], nx, MPI_DOUBLE, dst, 14, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 16: y+z- edge */
-   if (g->recv_bufs[16])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] + 1, cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[16], nx, MPI_DOUBLE, src, 16, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[16])
-   {
-      for (int i = 0; i < nx; i++) g->send_bufs[16][i] = vec[IDX(i, ny - 1, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] + 1, cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[16], nx, MPI_DOUBLE, dst, 17, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 17: y-z+ edge */
-   if (g->recv_bufs[17])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] - 1, cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[17], nx, MPI_DOUBLE, src, 17, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[17])
-   {
-      for (int i = 0; i < nx; i++) g->send_bufs[17][i] = vec[IDX(i, 0, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0], cd[1] - 1, cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[17], nx, MPI_DOUBLE, dst, 16, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-
-   /* ===== CORNERS (18-25) ===== */
-   /* 18: +++ corner */
-   if (g->recv_bufs[18])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] + 1, cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[18], 1, MPI_DOUBLE, src, 18, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[18])
-   {
-      g->send_bufs[18][0] = vec[IDX(nx - 1, ny - 1, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] + 1, cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[18], 1, MPI_DOUBLE, dst, 25, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 19: ++- corner */
-   if (g->recv_bufs[19])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] + 1, cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[19], 1, MPI_DOUBLE, src, 19, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[19])
-   {
-      g->send_bufs[19][0] = vec[IDX(nx - 1, ny - 1, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] + 1, cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[19], 1, MPI_DOUBLE, dst, 24, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 20: +-+ corner */
-   if (g->recv_bufs[20])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] - 1, cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[20], 1, MPI_DOUBLE, src, 20, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[20])
-   {
-      g->send_bufs[20][0] = vec[IDX(nx - 1, 0, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] - 1, cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[20], 1, MPI_DOUBLE, dst, 23, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 21: +-- corner */
-   if (g->recv_bufs[21])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] - 1, cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[21], 1, MPI_DOUBLE, src, 21, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[21])
-   {
-      g->send_bufs[21][0] = vec[IDX(nx - 1, 0, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] + 1, cd[1] - 1, cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[21], 1, MPI_DOUBLE, dst, 22, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 22: -++ corner */
-   if (g->recv_bufs[22])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] + 1, cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[22], 1, MPI_DOUBLE, src, 22, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[22])
-   {
-      g->send_bufs[22][0] = vec[IDX(0, ny - 1, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] + 1, cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[22], 1, MPI_DOUBLE, dst, 21, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 23: -+- corner */
-   if (g->recv_bufs[23])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] + 1, cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[23], 1, MPI_DOUBLE, src, 23, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[23])
-   {
-      g->send_bufs[23][0] = vec[IDX(0, ny - 1, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] + 1, cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[23], 1, MPI_DOUBLE, dst, 20, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 24: --+ corner */
-   if (g->recv_bufs[24])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] - 1, cd[2] + 1}, &src);
-      MPI_Irecv(g->recv_bufs[24], 1, MPI_DOUBLE, src, 24, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[24])
-   {
-      g->send_bufs[24][0] = vec[IDX(0, 0, nz - 1)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] - 1, cd[2] + 1}, &dst);
-      MPI_Isend(g->send_bufs[24], 1, MPI_DOUBLE, dst, 19, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   /* 25: --- corner */
-   if (g->recv_bufs[25])
-   {
-      int src;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] - 1, cd[2] - 1}, &src);
-      MPI_Irecv(g->recv_bufs[25], 1, MPI_DOUBLE, src, 25, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-   if (g->send_bufs[25])
-   {
-      g->send_bufs[25][0] = vec[IDX(0, 0, 0)];
-      int dst;
-      MPI_Cart_rank(mesh->cart_comm, (int[]){cd[0] - 1, cd[1] - 1, cd[2] - 1}, &dst);
-      MPI_Isend(g->send_bufs[25], 1, MPI_DOUBLE, dst, 18, mesh->cart_comm,
-                &g->reqs[reqc++]);
-   }
-
-#undef IDX
-
-   if (reqc > 0)
-   {
-      MPI_Status statuses[52];
-      MPI_Waitall(reqc, g->reqs, statuses);
+      if (g->nbrs[q] != MPI_PROC_NULL) SlabCopy(g, q, 0, g->recv_bufs[q]);
    }
    return 0;
 }
@@ -1263,26 +785,6 @@ InitializeTemperatureField(DistMesh *mesh, HeatParams *params, HYPRE_Real *T_now
             HYPRE_BigInt li  = gid - mesh->ilower;
             T_now[li]        = MMS_ExactSolution(gx * hx, gy * hy, gz * hz, 0.0, params);
          }
-}
-
-static void __attribute__((unused))
-EnsureDir(const char *path)
-{
-   if (!path || !*path) return;
-   char   buf[512];
-   size_t len = strlen(path);
-   if (len >= sizeof(buf)) return;
-   strcpy(buf, path);
-   for (char *p = buf + 1; *p; ++p)
-   {
-      if (*p == '/')
-      {
-         *p = '\0';
-         mkdir(buf, 0777);
-         *p = '/';
-      }
-   }
-   mkdir(buf, 0777);
 }
 
 /*--------------------------------------------------------------------------
@@ -1446,8 +948,9 @@ ComputeHeatFlux(DistMesh *m, HeatParams *p, HYPRE_Real *T, GhostData3D *g, HYPRE
    HYPRE_Real hy = p->L[1] / (gd[1] - 1);
    HYPRE_Real hz = p->L[2] / (gd[2] - 1);
 
-   /* Exchange ghost values */
-   ExchangeScalarGhosts(m, T, g);
+   /* g holds the ghosted T (the caller exchanged it). Halo values are read only
+      where a neighbor exists: on the domain boundary, one-sided differences
+      below ignore them. */
 
    for (int lz = 0; lz < nz; lz++)
       for (int ly = 0; ly < ny; ly++)
@@ -1465,34 +968,12 @@ ComputeHeatFlux(DistMesh *m, HeatParams *p, HYPRE_Real *T, GhostData3D *g, HYPRE
 
             /* Compute gradients using central differences */
             HYPRE_Real dTdx = 0.0, dTdy = 0.0, dTdz = 0.0;
-            HYPRE_Real T_xm, T_xp, T_ym, T_yp, T_zm, T_zp;
-
-            /* x-direction */
-            if (lx > 0) T_xm = T[lidx - 1];
-            else if (g->recv_bufs[0]) T_xm = g->recv_bufs[0][lz * ny + ly];
-            else T_xm = T_c; /* boundary */
-
-            if (lx < nx - 1) T_xp = T[lidx + 1];
-            else if (g->recv_bufs[1]) T_xp = g->recv_bufs[1][lz * ny + ly];
-            else T_xp = T_c; /* boundary */
-
-            /* y-direction */
-            if (ly > 0) T_ym = T[lidx - nx];
-            else if (g->recv_bufs[2]) T_ym = g->recv_bufs[2][lz * nx + lx];
-            else T_ym = T_c; /* boundary */
-
-            if (ly < ny - 1) T_yp = T[lidx + nx];
-            else if (g->recv_bufs[3]) T_yp = g->recv_bufs[3][lz * nx + lx];
-            else T_yp = T_c; /* boundary */
-
-            /* z-direction */
-            if (lz > 0) T_zm = T[lidx - ny * nx];
-            else if (g->recv_bufs[4]) T_zm = g->recv_bufs[4][ly * nx + lx];
-            else T_zm = T_c; /* boundary */
-
-            if (lz < nz - 1) T_zp = T[lidx + ny * nx];
-            else if (g->recv_bufs[5]) T_zp = g->recv_bufs[5][ly * nx + lx];
-            else T_zp = T_c; /* boundary */
+            HYPRE_Real T_xm = GhostAt(g, lx - 1, ly, lz),
+                       T_xp = GhostAt(g, lx + 1, ly, lz);
+            HYPRE_Real T_ym = GhostAt(g, lx, ly - 1, lz),
+                       T_yp = GhostAt(g, lx, ly + 1, lz);
+            HYPRE_Real T_zm = GhostAt(g, lx, ly, lz - 1),
+                       T_zp = GhostAt(g, lx, ly, lz + 1);
 
             /* Boundary handling for gradient */
             if (gx == 0 || gx == gd[0] - 1)
@@ -1538,7 +1019,7 @@ GetVTKDataDir(HeatParams *params, char *buf, size_t bufsize)
 
 void
 WritePVDCollectionFromStats(HYPREDRV_t hypredrv, HeatParams *params, int num_procs,
-                            double final_time)
+                            const double *step_times, int num_recorded)
 {
    int num_steps = 0;
    HYPREDRV_StatsLevelGetCount(hypredrv, 0, &num_steps);
@@ -1562,9 +1043,6 @@ WritePVDCollectionFromStats(HYPREDRV_t hypredrv, HeatParams *params, int num_pro
    /* Check if all timesteps should be included (bit 2: 0x4) */
    int write_all = (params->visualize & 0x4) != 0;
 
-   /* Compute time per step (approximate - assumes uniform dt) */
-   double dt_approx = final_time / num_steps;
-
    /* Determine which timesteps to include in PVD */
    int start_idx = write_all ? 0 : (num_steps - 1);
    int end_idx   = num_steps;
@@ -1575,8 +1053,9 @@ WritePVDCollectionFromStats(HYPREDRV_t hypredrv, HeatParams *params, int num_pro
       HYPREDRV_StatsLevelGetEntry(hypredrv, 0, i, &timestep_id, NULL, NULL, NULL, NULL);
 
       /* timestep_id is 1-indexed, file names are 0-indexed */
-      int    file_idx = timestep_id - 1;
-      double sim_time = timestep_id * dt_approx;
+      int file_idx = timestep_id - 1;
+      if (file_idx < 0 || file_idx >= num_recorded) continue;
+      double sim_time = step_times[file_idx];
 
       for (int r = 0; r < num_procs; r++)
       {
@@ -1707,7 +1186,6 @@ PrecomputeQ1ScalarTemplates(HYPRE_Real hx, HYPRE_Real hy, HYPRE_Real hz,
 
 int
 BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
-                          const HYPRE_Real *T_state, const HYPRE_Real *T_prev,
                           HYPRE_IJMatrix *A_ptr, HYPRE_IJVector *b_ptr, double *rnorm_out,
                           double current_time, GhostData3D *g_T_k, GhostData3D *g_T_n)
 {
@@ -1734,151 +1212,8 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
    HYPREDRV_IJ_MATRIX_INIT_HOST(A);
    HYPREDRV_IJ_VECTOR_INIT_HOST(b);
 
-   /* Exchange ghost data for T_state and T_prev */
-   if (g_T_k) ExchangeScalarGhosts(m, (double *)T_state, g_T_k);
-   if (g_T_n) ExchangeScalarGhosts(m, (double *)T_prev, g_T_n);
-
-   /* Local dimensions */
-   int nx = m->nlocal[0], ny = m->nlocal[1], nz = m->nlocal[2];
-
-/* Helper function to get T value at a node (local or ghost).
- * Buffer layout:
- *   0-5:   6 faces   (x-, x+, y-, y+, z-, z+)
- *   6-9:   4 edges along z (x+y+, x-y-, x+y-, x-y+)
- *   10-13: 4 edges along y (x+z+, x-z-, x+z-, x-z+)
- *   14-17: 4 edges along x (y+z+, y-z-, y+z-, y-z+)
- *   18-25: 8 corners (+++, ++-, +-+, +--, -++, -+-, --+, ---)
- */
-#define GET_T_VALUE(T_local, g_T, ng_coords)                             \
-   ({                                                                    \
-      HYPRE_Real _val  = 0.0;                                            \
-      int        _lx   = (int)(ng_coords[0] - ps[0][c[0]]);              \
-      int        _ly   = (int)(ng_coords[1] - ps[1][c[1]]);              \
-      int        _lz   = (int)(ng_coords[2] - ps[2][c[2]]);              \
-      int        _in_x = (_lx >= 0 && _lx < nx);                         \
-      int        _in_y = (_ly >= 0 && _ly < ny);                         \
-      int        _in_z = (_lz >= 0 && _lz < nz);                         \
-      int        _xm = (_lx == -1), _xp = (_lx == nx);                   \
-      int        _ym = (_ly == -1), _yp = (_ly == ny);                   \
-      int        _zm = (_lz == -1), _zp = (_lz == nz);                   \
-      if (_in_x && _in_y && _in_z)                                       \
-      {                                                                  \
-         _val = T_local ? T_local[_lz * ny * nx + _ly * nx + _lx] : 0.0; \
-      }                                                                  \
-      else if (g_T)                                                      \
-      {                                                                  \
-         /* Faces */                                                     \
-         if (_xm && _in_y && _in_z && g_T->recv_bufs[0])                 \
-         {                                                               \
-            _val = g_T->recv_bufs[0][_lz * ny + _ly];                    \
-         }                                                               \
-         else if (_xp && _in_y && _in_z && g_T->recv_bufs[1])            \
-         {                                                               \
-            _val = g_T->recv_bufs[1][_lz * ny + _ly];                    \
-         }                                                               \
-         else if (_ym && _in_x && _in_z && g_T->recv_bufs[2])            \
-         {                                                               \
-            _val = g_T->recv_bufs[2][_lz * nx + _lx];                    \
-         }                                                               \
-         else if (_yp && _in_x && _in_z && g_T->recv_bufs[3])            \
-         {                                                               \
-            _val = g_T->recv_bufs[3][_lz * nx + _lx];                    \
-         }                                                               \
-         else if (_zm && _in_x && _in_y && g_T->recv_bufs[4])            \
-         {                                                               \
-            _val = g_T->recv_bufs[4][_ly * nx + _lx];                    \
-         }                                                               \
-         else if (_zp && _in_x && _in_y && g_T->recv_bufs[5])            \
-         {                                                               \
-            _val = g_T->recv_bufs[5][_ly * nx + _lx];                    \
-         }                                                               \
-         /* Edges along z (xy combinations) */                           \
-         else if (_xp && _yp && _in_z && g_T->recv_bufs[6])              \
-         {                                                               \
-            _val = g_T->recv_bufs[6][_lz];                               \
-         }                                                               \
-         else if (_xm && _ym && _in_z && g_T->recv_bufs[7])              \
-         {                                                               \
-            _val = g_T->recv_bufs[7][_lz];                               \
-         }                                                               \
-         else if (_xp && _ym && _in_z && g_T->recv_bufs[8])              \
-         {                                                               \
-            _val = g_T->recv_bufs[8][_lz];                               \
-         }                                                               \
-         else if (_xm && _yp && _in_z && g_T->recv_bufs[9])              \
-         {                                                               \
-            _val = g_T->recv_bufs[9][_lz];                               \
-         }                                                               \
-         /* Edges along y (xz combinations) */                           \
-         else if (_xp && _zp && _in_y && g_T->recv_bufs[10])             \
-         {                                                               \
-            _val = g_T->recv_bufs[10][_ly];                              \
-         }                                                               \
-         else if (_xm && _zm && _in_y && g_T->recv_bufs[11])             \
-         {                                                               \
-            _val = g_T->recv_bufs[11][_ly];                              \
-         }                                                               \
-         else if (_xp && _zm && _in_y && g_T->recv_bufs[12])             \
-         {                                                               \
-            _val = g_T->recv_bufs[12][_ly];                              \
-         }                                                               \
-         else if (_xm && _zp && _in_y && g_T->recv_bufs[13])             \
-         {                                                               \
-            _val = g_T->recv_bufs[13][_ly];                              \
-         }                                                               \
-         /* Edges along x (yz combinations) */                           \
-         else if (_yp && _zp && _in_x && g_T->recv_bufs[14])             \
-         {                                                               \
-            _val = g_T->recv_bufs[14][_lx];                              \
-         }                                                               \
-         else if (_ym && _zm && _in_x && g_T->recv_bufs[15])             \
-         {                                                               \
-            _val = g_T->recv_bufs[15][_lx];                              \
-         }                                                               \
-         else if (_yp && _zm && _in_x && g_T->recv_bufs[16])             \
-         {                                                               \
-            _val = g_T->recv_bufs[16][_lx];                              \
-         }                                                               \
-         else if (_ym && _zp && _in_x && g_T->recv_bufs[17])             \
-         {                                                               \
-            _val = g_T->recv_bufs[17][_lx];                              \
-         }                                                               \
-         /* Corners */                                                   \
-         else if (_xp && _yp && _zp && g_T->recv_bufs[18])               \
-         {                                                               \
-            _val = g_T->recv_bufs[18][0];                                \
-         }                                                               \
-         else if (_xp && _yp && _zm && g_T->recv_bufs[19])               \
-         {                                                               \
-            _val = g_T->recv_bufs[19][0];                                \
-         }                                                               \
-         else if (_xp && _ym && _zp && g_T->recv_bufs[20])               \
-         {                                                               \
-            _val = g_T->recv_bufs[20][0];                                \
-         }                                                               \
-         else if (_xp && _ym && _zm && g_T->recv_bufs[21])               \
-         {                                                               \
-            _val = g_T->recv_bufs[21][0];                                \
-         }                                                               \
-         else if (_xm && _yp && _zp && g_T->recv_bufs[22])               \
-         {                                                               \
-            _val = g_T->recv_bufs[22][0];                                \
-         }                                                               \
-         else if (_xm && _yp && _zm && g_T->recv_bufs[23])               \
-         {                                                               \
-            _val = g_T->recv_bufs[23][0];                                \
-         }                                                               \
-         else if (_xm && _ym && _zp && g_T->recv_bufs[24])               \
-         {                                                               \
-            _val = g_T->recv_bufs[24][0];                                \
-         }                                                               \
-         else if (_xm && _ym && _zm && g_T->recv_bufs[25])               \
-         {                                                               \
-            _val = g_T->recv_bufs[25][0];                                \
-         }                                                               \
-      }                                                                  \
-      _val;                                                              \
-   })
+   /* g_T_k and g_T_n hold the ghosted current iterate T^k and previous step T^n:
+      the caller exchanges T^n once per time step and T^k once per Newton iteration */
 
    HYPRE_Real hx = p->L[0] / (gd[0] - 1), hy = p->L[1] / (gd[1] - 1),
               hz = p->L[2] / (gd[2] - 1);
@@ -1927,6 +1262,17 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
                /* Compute correct global ID using the proper owner's coordinates */
                gid[a] = grid2idx_any(ng[a], m->pdims, gd, ps);
                dof[a] = gid[a];
+            }
+
+            /* Current (T^k) and previous (T^n) nodal values, owned or halo */
+            HYPRE_Real T_k_e[8], T_n_e[8];
+            for (int a = 0; a < 8; a++)
+            {
+               int li   = (int)(ng[a][0] - ps[0][c[0]]);
+               int lj   = (int)(ng[a][1] - ps[1][c[1]]);
+               int lk   = (int)(ng[a][2] - ps[2][c[2]]);
+               T_k_e[a] = GhostAt(g_T_k, li, lj, lk);
+               T_n_e[a] = GhostAt(g_T_n, li, lj, lk);
             }
 
             /* Dirichlet flags: Only y=0 plane is Dirichlet (T=0), all other faces
@@ -2004,9 +1350,8 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
                      HYPRE_Real dTdx = 0.0, dTdy = 0.0, dTdz = 0.0;
                      for (int bnode = 0; bnode < 8; bnode++)
                      {
-                        HYPRE_Real Tbv = is_dirichlet[bnode]
-                                            ? rhs_dirichlet[bnode]
-                                            : GET_T_VALUE(T_state, g_T_k, ng[bnode]);
+                        HYPRE_Real Tbv =
+                           is_dirichlet[bnode] ? rhs_dirichlet[bnode] : T_k_e[bnode];
                         T_gp += N[bnode] * Tbv;
                         dTdx += dNx[bnode] * Tbv;
                         dTdy += dNy[bnode] * Tbv;
@@ -2015,6 +1360,17 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
 
                      HYPRE_Real k     = p->k0 * safe_exp(p->beta * T_gp);
                      HYPRE_Real kprim = p->beta * k;
+
+                     /* Physical coordinates of this Gauss point and its source */
+                     HYPRE_Real x_gp = 0.0, y_gp = 0.0, z_gp = 0.0;
+                     for (int bnode = 0; bnode < 8; bnode++)
+                     {
+                        x_gp += N[bnode] * (ng[bnode][0] * hx);
+                        y_gp += N[bnode] * (ng[bnode][1] * hy);
+                        z_gp += N[bnode] * (ng[bnode][2] * hz);
+                     }
+                     HYPRE_Real Q_total =
+                        MMS_SourceTerm(x_gp, y_gp, z_gp, current_time, p);
 
                      for (int a = 0; a < 8; a++)
                      {
@@ -2035,24 +1391,8 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
                         {
                            J_extra[a][l] += kprim * N[l] * gradTa_dot * w;
                         }
-                        /* Source term: spatial source + optional MMS */
-                        /* Compute physical coordinates at this GP */
-                        HYPRE_Real x_gp = 0.0, y_gp = 0.0, z_gp = 0.0;
-                        for (int bnode = 0; bnode < 8; bnode++)
-                        {
-                           HYPRE_Real x_node = ng[bnode][0] * hx;
-                           HYPRE_Real y_node = ng[bnode][1] * hy;
-                           HYPRE_Real z_node = ng[bnode][2] * hz;
-                           x_gp += N[bnode] * x_node;
-                           y_gp += N[bnode] * y_node;
-                           z_gp += N[bnode] * z_node;
-                        }
-                        HYPRE_Real Q_total =
-                           MMS_SourceTerm(x_gp, y_gp, z_gp, current_time, p);
-                        if (Q_total != 0.0)
-                        {
-                           fe_src[a] += Q_total * N[a] * w;
-                        }
+                        /* Source term (MMS) */
+                        fe_src[a] += Q_total * N[a] * w;
                      }
                   }
                }
@@ -2064,10 +1404,8 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
                HYPRE_Real acc_prev = 0.0, acc_curr = 0.0;
                for (int b_idx = 0; b_idx < 8; b_idx++)
                {
-                  if (T_prev)
-                     acc_prev += M_t[a][b_idx] * GET_T_VALUE(T_prev, g_T_n, ng[b_idx]);
-                  if (T_state)
-                     acc_curr += M_t[a][b_idx] * GET_T_VALUE(T_state, g_T_k, ng[b_idx]);
+                  acc_prev += M_t[a][b_idx] * T_n_e[b_idx];
+                  acc_curr += M_t[a][b_idx] * T_k_e[b_idx];
                }
                fe_mass[a] += mass_coeff * (acc_prev - acc_curr);
             }
@@ -2200,7 +1538,6 @@ BuildNonlinearSystem_Heat(HYPREDRV_t hypredrv, DistMesh *m, HeatParams *p,
    }
    free(res_accum);
    free(dir_mask);
-#undef GET_T_VALUE
 
    *A_ptr = A;
    *b_ptr = b;
@@ -2260,85 +1597,14 @@ WriteVTKsolutionScalar(DistMesh *m, HeatParams *p, HYPRE_Real *sol, GhostData3D 
    /* Build extended data array including ghost overlap for VTK connectivity */
    HYPRE_Real *ext_T = (HYPRE_Real *)calloc((size_t)npts, sizeof(HYPRE_Real));
 
-   /* Copy local data to extended array */
-   for (int k = 0; k < nz; k++)
-   {
-      for (int j = 0; j < ny; j++)
-      {
-         for (int i = 0; i < nx; i++)
-         {
-            int ig = i + ofi, jg = j + ofj, kg = k + ofk;
-            int idx_e    = kg * nxg * nyg + jg * nxg + ig;
-            int idx_l    = k * nx * ny + j * nx + i;
-            ext_T[idx_e] = sol[idx_l];
-         }
-      }
-   }
-
-   /* Fill ghost regions from neighbor data (recv_bufs: 0=x-, 2=y-, 4=z-) */
-   /* x- face ghost (left) */
-   if (ofi > 0 && ghost && ghost->recv_bufs[0])
-   {
-      for (int k = 0; k < nz; k++)
-      {
-         for (int j = 0; j < ny; j++)
-         {
-            int kg = k + ofk, jg = j + ofj;
-            int idx_e    = kg * nxg * nyg + jg * nxg + 0;
-            int idx_g    = k * ny + j;
-            ext_T[idx_e] = ghost->recv_bufs[0][idx_g];
-         }
-      }
-   }
-   /* y- face ghost (front) */
-   if (ofj > 0 && ghost && ghost->recv_bufs[2])
-   {
-      for (int k = 0; k < nz; k++)
-      {
-         for (int i = 0; i < nx; i++)
-         {
-            int kg = k + ofk, ig = i + ofi;
-            int idx_e    = kg * nxg * nyg + 0 * nxg + ig;
-            int idx_g    = k * nx + i;
-            ext_T[idx_e] = ghost->recv_bufs[2][idx_g];
-         }
-      }
-   }
-   /* z- face ghost (bottom) */
-   if (ofk > 0 && ghost && ghost->recv_bufs[4])
-   {
-      for (int j = 0; j < ny; j++)
-      {
-         for (int i = 0; i < nx; i++)
-         {
-            int jg = j + ofj, ig = i + ofi;
-            int idx_e    = 0 * nxg * nyg + jg * nxg + ig;
-            int idx_g    = j * nx + i;
-            ext_T[idx_e] = ghost->recv_bufs[4][idx_g];
-         }
-      }
-   }
-   /* Edge ghosts (xy-, xz-, yz-) and corner ghost (xyz-) would need extra handling
-    * For now, fill with nearest valid data to avoid gaps */
-   if (ofi > 0 && ofj > 0)
-   {
-      for (int k = 0; k < nzg; k++)
-         ext_T[k * nxg * nyg + 0 * nxg + 0] = ext_T[k * nxg * nyg + ofj * nxg + ofi];
-   }
-   if (ofi > 0 && ofk > 0)
-   {
+   /* Owned nodes plus the exchanged x-, y- and z- halo layers (edges and corners
+      included), so neighboring pieces share their seam nodes */
+   for (int k = 0; k < nzg; k++)
       for (int j = 0; j < nyg; j++)
-         ext_T[0 * nxg * nyg + j * nxg + 0] = ext_T[ofk * nxg * nyg + j * nxg + ofi];
-   }
-   if (ofj > 0 && ofk > 0)
-   {
-      for (int i = 0; i < nxg; i++)
-         ext_T[0 * nxg * nyg + 0 * nxg + i] = ext_T[ofk * nxg * nyg + ofj * nxg + i];
-   }
-   if (ofi > 0 && ofj > 0 && ofk > 0)
-   {
-      ext_T[0] = ext_T[ofk * nxg * nyg + ofj * nxg + ofi];
-   }
+         for (int i = 0; i < nxg; i++)
+         {
+            ext_T[(k * nyg + j) * nxg + i] = GhostAt(ghost, i - ofi, j - ofj, k - ofk);
+         }
 
    /* Compute heat flux if requested (bit 3: 0x8) */
    HYPRE_Real *qx = NULL, *qy = NULL, *qz = NULL;
@@ -2637,15 +1903,18 @@ main(int argc, char *argv[])
    double         current_time, rnorm;
    int            newton_iter, t_step;
    double         energy_prev = NAN;
+   double        *step_times  = NULL;
+   int            step_cap    = 0;
 
    MPI_Init(&argc, &argv);
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
 
-   if (ParseArguments(argc, argv, &params, myid, nprocs))
+   int parse = ParseArguments(argc, argv, &params, myid, nprocs);
+   if (parse)
    {
       MPI_Finalize();
-      return 1;
+      return (parse == 2) ? 0 : 1; /* 2: help was printed */
    }
 
    if (!myid)
@@ -2688,12 +1957,17 @@ main(int argc, char *argv[])
       {
          printf("Visualization:           disabled\n");
       }
-      printf("Verbosity level:         0x%x\n", params.verbose);
+      printf("Verbosity level:         0x%llx\n", (long long)params.verbose);
       printf("=====================================================\n\n");
    }
 
    /* Initialize hypredrive library and create main object */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
    if (params.verbose & 0x1)
    {
       HYPREDRV_SAFE_CALL(HYPREDRV_PrintLibInfo(comm, 1));
@@ -2765,6 +2039,21 @@ main(int argc, char *argv[])
       }
       current_time += params.dt;
 
+      /* Record each step's physical time for the PVD collection (dt may vary) */
+      if (t_step >= step_cap)
+      {
+         step_cap      = step_cap ? 2 * step_cap : 64;
+         double *grown = (double *)realloc(step_times, (size_t)step_cap * sizeof(double));
+         if (!grown)
+         {
+            fprintf(stderr, "[rank %d] Error: cannot record %d time steps\n", myid,
+                    step_cap);
+            MPI_Abort(MPI_COMM_WORLD, -1);
+         }
+         step_times = grown;
+      }
+      step_times[t_step] = current_time;
+
       /* Begin timestep annotation (level 0) */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateLevelBegin(hypredrv, 0, "timestep", t_step));
 
@@ -2788,8 +2077,8 @@ main(int argc, char *argv[])
          ExchangeScalarGhosts(mesh, T_now, g_T_k);
 
          /* Assemble linear system: J dT = -R */
-         BuildNonlinearSystem_Heat(hypredrv, mesh, &params, T_now, T_old, &A, &b, &rnorm,
-                                   current_time, g_T_k, g_T_n);
+         BuildNonlinearSystem_Heat(hypredrv, mesh, &params, &A, &b, &rnorm, current_time,
+                                   g_T_k, g_T_n);
 
          /* Check Newton convergence (after first iteration) */
          if (newton_iter > 0 && rnorm < params.newton.rtol)
@@ -2800,13 +2089,6 @@ main(int argc, char *argv[])
                HYPREDRV_AnnotateLevelEnd(hypredrv, 1, "newton", newton_iter));
             break;
          }
-
-#if defined(HYPRE_USING_GPU)
-         if (!myid && (params.verbose & 0x2)) printf("Migrating linear system to GPU...");
-         HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
-         HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
-         if (!myid && (params.verbose & 0x2)) printf(" Done!\n");
-#endif
 
          /* Set up linear system in hypredrv */
          HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix)A));
@@ -2831,15 +2113,14 @@ main(int argc, char *argv[])
          /* T = T + dT (correction applied to state vector 0) */
          HYPREDRV_SAFE_CALL(HYPREDRV_StateVectorApplyCorrection(hypredrv, 0));
 
+         /* Update norm ||dT||_inf for the -nw_tol test and the iteration report */
+         double delta_inf = 0.0;
+         HYPREDRV_SAFE_CALL(
+            HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, "inf", &delta_inf));
+
          /* Report Newton iteration */
          if (params.verbose & 0x1)
          {
-            /* Compute update norm ||dT||_inf BEFORE destroying solver or applying
-             * correction */
-            double delta_inf = 0.0;
-            HYPREDRV_SAFE_CALL(
-               HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, "inf", &delta_inf));
-
             int num_iterations = 0;
             HYPREDRV_SAFE_CALL(
                HYPREDRV_LinearSolverGetNumIter(hypredrv, &num_iterations));
@@ -2871,6 +2152,13 @@ main(int argc, char *argv[])
          /* End Newton iteration annotation (level 1) */
          HYPREDRV_SAFE_CALL(
             HYPREDRV_AnnotateLevelEnd(hypredrv, 1, "newton", newton_iter));
+
+         /* Converged on the update: count this iteration and stop */
+         if (delta_inf < params.newton.tol)
+         {
+            newton_iter++;
+            break;
+         }
       }
       if (!myid && params.verbose > 0 && newton_iter > 1) printf("\n");
 
@@ -2916,14 +2204,18 @@ main(int argc, char *argv[])
    /* Write PVD collection file */
    if (!myid && params.visualize)
    {
-      WritePVDCollectionFromStats(hypredrv, &params, nprocs, params.tf);
+      WritePVDCollectionFromStats(hypredrv, &params, nprocs, step_times, t_step);
    }
+   free(step_times);
 
    if (!myid && (params.verbose & 0x1)) HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));
    if (params.verbose & 0x2) HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
 
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
 
    return 0;

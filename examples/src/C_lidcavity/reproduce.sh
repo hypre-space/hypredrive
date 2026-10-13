@@ -86,7 +86,7 @@ if [[ "$MODE" == "centerlines" ]]; then
 
         # Run driver
         echo "Running: Re=${RE} (${resfile})"
-        if ! $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -Re $RE 2>&1 > "$outfile"; then
+        if ! $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -Re $RE > "$outfile" 2>&1; then
             echo "Error: run failed for Re=${RE}; aborting (remaining cases skipped)." >&2
             exit 1
         fi
@@ -138,7 +138,7 @@ elif [[ "$MODE" == "solvers" ]]; then
 
         # Run driver
         echo "Running: $config -> $outfile"
-        if ! $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -i "$config" 2>&1 > "$outfile"; then
+        if ! $MPIEXEC_EXECUTABLE $MPIEXEC_NUMPROC_FLAG $MPI_RANKS $EXEC $ARGS -i "$config" > "$outfile" 2>&1; then
             echo "Error: run failed for $config (see $outfile); aborting (remaining cases skipped)." >&2
             exit 1
         fi
