@@ -76,7 +76,7 @@ typedef struct
    HYPRE_Int  N[3];          /* Grid dimensions */
    HYPRE_Int  P[3];          /* Processor grid dimensions */
    HYPRE_Real c[6];          /* Diffusion coefficients */
-   HYPRE_Int  stencil;       /* Stencil type (7 or 27) */
+   HYPRE_Int  stencil;       /* Stencil type (7, 19, 27 or 125) */
    char      *yaml_file;     /* YAML configuration file */
    HYPRE_Int  hypredrv_argc; /* Number of hypredrive override args (incl. -a) */
    char     **hypredrv_argv; /* Hypredrive override args, starting at -a */
@@ -93,7 +93,7 @@ typedef struct
    HYPRE_Int     pdims[3];   /* Processor grid dimensions (Px, Py, Pz) */
    HYPRE_Int     coords[3];  /* Process coordinates in processor grid */
    HYPRE_Int     nlocal[3];  /* Local dimensions */
-   HYPRE_Int     nbrs[14];   /* Neighbor rank indices */
+   int           nbrs[14];   /* Neighbor rank indices */
    HYPRE_Int     local_size; /* Local problem size */
    HYPRE_BigInt  ilower;     /* Lower bound of local rows */
    HYPRE_BigInt  iupper;     /* Upper bound of local rows */
@@ -144,7 +144,7 @@ PrintUsage(void)
    printf("                         0: none\n");
    printf("                         1: ASCII VTK\n");
    printf("                         2: binary VTK\n");
-   printf("  -v|--verbose <n>  : Verbosity bitset (0)\n");
+   printf("  -v|--verbose <n>  : Verbosity bitset (3)\n");
    printf("                         0x1: Library info and linear solver statistics\n");
    printf("                         0x2: System information\n");
    printf("                         0x4: Linear system printing\n");
@@ -152,6 +152,15 @@ PrintUsage(void)
    printf("\n");
 
    return 0;
+}
+
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
 }
 
 /*--------------------------------------------------------------------------
@@ -182,7 +191,8 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -240,11 +250,13 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-s"))
       {
-         if (++i < argc) params->stencil = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->stencil = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-ns") || !strcmp(argv[i], "--nsolve"))
       {
-         if (++i < argc) params->nsolve = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nsolve = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-vis") || !strcmp(argv[i], "--visualize"))
       {
@@ -252,12 +264,19 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!myid) PrintUsage();
          return 2;
+      }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
       }
    }
 
@@ -268,15 +287,43 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       return 1;
    }
 
+   /* Only these stencils have a system builder */
+   if (params->stencil != 7 && params->stencil != 19 && params->stencil != 27 &&
+       params->stencil != 125)
+   {
+      if (!myid)
+      {
+         printf("Error: -s must be 7, 19, 27 or 125 (got %lld)\n",
+                (long long)params->stencil);
+      }
+      return 1;
+   }
+
+   /* Grid spacing is 1/(N-1) and the processor grid feeds MPI_Cart_create */
+   for (int d = 0; d < 3; d++)
+   {
+      if (params->N[d] < 2 || params->P[d] < 1)
+      {
+         if (!myid)
+         {
+            printf("Error: -n entries must be >= 2 and -P entries >= 1 (got N = %lld, "
+                   "P = %lld)\n",
+                   (long long)params->N[d], (long long)params->P[d]);
+         }
+         return 1;
+      }
+   }
+
    /* Verify processor grid matches total number of processes */
    if (params->P[0] * params->P[1] * params->P[2] != num_procs)
    {
       if (!myid)
       {
          printf("Error: Number of processes (%d) must match processor grid dimensions "
-                "(%d x %d x %d = %d)\n",
-                num_procs, params->P[0], params->P[1], params->P[2],
-                params->P[0] * params->P[1] * params->P[2]);
+                "(%lld x %lld x %lld = %lld)\n",
+                num_procs, (long long)params->P[0], (long long)params->P[1],
+                (long long)params->P[2],
+                (long long)(params->P[0] * params->P[1] * params->P[2]));
       }
       return 1;
    }
@@ -289,9 +336,10 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       {
          if (!myid)
          {
-            printf("Error: %s grid dimension (N = %d) must be larger than the number of "
-                   "ranks (P = %d)\n",
-                   name[d], params->N[d], params->P[d]);
+            printf(
+               "Error: %s grid dimension (N = %lld) must be larger than the number of "
+               "ranks (P = %lld)\n",
+               name[d], (long long)params->N[d], (long long)params->P[d]);
          }
          return 1;
       }
@@ -321,14 +369,20 @@ main(int argc, char *argv[])
    MPI_Comm_size(comm, &num_procs);
 
    /* Parse command line arguments */
-   if (ParseArguments(argc, argv, &params, myid, num_procs))
+   int parse = ParseArguments(argc, argv, &params, myid, num_procs);
+   if (parse)
    {
       MPI_Finalize();
-      return 1;
+      return (parse == 2) ? 0 : 1; /* 2: help was printed */
    }
 
    /* Initialize hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
 
    /* Print library info if requested */
    if (params.verbose & 0x1)
@@ -387,8 +441,8 @@ main(int argc, char *argv[])
              params.c[2]);
       printf("Discretization:       %d-point stencil\n", (int)params.stencil);
       printf("Visualization:        %s\n", params.visualize ? "true" : "false");
-      printf("Verbosity level:      0x%x\n", params.verbose);
-      printf("Number of solves:     %d\n", params.nsolve);
+      printf("Verbosity level:      0x%llx\n", (long long)params.verbose);
+      printf("Number of solves:     %lld\n", (long long)params.nsolve);
       printf("=====================================================\n\n");
    }
 
@@ -421,14 +475,6 @@ main(int argc, char *argv[])
       printf(" Done!\n");
    }
 
-   /* Transfer data to GPU memory */
-#if defined(HYPRE_USING_GPU)
-   if (!myid && (params.verbose > 0)) printf("Migrating linear system to GPU...");
-   HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
-   HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
-   if (!myid && (params.verbose > 0)) printf(" Done!\n");
-#endif
-
    /* Associate the matrix and vectors with hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix)A));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)b));
@@ -444,7 +490,7 @@ main(int argc, char *argv[])
    /* Solve multiple times if requested */
    for (int isolve = 0; isolve < params.nsolve; isolve++)
    {
-      if (!myid) printf("Solve %d/%d...\n", isolve + 1, params.nsolve);
+      if (!myid) printf("Solve %d/%lld...\n", isolve + 1, (long long)params.nsolve);
 
       /* (Optional) Annotate the entire solve iteration */
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "Run", isolve));
@@ -489,6 +535,9 @@ main(int argc, char *argv[])
    /* Finalize */
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
 
    return 0;
@@ -517,6 +566,20 @@ grid2idx(const HYPRE_BigInt gcoords[3], const HYPRE_Int bcoords[3],
            (gcoords[1] - pstarts[1][bcoords[1]])) *
              (pstarts[0][bcoords[0] + 1] - pstarts[0][bcoords[0]]) +
           (gcoords[0] - pstarts[0][bcoords[0]]);
+}
+
+/*--------------------------------------------------------------------------
+ * Partition block that owns global grid index g along dimension d. Searching
+ * the partition (rather than stepping one block from this rank) also handles
+ * stencils that reach past a neighboring block, e.g. the 125-point stencil on
+ * one-node-wide blocks.
+ *--------------------------------------------------------------------------*/
+static inline HYPRE_Int
+OwnerBlock(const DistMesh *mesh, int d, HYPRE_BigInt g)
+{
+   HYPRE_Int b = 0;
+   while (b + 1 < mesh->pdims[d] && g >= mesh->pstarts[d][b + 1]) b++;
+   return b;
 }
 
 /*--------------------------------------------------------------------------
@@ -1042,43 +1105,16 @@ BuildLaplacianSystem_19pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
                             nz >= 0 && nz < gdims[2])
                         {
                            /* Determine processor coordinates */
-                           int neighbor_proc[3] = {p[0], p[1], p[2]};
+                           HYPRE_Int neighbor_proc[3] = {OwnerBlock(mesh, 0, nx),
+                                                         OwnerBlock(mesh, 1, ny),
+                                                         OwnerBlock(mesh, 2, nz)};
 
-                           /* Check x */
-                           if (nx < pstarts[0][p[0]] && p[0] > 0)
-                              neighbor_proc[0] = p[0] - 1;
-                           else if (nx >= pstarts[0][p[0] + 1] &&
-                                    p[0] < mesh->pdims[0] - 1)
-                              neighbor_proc[0] = p[0] + 1;
-
-                           /* Check y */
-                           if (ny < pstarts[1][p[1]] && p[1] > 0)
-                              neighbor_proc[1] = p[1] - 1;
-                           else if (ny >= pstarts[1][p[1] + 1] &&
-                                    p[1] < mesh->pdims[1] - 1)
-                              neighbor_proc[1] = p[1] + 1;
-
-                           /* Check z */
-                           if (nz < pstarts[2][p[2]] && p[2] > 0)
-                              neighbor_proc[2] = p[2] - 1;
-                           else if (nz >= pstarts[2][p[2] + 1] &&
-                                    p[2] < mesh->pdims[2] - 1)
-                              neighbor_proc[2] = p[2] + 1;
-
-                           /* Add entry if neighbor is in valid partition */
-                           if (neighbor_proc[0] >= 0 &&
-                               neighbor_proc[0] < mesh->pdims[0] &&
-                               neighbor_proc[1] >= 0 &&
-                               neighbor_proc[1] < mesh->pdims[1] &&
-                               neighbor_proc[2] >= 0 && neighbor_proc[2] < mesh->pdims[2])
-                           {
-                              HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
-                                                           neighbor_proc, gdims, pstarts);
-                              cols[nentries]    = nrow;
-                              values[nentries]  = coeff;
-                              nentries++;
-                              center_val -= coeff;
-                           }
+                           HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
+                                                        neighbor_proc, gdims, pstarts);
+                           cols[nentries]    = nrow;
+                           values[nentries]  = coeff;
+                           nentries++;
+                           center_val -= coeff;
                         }
                         else
                         {
@@ -1250,59 +1286,18 @@ BuildLaplacianSystem_27pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix 
                             nz >= 0 && nz < gdims[2])
                         {
                            /* Figure out which rank this neighbor belongs to */
-                           int neighbor_proc[3] = {p[0], p[1], p[2]};
+                           HYPRE_Int neighbor_proc[3] = {OwnerBlock(mesh, 0, nx),
+                                                         OwnerBlock(mesh, 1, ny),
+                                                         OwnerBlock(mesh, 2, nz)};
 
-                           /* Check if it's outside this proc's local range in x */
-                           if (nx < pstarts[0][p[0]] && p[0] > 0)
-                              neighbor_proc[0] = p[0] - 1;
-                           else if (nx >= pstarts[0][p[0] + 1] &&
-                                    p[0] < mesh->pdims[0] - 1)
-                              neighbor_proc[0] = p[0] + 1;
+                           HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
+                                                        neighbor_proc, gdims, pstarts);
+                           /* Off-diagonal entry gets -adj */
+                           cols[nentries]   = nrow;
+                           vals[nentries++] = -adj;
 
-                           /* Check y */
-                           if (ny < pstarts[1][p[1]] && p[1] > 0)
-                              neighbor_proc[1] = p[1] - 1;
-                           else if (ny >= pstarts[1][p[1] + 1] &&
-                                    p[1] < mesh->pdims[1] - 1)
-                              neighbor_proc[1] = p[1] + 1;
-
-                           /* Check z */
-                           if (nz < pstarts[2][p[2]] && p[2] > 0)
-                              neighbor_proc[2] = p[2] - 1;
-                           else if (nz >= pstarts[2][p[2] + 1] &&
-                                    p[2] < mesh->pdims[2] - 1)
-                              neighbor_proc[2] = p[2] + 1;
-
-                           /* If still valid, compute global index for that neighbor */
-                           if (neighbor_proc[0] >= 0 &&
-                               neighbor_proc[0] < mesh->pdims[0] &&
-                               neighbor_proc[1] >= 0 &&
-                               neighbor_proc[1] < mesh->pdims[1] &&
-                               neighbor_proc[2] >= 0 && neighbor_proc[2] < mesh->pdims[2])
-                           {
-                              HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
-                                                           neighbor_proc, gdims, pstarts);
-                              /* Off-diagonal entry gets -adj */
-                              cols[nentries]   = nrow;
-                              vals[nentries++] = -adj;
-
-                              /* The center picks up +adj */
-                              center_val += adj;
-                           }
-                           else
-                           {
-                              /* Out-of-domain => Dirichlet boundary = 0, except y=0 => 1
-                               * This affects both the diagonal and possibly the RHS */
-                              if (ny == -1 ||
-                                  (ny == 0 &&
-                                   gy == 0)) // Check if this is the y=0 boundary
-                              {
-                                 rhs_val += adj; // Add to RHS for y=0 boundary condition
-                              }
-                              center_val -=
-                                 adj; // Always add to diagonal for all boundaries
-                              continue;
-                           }
+                           /* The center picks up +adj */
+                           center_val += adj;
                         }
                         else
                         {
@@ -1498,42 +1493,11 @@ BuildLaplacianSystem_125pt(DistMesh *mesh, ProblemParams *params, HYPRE_IJMatrix
 
                         /* If neighbor is inside the global domain, figure out which
                          * process subdomain it's on (like the other stencils do). */
-                        int neighbor_proc[3] = {p[0], p[1], p[2]};
+                        HYPRE_Int neighbor_proc[3] = {OwnerBlock(mesh, 0, nx),
+                                                      OwnerBlock(mesh, 1, ny),
+                                                      OwnerBlock(mesh, 2, nz)};
 
-                        /* Check x partition */
-                        if (nx < pstarts[0][p[0]] && p[0] > 0)
-                           neighbor_proc[0] = p[0] - 1;
-                        else if (nx >= pstarts[0][p[0] + 1] && p[0] < mesh->pdims[0] - 1)
-                           neighbor_proc[0] = p[0] + 1;
-
-                        /* Check y partition */
-                        if (ny < pstarts[1][p[1]] && p[1] > 0)
-                           neighbor_proc[1] = p[1] - 1;
-                        else if (ny >= pstarts[1][p[1] + 1] && p[1] < mesh->pdims[1] - 1)
-                           neighbor_proc[1] = p[1] + 1;
-
-                        /* Check z partition */
-                        if (nz < pstarts[2][p[2]] && p[2] > 0)
-                           neighbor_proc[2] = p[2] - 1;
-                        else if (nz >= pstarts[2][p[2] + 1] && p[2] < mesh->pdims[2] - 1)
-                           neighbor_proc[2] = p[2] + 1;
-
-                        /* Possibly the neighbor is out-of-partition => treated like
-                         * boundary=0 except y=0 => add w to RHS.
-                         */
-                        if (neighbor_proc[0] < 0 || neighbor_proc[0] >= mesh->pdims[0] ||
-                            neighbor_proc[1] < 0 || neighbor_proc[1] >= mesh->pdims[1] ||
-                            neighbor_proc[2] < 0 || neighbor_proc[2] >= mesh->pdims[2])
-                        {
-                           if ((gy == 0) && (dy == 0))
-                           {
-                              rhs_val += w;
-                           }
-                           sum_offdiag += w;
-                           continue;
-                        }
-
-                        /* The neighbor is valid => we add an off-diagonal entry. */
+                        /* Off-diagonal entry for the in-domain neighbor */
                         HYPRE_BigInt nrow = grid2idx((HYPRE_BigInt[]){nx, ny, nz},
                                                      neighbor_proc, gdims, pstarts);
 
@@ -1827,9 +1791,11 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
       extended_data[(0 * nyg + 0) * nxg + 0] = ghost_data[12][0];
 
    /* Write VTK file */
-   snprintf(filename, sizeof(filename), "laplacian_%s_%dx%dx%d_%dx%dx%d_%d.vtr",
-            stype[stmap], params->N[0], params->N[1], params->N[2], params->P[0],
-            params->P[1], params->P[2], myid);
+   snprintf(filename, sizeof(filename),
+            "laplacian_%s_%lldx%lldx%lld_%lldx%lldx%lld_%d.vtr", stype[stmap],
+            (long long)params->N[0], (long long)params->N[1], (long long)params->N[2],
+            (long long)params->P[0], (long long)params->P[1], (long long)params->P[2],
+            myid);
    FILE *fp = fopen(filename, "w");
    if (!fp)
    {
@@ -1892,9 +1858,10 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
    /* Create PVD file (rank 0 only) */
    if (!myid)
    {
-      snprintf(filename, sizeof(filename), "laplacian_%s_%dx%dx%d_%dx%dx%d.pvd",
-               stype[stmap], params->N[0], params->N[1], params->N[2], params->P[0],
-               params->P[1], params->P[2]);
+      snprintf(filename, sizeof(filename),
+               "laplacian_%s_%lldx%lldx%lld_%lldx%lldx%lld.pvd", stype[stmap],
+               (long long)params->N[0], (long long)params->N[1], (long long)params->N[2],
+               (long long)params->P[0], (long long)params->P[1], (long long)params->P[2]);
       fp = fopen(filename, "w");
       if (!fp)
       {
@@ -1907,11 +1874,12 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *sol_data)
       fprintf(fp, "<VTKFile type=\"Collection\" version=\"0.1\">\n");
       fprintf(fp, "  <Collection>\n");
       for (int i = 0; i < num_procs; i++)
-         fprintf(
-            fp,
-            "    <DataSet part=\"%d\" file=\"laplacian_%s_%dx%dx%d_%dx%dx%d_%d.vtr\"/>\n",
-            i, stype[stmap], params->N[0], params->N[1], params->N[2], params->P[0],
-            params->P[1], params->P[2], i);
+         fprintf(fp,
+                 "    <DataSet part=\"%d\" "
+                 "file=\"laplacian_%s_%lldx%lldx%lld_%lldx%lldx%lld_%d.vtr\"/>\n",
+                 i, stype[stmap], (long long)params->N[0], (long long)params->N[1],
+                 (long long)params->N[2], (long long)params->P[0],
+                 (long long)params->P[1], (long long)params->P[2], i);
       fprintf(fp, "  </Collection>\n");
       fprintf(fp, "</VTKFile>\n");
       fclose(fp);

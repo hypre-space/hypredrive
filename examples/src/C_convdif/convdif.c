@@ -200,6 +200,15 @@ PrintUsage(void)
    return 0;
 }
 
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
+}
+
 /*--------------------------------------------------------------------------
  * Parse command line arguments
  *--------------------------------------------------------------------------*/
@@ -234,7 +243,8 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -268,38 +278,43 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-L"))
       {
-         if (++i < argc) params->dom[0] = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->dom[0] = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-H"))
       {
-         if (++i < argc)
-         {
-            params->dom[1] = params->dom[2] = atof(argv[i]);
-         }
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->dom[1] = params->dom[2] = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-k") || !strcmp(argv[i], "--kappa"))
       {
-         if (++i < argc) params->kappa = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->kappa = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-u") || !strcmp(argv[i], "--umax"))
       {
-         if (++i < argc) params->umax = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->umax = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-w") || !strcmp(argv[i], "--swirl"))
       {
-         if (++i < argc) params->wmax = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->wmax = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-nt"))
       {
-         if (++i < argc) params->nt = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->nt = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-dt"))
       {
-         if (++i < argc) params->dt0 = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->dt0 = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-dtg") || !strcmp(argv[i], "--dt-growth"))
       {
-         if (++i < argc) params->dt_growth = atof(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->dt_growth = atof(argv[++i]);
       }
       else if (!strcmp(argv[i], "-vis") || !strcmp(argv[i], "--visualize"))
       {
@@ -311,12 +326,19 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, myid)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!myid) PrintUsage();
          return 2;
+      }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!myid) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
       }
    }
 
@@ -332,8 +354,9 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
    {
       if (!myid)
       {
-         printf("Error: -P entries must be >= 1 (got %d x %d x %d)\n", params->P[0],
-                params->P[1], params->P[2]);
+         printf("Error: -P entries must be >= 1 (got %lld x %lld x %lld)\n",
+                (long long)params->P[0], (long long)params->P[1],
+                (long long)params->P[2]);
       }
       return 1;
    }
@@ -344,9 +367,10 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       if (!myid)
       {
          printf("Error: Number of processes (%d) must match processor grid dimensions "
-                "(%d x %d x %d = %d)\n",
-                num_procs, params->P[0], params->P[1], params->P[2],
-                params->P[0] * params->P[1] * params->P[2]);
+                "(%lld x %lld x %lld = %lld)\n",
+                num_procs, (long long)params->P[0], (long long)params->P[1],
+                (long long)params->P[2],
+                (long long)(params->P[0] * params->P[1] * params->P[2]));
       }
       return 1;
    }
@@ -359,9 +383,9 @@ ParseArguments(int argc, char *argv[], ProblemParams *params, int myid, int num_
       {
          if (!myid)
          {
-            printf("Error: %s grid dimension (N = %d) must be at least as large as the "
-                   "number of ranks (P = %d)\n",
-                   name[d], params->N[d], params->P[d]);
+            printf("Error: %s grid dimension (N = %lld) must be at least as large as the "
+                   "number of ranks (P = %lld)\n",
+                   name[d], (long long)params->N[d], (long long)params->P[d]);
          }
          return 1;
       }
@@ -414,14 +438,20 @@ main(int argc, char *argv[])
    MPI_Comm_size(comm, &num_procs);
 
    /* Parse command line arguments */
-   if (ParseArguments(argc, argv, &params, myid, num_procs))
+   int parse = ParseArguments(argc, argv, &params, myid, num_procs);
+   if (parse)
    {
       MPI_Finalize();
-      return 1;
+      return (parse == 2) ? 0 : 1; /* 2: help was printed */
    }
 
    /* Initialize hypredrive */
    HYPREDRV_SAFE_CALL(HYPREDRV_Initialize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   /* This driver calls hypre directly: initialize the hypre it links, which
+    * is a separate instance from hypredrive's when hypre is a static library. */
+   HYPRE_Initialize();
+#endif
 
    /* Print library info if requested */
    if (params.verbose & 0x1)
@@ -490,7 +520,7 @@ main(int argc, char *argv[])
       printf("Initial step size:    %.2e\n", params.dt0);
       printf("Step growth factor:   %.2f\n", params.dt_growth);
       printf("Visualization:        %s\n", params.visualize ? "true" : "false");
-      printf("Verbosity level:      0x%x\n", params.verbose);
+      printf("Verbosity level:      0x%llx\n", (long long)params.verbose);
       printf("=====================================================\n\n");
    }
 
@@ -523,13 +553,6 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateBegin(hypredrv, "system", -1));
       BuildSystem(mesh, &params, c, dt, &A, &b, &x0);
       HYPREDRV_SAFE_CALL(HYPREDRV_AnnotateEnd(hypredrv, "system", -1));
-
-      /* Transfer data to GPU memory */
-#if defined(HYPRE_USING_GPU)
-      HYPRE_IJMatrixMigrate(A, HYPRE_MEMORY_DEVICE);
-      HYPRE_IJVectorMigrate(b, HYPRE_MEMORY_DEVICE);
-      HYPRE_IJVectorMigrate(x0, HYPRE_MEMORY_DEVICE);
-#endif
 
       /* Associate the matrix and vectors with hypredrive. The solution at the
        * previous time step is used as initial guess for the current one */
@@ -632,6 +655,9 @@ main(int argc, char *argv[])
    /* Finalize */
    HYPREDRV_SAFE_CALL(HYPREDRV_Destroy(&hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 22900
+   HYPRE_Finalize(); /* no-op when hypredrive shares this hypre */
+#endif
    MPI_Finalize();
 
    return 0;
@@ -837,9 +863,15 @@ BuildSystem(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c_old, HYPRE_Real
 #endif
    for (HYPRE_BigInt gz = pstarts[2][p[2]]; gz < pstarts[2][p[2] + 1]; gz++)
    {
-      HYPRE_Int    nentries;
-      HYPRE_BigInt row, cols[7];
-      HYPRE_Real   values[7], diag, rhs_value, x0_value;
+      /* One x-line of rows is handed to hypre per call */
+      HYPRE_Int    *line_ncols = (HYPRE_Int *)malloc((size_t)n[0] * sizeof(HYPRE_Int));
+      HYPRE_BigInt *line_rows =
+         (HYPRE_BigInt *)malloc((size_t)n[0] * sizeof(HYPRE_BigInt));
+      HYPRE_BigInt *line_cols =
+         (HYPRE_BigInt *)malloc((size_t)n[0] * 7 * sizeof(HYPRE_BigInt));
+      HYPRE_Real *line_vals = (HYPRE_Real *)malloc((size_t)n[0] * 7 * sizeof(HYPRE_Real));
+      HYPRE_Real *line_rhs  = (HYPRE_Real *)malloc((size_t)n[0] * sizeof(HYPRE_Real));
+      HYPRE_Real *line_x0   = (HYPRE_Real *)malloc((size_t)n[0] * sizeof(HYPRE_Real));
 
       const HYPRE_Real z = ((HYPRE_Real)gz + 0.5) * hz;
 
@@ -871,8 +903,15 @@ BuildSystem(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c_old, HYPRE_Real
          const HYPRE_Real Sy_lo = -My_lo, Sy_hi = My_hi;
          const HYPRE_Real Sz_lo = -Mz_lo, Sz_hi = Mz_hi;
 
+         HYPRE_Int nrows = 0, off = 0;
          for (HYPRE_BigInt gx = pstarts[0][p[0]]; gx < pstarts[0][p[0] + 1]; gx++)
          {
+            HYPRE_Int     nentries;
+            HYPRE_BigInt  row;
+            HYPRE_BigInt *cols   = &line_cols[off];
+            HYPRE_Real   *values = &line_vals[off];
+            HYPRE_Real    diag, rhs_value, x0_value;
+
             /* Global index in block-partitioned ordering */
             row = grid2idx((HYPRE_BigInt[]){gx, gy, gz}, p, gdims, pstarts);
 
@@ -963,13 +1002,27 @@ BuildSystem(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c_old, HYPRE_Real
                values[nentries++] = -(Dz + ((Sz_hi < 0.0) ? -Sz_hi : 0.0));
             }
 
-            /* Set matrix and vector values */
-            values[0] = diag;
-            HYPRE_IJMatrixSetValues(A, 1, &nentries, &row, cols, values);
-            HYPRE_IJVectorSetValues(b, 1, &row, &rhs_value);
-            HYPRE_IJVectorSetValues(x0, 1, &row, &x0_value);
+            /* Queue the row; its entries are already in place */
+            values[0]         = diag;
+            line_ncols[nrows] = nentries;
+            line_rows[nrows]  = row;
+            line_rhs[nrows]   = rhs_value;
+            line_x0[nrows]    = x0_value;
+            nrows++;
+            off += nentries;
          }
+
+         HYPRE_IJMatrixSetValues(A, nrows, line_ncols, line_rows, line_cols, line_vals);
+         HYPRE_IJVectorSetValues(b, nrows, line_rows, line_rhs);
+         HYPRE_IJVectorSetValues(x0, nrows, line_rows, line_x0);
       }
+
+      free(line_ncols);
+      free(line_rows);
+      free(line_cols);
+      free(line_vals);
+      free(line_rhs);
+      free(line_x0);
    }
 
    /* Assemble the matrix and vectors */
@@ -1042,15 +1095,18 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c, HYPRE_Int
    /* Write the local piece */
    if (step < 0)
    {
-      snprintf(filename, sizeof(filename), "convdif_%dx%dx%d_%dx%dx%d_%d.vtr",
-               params->N[0], params->N[1], params->N[2], params->P[0], params->P[1],
-               params->P[2], myid);
+      snprintf(filename, sizeof(filename), "convdif_%lldx%lldx%lld_%lldx%lldx%lld_%d.vtr",
+               (long long)params->N[0], (long long)params->N[1], (long long)params->N[2],
+               (long long)params->P[0], (long long)params->P[1], (long long)params->P[2],
+               myid);
    }
    else
    {
-      snprintf(filename, sizeof(filename), "convdif_%dx%dx%d_%dx%dx%d_s%04d_%d.vtr",
-               params->N[0], params->N[1], params->N[2], params->P[0], params->P[1],
-               params->P[2], (int)step, myid);
+      snprintf(filename, sizeof(filename),
+               "convdif_%lldx%lldx%lld_%lldx%lldx%lld_s%04d_%d.vtr",
+               (long long)params->N[0], (long long)params->N[1], (long long)params->N[2],
+               (long long)params->P[0], (long long)params->P[1], (long long)params->P[2],
+               (int)step, myid);
    }
    FILE *fp = fopen(filename, "w");
    if (!fp)
@@ -1094,8 +1150,9 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c, HYPRE_Int
    /* Create PVD file (rank 0 only, standalone-snapshot mode) */
    if (!myid && step < 0)
    {
-      snprintf(filename, sizeof(filename), "convdif_%dx%dx%d_%dx%dx%d.pvd", params->N[0],
-               params->N[1], params->N[2], params->P[0], params->P[1], params->P[2]);
+      snprintf(filename, sizeof(filename), "convdif_%lldx%lldx%lld_%lldx%lldx%lld.pvd",
+               (long long)params->N[0], (long long)params->N[1], (long long)params->N[2],
+               (long long)params->P[0], (long long)params->P[1], (long long)params->P[2]);
       fp = fopen(filename, "w");
       if (!fp)
       {
@@ -1110,9 +1167,11 @@ WriteVTKsolution(DistMesh *mesh, ProblemParams *params, HYPRE_Real *c, HYPRE_Int
       for (int i = 0; i < num_procs; i++)
       {
          fprintf(fp,
-                 "    <DataSet part=\"%d\" file=\"convdif_%dx%dx%d_%dx%dx%d_%d.vtr\"/>\n",
-                 i, params->N[0], params->N[1], params->N[2], params->P[0], params->P[1],
-                 params->P[2], i);
+                 "    <DataSet part=\"%d\" "
+                 "file=\"convdif_%lldx%lldx%lld_%lldx%lldx%lld_%d.vtr\"/>\n",
+                 i, (long long)params->N[0], (long long)params->N[1],
+                 (long long)params->N[2], (long long)params->P[0],
+                 (long long)params->P[1], (long long)params->P[2], i);
       }
       fprintf(fp, "  </Collection>\n");
       fprintf(fp, "</VTKFile>\n");
@@ -1139,8 +1198,9 @@ WriteVTKseries(DistMesh *mesh, ProblemParams *params, HYPRE_Int nsteps,
    MPI_Comm_size(mesh->cart_comm, &num_procs);
    if (myid) return 0;
 
-   snprintf(filename, sizeof(filename), "convdif_%dx%dx%d_%dx%dx%d.pvd", params->N[0],
-            params->N[1], params->N[2], params->P[0], params->P[1], params->P[2]);
+   snprintf(filename, sizeof(filename), "convdif_%lldx%lldx%lld_%lldx%lldx%lld.pvd",
+            (long long)params->N[0], (long long)params->N[1], (long long)params->N[2],
+            (long long)params->P[0], (long long)params->P[1], (long long)params->P[2]);
    FILE *fp = fopen(filename, "w");
    if (!fp)
    {
@@ -1158,9 +1218,10 @@ WriteVTKseries(DistMesh *mesh, ProblemParams *params, HYPRE_Int nsteps,
       {
          fprintf(fp,
                  "    <DataSet timestep=\"%g\" part=\"%d\" "
-                 "file=\"convdif_%dx%dx%d_%dx%dx%d_s%04d_%d.vtr\"/>\n",
-                 times[s], i, params->N[0], params->N[1], params->N[2], params->P[0],
-                 params->P[1], params->P[2], (int)s, i);
+                 "file=\"convdif_%lldx%lldx%lld_%lldx%lldx%lld_s%04d_%d.vtr\"/>\n",
+                 times[s], i, (long long)params->N[0], (long long)params->N[1],
+                 (long long)params->N[2], (long long)params->P[0],
+                 (long long)params->P[1], (long long)params->P[2], (int)s, i);
       }
    }
    fprintf(fp, "  </Collection>\n");

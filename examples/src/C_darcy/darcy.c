@@ -14,16 +14,6 @@
 #include "HYPREDRV.h"
 #include "HYPREDRV_utils.h"
 
-#if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 21900
-#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) \
-   HYPRE_IJMatrixInitialize_v2((mat), HYPRE_MEMORY_HOST)
-#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) \
-   HYPRE_IJVectorInitialize_v2((vec), HYPRE_MEMORY_HOST)
-#else
-#define HYPREDRV_IJ_MATRIX_INIT_HOST(mat) HYPRE_IJMatrixInitialize((mat))
-#define HYPREDRV_IJ_VECTOR_INIT_HOST(vec) HYPRE_IJVectorInitialize((vec))
-#endif
-
 typedef struct
 {
    HYPRE_Int    n[3];
@@ -75,8 +65,6 @@ struct DarcyDiscretization
 {
    const char *name;
    HYPRE_Int (*num_cell_flux_dofs)(const DarcyMesh *);
-   void (*cell_flux_dofs)(const DarcyMesh *, HYPRE_BigInt, HYPRE_BigInt, HYPRE_BigInt,
-                          HYPRE_BigInt *, HYPRE_Int *, HYPRE_Int *, HYPRE_Int *);
    HYPRE_Real (*mass_entry)(const DarcyMesh *, HYPRE_BigInt, HYPRE_Int, HYPRE_Int,
                             const HYPRE_Int *, const HYPRE_Int *);
 };
@@ -328,7 +316,12 @@ init_layout(const DarcyMesh *mesh, const HYPRE_Int P[3], DarcyLayout *layout)
       layout->offset[rank + 1] = layout->offset[rank] + layout->total[rank];
    }
    layout->N = layout->offset[layout->nprocs];
-   return layout->N == mesh->n_total ? 0 : 1;
+   if (layout->N != mesh->n_total)
+   {
+      destroy_layout(layout);
+      return 1;
+   }
+   return 0;
 }
 
 static HYPRE_BigInt
@@ -374,8 +367,7 @@ layout_zface(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
 }
 
 static HYPRE_BigInt
-layout_cell(const DarcyLayout *layout, const DarcyMesh *mesh, HYPRE_BigInt i,
-            HYPRE_BigInt j, HYPRE_BigInt k)
+layout_cell(const DarcyLayout *layout, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
 {
    HYPRE_Int    rx = layout->xpart[i];
    HYPRE_Int    ry = layout->ypart[j];
@@ -392,26 +384,6 @@ static HYPRE_BigInt
 cell_index(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
 {
    return i + (HYPRE_BigInt)mesh->n[0] * (j + (HYPRE_BigInt)mesh->n[1] * k);
-}
-
-static HYPRE_BigInt
-x_face_index(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
-{
-   return i + (HYPRE_BigInt)(mesh->n[0] + 1) * (j + (HYPRE_BigInt)mesh->n[1] * k);
-}
-
-static HYPRE_BigInt
-y_face_index(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
-{
-   return mesh->n_x_faces + i +
-          (HYPRE_BigInt)mesh->n[0] * (j + (HYPRE_BigInt)(mesh->n[1] + 1) * k);
-}
-
-static HYPRE_BigInt
-z_face_index(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k)
-{
-   return mesh->n_x_faces + mesh->n_y_faces + i +
-          (HYPRE_BigInt)mesh->n[0] * (j + (HYPRE_BigInt)mesh->n[1] * k);
 }
 
 static HYPRE_Real
@@ -443,40 +415,6 @@ static HYPRE_Int
 rt0_num_cell_flux_dofs(const DarcyMesh *mesh)
 {
    return 2 * mesh->dim;
-}
-
-static void
-rt0_cell_flux_dofs(const DarcyMesh *mesh, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k,
-                   HYPRE_BigInt *faces, HYPRE_Int *dirs, HYPRE_Int *is_low,
-                   HYPRE_Int *signs)
-{
-   faces[0] = x_face_index(mesh, i, j, k);
-   faces[1] = x_face_index(mesh, i + 1, j, k);
-   dirs[0] = dirs[1] = 0;
-   is_low[0]         = 1;
-   is_low[1]         = 0;
-   signs[0]          = -1;
-   signs[1]          = +1;
-   if (mesh->dim >= 2)
-   {
-      faces[2] = y_face_index(mesh, i, j, k);
-      faces[3] = y_face_index(mesh, i, j + 1, k);
-      dirs[2] = dirs[3] = 1;
-      is_low[2]         = 1;
-      is_low[3]         = 0;
-      signs[2]          = -1;
-      signs[3]          = +1;
-   }
-   if (mesh->dim >= 3)
-   {
-      faces[4] = z_face_index(mesh, i, j, k);
-      faces[5] = z_face_index(mesh, i, j, k + 1);
-      dirs[4] = dirs[5] = 2;
-      is_low[4]         = 1;
-      is_low[5]         = 0;
-      signs[4]          = -1;
-      signs[5]          = +1;
-   }
 }
 
 static void
@@ -539,14 +477,13 @@ rt0_mass_entry(const DarcyMesh *mesh, HYPRE_BigInt cell, HYPRE_Int a, HYPRE_Int 
           (face_area(mesh, da) * face_area(mesh, db));
 }
 
-static const DarcyDiscretization rt0_discretization = {
-   "RT0/P0", rt0_num_cell_flux_dofs, rt0_cell_flux_dofs, rt0_mass_entry};
+static const DarcyDiscretization rt0_discretization = {"RT0/P0", rt0_num_cell_flux_dofs,
+                                                       rt0_mass_entry};
 
 static int
 is_pinned_neumann_physical(const DarcyMesh *mesh, HYPRE_Int axis, HYPRE_BigInt i,
                            HYPRE_BigInt j, HYPRE_BigInt k, HYPRE_Int drive_axis)
 {
-   (void)i;
    HYPRE_Int low = 0, high = 0;
    if (axis == 0)
    {
@@ -567,11 +504,9 @@ is_pinned_neumann_physical(const DarcyMesh *mesh, HYPRE_Int axis, HYPRE_BigInt i
 }
 
 static HYPRE_Real
-dirichlet_rhs_physical(const DarcyMesh *mesh, HYPRE_Int axis, HYPRE_BigInt i,
-                       HYPRE_BigInt j, HYPRE_BigInt k, HYPRE_Int drive_axis)
+dirichlet_rhs_physical(HYPRE_Int axis, HYPRE_BigInt i, HYPRE_BigInt j, HYPRE_BigInt k,
+                       HYPRE_Int drive_axis)
 {
-   (void)j;
-   (void)k;
    if (axis != drive_axis)
    {
       return 0.0;
@@ -721,6 +656,15 @@ print_usage(void)
    return 0;
 }
 
+/* Report and return nonzero when option argv[i] is missing its n values */
+static int
+MissingValues(int argc, char *argv[], int i, int n, int myid)
+{
+   if (i + n < argc) return 0;
+   if (!myid) printf("Error: %s requires %d value(s)\n", argv[i], n);
+   return 1;
+}
+
 static int
 parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
 {
@@ -729,7 +673,8 @@ parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
    {
       if (!strcmp(argv[i], "-i") || !strcmp(argv[i], "--input"))
       {
-         if (++i < argc) params->yaml_file = argv[i];
+         if (MissingValues(argc, argv, i, 1, rank)) return 1;
+         params->yaml_file = argv[++i];
       }
       else if (!strcmp(argv[i], "-a") || !strcmp(argv[i], "--args"))
       {
@@ -836,12 +781,19 @@ parse_args(int argc, char **argv, DarcyParams *params, int rank, int nprocs)
       }
       else if (!strcmp(argv[i], "-v") || !strcmp(argv[i], "--verbose"))
       {
-         if (++i < argc) params->verbose = atoi(argv[i]);
+         if (MissingValues(argc, argv, i, 1, rank)) return 1;
+         params->verbose = atoi(argv[++i]);
       }
       else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help"))
       {
          if (!rank) print_usage();
          return 2;
+      }
+      else
+      {
+         /* A mistyped option would otherwise run silently with defaults. */
+         if (!rank) printf("Error: unknown option '%s' (see -h)\n", argv[i]);
+         return 1;
       }
    }
 
@@ -967,44 +919,74 @@ append_real(HYPRE_Real **values_ptr, size_t *count_ptr, size_t *capacity_ptr,
    return 0;
 }
 
+/* Rank 0 parses the permeability file and broadcasts the values, so a large
+ * field (e.g. SPE10) is read once rather than by every rank. Collective. */
 static int
-read_permeability_values(const char *path, HYPRE_Real **values_ptr, size_t *count_ptr,
-                         int rank)
+read_permeability_values(MPI_Comm comm, const char *path, HYPRE_Real **values_ptr,
+                         size_t *count_ptr, int rank)
 {
-   FILE *fp = fopen(path, "r");
-   if (!fp)
-   {
-      if (!rank) printf("Error: failed to open permeability file '%s'\n", path);
-      return 1;
-   }
-
    HYPRE_Real *values   = NULL;
    size_t      count    = 0;
    size_t      capacity = 0;
-   for (;;)
+   int         failed   = 0;
+
+   if (!rank)
    {
-      double value = 0.0;
-      int    rc    = fscanf(fp, "%lf", &value);
-      if (rc == EOF)
+      FILE *fp = fopen(path, "r");
+      if (!fp)
       {
-         break;
+         printf("Error: failed to open permeability file '%s'\n", path);
+         failed = 1;
       }
-      if (rc != 1 || !isfinite(value))
+      while (!failed)
       {
-         if (!rank) printf("Error: invalid value in permeability file '%s'\n", path);
-         free(values);
-         fclose(fp);
-         return 1;
+         double value = 0.0;
+         int    rc    = fscanf(fp, "%lf", &value);
+         if (rc == EOF)
+         {
+            break;
+         }
+         if (rc != 1 || !isfinite(value))
+         {
+            printf("Error: invalid value in permeability file '%s'\n", path);
+            failed = 1;
+         }
+         else if (append_real(&values, &count, &capacity, (HYPRE_Real)value))
+         {
+            printf("Error: failed to allocate permeability values\n");
+            failed = 1;
+         }
       }
-      if (append_real(&values, &count, &capacity, (HYPRE_Real)value))
+      if (fp)
       {
-         if (!rank) printf("Error: failed to allocate permeability values\n");
-         free(values);
          fclose(fp);
-         return 1;
       }
    }
-   fclose(fp);
+
+   unsigned long long n = (unsigned long long)count;
+   MPI_Bcast(&failed, 1, MPI_INT, 0, comm);
+   MPI_Bcast(&n, 1, MPI_UNSIGNED_LONG_LONG, 0, comm);
+   if (!failed && rank)
+   {
+      count  = (size_t)n;
+      values = (HYPRE_Real *)malloc((count ? count : 1) * sizeof(HYPRE_Real));
+      failed = (values == NULL);
+   }
+   MPI_Allreduce(MPI_IN_PLACE, &failed, 1, MPI_INT, MPI_MAX, comm);
+   if (failed)
+   {
+      free(values);
+      return 1;
+   }
+
+   /* Broadcast in chunks: MPI counts are int. */
+   for (size_t off = 0; off < count;)
+   {
+      size_t chunk = count - off;
+      chunk        = (chunk > ((size_t)1 << 28)) ? ((size_t)1 << 28) : chunk;
+      MPI_Bcast(values + off, (int)chunk, HYPRE_MPI_REAL, 0, comm);
+      off += chunk;
+   }
 
    *values_ptr = values;
    *count_ptr  = count;
@@ -1019,7 +1001,8 @@ nearest_source_index(HYPRE_BigInt dst, HYPRE_BigInt ndst, HYPRE_BigInt nsrc)
 }
 
 static int
-load_permeability_file(const DarcyParams *params, DarcyMesh *mesh, int rank)
+load_permeability_file(MPI_Comm comm, const DarcyParams *params, DarcyMesh *mesh,
+                       int rank)
 {
    if (!params->K_file)
    {
@@ -1058,7 +1041,7 @@ load_permeability_file(const DarcyParams *params, DarcyMesh *mesh, int rank)
 
    HYPRE_Real *values = NULL;
    size_t      count  = 0;
-   if (read_permeability_values(params->K_file, &values, &count, rank))
+   if (read_permeability_values(comm, params->K_file, &values, &count, rank))
    {
       return 1;
    }
@@ -1154,12 +1137,14 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    HYPRE_BigInt iupper     = ilower + local_rows - 1;
    if (local_rows <= 0)
    {
-      if (!rank) printf("Error: more ranks than unknowns are not supported\n");
+      fprintf(stderr, "[rank %d] Error: more ranks than unknowns are not supported\n",
+              rank);
       return 1;
    }
    if ((HYPRE_BigInt)((int)local_rows) != local_rows)
    {
-      if (!rank) printf("Error: local row count is too large for dofmap API\n");
+      fprintf(stderr, "[rank %d] Error: local row count is too large for dofmap API\n",
+              rank);
       return 1;
    }
 
@@ -1179,7 +1164,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    HYPRE_BigInt nnz_capacity = local_rows * (2 * (nloc + 1));
    if (nnz_capacity < 0 || (HYPRE_BigInt)(size_t)nnz_capacity != nnz_capacity)
    {
-      if (!rank) printf("Error: local nonzero count is too large\n");
+      fprintf(stderr, "[rank %d] Error: local nonzero count is too large\n", rank);
       free(dofmap);
       free(rhs);
       free(indptr);
@@ -1191,7 +1176,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    HYPRE_Real *data = (HYPRE_Real *)malloc((size_t)nnz_capacity * sizeof(HYPRE_Real));
    if ((nnz_capacity && (!col_indices || !data)))
    {
-      if (!rank) printf("Error: failed to allocate local CSR matrix\n");
+      fprintf(stderr, "[rank %d] Error: failed to allocate local CSR matrix\n", rank);
       free(dofmap);
       free(rhs);
       free(indptr);
@@ -1209,27 +1194,28 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    HYPRE_Int    rx, ry, rz;
    layout_rank_coords(layout, rank, &rx, &ry, &rz);
 
-#define DARCY_APPEND_ROW()                                                    \
-   do                                                                         \
-   {                                                                          \
-      if (nnz + nentries > nnz_capacity)                                      \
-      {                                                                       \
-         if (!rank) printf("Error: local CSR capacity was underestimated\n"); \
-         free(dofmap);                                                        \
-         free(rhs);                                                           \
-         free(indptr);                                                        \
-         free(col_indices);                                                   \
-         free(data);                                                          \
-         return 1;                                                            \
-      }                                                                       \
-      for (HYPRE_Int entry = 0; entry < nentries; entry++)                    \
-      {                                                                       \
-         col_indices[nnz] = cols[entry];                                      \
-         data[nnz]        = vals[entry];                                      \
-         nnz++;                                                               \
-      }                                                                       \
-      indptr[lr + 1] = nnz;                                                   \
-      lr++;                                                                   \
+#define DARCY_APPEND_ROW()                                                           \
+   do                                                                                \
+   {                                                                                 \
+      if (nnz + nentries > nnz_capacity)                                             \
+      {                                                                              \
+         fprintf(stderr, "[rank %d] Error: local CSR capacity was underestimated\n", \
+                 rank);                                                              \
+         free(dofmap);                                                               \
+         free(rhs);                                                                  \
+         free(indptr);                                                               \
+         free(col_indices);                                                          \
+         free(data);                                                                 \
+         return 1;                                                                   \
+      }                                                                              \
+      for (HYPRE_Int entry = 0; entry < nentries; entry++)                           \
+      {                                                                              \
+         col_indices[nnz] = cols[entry];                                             \
+         data[nnz]        = vals[entry];                                             \
+         nnz++;                                                                      \
+      }                                                                              \
+      indptr[lr + 1] = nnz;                                                          \
+      lr++;                                                                          \
    } while (0)
 
    HYPRE_Int x_start = layout->x0[rx];
@@ -1254,9 +1240,9 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
             append_or_accumulate_entry(cols, vals, &nentries, faces[bb], m);             \
          }                                                                               \
       }                                                                                  \
-      append_or_accumulate_entry(                                                        \
-         cols, vals, &nentries, layout_cell(layout, mesh, (cell_i), (cell_j), (cell_k)), \
-         -(HYPRE_Real)signs[a]);                                                         \
+      append_or_accumulate_entry(cols, vals, &nentries,                                  \
+                                 layout_cell(layout, (cell_i), (cell_j), (cell_k)),      \
+                                 -(HYPRE_Real)signs[a]);                                 \
    } while (0)
 
    for (HYPRE_BigInt k = z_start; k < z_end; k++)
@@ -1269,7 +1255,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
             HYPRE_BigInt row      = layout_xface(layout, mesh, i, j, k);
             HYPRE_Int    nentries = 0;
             dofmap[lr]            = 1;
-            rhs[lr]               = dirichlet_rhs_physical(mesh, 0, i, j, k, drive_axis);
+            rhs[lr]               = dirichlet_rhs_physical(0, i, j, k, drive_axis);
             if (is_pinned_neumann_physical(mesh, 0, i, j, k, drive_axis))
             {
                cols[nentries]   = row;
@@ -1297,7 +1283,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                HYPRE_BigInt row      = layout_yface(layout, mesh, i, j, k);
                HYPRE_Int    nentries = 0;
                dofmap[lr]            = 1;
-               rhs[lr] = dirichlet_rhs_physical(mesh, 1, i, j, k, drive_axis);
+               rhs[lr]               = dirichlet_rhs_physical(1, i, j, k, drive_axis);
                if (is_pinned_neumann_physical(mesh, 1, i, j, k, drive_axis))
                {
                   cols[nentries]   = row;
@@ -1326,7 +1312,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                HYPRE_BigInt row      = layout_zface(layout, mesh, i, j, k);
                HYPRE_Int    nentries = 0;
                dofmap[lr]            = 1;
-               rhs[lr] = dirichlet_rhs_physical(mesh, 2, i, j, k, drive_axis);
+               rhs[lr]               = dirichlet_rhs_physical(2, i, j, k, drive_axis);
                if (is_pinned_neumann_physical(mesh, 2, i, j, k, drive_axis))
                {
                   cols[nentries]   = row;
@@ -1349,10 +1335,9 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
       {
          for (HYPRE_BigInt i = x_start; i < x_end; i++)
          {
-            HYPRE_BigInt c        = cell_index(mesh, i, j, k);
-            HYPRE_Int    nentries = 0;
-            dofmap[lr]            = 0;
-            rhs[lr]               = 0.0;
+            HYPRE_Int nentries = 0;
+            dofmap[lr]         = 0;
+            rhs[lr]            = 0.0;
             rt0_cell_flux_dofs_layout(layout, mesh, i, j, k, faces, dirs, is_low, signs);
 #if defined(HYPRE_RELEASE_NUMBER) && HYPRE_RELEASE_NUMBER >= 30000 && \
    HYPRE_RELEASE_NUMBER < 30100
@@ -1363,7 +1348,7 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                coarse grids (heap corruption) without it. Fixed in hypre 3.1.0.
                Older releases use the legacy AMG default, whose relaxation must
                not see this explicit zero diagonal. */
-            cols[nentries]   = layout_cell(layout, mesh, i, j, k);
+            cols[nentries]   = layout_cell(layout, i, j, k);
             vals[nentries++] = 0.0;
 #endif
             for (HYPRE_Int a = 0; a < nloc; a++)
@@ -1371,7 +1356,6 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                cols[nentries]   = faces[a];
                vals[nentries++] = -(HYPRE_Real)signs[a];
             }
-            (void)c;
             DARCY_APPEND_ROW();
          }
       }
@@ -1382,11 +1366,8 @@ build_system_csr(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
 
    if (lr != local_rows)
    {
-      if (!rank)
-      {
-         printf("Error: layout row count mismatch (%lld != %lld)\n", (long long)lr,
-                (long long)local_rows);
-      }
+      fprintf(stderr, "[rank %d] Error: layout row count mismatch (%lld != %lld)\n", rank,
+              (long long)lr, (long long)local_rows);
       free(dofmap);
       free(rhs);
       free(indptr);
@@ -1422,13 +1403,11 @@ pressure_l2_error(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layou
       {
          for (HYPRE_BigInt i = layout->x0[rx]; i < layout->x1[rx]; i++)
          {
-            HYPRE_BigInt row = layout_cell(layout, mesh, i, j, k);
-            HYPRE_BigInt c   = cell_index(mesh, i, j, k);
-            (void)c;
-            HYPRE_Real coord[3] = {(i + 0.5) * mesh->h[0], (j + 0.5) * mesh->h[1],
-                                   (k + 0.5) * mesh->h[2]};
-            HYPRE_Real u_ref    = 1.0 - coord[drive_axis] / mesh->L[drive_axis];
-            HYPRE_Real diff     = x[row - ilower] - u_ref;
+            HYPRE_BigInt row      = layout_cell(layout, i, j, k);
+            HYPRE_Real   coord[3] = {(i + 0.5) * mesh->h[0], (j + 0.5) * mesh->h[1],
+                                     (k + 0.5) * mesh->h[2]};
+            HYPRE_Real   u_ref    = 1.0 - coord[drive_axis] / mesh->L[drive_axis];
+            HYPRE_Real   diff     = x[row - ilower] - u_ref;
             local_err += diff * diff * cell_volume(mesh);
             local_ref += u_ref * u_ref * cell_volume(mesh);
          }
@@ -1526,12 +1505,14 @@ write_vti_piece(const char *filename, const DarcyMesh *mesh, const HYPRE_Int ext
    rc |= fprintf(fp, "<VTKFile type=\"ImageData\" version=\"1.0\" "
                      "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
    rc |= fprintf(fp,
-                 "  <ImageData WholeExtent=\"%d %d %d %d %d %d\" "
+                 "  <ImageData WholeExtent=\"%lld %lld %lld %lld %lld %lld\" "
                  "Origin=\"0 0 0\" Spacing=\"%.17g %.17g %.17g\">\n",
-                 extent[0], extent[1], extent[2], extent[3], extent[4], extent[5], sx, sy,
+                 (long long)extent[0], (long long)extent[1], (long long)extent[2],
+                 (long long)extent[3], (long long)extent[4], (long long)extent[5], sx, sy,
                  sz) < 0;
-   rc |= fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\">\n", extent[0], extent[1],
-                 extent[2], extent[3], extent[4], extent[5]) < 0;
+   rc |= fprintf(fp, "    <Piece Extent=\"%lld %lld %lld %lld %lld %lld\">\n",
+                 (long long)extent[0], (long long)extent[1], (long long)extent[2],
+                 (long long)extent[3], (long long)extent[4], (long long)extent[5]) < 0;
    rc |= fprintf(fp, "      <CellData Scalars=\"pressure\" Vectors=\"flux\" "
                      "Tensors=\"permeability\">\n") < 0;
    rc |= fprintf(fp,
@@ -1591,12 +1572,13 @@ write_pvti_master(const char *filename, const char *piece_base, const DarcyMesh 
    rc |= fprintf(fp, "<?xml version=\"1.0\"?>\n") < 0;
    rc |= fprintf(fp, "<VTKFile type=\"PImageData\" version=\"1.0\" "
                      "byte_order=\"LittleEndian\" header_type=\"UInt64\">\n") < 0;
-   rc |=
-      fprintf(fp,
-              "  <PImageData WholeExtent=\"%d %d %d %d %d %d\" "
-              "GhostLevel=\"0\" Origin=\"0 0 0\" "
-              "Spacing=\"%.17g %.17g %.17g\">\n",
-              whole[0], whole[1], whole[2], whole[3], whole[4], whole[5], sx, sy, sz) < 0;
+   rc |= fprintf(fp,
+                 "  <PImageData WholeExtent=\"%lld %lld %lld %lld %lld %lld\" "
+                 "GhostLevel=\"0\" Origin=\"0 0 0\" "
+                 "Spacing=\"%.17g %.17g %.17g\">\n",
+                 (long long)whole[0], (long long)whole[1], (long long)whole[2],
+                 (long long)whole[3], (long long)whole[4], (long long)whole[5], sx, sy,
+                 sz) < 0;
    rc |= fprintf(fp, "    <PCellData Scalars=\"pressure\" Vectors=\"flux\" "
                      "Tensors=\"permeability\">\n") < 0;
    rc |= fprintf(fp, "      <PDataArray type=\"Float64\" Name=\"pressure\"/>\n") < 0;
@@ -1624,9 +1606,12 @@ write_pvti_master(const char *filename, const char *piece_base, const DarcyMesh 
          return 1;
       }
       snprintf(piece, (size_t)needed + 1, "%s_p%d.vti", piece_base, r);
-      rc |= fprintf(fp, "    <Piece Extent=\"%d %d %d %d %d %d\" Source=\"%s\"/>\n",
-                    extent[0], extent[1], extent[2], extent[3], extent[4], extent[5],
-                    path_basename(piece)) < 0;
+      rc |=
+         fprintf(fp,
+                 "    <Piece Extent=\"%lld %lld %lld %lld %lld %lld\" Source=\"%s\"/>\n",
+                 (long long)extent[0], (long long)extent[1], (long long)extent[2],
+                 (long long)extent[3], (long long)extent[4], (long long)extent[5],
+                 path_basename(piece)) < 0;
       free(piece);
    }
 
@@ -1713,7 +1698,7 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
          for (HYPRE_BigInt i = layout->x0[rx]; i < layout->x1[rx]; i++)
          {
             HYPRE_BigInt cell = cell_index(mesh, i, j, k);
-            pressure[p]       = solution[layout_cell(layout, mesh, i, j, k)];
+            pressure[p]       = solution[layout_cell(layout, i, j, k)];
             flux[3 * p]       = 0.5 *
                           (solution[layout_xface(layout, mesh, i, j, k)] +
                            solution[layout_xface(layout, mesh, i + 1, j, k)]) /
@@ -1772,6 +1757,7 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
    }
    else
    {
+      /* Every rank reaches the reduction below, even after a local failure */
       if (path_without_extension(output_file, &base))
       {
          rc = 1;
@@ -1791,32 +1777,31 @@ write_vtk_output(MPI_Comm comm, const DarcyMesh *mesh, const DarcyLayout *layout
                                  n_cells, use_uint64_ids);
             free(piece_path);
          }
-         int any_rc = 0;
-         MPI_Allreduce(&rc, &any_rc, 1, MPI_INT, MPI_MAX, comm);
-         rc = any_rc;
-         if (!rank && !rc)
-         {
-            int   master_needed = snprintf(NULL, 0, "%s.pvti", base);
-            char *master_path   = (char *)malloc((size_t)master_needed + 1);
-            if (!master_path)
-            {
-               rc = 1;
-            }
-            else
-            {
-               snprintf(master_path, (size_t)master_needed + 1, "%s.pvti", base);
-               rc = write_pvti_master(master_path, path_basename(base), mesh, layout,
-                                      use_uint64_ids);
-               if (!rc)
-               {
-                  printf("wrote                : %s (+ %d piece(s))\n", master_path,
-                         nprocs);
-               }
-               free(master_path);
-            }
-         }
-         free(base);
       }
+      int any_rc = 0;
+      MPI_Allreduce(&rc, &any_rc, 1, MPI_INT, MPI_MAX, comm);
+      rc = any_rc;
+      if (!rank && !rc && base)
+      {
+         int   master_needed = snprintf(NULL, 0, "%s.pvti", base);
+         char *master_path   = (char *)malloc((size_t)master_needed + 1);
+         if (!master_path)
+         {
+            rc = 1;
+         }
+         else
+         {
+            snprintf(master_path, (size_t)master_needed + 1, "%s.pvti", base);
+            rc = write_pvti_master(master_path, path_basename(base), mesh, layout,
+                                   use_uint64_ids);
+            if (!rc)
+            {
+               printf("wrote                : %s (+ %d piece(s))\n", master_path, nprocs);
+            }
+            free(master_path);
+         }
+      }
+      free(base);
    }
 
    free(solution);
@@ -1847,7 +1832,7 @@ main(int argc, char **argv)
 
    DarcyMesh mesh;
    init_mesh(&params, &mesh);
-   if (load_permeability_file(&params, &mesh, rank))
+   if (load_permeability_file(comm, &params, &mesh, rank))
    {
       destroy_mesh(&mesh);
       MPI_Finalize();
@@ -1928,15 +1913,16 @@ main(int argc, char **argv)
       printf("              Darcy Mixed Problem Setup\n");
       printf("=====================================================\n");
       printf("Discretization:       %s\n", rt0_discretization.name);
-      printf("Grid cells:           %d x %d x %d\n", params.n[0], params.n[1],
-             params.n[2]);
+      printf("Grid cells:           %lld x %lld x %lld\n", (long long)params.n[0],
+             (long long)params.n[1], (long long)params.n[2]);
       printf("Unknowns:             %lld flux + %lld pressure = %lld\n",
              (long long)mesh.n_faces, (long long)mesh.n_cells, (long long)mesh.n_total);
       printf("MPI ranks:            %d\n", nprocs);
-      printf("MPI grid partition:   %d x %d x %d ranks\n", mpi_grid[0], mpi_grid[1],
-             mpi_grid[2]);
-      printf("Cell block target:    <= %d x %d x %d cells/rank\n", cell_block[0],
-             cell_block[1], cell_block[2]);
+      printf("MPI grid partition:   %lld x %lld x %lld ranks\n", (long long)mpi_grid[0],
+             (long long)mpi_grid[1], (long long)mpi_grid[2]);
+      printf("Cell block target:    <= %lld x %lld x %lld cells/rank\n",
+             (long long)cell_block[0], (long long)cell_block[1],
+             (long long)cell_block[2]);
       printf("Row partition:        rank-contiguous spatial DOFs (%lld",
              (long long)rows_per_rank_min);
       if (rows_per_rank_max != rows_per_rank_min)
@@ -1950,8 +1936,9 @@ main(int argc, char **argv)
          printf("Permeability file:    %s\n", params.K_file);
          if (params.K_file_grid[0])
          {
-            printf("Permeability grid:    %d x %d x %d (%s)\n", params.K_file_grid[0],
-                   params.K_file_grid[1], params.K_file_grid[2],
+            printf("Permeability grid:    %lld x %lld x %lld (%s)\n",
+                   (long long)params.K_file_grid[0], (long long)params.K_file_grid[1],
+                   (long long)params.K_file_grid[2],
                    params.K_file_top_down ? "top-down" : "bottom-up");
          }
       }
