@@ -228,8 +228,16 @@ if(HYPREDRV_ENABLE_COVERAGE)
             # Run serially: parallel ctest processes all write the same .gcda files for
             # shared objects (e.g. libHYPREDRV), corrupting coverage (arc mismatch, 0%
             # for large TUs like yaml.c).
+            # Counters left by an earlier run do not match objects rebuilt since;
+            # gcov rejects them (silenced by --gcov-ignore-errors) and the report
+            # then shows those files as never executed. Start from empty counters.
+            set(_coverage_reset_script ${CMAKE_BINARY_DIR}/coverage_reset_counters.cmake)
+            file(WRITE ${_coverage_reset_script}
+                 "file(GLOB_RECURSE _gcda \"${CMAKE_BINARY_DIR}/*.gcda\")\n"
+                 "if(_gcda)\n  file(REMOVE \${_gcda})\nendif()\n")
             add_custom_target(run_tests_for_coverage
                 COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target all
+                COMMAND ${CMAKE_COMMAND} -P ${_coverage_reset_script}
                 COMMAND ${CMAKE_CTEST_COMMAND} -j1 --output-on-failure
                 WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 COMMENT "Building all targets then running tests to generate coverage data"

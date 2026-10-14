@@ -465,6 +465,79 @@ fuzz_matrix_part_within_limits(const uint8_t *data, size_t size)
    return 1;
 }
 
+#if defined(HYPREDRV_FUZZ_HAS_LSSEQ)
+/* Number of whole `entry_size` records of a table at `offset` that fit in the
+ * input, capped at `count`; tables reaching past the input are rejected by the
+ * reader, so only the in-bounds records need checking here. */
+static uint64_t
+fuzz_lsseq_table_entries(size_t size, uint64_t offset, uint64_t count, size_t entry_size)
+{
+   if (offset > size)
+   {
+      return 0;
+   }
+   uint64_t fit = ((uint64_t)size - offset) / entry_size;
+   return (count < fit) ? count : fit;
+}
+
+/* Mirrors the matrix/vector limits for LSSeq containers: skip inputs whose part,
+ * pattern or system metadata declare more rows or nonzeros than the fuzz caps,
+ * since the reader sizes its buffers from those counts before reading data. */
+static int
+fuzz_lsseq_within_limits(const uint8_t *data, size_t size)
+{
+   LSSeqHeader header;
+
+   if (size < sizeof(header))
+   {
+      return 1;
+   }
+   memcpy(&header, data, sizeof(header));
+
+   uint64_t n = fuzz_lsseq_table_entries(size, header.offset_part_meta, header.num_parts,
+                                         sizeof(LSSeqPartMeta));
+   for (uint64_t i = 0; i < n; i++)
+   {
+      LSSeqPartMeta part;
+      memcpy(&part, data + header.offset_part_meta + i * sizeof(part), sizeof(part));
+      if (part.nrows > FUZZ_MATRIX_MAX_ROWS ||
+          (part.row_upper >= part.row_lower &&
+           part.row_upper - part.row_lower >= FUZZ_MATRIX_MAX_ROWS))
+      {
+         return 0;
+      }
+   }
+
+   n = fuzz_lsseq_table_entries(size, header.offset_pattern_meta, header.num_patterns,
+                                sizeof(LSSeqPatternMeta));
+   for (uint64_t i = 0; i < n; i++)
+   {
+      LSSeqPatternMeta pattern;
+      memcpy(&pattern, data + header.offset_pattern_meta + i * sizeof(pattern),
+             sizeof(pattern));
+      if (pattern.nnz > FUZZ_MATRIX_MAX_NNZ)
+      {
+         return 0;
+      }
+   }
+
+   n = fuzz_lsseq_table_entries(size, header.offset_sys_part_meta,
+                                (uint64_t)header.num_systems * header.num_parts,
+                                sizeof(LSSeqSystemPartMeta));
+   for (uint64_t i = 0; i < n; i++)
+   {
+      LSSeqSystemPartMeta sys;
+      memcpy(&sys, data + header.offset_sys_part_meta + i * sizeof(sys), sizeof(sys));
+      if (sys.nnz > FUZZ_MATRIX_MAX_NNZ || sys.dof_num_entries > FUZZ_VECTOR_MAX_ROWS)
+      {
+         return 0;
+      }
+   }
+
+   return 1;
+}
+#endif
+
 static int
 fuzz_vector_part_within_limits(const uint8_t *data, size_t size)
 {
@@ -794,7 +867,8 @@ fuzz_lsseq_file(const uint8_t *data, size_t size)
    int  has_dofmap    = 0;
    int  has_timesteps = 0;
 
-   if (!fuzz_write_temp_file(data, size, ".bin", path, sizeof(path)))
+   if (!fuzz_lsseq_within_limits(data, size) ||
+       !fuzz_write_temp_file(data, size, ".bin", path, sizeof(path)))
    {
       return;
    }

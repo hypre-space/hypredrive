@@ -72,6 +72,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_FUZZING=ON \
             -DHYPREDRV_ENABLE_TESTING=ON \
+            -DHYPREDRV_ENABLE_COMPRESSION=ON \
             -DCMAKE_C_COMPILER=mpicc \
             -DCMAKE_PREFIX_PATH=${{ steps.build-hypre.outputs.hypre_prefix }}
 
@@ -137,7 +138,7 @@ jobs:
 
       - name: Run smoke campaign
         env:
-          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
+          ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=1
         run: tests/fuzz/fuzzing.sh ${{ matrix.mode }} 60 libfuzzer
 
   fuzz-nightly:

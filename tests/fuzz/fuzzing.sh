@@ -27,6 +27,8 @@ run_dir="$build_dir/fuzz-run/$mode-$timestamp"
 mkdir -p "$run_dir/corpus"
 mkdir -p "$run_dir/tmp"
 export TMPDIR="$run_dir/tmp"
+# Ignore the MPI/runtime leaks listed in .github/lsan.supp, as ctest does.
+export LSAN_OPTIONS="${LSAN_OPTIONS:-suppressions=$repo_dir/.github/lsan.supp}"
 shopt -s nullglob
 corpus_inputs=("$script_dir/seeds/$mode"/* "$script_dir/regressions/$mode"/*)
 case "$mode" in

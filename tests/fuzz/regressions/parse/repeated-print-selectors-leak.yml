@@ -1,0 +1,6 @@
+linear_system
+  print_system:
+    selectors
+      - ranges:0,2
+    selectors
+      - ranges:0,2
