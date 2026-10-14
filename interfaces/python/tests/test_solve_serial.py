@@ -304,6 +304,22 @@ def test_invalid_inputs_raise(base_options):
             )
 
 
+def test_index_arrays_are_not_silently_truncated(base_options):
+    indptr = np.array([0, 1], dtype=hd.BIGINT_DTYPE)
+    data = np.array([1.0], dtype=hd.REAL_DTYPE)
+    with hd.HypreDrive(options=base_options) as drv:
+        with pytest.raises(TypeError, match="integers"):
+            drv.set_matrix_from_csr(
+                indptr, np.array([0.5]), data, row_start=0, row_end=0
+            )
+        # 2**63 does not fit HYPRE_BigInt of either width; a plain dtype cast
+        # would wrap it to a negative index.
+        with pytest.raises(ValueError, match="HYPRE_BigInt range"):
+            drv.set_matrix_from_csr(
+                indptr, np.array([2**63], dtype=np.uint64), data, row_start=0, row_end=0
+            )
+
+
 def test_explicit_initialize_finalize_is_noop_when_redundant(base_options, laplacian_1d):
     indptr, cols, data, rhs, n = laplacian_1d
     hd.initialize()

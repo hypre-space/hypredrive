@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 
 execute_process(
-    COMMAND bash ${SOURCE_DIR}/scripts/list_public_apis.sh
+    COMMAND bash ${SOURCE_DIR}/scripts/list_public_apis.sh --root ${SOURCE_DIR}
     WORKING_DIRECTORY ${SOURCE_DIR}
     OUTPUT_VARIABLE _actual
     RESULT_VARIABLE _result)

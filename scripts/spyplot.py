@@ -382,7 +382,7 @@ def main():
             **trace_kwargs
         ))
 
-    r0, c0, cv0, shape0 = mats[0][0], mats[0][1], mats[0][2], mats[0][3]
+    shape0 = mats[0][3]
     fig = go.Figure(data=traces)
     showgrid = not args.no_grid
     fig.update_layout(

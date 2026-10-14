@@ -141,20 +141,16 @@ jobs:
         with:
           version: '1.10'
 
-      - name: Download artifact tarballs
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          name: hypredrive-julia-artifacts
-          path: julia-artifacts
-
-      - name: Verify complete artifact set
+      - name: Download the staged release tarballs
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euxo pipefail
-          tarball_count=$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) | wc -l)
+          mkdir -p release-assets
+          gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" \
+            --pattern '*.tar.gz' --dir release-assets
+          tarball_count=$(find release-assets -type f -name '*.tar.gz' | wc -l)
           test "$tarball_count" -eq 5
-          for target in x86_64-linux-gnu x86_64-apple-darwin x86_64-w64-mingw32 aarch64-linux-gnu aarch64-apple-darwin; do
-            test -n "$(find julia-artifacts -type f \( -name '*.tar.gz' -o -name '*.tgz' \) -name "*${target}*" -print -quit)"
-          done
 
       - name: Verify tag already carries artifact bindings
         run: |
@@ -180,24 +176,34 @@ jobs:
           end
           '
 
-      - name: Upload release assets
-        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
-        with:
-          files: |
-            julia-artifacts/*.tar.gz
-            julia-artifacts/*.tgz
-
-      - name: Print Artifacts.toml binding commands
+      # The tarballs built by this run are not byte-identical to the ones the
+      # manual binding run pinned, so they are never uploaded. The release must
+      # carry the bound tarballs (staged by update-artifacts-toml); check them.
+      - name: Verify release tarballs match Artifacts.toml
         run: |
           set -euxo pipefail
-          rm -f /tmp/Artifacts.toml
-          for tarball in julia-artifacts/*.tar.gz julia-artifacts/*.tgz; do
-            test -e "$tarball" || continue
-            name=$(basename "$tarball")
-            url="https://github.com/${RELEASE_REPOSITORY}/releases/download/${RELEASE_TAG}/${name}"
-            julia interfaces/julia/binary/bind_artifact.jl "$tarball" "$url" /tmp/Artifacts.toml
-          done
-          cat /tmp/Artifacts.toml
+          julia -e '
+          using Pkg, SHA, TOML
+          tag = ENV["RELEASE_TAG"]
+          entries = TOML.parsefile("interfaces/julia/Artifacts.toml")["hypredrive_mpi_trampoline"]
+          entries = entries isa AbstractVector ? entries : Any[entries]
+          for entry in entries, download in get(entry, "download", Any[])
+              url = String(download["url"])
+              occursin("/releases/download/$tag/", url) || continue
+              name = basename(url)
+              path = joinpath("release-assets", name)
+              isfile(path) || error("release $tag has no asset $name")
+              sha = bytes2hex(open(sha256, path))
+              sha == download["sha256"] ||
+                  error("$name: sha256 $sha does not match Artifacts.toml ($(download["sha256"]))")
+              dir = mktempdir()
+              run(`tar -xzf $path -C $dir`)
+              tree = bytes2hex(Pkg.GitTools.tree_hash(dir))
+              tree == entry["git-tree-sha1"] ||
+                  error("$name: git-tree-sha1 $tree does not match Artifacts.toml ($(entry["git-tree-sha1"]))")
+              println("verified ", name)
+          end
+          '
 
   update-artifacts-toml:
     if: >-
@@ -261,3 +267,15 @@ jobs:
           done
           echo "Failed to push Artifacts.toml after retrying; check branch protection and concurrent commits" >&2
           exit 1
+
+      # Publish exactly the tarballs that were just bound; the tag workflow
+      # verifies the release assets against Artifacts.toml instead of uploading
+      # its own (non-reproducible) rebuild.
+      - name: Stage the bound tarballs on a draft release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          draft: true
+          files: |
+            julia-artifacts/*.tar.gz
+            julia-artifacts/*.tgz

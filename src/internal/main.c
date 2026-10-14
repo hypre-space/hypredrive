@@ -31,7 +31,7 @@ PrintUsage(const char *argv0)
    fprintf(stdout, "  %s input.yml -a solver:pcg:print_level 1\n", argv0);
    fprintf(stdout, "  %s input.yml -a --preconditioner:amg:print_level 2\n", argv0);
    fprintf(stdout, "  %s input.yml -p poisson\n", argv0);
-   fprintf(stdout, "  %s input1.yml input2.yml -q\n", argv0);
+   fprintf(stdout, "  %s input1.yml input2.yml\n", argv0);
    fflush(stdout);
 }
 
@@ -157,6 +157,46 @@ BuildConfigArgv(int argc, char **argv, int config_index, char **config_argv)
 
    config_argv[config_argc] = NULL;
    return config_argc;
+}
+
+/* Returns the first argument the driver does not recognize, or NULL. Tokens
+ * after -a/--args are YAML overrides up to the next config file or driver
+ * option, matching the override parser. A -p/--prec-preset without a value is
+ * reported as well. */
+static const char *
+FindUnknownArgument(int argc, char **argv)
+{
+   int in_overrides = 0;
+   for (int i = 1; i < argc; i++)
+   {
+      const char *arg       = argv[i];
+      int         is_info   = !strcmp(arg, "-i") || !strcmp(arg, "--info");
+      int         is_preset = !strcmp(arg, "-p") || !strcmp(arg, "--prec-preset");
+      int         is_config = IsConfigFileArgument(arg);
+
+      if (in_overrides && !is_info && !is_preset && !is_config)
+      {
+         continue;
+      }
+      in_overrides = 0;
+
+      if (is_preset)
+      {
+         if (++i >= argc)
+         {
+            return arg;
+         }
+      }
+      else if (!strcmp(arg, "-a") || !strcmp(arg, "--args"))
+      {
+         in_overrides = 1;
+      }
+      else if (!is_info && !is_config)
+      {
+         return arg;
+      }
+   }
+   return NULL;
 }
 
 static int
@@ -306,6 +346,20 @@ main(int argc, char **argv)
    }
    if (!RequireConfigArgument(argc, argv, myid))
    {
+      HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
+      MPI_Finalize();
+      return 1;
+   }
+
+   /* A mistyped option would otherwise be ignored and the run would use the
+    * unmodified configuration. */
+   const char *unknown = FindUnknownArgument(argc, argv);
+   if (unknown)
+   {
+      if (!myid)
+      {
+         fprintf(stderr, "Error: unknown or incomplete option '%s' (see -h)\n", unknown);
+      }
       HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
       MPI_Finalize();
       return 1;

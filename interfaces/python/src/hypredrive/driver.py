@@ -66,10 +66,23 @@ REAL_DTYPE: np.dtype = _resolve_real_dtype()
 
 
 def _as_bigint_array(arr: Any, name: str) -> np.ndarray:
-    a = np.ascontiguousarray(arr, dtype=BIGINT_DTYPE)
+    a = np.asarray(arr)
     if a.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array, got shape {a.shape}")
-    return a
+    if a.dtype == BIGINT_DTYPE or a.size == 0:
+        return np.ascontiguousarray(a, dtype=BIGINT_DTYPE)
+    # numpy's dtype conversion would silently truncate floats and wrap integers
+    # that do not fit (e.g. int64 indices on a 32-bit HYPRE_BigInt build).
+    if a.dtype.kind not in "iu":
+        raise TypeError(f"{name} must hold integers, got dtype {a.dtype}")
+    info = np.iinfo(BIGINT_DTYPE)
+    lo, hi = int(a.min()), int(a.max())
+    if lo < int(info.min) or hi > int(info.max):
+        raise ValueError(
+            f"{name} has values in [{lo}, {hi}], outside the HYPRE_BigInt range "
+            f"[{int(info.min)}, {int(info.max)}]"
+        )
+    return np.ascontiguousarray(a, dtype=BIGINT_DTYPE)
 
 
 def _as_real_array(arr: Any, name: str) -> np.ndarray:

@@ -16,46 +16,14 @@
 #include <string.h>
 #include <time.h>
 
-void
-hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
+/* Format the current local time; returns 1 on success. */
+static int
+FormatLocalTime(char *buffer, size_t len)
 {
-   int myid = 0;
+   time_t     now    = time(NULL);
+   struct tm *tm_now = localtime(&now);
 
-   MPI_Comm_rank(comm, &myid);
-   if (!myid)
-   {
-      if (print_datetime)
-      {
-         time_t     now    = time(NULL);
-         struct tm *tm_now = localtime(&now);
-         char       buffer[100];
-
-         if (tm_now && strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_now))
-         {
-            printf("Date and time: %s\n", buffer);
-         }
-      }
-
-#if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
-      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s (%s)\n", HYPREDRV_DEVELOP_STRING,
-             HYPREDRV_BRANCH_NAME);
-#elif defined(HYPREDRV_DEVELOP_STRING)
-      printf("\nUsing HYPREDRV_DEVELOP_STRING: %s\n", HYPREDRV_DEVELOP_STRING);
-#elif defined(HYPREDRV_GIT_SHA)
-      printf("\nUsing HYPREDRV_GIT_SHA: %s\n", HYPREDRV_GIT_SHA);
-#elif defined(HYPREDRV_RELEASE_VERSION)
-      printf("\nUsing HYPREDRV_RELEASE_VERSION: %s\n", HYPREDRV_RELEASE_VERSION);
-#endif
-
-#if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
-      printf("Using HYPRE_DEVELOP_STRING: %s (%s)\n", HYPRE_DEVELOP_STRING,
-             HYPRE_BRANCH_NAME);
-#elif defined(HYPRE_DEVELOP_STRING)
-      printf("Using HYPRE_DEVELOP_STRING: %s\n", HYPRE_DEVELOP_STRING);
-#elif defined(HYPRE_RELEASE_VERSION)
-      printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
-#endif
-   }
+   return tm_now && strftime(buffer, len, "%Y-%m-%d %H:%M:%S", tm_now);
 }
 
 void
@@ -72,37 +40,6 @@ hypredrv_PrintSystemInfo(MPI_Comm comm)
    }
 }
 
-const char *
-hypredrv_ExecutionPolicyName(int exec_policy)
-{
-   HYPRE_ExecutionPolicy hypre_exec_policy =
-      exec_policy ? HYPRE_EXEC_DEVICE : HYPRE_EXEC_HOST;
-
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   return HYPRE_GetExecutionPolicyName(hypre_exec_policy);
-#else
-   return hypre_exec_policy == HYPRE_EXEC_DEVICE ? "Device" : "Host";
-#endif
-}
-
-void
-hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
-{
-   int myid = 0;
-
-   if (!stream)
-   {
-      return;
-   }
-
-   MPI_Comm_rank(comm, &myid);
-   if (!myid)
-   {
-      fprintf(stream, "HYPRE execution policy: %s\n\n",
-              hypredrv_ExecutionPolicyName(exec_policy));
-   }
-}
-
 void
 hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
 {
@@ -111,19 +48,14 @@ hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
    MPI_Comm_rank(comm, &myid);
    if (!myid)
    {
-      time_t      now    = time(NULL);
-      struct tm  *tm_now = localtime(&now);
       char        buffer[100];
       const char *driver_name = (argv0 && argv0[0]) ? argv0 : "Driver";
 
-      if (tm_now && strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", tm_now))
+      if (!FormatLocalTime(buffer, sizeof(buffer)))
       {
-         printf("Date and time: %s\n%s done!\n", buffer, driver_name);
+         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
       }
-      else
-      {
-         printf("Date and time: (time unavailable)\n%s done!\n", driver_name);
-      }
+      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
    }
 }
 
@@ -2368,8 +2300,7 @@ DetectCpuModels(int *numPhysicalCPUs_out, int *numCPUs_out, char cpuModels[8][25
       sysctlbyname("machdep.cpu.brand_string", &cpuModels[i], &msize, NULL, 0);
    }
 #else
-   int physicalCPUSeen = 0;
-   fp                  = fopen("/proc/cpuinfo", "r");
+   fp = fopen("/proc/cpuinfo", "r");
    if (fp != NULL)
    {
       DetectCpuModelsFromProcInfo(fp, buffer, sizeof(buffer), &numPhysicalCPUs, &numCPUs,
@@ -2453,7 +2384,6 @@ PrintDiscoveredGpuModels(void)
          }
       }
    }
-   gcount = 0;
 #endif
 }
 
@@ -2531,11 +2461,104 @@ PrintNvidiaGpuMemory(double mib_to_gib)
    }
 }
 
+#if defined(__linux__)
+typedef struct
+{
+   char               pci_busid[20];
+   unsigned long long total, used;
+} AmdVramInfo;
+
+static int
+CompareAmdVramByBusId(const void *a, const void *b)
+{
+   return strcmp(((const AmdVramInfo *)a)->pci_busid,
+                 ((const AmdVramInfo *)b)->pci_busid);
+}
+
+static int
+ReadSysfsUll(const char *path, unsigned long long *value)
+{
+   FILE *fp = fopen(path, "r");
+   int   ok = fp && fscanf(fp, "%llu", value) == 1;
+   if (fp)
+   {
+      fclose(fp);
+   }
+   return ok;
+}
+
+/* Prints AMD GPU memory from the amdgpu sysfs counters (what amd-smi reports),
+ * numbering GPUs in PCI bus order like amd-smi. Returns the number printed. */
+static int
+PrintAmdGpuMemorySysfs(double bytes_to_gib)
+{
+   AmdVramInfo    gpus[16];
+   int            count = 0;
+   DIR           *dir   = opendir("/sys/class/drm");
+   struct dirent *entry = NULL;
+
+   if (!dir)
+   {
+      return 0;
+   }
+   while ((entry = readdir(dir)) != NULL && count < (int)(sizeof(gpus) / sizeof(gpus[0])))
+   {
+      int  card_number = -1;
+      char trailing    = '\0';
+      char path[PATH_MAX];
+      char driver[32];
+
+      if (sscanf(entry->d_name, "card%d%c", &card_number, &trailing) != 1)
+      {
+         continue;
+      }
+      snprintf(path, sizeof(path), "/sys/class/drm/%s/device/uevent", entry->d_name);
+      if (!ReadUeventValue(path, "DRIVER", driver, sizeof(driver)) ||
+          strcmp(driver, "amdgpu") != 0 ||
+          !ReadUeventValue(path, "PCI_SLOT_NAME", gpus[count].pci_busid,
+                           sizeof(gpus[count].pci_busid)))
+      {
+         continue;
+      }
+      snprintf(path, sizeof(path), "/sys/class/drm/%s/device/mem_info_vram_total",
+               entry->d_name);
+      if (!ReadSysfsUll(path, &gpus[count].total) || gpus[count].total == 0)
+      {
+         continue;
+      }
+      snprintf(path, sizeof(path), "/sys/class/drm/%s/device/mem_info_vram_used",
+               entry->d_name);
+      if (!ReadSysfsUll(path, &gpus[count].used))
+      {
+         continue;
+      }
+      count++;
+   }
+   closedir(dir);
+
+   qsort(gpus, (size_t)count, sizeof(gpus[0]), CompareAmdVramByBusId);
+   for (int i = 0; i < count; i++)
+   {
+      printf("GPU RAM AMD #%d        : %6.2f / %6.2f  (%5.2f %%) GiB\n", i,
+             (double)gpus[i].used / bytes_to_gib, (double)gpus[i].total / bytes_to_gib,
+             100.0 * (double)gpus[i].used / (double)gpus[i].total);
+   }
+   return count;
+}
+#endif
+
 static void
 PrintAmdGpuMemory(double bytes_to_gib)
 {
    int    gcount = 0;
    size_t total = 0, used = 0;
+#if defined(__linux__)
+   /* The amdgpu sysfs counters avoid a slow amd-smi (Python) run. */
+   if (PrintAmdGpuMemorySysfs(bytes_to_gib) > 0)
+   {
+      return;
+   }
+#endif
    /* AMD GPU Memory Information */
    {
       char amd_path[PATH_MAX];
@@ -2611,7 +2634,8 @@ PrintAmdGpuMemory(double bytes_to_gib)
                   }
                }
 
-               // Move to next GPU entry
+               // Move to next GPU entry (stop on a "gpu" key without a value)
+               if (!ptr) break;
                ptr = strstr(ptr, "}");
                if (ptr) ptr++;
                else break;
@@ -2660,6 +2684,19 @@ PrintIntelGpuMemory(double bytes_to_gib)
    }
 }
 
+/* Per-rank accelerator binding strings gathered on rank 0. */
+static void
+PrintAcceleratorBinding(const char *gpuBindingAll, int nprocs)
+{
+   printf("Accelerator Binding (per rank)\n");
+   printf("-------------------------------\n");
+   for (int r = 0; r < nprocs; r++)
+   {
+      printf("Rank %-3d              : %s\n", r,
+             gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
+   }
+}
+
 /* Legacy system-information report, section 2: host and accelerator memory. */
 static void
 PrintLegacyMemorySection(int nprocs, double bytes_to_gib, double mib_to_gib,
@@ -2684,22 +2721,15 @@ PrintLegacyMemorySection(int nprocs, double bytes_to_gib, double mib_to_gib,
 
    if (gpuBindingAll)
    {
-      printf("Accelerator Binding (per rank)\n");
-      printf("-------------------------------\n");
-      for (int r = 0; r < nprocs; r++)
-      {
-         printf("Rank %-3d              : %s\n", r,
-                gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
-      }
+      PrintAcceleratorBinding(gpuBindingAll, nprocs);
    }
 }
 
-/* Legacy system-information report, section 3: operating system identity. */
+/* Operating system identity (shared by the legacy and hwloc reports). */
 static void
-PrintLegacyOsSection(void)
+PrintOsSection(void)
 {
-   // 3. OS system info, release, version, machine
-   printf("\nOperating System\n");
+   printf("Operating System\n");
    printf("-----------------\n");
    struct utsname sysinfo;
    if (uname(&sysinfo) == 0)
@@ -2712,11 +2742,10 @@ PrintLegacyOsSection(void)
    }
 }
 
-/* Legacy system-information report, section 5: current working directory. */
+/* Current working directory (shared by the legacy and hwloc reports). */
 static void
-PrintLegacyCwdSection(void)
+PrintCwdSection(void)
 {
-   // 5. Current working directory
    printf("Current Working Directory\n");
    printf("--------------------------\n");
    char cwd[4096];
@@ -2726,11 +2755,10 @@ PrintLegacyCwdSection(void)
    }
 }
 
-/* Legacy system-information report, section 6: loaded dynamic libraries. */
+/* Loaded dynamic libraries (shared by the legacy and hwloc reports). */
 static void
-PrintLegacyDynamicLibrariesSection(void)
+PrintDynamicLibrariesSection(void)
 {
-   // 6. Dynamic libraries used
    printf("Dynamic Libraries Loaded\n");
    printf("------------------------\n");
 #ifdef __APPLE__
@@ -2790,13 +2818,14 @@ hypredrv_PrintSystemInfoLegacy(MPI_Comm comm)
 
       PrintLegacyMemorySection(nprocs, bytes_to_gib, mib_to_gib, gpuBindingAll);
 
-      PrintLegacyOsSection();
+      printf("\n");
+      PrintOsSection();
 
       PrintCompilationInfo();
 
-      PrintLegacyCwdSection();
+      PrintCwdSection();
 
-      PrintLegacyDynamicLibrariesSection();
+      PrintDynamicLibrariesSection();
 
       PrintMpiRuntimeInformation(comm);
       PrintThreadingEnvironmentInformation();
@@ -3899,6 +3928,10 @@ PrintThreadAffinity(MPI_Comm comm, GpuInfo *gpus, int gpu_count)
    {
       printf("\n");
    }
+#else
+   (void)comm;
+   (void)gpus;
+   (void)gpu_count;
 #endif
 }
 
@@ -4071,59 +4104,6 @@ PrintMemoryInformation(double bytes_to_gib, double mib_to_gib)
 }
 
 static void
-PrintOperatingSystemInfo(void)
-{
-   printf("Operating System\n");
-   printf("-----------------\n");
-   struct utsname sysinfo;
-   if (uname(&sysinfo) == 0)
-   {
-      printf("System Name           : %s\n", sysinfo.sysname);
-      printf("Node Name             : %s\n", sysinfo.nodename);
-      printf("Release               : %s\n", sysinfo.release);
-      printf("Version               : %s\n", sysinfo.version);
-      printf("Machine Architecture  : %s\n\n", sysinfo.machine);
-   }
-}
-
-static void
-PrintWorkingDirectory(void)
-{
-   printf("Current Working Directory\n");
-   printf("--------------------------\n");
-   char cwd[4096];
-   if (getcwd(cwd, sizeof(cwd)) != NULL)
-   {
-      printf("%s\n\n", cwd);
-   }
-}
-
-static void
-PrintDynamicLibraries(void)
-{
-   printf("Dynamic Libraries Loaded\n");
-   printf("------------------------\n");
-#ifdef __APPLE__
-   uint32_t dcount = _dyld_image_count();
-   for (uint32_t i = 0; i < dcount; i++)
-   {
-      const char               *name     = _dyld_get_image_name(i);
-      const struct mach_header *header   = _dyld_get_image_header(i);
-      const char               *filename = strrchr(name, '/');
-
-      filename = filename ? filename + 1 : name;
-      printf("   %s => %s (0x%lx)\n", filename, name, (unsigned long)header);
-   }
-#else
-   if (!PrintDynamicLibrariesTree())
-   {
-      dl_iterate_phdr(hypredrv_dlpi_callback, NULL);
-   }
-#endif
-   printf("\n");
-}
-
-static void
 PrintRunningInfo(MPI_Comm comm)
 {
    int myid = 0, nprocs = 0;
@@ -4214,13 +4194,7 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
       // 8. Accelerator Binding (per rank)
       if (gpuBindingAll)
       {
-         printf("Accelerator Binding (per rank)\n");
-         printf("-------------------------------\n");
-         for (int r = 0; r < nprocs; r++)
-         {
-            printf("Rank %-3d              : %s\n", r,
-                   gpuBindingAll + (size_t)r * HYPRE_MAX_GPU_BINDING);
-         }
+         PrintAcceleratorBinding(gpuBindingAll, nprocs);
          printf("\n");
       }
 
@@ -4238,7 +4212,7 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
       PrintTopologyTree();
 
       // 12. Operating System
-      PrintOperatingSystemInfo();
+      PrintOsSection();
 
       // 13. Compilation Information
       PrintCompilationInfo();
@@ -4255,10 +4229,10 @@ hypredrv_PrintSystemInfoHwloc(MPI_Comm comm)
 #endif
 
       // 17. Current Working Directory
-      PrintWorkingDirectory();
+      PrintCwdSection();
 
       // 18. Dynamic Libraries
-      PrintDynamicLibraries();
+      PrintDynamicLibrariesSection();
 
       // 19. hwloc Information
       printf("hwloc Information\n");
@@ -4673,90 +4647,118 @@ PrintNetworkInformation(void)
 static int
 PrintNvidiaRuntimeInfo(void)
 {
-   int printed = 0;
+   char  nvidia_path[PATH_MAX];
+   char  output[32768];
+   char  caps[64][32];
+   int   cap_count    = 0;
+   int   printed      = 0;
+   int   have_caps    = 1;
+   char *saveptr      = NULL;
+   char *line         = NULL;
+   char *query_both[] = {nvidia_path, "--query-gpu=driver_version,compute_cap",
+                         "--format=csv,noheader", NULL};
+   char *query_drv[]  = {nvidia_path, "--query-gpu=driver_version",
+                         "--format=csv,noheader", NULL};
 
+   if (!FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
    {
-      char nvidia_path[PATH_MAX];
-      if (FindExecutableInPath("nvidia-smi", nvidia_path, sizeof(nvidia_path)))
+      return 0;
+   }
+
+   /* One nvidia-smi run for both fields ("<driver>, <cap>" per GPU); drivers
+    * that predate the compute_cap field only report the driver version. */
+   if (!RunCommandCapture(nvidia_path, query_both, 1, output, sizeof(output)))
+   {
+      have_caps = 0;
+      if (!RunCommandCapture(nvidia_path, query_drv, 1, output, sizeof(output)))
       {
-         {
-            char  output[32768];
-            char *first_driver = NULL;
-            char *argv[]       = {nvidia_path, "--query-gpu=driver_version",
-                                  "--format=csv,noheader", NULL};
-
-            if (RunCommandCapture(nvidia_path, argv, 1, output, sizeof(output)))
-            {
-               first_driver = strtok(output, "\n");
-               if (first_driver)
-               {
-                  hypredrv_TrimTrailingWhitespace(first_driver);
-                  if (first_driver[0] != '\0')
-                  {
-                     printf("NVIDIA driver         : %s\n", first_driver);
-                     printed = 1;
-                  }
-               }
-            }
-         }
-
-         {
-            char  output[32768];
-            char *argv[] = {nvidia_path, "--query-gpu=compute_cap",
-                            "--format=csv,noheader", NULL};
-            if (RunCommandCapture(nvidia_path, argv, 1, output, sizeof(output)))
-            {
-               char  caps[64][32];
-               int   cap_count = 0;
-               char *entry     = NULL;
-               char *saveptr   = NULL;
-
-               entry = strtok_r(output, "\n", &saveptr);
-               while (entry)
-               {
-                  int duplicate = 0;
-                  hypredrv_TrimTrailingWhitespace(entry);
-                  if (entry[0] != '\0')
-                  {
-                     for (int i = 0; i < cap_count; i++)
-                     {
-                        if (strcmp(caps[i], entry) == 0)
-                        {
-                           duplicate = 1;
-                           break;
-                        }
-                     }
-                     if (!duplicate && cap_count < (int)(sizeof(caps) / sizeof(caps[0])))
-                     {
-                        snprintf(caps[cap_count], sizeof(caps[cap_count]), "%s", entry);
-                        cap_count++;
-                     }
-                  }
-                  entry = strtok_r(NULL, "\n", &saveptr);
-               }
-
-               if (cap_count > 0)
-               {
-                  qsort(caps, (size_t)cap_count, sizeof(caps[0]), CompareFixedStrings);
-                  for (int i = 0; i < cap_count; i++)
-                  {
-                     if (i == 0)
-                     {
-                        printf("CUDA comp. capability : %s\n", caps[i]);
-                     }
-                     else
-                     {
-                        printf("                        %s\n", caps[i]);
-                     }
-                     printed = 1;
-                  }
-               }
-            }
-         }
+         return 0;
       }
    }
 
+   for (line = strtok_r(output, "\n", &saveptr); line;
+        line = strtok_r(NULL, "\n", &saveptr))
+   {
+      char *cap = have_caps ? strchr(line, ',') : NULL;
+      if (cap)
+      {
+         *cap++ = '\0';
+         while (*cap == ' ')
+         {
+            cap++;
+         }
+         hypredrv_TrimTrailingWhitespace(cap);
+      }
+      hypredrv_TrimTrailingWhitespace(line);
+
+      if (!printed && line[0] != '\0')
+      {
+         printf("NVIDIA driver         : %s\n", line);
+         printed = 1;
+      }
+
+      int duplicate = 0;
+      for (int i = 0; cap && cap[0] != '\0' && i < cap_count; i++)
+      {
+         duplicate |= !strcmp(caps[i], cap);
+      }
+      if (cap && cap[0] != '\0' && !duplicate &&
+          cap_count < (int)(sizeof(caps) / sizeof(caps[0])))
+      {
+         snprintf(caps[cap_count], sizeof(caps[cap_count]), "%s", cap);
+         cap_count++;
+      }
+   }
+
+   if (cap_count > 0)
+   {
+      qsort(caps, (size_t)cap_count, sizeof(caps[0]), CompareFixedStrings);
+      for (int i = 0; i < cap_count; i++)
+      {
+         printf("%s%s\n",
+                (i == 0) ? "CUDA comp. capability : " : "                        ",
+                caps[i]);
+      }
+      printed = 1;
+   }
+
    return printed;
+}
+
+/* Reads the first line of `<root>/.info/version` from the ROCm installation that
+ * contains `path` (searching a few parent directories). Returns 1 on success. */
+static int
+ReadRocmInstallVersion(const char *path, char *version, size_t len)
+{
+   char dir[PATH_MAX];
+
+   snprintf(dir, sizeof(dir), "%s", path);
+   for (int depth = 0; depth < 4; depth++)
+   {
+      char *slash = strrchr(dir, '/');
+      char  file[PATH_MAX + 16];
+      FILE *fp = NULL;
+
+      if (!slash || slash == dir)
+      {
+         return 0;
+      }
+      *slash = '\0';
+      snprintf(file, sizeof(file), "%s/.info/version", dir);
+      fp = fopen(file, "r");
+      if (fp)
+      {
+         int ok = fgets(version, (int)len, fp) != NULL;
+         fclose(fp);
+         if (ok)
+         {
+            hypredrv_TrimTrailingWhitespace(version);
+            return version[0] != '\0';
+         }
+         return 0;
+      }
+   }
+   return 0;
 }
 
 static int
@@ -4766,7 +4768,15 @@ PrintAmdRuntimeInfo(void)
 
    {
       char amd_path[PATH_MAX];
-      if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)))
+      char rocm_version[64];
+      if (FindExecutableInPath("amd-smi", amd_path, sizeof(amd_path)) &&
+          ReadRocmInstallVersion(amd_path, rocm_version, sizeof(rocm_version)))
+      {
+         /* The installation records its ROCm version: skip a slow amd-smi run. */
+         printf("AMD driver            : ROCm %s\n", rocm_version);
+         printed = 1;
+      }
+      else if (amd_path[0] != '\0')
       {
          {
             char  output[32768];
@@ -4896,6 +4906,44 @@ QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *used)
 
 #endif /* __APPLE__ */
 
+/* Format the current local time; returns 1 on success. */
+static int
+FormatLocalTime(char *buffer, size_t len)
+{
+   time_t    t = time(NULL);
+   struct tm tm_buf;
+
+   return localtime_r(&t, &tm_buf) && strftime(buffer, len, "%Y-%m-%d %H:%M:%S", &tm_buf);
+}
+
+/*--------------------------------------------------------------------------
+ * PrintExitInfo
+ *--------------------------------------------------------------------------*/
+
+void
+hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
+{
+   int myid = 0;
+
+   MPI_Comm_rank(comm, &myid);
+
+   if (!myid)
+   {
+      char buffer[100];
+      char driver_name[PATH_MAX];
+
+      if (!FormatLocalTime(buffer, sizeof(buffer)))
+      {
+         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
+      }
+
+      ResolveDriverName(argv0, driver_name, sizeof(driver_name));
+      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
+   }
+}
+
+#endif /* _WIN32 */
+
 /*--------------------------------------------------------------------------
  * PrintLibInfo
  *--------------------------------------------------------------------------*/
@@ -4909,19 +4957,11 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 
    if (!myid)
    {
-      if (print_datetime)
-      {
-         time_t    t = 0;
-         struct tm tm_buf;
-         char      buffer[100];
+      char buffer[100];
 
-         /* Get current time */
-         time(&t);
-         if (localtime_r(&t, &tm_buf))
-         {
-            strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
-            printf("Date and time: %s\n", buffer);
-         }
+      if (print_datetime && FormatLocalTime(buffer, sizeof(buffer)))
+      {
+         printf("Date and time: %s\n", buffer);
       }
 
 #if defined(HYPREDRV_DEVELOP_STRING) && defined(HYPREDRV_BRANCH_NAME)
@@ -4938,7 +4978,7 @@ hypredrv_PrintLibInfo(MPI_Comm comm, int print_datetime)
 #if defined(HYPRE_DEVELOP_STRING) && defined(HYPRE_BRANCH_NAME)
       printf("Using HYPRE_DEVELOP_STRING: %s (%s)\n", HYPRE_DEVELOP_STRING,
              HYPRE_BRANCH_NAME);
-#elif defined(HYPRE_DEVELOP_STRING) && !defined(HYPRE_BRANCH_NAME)
+#elif defined(HYPRE_DEVELOP_STRING)
       printf("Using HYPRE_DEVELOP_STRING: %s\n", HYPRE_DEVELOP_STRING);
 #elif defined(HYPRE_RELEASE_VERSION)
       printf("Using HYPRE_RELEASE_VERSION: %s\n", HYPRE_RELEASE_VERSION);
@@ -4985,39 +5025,3 @@ hypredrv_PrintExecutionPolicy(MPI_Comm comm, int exec_policy, FILE *stream)
               hypredrv_ExecutionPolicyName(exec_policy));
    }
 }
-
-/*--------------------------------------------------------------------------
- * PrintExitInfo
- *--------------------------------------------------------------------------*/
-
-void
-hypredrv_PrintExitInfo(MPI_Comm comm, const char *argv0)
-{
-   int myid = 0;
-
-   MPI_Comm_rank(comm, &myid);
-
-   if (!myid)
-   {
-      char      buffer[100];
-      char      driver_name[PATH_MAX];
-      time_t    t = 0;
-      struct tm tm_buf;
-
-      /* Get current time */
-      time(&t);
-      if (localtime_r(&t, &tm_buf))
-      {
-         strftime(buffer, sizeof(buffer), "%Y-%m-%d %H:%M:%S", &tm_buf);
-      }
-      else
-      {
-         (void)snprintf(buffer, sizeof(buffer), "(time unavailable)");
-      }
-
-      ResolveDriverName(argv0, driver_name, sizeof(driver_name));
-      printf("Date and time: %s\n%s done!\n", buffer, driver_name);
-   }
-}
-
-#endif /* _WIN32 */

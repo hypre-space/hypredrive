@@ -100,6 +100,9 @@ write_basic_package_version_file(
 set(HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS "")
 set(HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES "")
 set(HYPREDRV_CONFIG_CALIPER_DIR "")
+set(_hypredrv_build_hypre_include_dirs "")
+set(_hypredrv_build_hypre_link_libraries "")
+set(_hypredrv_build_caliper_dir "")
 set(HYPREDRV_CONFIG_NEEDS_ZLIB OFF)
 set(HYPREDRV_CONFIG_NEEDS_MPI OFF)
 set(HYPREDRV_CONFIG_ENABLE_FORTRAN ${HYPREDRV_ENABLE_FORTRAN})
@@ -178,6 +181,10 @@ if(TARGET HYPRE::HYPRE AND _hypredrv_config_hypre_imported)
     if(NOT HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES)
         set(HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES "")
     endif()
+    # Build-directory consumers need the original dependency locations rather
+    # than paths rewritten relative to the installation prefix.
+    set(_hypredrv_build_hypre_include_dirs "${HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS}")
+    set(_hypredrv_build_hypre_link_libraries "${HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES}")
     _hypredrv_make_package_relative_list(
         HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS
         ${HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS})
@@ -189,6 +196,7 @@ if(TARGET ZLIB::ZLIB)
     set(HYPREDRV_CONFIG_NEEDS_ZLIB ON)
 endif()
 if(TARGET caliper AND caliper_DIR)
+    set(_hypredrv_build_caliper_dir "${caliper_DIR}")
     _hypredrv_make_package_relative_list(
         HYPREDRV_CONFIG_CALIPER_DIR "${caliper_DIR}")
 endif()
@@ -198,9 +206,11 @@ if(_hypredrv_hypredrv_links_mpi OR _hypredrv_hypre_links_mpi)
     set(HYPREDRV_CONFIG_NEEDS_MPI ON)
 endif()
 
+set(_hypredrv_install_config_file
+    "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/install-config/HYPREDRVConfig.cmake")
 configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRVConfig.cmake.in"
-    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfig.cmake"
+    "${_hypredrv_install_config_file}"
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/HYPREDRV
 )
 
@@ -212,9 +222,21 @@ install(EXPORT HYPREDRVTargets
 
 # Install the Config files
 install(FILES
-    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfig.cmake"
+    "${_hypredrv_install_config_file}"
     "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/HYPREDRV
+)
+
+# The build-directory config lives next to HYPREDRVTargets.cmake, not under
+# lib/cmake/HYPREDRV. Give it its own prefix calculation and dependency paths.
+set(HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS "${_hypredrv_build_hypre_include_dirs}")
+set(HYPREDRV_CONFIG_HYPRE_LINK_LIBRARIES "${_hypredrv_build_hypre_link_libraries}")
+set(HYPREDRV_CONFIG_CALIPER_DIR "${_hypredrv_build_caliper_dir}")
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRVConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfig.cmake"
+    INSTALL_DESTINATION .
+    INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 # Export the targets for use in the build tree only when non-imported
