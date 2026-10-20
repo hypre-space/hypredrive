@@ -39,7 +39,7 @@ typedef struct Schwarz_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_SchwarzSetDefaultArgs(Schwarz_args *);
-void hypredrv_SchwarzSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_SchwarzSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_SchwarzCreate(const Schwarz_args *, HYPRE_Solver *);
 
 #endif /* SCHWARZ_HEADER */

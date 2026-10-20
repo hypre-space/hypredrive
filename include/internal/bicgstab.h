@@ -34,7 +34,7 @@ typedef struct BiCGSTAB_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-void hypredrv_BiCGSTABSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_BiCGSTABSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_BiCGSTABCreate(MPI_Comm, const BiCGSTAB_args *, HYPRE_Solver *);
 
 #endif /* BICGSTAB_HEADER */

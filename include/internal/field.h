@@ -12,7 +12,7 @@
 #include "internal/containers.h"
 #include "internal/yaml.h"
 
-typedef void (*SetterFnc)(void *, const YAMLnode *);
+typedef void (*SetterFnc)(void *, YAMLnode *);
 
 typedef struct FieldOffsetMap_struct
 {
@@ -36,16 +36,16 @@ typedef struct FieldOffsetMap_struct
  * Prototypes
  *-----------------------------------------------------------------------------*/
 
-void hypredrv_FieldOffsetMapSet(const FieldOffsetMap *, void *, const YAMLnode *);
-void hypredrv_FieldTypeIntSet(void *, const YAMLnode *);
-void hypredrv_FieldTypeNonNegIntSet(void *, const YAMLnode *);
-void hypredrv_FieldTypePositiveIntSet(void *, const YAMLnode *);
-void hypredrv_FieldTypeIntArraySet(void *, const YAMLnode *);
-void hypredrv_FieldTypeStackIntArraySet(void *, const YAMLnode *);
-void hypredrv_FieldTypeDoubleSet(void *, const YAMLnode *);
-void hypredrv_FieldTypeDoubleArraySet(void *, const YAMLnode *);
-void hypredrv_FieldTypeCharSet(void *, const YAMLnode *);
-void hypredrv_FieldTypeStringSet(void *, const YAMLnode *);
-void hypredrv_FieldTypeNoopSet(void *, const YAMLnode *);
+void hypredrv_FieldOffsetMapSet(const FieldOffsetMap *, void *, YAMLnode *);
+void hypredrv_FieldTypeIntSet(void *, YAMLnode *);
+void hypredrv_FieldTypeNonNegIntSet(void *, YAMLnode *);
+void hypredrv_FieldTypePositiveIntSet(void *, YAMLnode *);
+void hypredrv_FieldTypeIntArraySet(void *, YAMLnode *);
+void hypredrv_FieldTypeStackIntArraySet(void *, YAMLnode *);
+void hypredrv_FieldTypeDoubleSet(void *, YAMLnode *);
+void hypredrv_FieldTypeDoubleArraySet(void *, YAMLnode *);
+void hypredrv_FieldTypeCharSet(void *, YAMLnode *);
+void hypredrv_FieldTypeStringSet(void *, YAMLnode *);
+void hypredrv_FieldTypeNoopSet(void *, YAMLnode *);
 
 #endif /* FIELD_HEADER */

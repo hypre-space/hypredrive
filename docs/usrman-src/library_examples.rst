@@ -263,7 +263,9 @@ This example shows a minimal library program:
 - Ownership follows library mode. After ``HYPREDRV_SetLibraryMode``, hypredrive
   borrows non-``NULL`` HYPRE objects from the caller. The caller retains ownership.
   Without library mode, hypredrive owns non-``NULL`` objects from these setters.
-  It destroys these objects with the ``HYPREDRV_t`` object.
+  It destroys these objects with the ``HYPREDRV_t`` object. Call
+  ``HYPREDRV_SetLibraryMode`` before attaching any object; a later call fails.
+  State vectors passed to ``HYPREDRV_StateVectorSet`` stay caller-owned in both modes.
 
 .. note::
    The ``preconditioner.reuse`` YAML subsection controls reuse across a system sequence.

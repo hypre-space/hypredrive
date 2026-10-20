@@ -38,6 +38,19 @@ hypredrv_fortran_bigint_from_i64(int64_t value, const char *name, HYPRE_BigInt *
    return HYPREDRV_SUCCESS;
 }
 
+/* Rows in [row_start, row_end], or -1 for an invalid range; overflow-free for any
+ * int64 input. */
+static int64_t
+hypredrv_fortran_num_rows(int64_t row_start, int64_t row_end)
+{
+   if (row_end < row_start)
+   {
+      return -1;
+   }
+   uint64_t span = (uint64_t)row_end - (uint64_t)row_start; /* exact when end >= start */
+   return (span >= (uint64_t)INT64_MAX) ? -1 : (int64_t)span + 1;
+}
+
 size_t
 HYPREDRV_FortranBigIntSize(void)
 {
@@ -98,13 +111,8 @@ HYPREDRV_FortranLinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_st
       return HYPREDRV_ErrorInvalidValue("Fortran CSR input pointer is NULL");
    }
 
-   /* Guard the subtraction against overflow before computing nrows. */
-   if (row_end_in < row_start_in)
-   {
-      return HYPREDRV_ErrorInvalidValue("Fortran CSR row_end must be >= row_start");
-   }
-   int64_t nrows = row_end_in - row_start_in + 1;
-   if (nrows <= 0 || indptr_len != nrows + 1)
+   int64_t nrows = hypredrv_fortran_num_rows(row_start_in, row_end_in);
+   if (nrows <= 0 || indptr_len - 1 != nrows)
    {
       return HYPREDRV_ErrorInvalidValue(
          "Fortran CSR indptr length does not match row range");
@@ -178,7 +186,7 @@ HYPREDRV_FortranLinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_sta
       return ierr;
    }
 
-   int64_t nrows = row_end_in - row_start_in + 1;
+   int64_t nrows = hypredrv_fortran_num_rows(row_start_in, row_end_in);
    if (nrows <= 0 || values_len != nrows)
    {
       return HYPREDRV_ErrorInvalidValue("Fortran RHS length does not match row range");

@@ -22,24 +22,6 @@ if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(convdif)
 endif()
 
-# If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
-if(HYPREDRV_ENABLE_CALIPER)
-    enable_language(CXX OPTIONAL)
-    if(CMAKE_CXX_COMPILER)
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            target_link_libraries(convdif PRIVATE stdc++)
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-            # Clang can use either libstdc++ or libc++
-            # Default to stdc++ on Linux
-            if(UNIX AND NOT APPLE)
-                target_link_libraries(convdif PRIVATE stdc++)
-            else()
-                target_link_libraries(convdif PRIVATE c++)
-            endif()
-        endif()
-    endif()
-endif()
-
 # Apply sanitizer link flags if sanitizers are enabled
 get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
 get_property(_sanitizer_flags GLOBAL PROPERTY HYPREDRV_SANITIZER_LINK_FLAGS)

@@ -989,11 +989,11 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
 
    /* Push onto level stack - allocate memory for name */
    size_t name_len                = strlen(name) + 1;
-   stats->level_stack[level].name = (const char *)malloc(name_len);
+   stats->level_stack[level].name = (char *)malloc(name_len);
    /* GCOVR_EXCL_BR_START */
    if (stats->level_stack[level].name) /* GCOVR_EXCL_BR_STOP */
    {
-      memcpy((void *)stats->level_stack[level].name, name, name_len);
+      memcpy(stats->level_stack[level].name, name, name_len);
    }
    stats->level_stack[level].level      = level;
    stats->level_stack[level].start_time = MPI_Wtime();
@@ -1119,7 +1119,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
    /* GCOVR_EXCL_BR_START */
    if (stats->level_stack[level].name) /* GCOVR_EXCL_BR_STOP */
    {
-      free((void *)stats->level_stack[level].name);
+      free(stats->level_stack[level].name);
       stats->level_stack[level].name = NULL;
    }
    stats->level_stack[level].level = -1;

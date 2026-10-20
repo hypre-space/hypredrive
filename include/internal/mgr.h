@@ -203,7 +203,7 @@ hypredrv_MGRNumFineLevels(const MGR_args *args)
  *--------------------------------------------------------------------------*/
 
 void hypredrv_MGRSetDefaultArgs(MGR_args *);
-void hypredrv_MGRSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_MGRSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_MGRSetDofmap(MGR_args *, IntArray *);
 void hypredrv_MGRSetDofLabels(const DofLabelMap *);
 void hypredrv_MGRSetNearNullSpace(MGR_args *, HYPRE_IJVector);

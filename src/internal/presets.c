@@ -15,17 +15,17 @@
 #include <string.h>
 
 /* Pre-defined preconditioner variants */
-static const char preset_poisson[] = "amg"; /* Note: no ":" required */
+static char preset_poisson[] = "amg"; /* Note: no ":" required */
 
-static const char preset_elasticity_2d[] = "amg:\n"
-                                           "  coarsening:\n"
-                                           "    num_functions: 2\n"
-                                           "    strong_th: 0.8";
+static char preset_elasticity_2d[] = "amg:\n"
+                                     "  coarsening:\n"
+                                     "    num_functions: 2\n"
+                                     "    strong_th: 0.8";
 
-static const char preset_elasticity_3d[] = "amg:\n"
-                                           "  coarsening:\n"
-                                           "    num_functions: 3\n"
-                                           "    strong_th: 0.8";
+static char preset_elasticity_3d[] = "amg:\n"
+                                     "  coarsening:\n"
+                                     "    num_functions: 3\n"
+                                     "    strong_th: 0.8";
 
 static const hypredrv_Preset g_presets[] = {
    HYPREDRV_PRESET(poisson, HYPREDRV_PRESET_PRECON, "BoomerAMG for poisson"),
@@ -178,9 +178,9 @@ hypredrv_PresetFreeUserPresets(void)
 {
    for (size_t i = 0; i < g_num_user_presets; i++)
    {
-      free((char *)g_user_presets[i].name);
-      free((char *)g_user_presets[i].text);
-      free((char *)g_user_presets[i].help);
+      free(g_user_presets[i].name);
+      free(g_user_presets[i].text);
+      free(g_user_presets[i].help);
    }
    free(g_user_presets);
    g_user_presets     = NULL;

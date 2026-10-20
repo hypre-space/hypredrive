@@ -773,12 +773,12 @@ PrintSystemLookupName(const PrintSystemNameMap *table, size_t count, const char 
 static void
 PrintSystemMarkSequenceItemsValid(const YAMLnode *child)
 {
-   for (const YAMLnode *item = child->children; item != NULL; item = item->next)
+   for (YAMLnode *item = child->children; item != NULL; item = item->next)
    {
       /* GCOVR_EXCL_BR_START */
       if (!strcmp(item->key, "-")) /* GCOVR_EXCL_BR_STOP */
       {
-         ((YAMLnode *)item)->valid = YAML_NODE_VALID;
+         item->valid = YAML_NODE_VALID;
       }
    }
 }
@@ -1018,7 +1018,7 @@ PrintSystemParseSelectorList(const YAMLnode *child, DumpSelector_args *selectors
 {
    size_t selector_idx = 0;
 
-   for (const YAMLnode *item = child->children; item != NULL; item = item->next)
+   for (YAMLnode *item = child->children; item != NULL; item = item->next)
    {
       /* GCOVR_EXCL_BR_START */
       if (strcmp(item->key, "-") != 0) /* GCOVR_EXCL_BR_STOP */
@@ -1039,7 +1039,7 @@ PrintSystemParseSelectorList(const YAMLnode *child, DumpSelector_args *selectors
             (int)selector_idx);
          return 0;
       }
-      ((YAMLnode *)item)->valid = YAML_NODE_VALID;
+      item->valid = YAML_NODE_VALID;
       selector_idx++;
    }
 
@@ -1111,8 +1111,7 @@ static const PrintSystemKeyHandler kPrintSystemKeys[] = {
 
 /* Applies one child node of the print_system mapping. */
 static int
-PrintSystemApplyChild(PrintSystem_args *args, const YAMLnode *child,
-                      PrintSystemSeenKeys *seen)
+PrintSystemApplyChild(PrintSystem_args *args, YAMLnode *child, PrintSystemSeenKeys *seen)
 {
    /* GCOVR_EXCL_BR_START */
    const char *value = child->mapped_val ? child->mapped_val : child->val;
@@ -1128,7 +1127,7 @@ PrintSystemApplyChild(PrintSystem_args *args, const YAMLnode *child,
       {
          return 0;
       }
-      ((YAMLnode *)child)->valid = YAML_NODE_VALID;
+      child->valid = YAML_NODE_VALID;
       return 1;
    }
 
@@ -1287,7 +1286,7 @@ PrintSystemSetArgsFromScalar(PrintSystem_args *args, const YAMLnode *node)
 }
 
 void
-hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
+hypredrv_PrintSystemSetArgs(void *field, YAMLnode *node)
 {
    PrintSystem_args   *args = (PrintSystem_args *)field;
    PrintSystemSeenKeys seen = {0, 0, 0, 0, 0};
@@ -1306,7 +1305,7 @@ hypredrv_PrintSystemSetArgs(void *field, const YAMLnode *node)
       return;
    }
 
-   for (const YAMLnode *child = node->children; child != NULL; child = child->next)
+   for (YAMLnode *child = node->children; child != NULL; child = child->next)
    {
       if (!PrintSystemApplyChild(args, child, &seen))
       {
@@ -2383,7 +2382,7 @@ PrintSystemChooseDumpLeaf(const PrintSystem_args *cfg, PrintSystem_args *cfg_sta
 }
 
 static int
-PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemContext *ctx,
+PrintSystemChooseDumpDirLocal(PrintSystem_args *cfg, const PrintSystemContext *ctx,
                               const char *object_name, char *dump_dir,
                               size_t dump_dir_size)
 {
@@ -2408,8 +2407,7 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
       return 0; /* GCOVR_EXCL_LINE */
    }
 
-   PrintSystem_args *cfg_state = (PrintSystem_args *)cfg;
-   if (cfg->overwrite && !cfg_state->overwrite_prepared)
+   if (cfg->overwrite && !cfg->overwrite_prepared)
    {
       /* GCOVR_EXCL_BR_START */
       if (PrintSystemPathExists(base_dir) && !PrintSystemRemoveTree(base_dir))
@@ -2417,8 +2415,8 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
       {
          return 0; /* GCOVR_EXCL_LINE */
       }
-      cfg_state->next_dump_index    = 0;
-      cfg_state->overwrite_prepared = 1;
+      cfg->next_dump_index    = 0;
+      cfg->overwrite_prepared = 1;
    }
 
    if (!PrintSystemEnsureDir(base_dir))
@@ -2427,7 +2425,7 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
    }
 
    char candidate[2 * MAX_FILENAME_LENGTH];
-   if (!PrintSystemChooseDumpLeaf(cfg, cfg_state, base_dir, candidate, sizeof(candidate)))
+   if (!PrintSystemChooseDumpLeaf(cfg, cfg, base_dir, candidate, sizeof(candidate)))
    {
       return 0;
    }
@@ -2441,7 +2439,7 @@ PrintSystemChooseDumpDirLocal(const PrintSystem_args *cfg, const PrintSystemCont
 }
 
 static int
-PrintSystemChooseDumpDir(MPI_Comm comm, const PrintSystem_args *cfg,
+PrintSystemChooseDumpDir(MPI_Comm comm, PrintSystem_args *cfg,
                          const PrintSystemContext *ctx, const char *object_name,
                          char *dump_dir, size_t dump_dir_size)
 {
@@ -2679,17 +2677,16 @@ PrintSystemWriteDumpIndex(MPI_Comm comm, const PrintSystem_args *cfg,
 }
 
 uint32_t
-hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, const LS_args *args,
-                                   HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
-                                   HYPRE_IJVector vec_b, HYPRE_IJVector vec_x0,
-                                   HYPRE_IJVector vec_xref, HYPRE_IJVector vec_x,
-                                   const IntArray *dofmap, const PrintSystemContext *ctx,
-                                   const char *object_name)
+hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat_A,
+                                   HYPRE_IJMatrix mat_M, HYPRE_IJVector vec_b,
+                                   HYPRE_IJVector vec_x0, HYPRE_IJVector vec_xref,
+                                   HYPRE_IJVector vec_x, const IntArray *dofmap,
+                                   const PrintSystemContext *ctx, const char *object_name)
 {
-   const PrintSystem_args *cfg = NULL;
-   char                    decision_reason[160];
-   char                    dump_dir[2 * MAX_FILENAME_LENGTH];
-   int                     ls_id_for_log = 0;
+   PrintSystem_args *cfg = NULL;
+   char              decision_reason[160];
+   char              dump_dir[2 * MAX_FILENAME_LENGTH];
+   int               ls_id_for_log = 0;
 
    if (!args || !ctx)
    {

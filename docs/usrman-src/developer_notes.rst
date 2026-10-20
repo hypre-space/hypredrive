@@ -229,6 +229,8 @@ Ownership depends on library mode:
   never destroys them.
 - ``HYPREDRV_SetLibraryMode`` disabled: Ownership transfers to `hypredrive`.
   `hypredrive` can destroy the objects during replacement or object teardown.
+- Setters record ownership when they run, so ``HYPREDRV_SetLibraryMode`` is
+  rejected once any object is attached. State vectors are always caller-owned.
 
 Keep this object-lifetime contract explicit in code comments and user
 documentation.

@@ -11,6 +11,10 @@
 #include <stdio.h>
 #include <string.h>
 #include "internal/containers.h"
+#include "internal/gen_macros.h"
+#include "internal/linsys.h"
+#include "internal/precon.h"
+#include "internal/solver.h"
 #include "internal/utils.h"
 
 typedef StrArray (*HelpGetKeysFunc)(void);
@@ -43,66 +47,6 @@ struct HelpNode_struct
 };
 
 #define ARRAY_SIZE(a) (sizeof(a) / sizeof((a)[0]))
-
-/* Generated/internal schema getters used as read-only metadata. */
-StrArray       hypredrv_GeneralGetValidKeys(void);
-StrIntMapArray hypredrv_GeneralGetValidValues(const char *);
-StrArray       hypredrv_LinearSystemGetValidKeys(void);
-StrIntMapArray hypredrv_LinearSystemGetValidValues(const char *);
-StrArray       hypredrv_EigSpecGetValidKeys(void);
-StrIntMapArray hypredrv_EigSpecGetValidValues(const char *);
-StrArray       hypredrv_ScalingGetValidKeys(void);
-StrIntMapArray hypredrv_ScalingGetValidValues(const char *);
-StrArray       hypredrv_SolverGetValidKeys(void);
-StrIntMapArray hypredrv_SolverGetValidValues(const char *);
-StrIntMapArray hypredrv_SolverGetValidTypeIntMap(void);
-StrArray       hypredrv_PCGGetValidKeys(void);
-StrIntMapArray hypredrv_PCGGetValidValues(const char *);
-StrArray       hypredrv_GMRESGetValidKeys(void);
-StrIntMapArray hypredrv_GMRESGetValidValues(const char *);
-StrArray       hypredrv_FGMRESGetValidKeys(void);
-StrIntMapArray hypredrv_FGMRESGetValidValues(const char *);
-StrArray       hypredrv_BiCGSTABGetValidKeys(void);
-StrIntMapArray hypredrv_BiCGSTABGetValidValues(const char *);
-StrArray       hypredrv_PreconGetValidKeys(void);
-StrIntMapArray hypredrv_PreconGetValidValues(const char *);
-StrIntMapArray hypredrv_PreconGetValidTypeIntMap(void);
-StrArray       hypredrv_AMGGetValidKeys(void);
-StrIntMapArray hypredrv_AMGGetValidValues(const char *);
-StrArray       hypredrv_AMGintGetValidKeys(void);
-StrIntMapArray hypredrv_AMGintGetValidValues(const char *);
-StrArray       hypredrv_AMGaggGetValidKeys(void);
-StrIntMapArray hypredrv_AMGaggGetValidValues(const char *);
-StrArray       hypredrv_AMGcsnGetValidKeys(void);
-StrIntMapArray hypredrv_AMGcsnGetValidValues(const char *);
-StrArray       hypredrv_AMGrlxGetValidKeys(void);
-StrIntMapArray hypredrv_AMGrlxGetValidValues(const char *);
-StrArray       hypredrv_AMGsmtGetValidKeys(void);
-StrIntMapArray hypredrv_AMGsmtGetValidValues(const char *);
-StrArray       hypredrv_ChebyGetValidKeys(void);
-StrIntMapArray hypredrv_ChebyGetValidValues(const char *);
-StrArray       hypredrv_ILUGetValidKeys(void);
-StrIntMapArray hypredrv_ILUGetValidValues(const char *);
-StrArray       hypredrv_FSAIGetValidKeys(void);
-StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
-StrArray       hypredrv_AMSGetValidKeys(void);
-StrIntMapArray hypredrv_AMSGetValidValues(const char *);
-StrArray       hypredrv_ADSGetValidKeys(void);
-StrIntMapArray hypredrv_ADSGetValidValues(const char *);
-StrArray       hypredrv_MGRGetValidKeys(void);
-StrIntMapArray hypredrv_MGRGetValidValues(const char *);
-StrArray       hypredrv_MGRlvlGetValidKeys(void);
-StrIntMapArray hypredrv_MGRlvlGetValidValues(const char *);
-StrArray       hypredrv_MGRclsGetValidKeys(void);
-StrIntMapArray hypredrv_MGRclsGetValidValues(const char *);
-StrArray       hypredrv_MGRfrlxGetValidKeys(void);
-StrIntMapArray hypredrv_MGRfrlxGetValidValues(const char *);
-StrArray       hypredrv_MGRgrlxGetValidKeys(void);
-StrIntMapArray hypredrv_MGRgrlxGetValidValues(const char *);
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-StrArray       hypredrv_SchwarzGetValidKeys(void);
-StrIntMapArray hypredrv_SchwarzGetValidValues(const char *);
-#endif
 
 static StrIntMapArray
 HelpVoidValues(const char *key)

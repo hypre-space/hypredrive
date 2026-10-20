@@ -182,7 +182,7 @@ StrIntMapArray hypredrv_LinearSystemGetValidValues(const char *);
 void hypredrv_LinearSystemSetDefaultArgs(LS_args *);
 void hypredrv_PrintSystemSetDefaultArgs(PrintSystem_args *);
 void hypredrv_PrintSystemDestroyArgs(PrintSystem_args *);
-void hypredrv_PrintSystemSetArgs(void *, const YAMLnode *);
+void hypredrv_PrintSystemSetArgs(void *, YAMLnode *);
 int  hypredrv_PrintSystemNeedsTimestepSchedule(const PrintSystem_args *);
 
 void hypredrv_LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int,
@@ -241,7 +241,7 @@ void hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm, HYPRE_IJMatrix, HYPRE_
                                                 const DofLabelMap *, const char *, int);
 void hypredrv_LinearSystemPrintData(MPI_Comm, LS_args *, HYPRE_IJMatrix, HYPRE_IJVector,
                                     const IntArray *);
-uint32_t hypredrv_LinearSystemDumpScheduled(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
+uint32_t hypredrv_LinearSystemDumpScheduled(MPI_Comm, LS_args *, HYPRE_IJMatrix,
                                             HYPRE_IJMatrix, HYPRE_IJVector,
                                             HYPRE_IJVector, HYPRE_IJVector,
                                             HYPRE_IJVector, const IntArray *,

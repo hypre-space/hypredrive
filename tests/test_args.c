@@ -1096,8 +1096,9 @@ test_InputArgsParse_driver_mode_with_config_file(void)
 {
    /* Test the branch where config file is found anywhere in argv (driver mode) */
    input_args *args        = NULL;
-   char        yaml_file[] = "/tmp/test_config.yml";
-   FILE       *fp          = fopen(yaml_file, "w");
+   char        yaml_file[256];
+   test_scratch_path(yaml_file, sizeof(yaml_file), "test_config.yml");
+   FILE *fp = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
    fprintf(fp, "solver: pcg\npreconditioner: amg\n");
    fclose(fp);
@@ -1151,8 +1152,9 @@ test_InputArgsParse_legacy_mode_with_overrides(void)
 {
    /* Test legacy mode: argv[0] is YAML filename, argv[1..] are override pairs */
    input_args *args        = NULL;
-   char        yaml_file[] = "/tmp/test_config2.yml";
-   FILE       *fp          = fopen(yaml_file, "w");
+   char        yaml_file[256];
+   test_scratch_path(yaml_file, sizeof(yaml_file), "test_config2.yml");
+   FILE *fp = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
    fprintf(fp, "solver: gmres\npreconditioner: amg\n");
    fclose(fp);
@@ -1176,8 +1178,9 @@ static void
 test_InputArgsParse_driver_mode_with_nodash_overrides(void)
 {
    input_args *args        = NULL;
-   char        yaml_file[] = "/tmp/test_config3.yml";
-   FILE       *fp          = fopen(yaml_file, "w");
+   char        yaml_file[256];
+   test_scratch_path(yaml_file, sizeof(yaml_file), "test_config3.yml");
+   FILE *fp = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
    fprintf(fp, "solver: gmres\n"
                "preconditioner:\n"

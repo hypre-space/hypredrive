@@ -21,30 +21,11 @@
 #include "test_ij_helpers.h"
 #include "test_helpers.h"
 #include "internal/yaml.h"
+#include "internal/gen_macros.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
 #define HYPREDRIVE_SOURCE_DIR "."
 #endif
-
-/* Forward declarations */
-void           hypredrv_GMRESSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_GMRESSetDefaultArgs(GMRES_args *);
-StrArray       hypredrv_GMRESGetValidKeys(void);
-StrIntMapArray hypredrv_GMRESGetValidValues(const char *);
-void           hypredrv_PCGSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_PCGSetDefaultArgs(PCG_args *);
-StrIntMapArray hypredrv_PCGGetValidValues(const char *);
-void           hypredrv_BiCGSTABSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-StrIntMapArray hypredrv_BiCGSTABGetValidValues(const char *);
-void           hypredrv_FGMRESSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_FGMRESSetDefaultArgs(FGMRES_args *);
-StrArray       hypredrv_FGMRESGetValidKeys(void);
-StrIntMapArray hypredrv_FGMRESGetValidValues(const char *);
-void           hypredrv_ChebySetFieldByName(void *, const YAMLnode *);
-void           hypredrv_ChebySetDefaultArgs(Cheby_args *);
-StrArray       hypredrv_ChebyGetValidKeys(void);
-StrIntMapArray hypredrv_ChebyGetValidValues(const char *);
 
 typedef struct
 {

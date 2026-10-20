@@ -12,10 +12,10 @@
 
 typedef struct hypredrv_preset_struct
 {
-   const char *name; /* lowercase key */
-   const char *text; /* YAML snippet that expands under `preconditioner:` */
-   const char *help; /* short help text */
-   int         kind; /* hypredrv_PresetKind */
+   char *name; /* lowercase key */
+   char *text; /* YAML snippet that expands under `preconditioner:` */
+   char *help; /* short help text */
+   int   kind; /* hypredrv_PresetKind */
 } hypredrv_Preset;
 
 typedef enum

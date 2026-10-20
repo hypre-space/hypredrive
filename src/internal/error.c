@@ -59,8 +59,8 @@ ErrorWaitChild(pid_t pid)
 }
 
 static int
-ErrorAddr2lineResolve(const char *exe_path, unsigned long offset, char *func,
-                      size_t func_size, char *file, size_t file_size)
+ErrorAddr2lineResolve(char *exe_path, unsigned long offset, char *func, size_t func_size,
+                      char *file, size_t file_size)
 {
    int   pipefd[2] = {-1, -1};
    pid_t child_pid = -1;
@@ -111,7 +111,7 @@ ErrorAddr2lineResolve(const char *exe_path, unsigned long offset, char *func,
 
       {
          char *const argv[] = {
-            "addr2line", "-e", (char *)exe_path, "-f", "-C", "-i", offset_arg, NULL,
+            "addr2line", "-e", exe_path, "-f", "-C", "-i", offset_arg, NULL,
          };
          execvp("addr2line", argv);
       }

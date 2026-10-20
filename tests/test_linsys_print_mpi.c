@@ -62,9 +62,7 @@ test_dump_dir_is_shared_across_ranks(void)
 {
    int myid = 0;
    int nprocs = 0;
-   int root_pid = 0;
-   char outdir[PATH_MAX];
-   char cleanup_cmd[PATH_MAX + 32];
+   char outdir[PATH_MAX] = {0};
    LS_args args;
    IntArray *dofmap = NULL;
    PrintSystemContext ctx;
@@ -72,21 +70,12 @@ test_dump_dir_is_shared_across_ranks(void)
    MPI_Comm_rank(MPI_COMM_WORLD, &myid);
    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
+   /* All ranks share the root rank's private scratch path */
    if (myid == 0)
    {
-      root_pid = getpid();
+      test_scratch_path(outdir, sizeof(outdir), "hypredrive_dump_mpi");
    }
-   MPI_Bcast(&root_pid, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_mpi_%d", root_pid);
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-
-   if (myid == 0)
-   {
-      int cleanup_rc = system(cleanup_cmd);
-      (void)cleanup_rc;
-   }
-   MPI_Barrier(MPI_COMM_WORLD);
+   MPI_Bcast(outdir, (int)sizeof(outdir), MPI_CHAR, 0, MPI_COMM_WORLD);
 
    hypredrv_LinearSystemSetDefaultArgs(&args);
    args.print_system.enabled    = 1;
@@ -156,11 +145,6 @@ test_dump_dir_is_shared_across_ranks(void)
    hypredrv_IntArrayDestroy(&dofmap);
    hypredrv_PrintSystemDestroyArgs(&args.print_system);
 
-   if (myid == 0)
-   {
-      int cleanup_rc = system(cleanup_cmd);
-      (void)cleanup_rc;
-   }
    MPI_Barrier(MPI_COMM_WORLD);
 }
 

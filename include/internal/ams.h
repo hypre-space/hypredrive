@@ -66,7 +66,7 @@ typedef struct AMS_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_AMSSetDefaultArgs(AMS_args *);
-void hypredrv_AMSSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_AMSSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_AMSCreate(const AMS_args *, HYPRE_Solver *);
 
 /* Inject the operator inputs AMS requires (discrete gradient + vertex

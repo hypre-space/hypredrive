@@ -254,6 +254,17 @@ ScalingDofmapResolve(MPI_Comm comm, const char *label, HYPRE_IJMatrix mat_A,
                            dofmap->size, (long long)*num_local_rows_out);
       local_ok = 0;
    }
+   /* hypre indexes per-tag arrays with these labels and only asserts the range */
+   for (size_t i = 0; local_ok && i < dofmap->size; i++)
+   {
+      if (dofmap->data[i] < 0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("%s scaling: negative dofmap label %d at local row %zu",
+                              label, (int)dofmap->data[i], i);
+         local_ok = 0;
+      }
+   }
 
    /* The dofmap is rank-local: agree on its validity before the collective
     * below, so a rank that rejects it cannot leave the others blocked. */

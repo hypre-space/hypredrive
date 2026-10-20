@@ -10,6 +10,7 @@
 #include "internal/containers.h"
 #include "internal/error.h"
 #include "internal/fsai.h"
+#include "internal/gen_macros.h"
 #include "internal/ilu.h"
 #include "internal/krylov.h"
 #include "internal/mgr.h"
@@ -20,44 +21,9 @@
 #include "test_ij_helpers.h"
 
 /* Forward declarations for internal AMG functions */
-void           hypredrv_AMGSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_AMGintSetFieldByName(void *, const YAMLnode *);
 void           hypredrv_AMGintSetDefaultArgs(AMGint_args *);
-StrIntMapArray hypredrv_AMGintGetValidValues(const char *);
-void           hypredrv_AMGcsnSetFieldByName(void *, const YAMLnode *);
 void           hypredrv_AMGcsnSetDefaultArgs(AMGcsn_args *);
-StrIntMapArray hypredrv_AMGcsnGetValidValues(const char *);
-StrIntMapArray hypredrv_AMGaggGetValidValues(const char *);
-void           hypredrv_AMGrlxSetFieldByName(void *, const YAMLnode *);
 void           hypredrv_AMGrlxSetDefaultArgs(AMGrlx_args *);
-StrIntMapArray hypredrv_AMGrlxGetValidValues(const char *);
-StrIntMapArray hypredrv_AMGsmtGetValidValues(const char *);
-
-void           hypredrv_ILUSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_ILUSetDefaultArgs(ILU_args *);
-StrArray       hypredrv_ILUGetValidKeys(void);
-StrIntMapArray hypredrv_ILUGetValidValues(const char *);
-void           hypredrv_FSAISetFieldByName(void *, const YAMLnode *);
-void           hypredrv_FSAISetDefaultArgs(FSAI_args *);
-StrArray       hypredrv_FSAIGetValidKeys(void);
-StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-void           hypredrv_SchwarzSetFieldByName(void *, const YAMLnode *);
-void           hypredrv_SchwarzSetDefaultArgs(Schwarz_args *);
-StrArray       hypredrv_SchwarzGetValidKeys(void);
-StrIntMapArray hypredrv_SchwarzGetValidValues(const char *);
-#endif
-
-/* AMS/ADS generated helpers not exposed in their headers */
-void           hypredrv_AMSSetFieldByName(void *, const YAMLnode *);
-StrArray       hypredrv_AMSGetValidKeys(void);
-StrIntMapArray hypredrv_AMSGetValidValues(const char *);
-void           hypredrv_ADSSetFieldByName(void *, const YAMLnode *);
-StrArray       hypredrv_ADSGetValidKeys(void);
-StrIntMapArray hypredrv_ADSGetValidValues(const char *);
-
-void hypredrv_MGRSetDefaultArgs(MGR_args *);
-void hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
 
 static HYPRE_IJMatrix precon_test_ij_matrix_4x4(void);
 
@@ -4941,7 +4907,8 @@ test_PreconDestroy_mgr_frelax_ilu_reclaims_after_hypre_destroy(void)
 }
 #endif
 
-#if HYPRE_CHECK_MIN_VERSION(23200, 0)
+/* hypre_MGRColLumpedRestrict frees its temporary B_CF only after v3.2.0 (#1610). */
+#if HYPRE_CHECK_MIN_VERSION(30200, 1)
 static void
 test_PreconSetup_mgr_columped_partial_reclaims_block_column_sum(void)
 {
@@ -7780,7 +7747,7 @@ main(int argc, char **argv)
 #if HYPRE_CHECK_MIN_VERSION(23200, 14)
    RUN_TEST(test_PreconDestroy_mgr_frelax_ilu_reclaims_after_hypre_destroy);
 #endif
-#if HYPRE_CHECK_MIN_VERSION(23200, 0)
+#if HYPRE_CHECK_MIN_VERSION(30200, 1)
    RUN_TEST(test_PreconSetup_mgr_columped_partial_reclaims_block_column_sum);
 #endif
    RUN_TEST(test_MGRForgetCachedSolvers_destroys_projected_rbms);

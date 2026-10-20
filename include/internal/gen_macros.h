@@ -23,7 +23,7 @@
  * @param _numFields Number of fields in the map.
  */
 #define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields) \
-   void _funcName(void *vargs, const YAMLnode *_node)                         \
+   void _funcName(void *vargs, YAMLnode *_node)                               \
    {                                                                          \
       _argsType *_args = (_argsType *)vargs;                                  \
       for (size_t i = 0; i < (_numFields); i++)                               \
@@ -60,17 +60,6 @@
 /**
  * @brief Declares a function to get valid values.
  *
- * @details This macro generates a forward declaration for a function
- * that retrieves valid values as a StrIntMapArray object type.
- *
- * @param _prefix Prefix used in the naming of the declared function.
- */
-#define DECLARE_GET_VALID_VALUES_FUNC(_prefix) \
-   StrIntMapArray _prefix##GetValidValues(const char *);
-
-/**
- * @brief Declares a function to get valid values.
- *
  * @details This macro generates a function that retrieves valid values
  * as a StrIntMapArray object type. No restrictions are imposed on the
  * valid values, so we create a void map
@@ -94,14 +83,6 @@
    void _fnPrefix##SetDefaultArgs(_argsType *);
 
 /**
- * @brief Declares a function to set arguments from a YAML input.
- *
- * @param _prefix Prefix used in the naming of the declared function.
- */
-#define DECLARE_SET_ARGS_FROM_YAML_FUNC(_prefix) \
-   void _prefix##SetArgsFromYAML(void *, YAMLnode *);
-
-/**
  * @brief Define a wrapper setter that also sets a "type" field on the parent struct.
  *
  * @details Useful when a YAML key (e.g., "ilu") selects a variant stored in a union
@@ -117,7 +98,7 @@
  * @param _setter    The real setter to invoke after setting the type.
  */
 #define DEFINE_TYPED_SETTER(_func_name, _parent, _field, _type, _setter)    \
-   static void _func_name(void *v, const YAMLnode *n)                       \
+   static void _func_name(void *v, YAMLnode *n)                             \
    {                                                                        \
       ((_parent *)((char *)v - offsetof(_parent, _field)))->type = (_type); \
       _setter(v, n);                                                        \
@@ -143,12 +124,12 @@
  * @param _prefix Struct prefix for args type.
  * @param _fnPrefix Function name prefix for callables.
  */
-#define DEFINE_SET_ARGS_FUNC(_prefix, _fnPrefix)                    \
-   void _fnPrefix##SetArgs(void *vargs, const YAMLnode *parent)     \
-   {                                                                \
-      _prefix##_args *args = (_prefix##_args *)vargs;               \
-      _fnPrefix##SetDefaultArgs(args);                              \
-      _fnPrefix##SetArgsFromYAML((void *)args, (YAMLnode *)parent); \
+#define DEFINE_SET_ARGS_FUNC(_prefix, _fnPrefix)          \
+   void _fnPrefix##SetArgs(void *vargs, YAMLnode *parent) \
+   {                                                      \
+      _prefix##_args *args = (_prefix##_args *)vargs;     \
+      _fnPrefix##SetDefaultArgs(args);                    \
+      _fnPrefix##SetArgsFromYAML((void *)args, parent);   \
    }
 
 /**
@@ -201,7 +182,6 @@
                                  prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
                               prefix##_field_offset_map)                            \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                 \
    DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                  \
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix)                        \
    DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
@@ -257,7 +237,6 @@
                                  prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
                               prefix##_field_offset_map)                            \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                 \
    DEFINE_SET_DEFAULT_ARGS_FROM_FIELDS(prefix)                                      \
    DEFINE_SET_ARGS_FROM_YAML_FUNC(prefix, hypredrv_##prefix)                        \
    DEFINE_SET_ARGS_FUNC(prefix, hypredrv_##prefix)
@@ -267,13 +246,13 @@
  *        repeat (last wins), so first release what a previous parse of the same
  *        key allocated; needs a _fnPrefix##ReleaseArgs(_prefix##_args *).
  */
-#define DEFINE_SET_ARGS_RELEASING_FUNC(_prefix, _fnPrefix)          \
-   void _fnPrefix##SetArgs(void *vargs, const YAMLnode *parent)     \
-   {                                                                \
-      _prefix##_args *args = (_prefix##_args *)vargs;               \
-      _fnPrefix##ReleaseArgs(args);                                 \
-      _fnPrefix##SetDefaultArgs(args);                              \
-      _fnPrefix##SetArgsFromYAML((void *)args, (YAMLnode *)parent); \
+#define DEFINE_SET_ARGS_RELEASING_FUNC(_prefix, _fnPrefix) \
+   void _fnPrefix##SetArgs(void *vargs, YAMLnode *parent)  \
+   {                                                       \
+      _prefix##_args *args = (_prefix##_args *)vargs;      \
+      _fnPrefix##ReleaseArgs(args);                        \
+      _fnPrefix##SetDefaultArgs(args);                     \
+      _fnPrefix##SetArgsFromYAML((void *)args, parent);    \
    }
 
 /**
@@ -287,12 +266,48 @@
                                  prefix##_field_offset_map, prefix##_NUM_FIELDS)      \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS,   \
                               prefix##_field_offset_map)                              \
-   DECLARE_GET_VALID_VALUES_FUNC(hypredrv_##prefix)                                   \
    DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                    \
-   DECLARE_SET_ARGS_FROM_YAML_FUNC(hypredrv_##prefix)                                 \
    _set_args_def(prefix, hypredrv_##prefix)
 
 #define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(prefix) \
    hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH(prefix, DEFINE_SET_ARGS_FUNC)
+
+/**
+ * @brief Declares the type-agnostic callables generated for a prefix.
+ *
+ * @details One prototype per generated function, shared by the defining file, the
+ *          help printer, and the tests.
+ */
+#define DECLARE_PREFIXED_COMPONENTS(prefix)                               \
+   void           hypredrv_##prefix##SetFieldByName(void *, YAMLnode *);  \
+   StrArray       hypredrv_##prefix##GetValidKeys(void);                  \
+   StrIntMapArray hypredrv_##prefix##GetValidValues(const char *);        \
+   void           hypredrv_##prefix##SetArgsFromYAML(void *, YAMLnode *); \
+   void           hypredrv_##prefix##SetArgs(void *, YAMLnode *);
+
+DECLARE_PREFIXED_COMPONENTS(General)
+DECLARE_PREFIXED_COMPONENTS(Scaling)
+DECLARE_PREFIXED_COMPONENTS(EigSpec)
+DECLARE_PREFIXED_COMPONENTS(PCG)
+DECLARE_PREFIXED_COMPONENTS(GMRES)
+DECLARE_PREFIXED_COMPONENTS(FGMRES)
+DECLARE_PREFIXED_COMPONENTS(BiCGSTAB)
+DECLARE_PREFIXED_COMPONENTS(Cheby)
+DECLARE_PREFIXED_COMPONENTS(AMG)
+DECLARE_PREFIXED_COMPONENTS(AMGint)
+DECLARE_PREFIXED_COMPONENTS(AMGcsn)
+DECLARE_PREFIXED_COMPONENTS(AMGagg)
+DECLARE_PREFIXED_COMPONENTS(AMGrlx)
+DECLARE_PREFIXED_COMPONENTS(AMGsmt)
+DECLARE_PREFIXED_COMPONENTS(ILU)
+DECLARE_PREFIXED_COMPONENTS(FSAI)
+DECLARE_PREFIXED_COMPONENTS(AMS)
+DECLARE_PREFIXED_COMPONENTS(ADS)
+DECLARE_PREFIXED_COMPONENTS(Schwarz)
+DECLARE_PREFIXED_COMPONENTS(MGR)
+DECLARE_PREFIXED_COMPONENTS(MGRlvl)
+DECLARE_PREFIXED_COMPONENTS(MGRcls)
+DECLARE_PREFIXED_COMPONENTS(MGRfrlx)
+DECLARE_PREFIXED_COMPONENTS(MGRgrlx)
 
 #endif /* GEN_MACROS_HEADER */

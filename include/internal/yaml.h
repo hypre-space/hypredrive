@@ -96,7 +96,7 @@ typedef struct YAMLtree
 
 typedef StrArray (*YAMLGetValidKeysFunc)(void);
 typedef StrIntMapArray (*YAMLGetValidValuesFunc)(const char *);
-typedef void (*YAMLSetFieldByNameFunc)(void *, const YAMLnode *);
+typedef void (*YAMLSetFieldByNameFunc)(void *, YAMLnode *);
 
 void hypredrv_YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc,
                                      YAMLGetValidValuesFunc);

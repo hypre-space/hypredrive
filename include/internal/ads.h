@@ -61,7 +61,7 @@ typedef struct ADS_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_ADSSetDefaultArgs(ADS_args *);
-void hypredrv_ADSSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_ADSSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_ADSCreate(const ADS_args *, HYPRE_Solver *);
 
 /* Inject the operator inputs ADS requires (discrete gradient + discrete curl +

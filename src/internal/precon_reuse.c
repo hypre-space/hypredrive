@@ -829,7 +829,7 @@ hypredrv_PreconReuseShouldRebuildStatic(const PreconReuse_args *args,
       return (timestep_idx % timestep_period) == 0;
    }
 
-   return (next_ls_id % (freq + 1)) == 0;
+   return (next_ls_id % ((long long)freq + 1)) == 0; /* freq may be INT_MAX */
 }
 
 static double

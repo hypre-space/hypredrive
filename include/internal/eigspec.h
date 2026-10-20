@@ -31,7 +31,7 @@ typedef struct EigSpec_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_EigSpecSetDefaultArgs(EigSpec_args *);
-void hypredrv_EigSpecSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_EigSpecSetArgs(void *, struct YAMLnode_struct *);
 
 /* Internal helpers */
 #ifdef HYPREDRV_ENABLE_EIGSPEC

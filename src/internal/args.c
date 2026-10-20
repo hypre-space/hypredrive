@@ -23,7 +23,7 @@
  *-----------------------------------------------------------------------------*/
 
 static void
-FieldTypePoolGBToBytesSet(void *field, const YAMLnode *node)
+FieldTypePoolGBToBytesSet(void *field, YAMLnode *node)
 {
    double gb = 0.0;
    if (!hypredrv_ParseDouble(node->mapped_val, &gb) || gb < 0.0 ||
@@ -246,7 +246,7 @@ InputArgsReattachDetachedChild(YAMLnode *parent, YAMLnode **child_ptr)
  * hypredrv_InputArgsParseGeneral
  *-----------------------------------------------------------------------------*/
 
-void
+static void
 hypredrv_InputArgsParseGeneral(input_args *iargs, const YAMLtree *tree)
 {
    YAMLnode *parent = InputArgsFindUniqueRootSection(tree, "general");
@@ -272,7 +272,7 @@ hypredrv_InputArgsParseGeneral(input_args *iargs, const YAMLtree *tree)
  * hypredrv_InputArgsParseLinearSystem
  *-----------------------------------------------------------------------------*/
 
-void
+static void
 hypredrv_InputArgsParseLinearSystem(input_args *iargs, const YAMLtree *tree)
 {
    const char key[]  = {"linear_system"};
@@ -308,7 +308,7 @@ hypredrv_InputArgsParseLinearSystem(input_args *iargs, const YAMLtree *tree)
  * hypredrv_InputArgsParseSolver
  *-----------------------------------------------------------------------------*/
 
-void
+static void
 hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
 {
    YAMLnode *parent       = NULL;
@@ -442,9 +442,8 @@ typedef struct
 } WrappedTypeNode;
 
 static YAMLnode *
-WrappedTypeNodeInit(WrappedTypeNode *w, const char *parent_key,
-                    const YAMLnode *parent_node, const char *type_key, int type_level,
-                    YAMLnode *type_children)
+WrappedTypeNodeInit(WrappedTypeNode *w, char *parent_key, const YAMLnode *parent_node,
+                    const char *type_key, int type_level, YAMLnode *type_children)
 {
    memset(w, 0, sizeof(*w));
    w->type.key      = strdup(type_key ? type_key : "");
@@ -453,7 +452,7 @@ WrappedTypeNodeInit(WrappedTypeNode *w, const char *parent_key,
    w->type.valid    = YAML_NODE_VALID;
    w->type.children = type_children;
 
-   w->parent.key      = (char *)parent_key;
+   w->parent.key      = parent_key;
    w->parent.val      = "";
    w->parent.level    = parent_node ? parent_node->level : 0;
    w->parent.valid    = YAML_NODE_VALID;
@@ -962,9 +961,6 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
    InputArgsPreconVariant0Activate(iargs, ctx, 1);
    return PRECON_PARSE_SUCCESS;
 }
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 static void
 hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
