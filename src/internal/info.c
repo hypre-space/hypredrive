@@ -1201,6 +1201,8 @@ CompareIntelXeCards(const void *lhs, const void *rhs)
    return 0;
 }
 
+#endif
+
 static int
 ReadUeventValue(const char *uevent_path, const char *key, char *value, size_t len)
 {
@@ -1245,6 +1247,7 @@ ReadUeventValue(const char *uevent_path, const char *key, char *value, size_t le
    return found;
 }
 
+#ifdef HYPREDRV_HAVE_INTEL_XE_QUERY
 static int
 CollectIntelXeCards(IntelXeCard *cards, int max_cards)
 {
