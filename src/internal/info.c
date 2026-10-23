@@ -2191,6 +2191,26 @@ GatherAllHostnames(MPI_Comm comm, int nprocs, char **allHostnames_out)
 
 /* Fills the per-package CPU model strings and the package/thread counts. */
 #ifndef __APPLE__
+static void
+DetectCpuModelsFromLscpu(int *numPhysicalCPUs_out, char cpuModels[8][256])
+{
+   int  numPhysicalCPUs = 0;
+   char lscpu_path[PATH_MAX];
+   char lscpu_model[sizeof(cpuModels[0])] = {0};
+   if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
+       ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
+                          sizeof(lscpu_model)) &&
+       lscpu_model[0] != '\0')
+   {
+      int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
+      for (int i = 0; i < fill_count; i++)
+      {
+         snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
+      }
+   }
+   *numPhysicalCPUs_out = numPhysicalCPUs;
+}
+
 /* Parses /proc/cpuinfo for the per-package model strings and the physical /
  * logical processor counts. */
 static void
@@ -2253,19 +2273,7 @@ DetectCpuModelsFromProcInfo(FILE *fp, char *buffer, size_t buffer_size,
 
    if (numPhysicalCPUs == 0)
    {
-      char lscpu_path[PATH_MAX];
-      char lscpu_model[sizeof(cpuModels[0])] = {0};
-      if (FindExecutableInPath("lscpu", lscpu_path, sizeof(lscpu_path)) &&
-          ParseLscpuFallback(lscpu_path, &numPhysicalCPUs, lscpu_model,
-                             sizeof(lscpu_model)) &&
-          lscpu_model[0] != '\0')
-      {
-         int fill_count = (numPhysicalCPUs < 8) ? numPhysicalCPUs : 8;
-         for (int i = 0; i < fill_count; i++)
-         {
-            snprintf(cpuModels[i], sizeof(cpuModels[i]), "%s", lscpu_model);
-         }
-      }
+      DetectCpuModelsFromLscpu(&numPhysicalCPUs, cpuModels);
    }
 
    *numPhysicalCPUs_out = numPhysicalCPUs;
@@ -2550,6 +2558,21 @@ PrintAmdGpuMemorySysfs(double bytes_to_gib)
 #endif
 
 static void
+ReadAmdVramBytes(const char *field, size_t *bytes)
+{
+   const char *value = strstr(field, "\"value\"");
+   if (!value)
+   {
+      return;
+   }
+   value = strchr(value, ':');
+   if (value)
+   {
+      *bytes = strtoull(value + 1, NULL, 10) * 1024 * 1024;
+   }
+}
+
+static void
 PrintAmdGpuMemory(double bytes_to_gib)
 {
    int    gcount = 0;
@@ -2597,33 +2620,8 @@ PrintAmdGpuMemory(double bytes_to_gib)
 
                   if (total_ptr && used_ptr)
                   {
-                     // Extract total_vram value
-                     const char *val_ptr = strstr(total_ptr, "\"value\"");
-                     if (val_ptr)
-                     {
-                        val_ptr = strchr(val_ptr, ':');
-                        if (val_ptr)
-                        {
-                           val_ptr++;
-                           while (*val_ptr == ' ') val_ptr++;
-                           total =
-                              strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
-                        }
-                     }
-
-                     // Extract used_vram value
-                     val_ptr = strstr(used_ptr, "\"value\"");
-                     if (val_ptr)
-                     {
-                        val_ptr = strchr(val_ptr, ':');
-                        if (val_ptr)
-                        {
-                           val_ptr++;
-                           while (*val_ptr == ' ') val_ptr++;
-                           used =
-                              strtoull(val_ptr, NULL, 10) * 1024 * 1024; // MB to bytes
-                        }
-                     }
+                     ReadAmdVramBytes(total_ptr, &total);
+                     ReadAmdVramBytes(used_ptr, &used);
 
                      if (total > 0)
                      {
@@ -3107,30 +3105,12 @@ PrintCacheHierarchy(void)
    printf("\nCache Hierarchy\n");
    printf("-----------------\n");
 
-   // Group caches by level and show summary
-   for (int level = 1; level <= 5; level++)
+   static const hwloc_obj_type_t cache_types[] = {HWLOC_OBJ_L1CACHE, HWLOC_OBJ_L2CACHE,
+                                                  HWLOC_OBJ_L3CACHE, HWLOC_OBJ_L4CACHE,
+                                                  HWLOC_OBJ_L5CACHE};
+   for (size_t level = 0; level < sizeof(cache_types) / sizeof(cache_types[0]); level++)
    {
-      hwloc_obj_type_t cache_type;
-      switch (level)
-      {
-         case 1:
-            cache_type = HWLOC_OBJ_L1CACHE;
-            break;
-         case 2:
-            cache_type = HWLOC_OBJ_L2CACHE;
-            break;
-         case 3:
-            cache_type = HWLOC_OBJ_L3CACHE;
-            break;
-         case 4:
-            cache_type = HWLOC_OBJ_L4CACHE;
-            break;
-         case 5:
-            cache_type = HWLOC_OBJ_L5CACHE;
-            break;
-         default:
-            continue;
-      }
+      hwloc_obj_type_t cache_type = cache_types[level];
 
       int count = hwloc_get_nbobjs_by_type(topology, cache_type);
       if (count == 0)
@@ -4644,6 +4624,24 @@ PrintNetworkInformation(void)
    printf("\n");
 }
 
+static void
+NvidiaCapabilityAdd(char caps[64][32], int *cap_count, const char *cap)
+{
+   if (!cap || cap[0] == '\0' || *cap_count >= 64)
+   {
+      return;
+   }
+   for (int i = 0; i < *cap_count; i++)
+   {
+      if (!strcmp(caps[i], cap))
+      {
+         return;
+      }
+   }
+   snprintf(caps[*cap_count], sizeof(caps[0]), "%s", cap);
+   (*cap_count)++;
+}
+
 /* Vendor driver/runtime probes for the accelerator report. Each returns
  * nonzero when it managed to print something. */
 static int
@@ -4699,17 +4697,7 @@ PrintNvidiaRuntimeInfo(void)
          printed = 1;
       }
 
-      int duplicate = 0;
-      for (int i = 0; cap && cap[0] != '\0' && i < cap_count; i++)
-      {
-         duplicate |= !strcmp(caps[i], cap);
-      }
-      if (cap && cap[0] != '\0' && !duplicate &&
-          cap_count < (int)(sizeof(caps) / sizeof(caps[0])))
-      {
-         snprintf(caps[cap_count], sizeof(caps[cap_count]), "%s", cap);
-         cap_count++;
-      }
+      NvidiaCapabilityAdd(caps, &cap_count, cap);
    }
 
    if (cap_count > 0)

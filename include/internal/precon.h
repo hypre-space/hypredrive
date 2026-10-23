@@ -111,7 +111,7 @@ void hypredrv_PreconArgsDestroyOwnedConfig(precon_t, precon_args *);
 void hypredrv_PreconArgsDestroyRuntimeState(precon_t, precon_args *);
 void hypredrv_PreconSetArgsFromYAML(precon_args *,
                                     YAMLnode *); /* TODO: change to PreconSetArgs */
-void hypredrv_PreconCreate(precon_t, precon_args *, IntArray *, HYPRE_IJVector,
+void hypredrv_PreconCreate(MPI_Comm, precon_t, precon_args *, IntArray *, HYPRE_IJVector,
                            HYPRE_Precon *, const Stats *, int, const PreconOperators *);
 /* Returns 1 if the method needs externally supplied operator inputs
  * (AMS: discrete gradient + coordinates; ADS: + discrete curl), else 0. */

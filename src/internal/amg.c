@@ -51,13 +51,13 @@
    ADD_FIELD_OFFSET_ENTRY(_prefix, strong_th, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's aggressive coarsening fields */
-#define AMGagg_FIELDS(_prefix)                                                    \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet)          \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, hypredrv_FieldTypeIntSet)           \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet)   \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)         \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)     \
-   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, hypredrv_FieldTypeDoubleSet) \
+#define AMGagg_FIELDS(_prefix)                                                  \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_levels, hypredrv_FieldTypeIntSet)        \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, num_paths, hypredrv_FieldTypeIntSet)         \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, prolongation_type, hypredrv_FieldTypeIntSet) \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, max_nnz_row, hypredrv_FieldTypeIntSet)       \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, trunc_factor, hypredrv_FieldTypeDoubleSet)   \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, P12_max_elements, hypredrv_FieldTypeIntSet)  \
    ADD_FIELD_OFFSET_ENTRY(_prefix, P12_trunc_factor, hypredrv_FieldTypeDoubleSet)
 
 /* AMG's relaxation fields */

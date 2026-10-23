@@ -150,9 +150,14 @@ test_parse_yaml_overloads()
    drv.parse_yaml(std::string(test_options_yaml));
    std::istringstream stream(test_options_yaml);
    drv.parse_yaml(stream);
-   int rank = 0;
+   int rank = 0, size = 0;
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-   const std::string path = "hypredrive_cpp_options_" + std::to_string(rank) + ".yml";
+   MPI_Comm_size(MPI_COMM_WORLD, &size);
+   // Scratch files go in the test's working directory (its build tree), tagged by
+   // job size and rank so the serial and MPI runs never share a file.
+   const std::string stem =
+      "hypredrive_cpp_options_np" + std::to_string(size) + "_" + std::to_string(rank);
+   const std::string path = stem + ".yml";
    {
       std::ofstream file(path);
       file << test_options_yaml;
@@ -160,16 +165,55 @@ test_parse_yaml_overloads()
    drv.parse_yaml(path);
    std::remove(path.c_str());
 
-   // Overrides overload: resolves a path the C-side filename heuristic would
-   // reject (uppercase extension) and applies CLI-style override tokens.
-   const std::string upper_path =
-      "hypredrive_cpp_options_" + std::to_string(rank) + ".YML";
+   // File paths, including uppercase extensions, reach the C parser with overrides.
+   const std::string upper_path = stem + ".YML";
    {
       std::ofstream file(upper_path);
       file << test_options_yaml;
    }
    drv.parse_yaml(upper_path, {"--solver:pcg:max_iter", "7"});
    std::remove(upper_path.c_str());
+
+   // Paths the C parser would take for inline YAML are read by the wrapper.
+   for (const std::string &other : {stem + ".cfg", stem + " copy.yml"})
+   {
+      {
+         std::ofstream file(other);
+         file << test_options_yaml;
+      }
+      drv.parse_yaml(std::filesystem::path(other));
+      drv.parse_yaml(other, {"--solver:pcg:max_iter", "7"});
+      std::remove(other.c_str());
+   }
+
+   std::string missing_message;
+   try
+   {
+      drv.parse_yaml(std::filesystem::path(stem + "_missing.yml"));
+   }
+   catch (const std::runtime_error &e)
+   {
+      missing_message = e.what();
+   }
+   if (missing_message.find("failed to open") == std::string::npos)
+   {
+      throw std::runtime_error("a missing YAML file should report an open failure");
+   }
+
+   const std::string child_path = path + ".included.yml";
+   {
+      std::ofstream file(child_path);
+      file << "solver:\n    pcg:\n        max_iter: 20\n"
+              "preconditioner:\n    amg:\n        print_level: 0\n";
+   }
+   {
+      std::ofstream file(path);
+      file << "general:\n    statistics: off\ninclude: "
+           << std::filesystem::path(child_path).filename().string() << "\n";
+   }
+   drv.parse_yaml(std::filesystem::path(path));
+   std::remove(path.c_str());
+   std::remove(child_path.c_str());
 
    // Inline text plus an override value ending in .yml: the value must be
    // applied as-is, not rediscovered as a configuration file.

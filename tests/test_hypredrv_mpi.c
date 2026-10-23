@@ -7,9 +7,10 @@
 
 #include <mpi.h>
 #include <stdint.h>
-#include "_hypre_utilities.h"
 #include "HYPREDRV.h"
+#include "_hypre_utilities.h"
 #include "internal/error.h"
+#include "logging.h"
 #include "object.h"
 #include "test_helpers.h"
 
@@ -55,8 +56,8 @@ create_distributed_test_object(const char *scaling_type)
    ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(
                 obj, (HYPRE_BigInt)rank, (HYPRE_BigInt)rank, row_ptr, cols, values),
              ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(
-                obj, (HYPRE_BigInt)rank, (HYPRE_BigInt)rank, rhs),
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, (HYPRE_BigInt)rank,
+                                                  (HYPRE_BigInt)rank, rhs),
              ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
    return obj;
@@ -89,13 +90,12 @@ assert_local_system_restored(HYPREDRV_t obj)
    int rank = 0;
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
-   HYPRE_Int               ncols = 1;
-   HYPRE_BigInt            index = (HYPRE_BigInt)rank;
+   struct hypredrv_struct *state        = (struct hypredrv_struct *)obj;
+   HYPRE_Int               ncols        = 1;
+   HYPRE_BigInt            index        = (HYPRE_BigInt)rank;
    HYPRE_Complex           matrix_value = 0.0, rhs_value = 0.0;
-   ASSERT_EQ(HYPRE_IJMatrixGetValues(state->mat_A, 1, &ncols, &index, &index,
-                                     &matrix_value),
-             0);
+   ASSERT_EQ(
+      HYPRE_IJMatrixGetValues(state->mat_A, 1, &ncols, &index, &index, &matrix_value), 0);
    ASSERT_EQ(HYPRE_IJVectorGetValues(state->vec_b, 1, &index, &rhs_value), 0);
    ASSERT_EQ_DOUBLE((double)matrix_value, 2.0, 1.0e-12);
    ASSERT_EQ_DOUBLE((double)rhs_value, 1.0, 1.0e-12);
@@ -221,6 +221,99 @@ test_dofmap_scaling_rank_local_size_mismatch_fails_collectively(void)
 }
 #endif
 
+static void
+test_independent_self_solve_and_recycled_log_comm(void)
+{
+   int rank = 0, size = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   MPI_Comm_size(MPI_COMM_WORLD, &size);
+   for (int i = 0; i < 8; i++)
+   {
+      MPI_Comm split = MPI_COMM_NULL;
+      MPI_Comm_split(MPI_COMM_WORLD, 0, (i % 2) ? size - rank : rank, &split);
+      int expected = -1;
+      MPI_Comm_rank(split, &expected);
+      ASSERT_EQ(hypredrv_LogRankFromComm(split), expected);
+      MPI_Comm_free(&split);
+   }
+   /* Other ranks wait in a different collective. Any accidental WORLD
+    * collective in the driver or nested MGR solvers deadlocks this test. */
+   if (rank == 0)
+   {
+      HYPREDRV_t obj = NULL;
+      ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+      char yaml[] =
+         "general:\n  statistics: off\nlinear_system:\n  init_guess_mode: zeros\n"
+         "solver:\n  fgmres:\n    max_iter: 5\n"
+         "preconditioner:\n"
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         "  mgr:\n    level:\n      0:\n        f_dofs: [0]\n"
+#if HYPRE_CHECK_MIN_VERSION(30100, 5)
+         "        f_relaxation:\n          gmres:\n            max_iter: 1\n            "
+         "preconditioner: amg\n"
+         "        g_relaxation:\n          gmres:\n            max_iter: 1\n            "
+         "preconditioner: amg\n"
+         "    coarsest_level:\n      gmres:\n        max_iter: 1\n        "
+         "preconditioner: amg\n";
+#else
+         "        f_relaxation: jacobi\n        g_relaxation: none\n"
+         "    coarsest_level:\n      amg:\n        print_level: 0\n";
+#endif
+#else
+         "  amg:\n    print_level: 0\n";
+#endif
+      char *argv[] = {yaml};
+      ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+      HYPRE_BigInt rows[] = {0, 1, 2}, cols[] = {0, 1};
+      HYPRE_Real   values[] = {2.0, 3.0}, rhs[] = {4.0, 9.0};
+      int          dofs[] = {0, 1};
+      ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, rows, cols, values),
+                ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 1, rhs), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSystemSetDofmap(obj, 2, dofs), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+      ASSERT_TRUE(obj->iargs->precon.mgr.comm == MPI_COMM_SELF);
+#endif
+      ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   }
+   MPI_Barrier(MPI_COMM_WORLD);
+}
+
+static void
+test_rank_local_schedule_error_is_collective(void)
+{
+   int rank = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
+   char path[] = "/tmp/hypredrive-schedule-mpi-XXXXXX";
+   int  fd     = mkstemp(path);
+   ASSERT_TRUE(fd >= 0);
+   FILE *fp = fdopen(fd, "w");
+   ASSERT_NOT_NULL(fp);
+   fputs(rank == 0 ? "1\n0 0\n" : "0\n", fp);
+   fclose(fp);
+   char yaml[512];
+   snprintf(yaml, sizeof(yaml),
+            "general:\n  statistics: on\nlinear_system:\n  timestep_filename: %s\n",
+            path);
+   char    *argv[] = {yaml};
+   uint32_t code   = HYPREDRV_InputArgsParse(1, argv, obj);
+   uint32_t low = 0, high = 0;
+   MPI_Allreduce(&code, &low, 1, MPI_UINT32_T, MPI_MIN, MPI_COMM_WORLD);
+   MPI_Allreduce(&code, &high, 1, MPI_UINT32_T, MPI_MAX, MPI_COMM_WORLD);
+   ASSERT_NE(low, ERROR_NONE);
+   ASSERT_EQ_U32(low, high);
+   unlink(path);
+   hypredrv_ErrorStateReset();
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -231,6 +324,8 @@ main(int argc, char **argv)
    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
    if (nprocs >= 2)
    {
+      RUN_TEST(test_independent_self_solve_and_recycled_log_comm);
+      RUN_TEST(test_rank_local_schedule_error_is_collective);
       RUN_TEST(test_PreconSetup_synchronizes_rank_local_hypre_error);
       RUN_TEST(test_LinearSolverSetup_synchronizes_rank_local_hypre_error);
       RUN_TEST(test_reused_precon_remains_setup_after_solver_setup_error);

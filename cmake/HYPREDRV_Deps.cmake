@@ -1429,6 +1429,18 @@ if(TARGET HYPRE::HYPRE)
     _hypredrv_ensure_hypre_cuda_nvjitlink()
     get_target_property(HYPRE_INCLUDE_DIRS HYPRE::HYPRE INTERFACE_INCLUDE_DIRECTORIES)
 
+    # HYPRE headers are external to this project. Preserve strict diagnostics
+    # for our sources without promoting warnings in dependency inlines to errors.
+    get_target_property(_hypredrv_hypre_target HYPRE::HYPRE ALIASED_TARGET)
+    if(NOT _hypredrv_hypre_target)
+        set(_hypredrv_hypre_target HYPRE::HYPRE)
+    endif()
+    if(HYPRE_INCLUDE_DIRS)
+        set_property(TARGET ${_hypredrv_hypre_target} APPEND PROPERTY
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${HYPRE_INCLUDE_DIRS}")
+    endif()
+    unset(_hypredrv_hypre_target)
+
     # Try to get library location - handle both Release and Debug configurations.
     # For autotools/custom installs we only have INTERFACE_LINK_LIBRARIES, so
     # fall back to the user-provided variables for a clearer message.

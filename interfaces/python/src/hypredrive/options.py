@@ -7,9 +7,11 @@ We support three input shapes for solver/preconditioner configuration:
 * a YAML literal ``str``, passed through unchanged;
 * a filesystem path (``str`` or ``pathlib.Path``) pointing to a YAML file.
 
-In every case the binding ultimately hands a YAML *string* to
-``HYPREDRV_InputArgsParse``: the C entry point already accepts a literal
-YAML buffer in ``argv[0]``, so we sidestep temp files entirely.
+The binding passes inline YAML or a file path to ``HYPREDRV_InputArgsParse``.
+The C layer reads files on rank zero, broadcasts them, and resolves includes
+relative to the configuration directory. It only recognizes a path when it
+has no spaces and a ``.yml``/``.yaml`` extension; any other file is read here
+and passed as text, so its includes resolve against the working directory.
 
 We deliberately do not depend on PyYAML. The YAML hypredrive accepts is a
 restricted subset (no anchors, no flow style, integer-aligned indents) and
@@ -20,7 +22,6 @@ keeps the package wheel-friendly.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Mapping, Union
 
 OptionsLike = Union[Mapping[str, Any], str, os.PathLike[str], None]
@@ -181,8 +182,32 @@ def options_to_yaml(options: Mapping[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _c_reads_config_path(path: str) -> bool:
+    """Whether ``HYPREDRV_InputArgsParse`` reads ``path`` as a file.
+
+    Mirrors ``hypredrv_IsYAMLFilename`` (no spaces, ``.yml``/``.yaml`` in any
+    case) and the C rejection of resolved paths containing ``..``.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    return (
+        " " not in path
+        and ext in (".yml", ".yaml")
+        and ".." not in os.path.realpath(path)
+    )
+
+
+def _config_file_option(path: str) -> str:
+    """Return ``path`` when the C layer reads it, else the file's text."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(path)
+    if _c_reads_config_path(path):
+        return path
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
 def normalize_options(options: OptionsLike) -> str:
-    """Coerce ``options`` into a YAML *string* the C layer can consume.
+    """Coerce ``options`` into inline YAML or a file path for the C layer.
 
     See module docstring for the accepted input shapes. ``None`` defaults
     to a minimal viable YAML that parses successfully but configures
@@ -193,19 +218,14 @@ def normalize_options(options: OptionsLike) -> str:
     if isinstance(options, Mapping):
         return options_to_yaml(options)
     if isinstance(options, os.PathLike):
-        path = Path(options)
-        if not path.is_file():
-            raise FileNotFoundError(path)
-        return path.read_text(encoding="utf-8")
+        return _config_file_option(os.fspath(options))
     if isinstance(options, str):
-        text = options
-        if "\n" not in text:
-            path = Path(text)
-            if path.is_file():
-                return path.read_text(encoding="utf-8")
-            if path.suffix or "/" in text or "\\" in text:
-                raise FileNotFoundError(path)
-        return text
+        if "\n" not in options:
+            if os.path.isfile(options):
+                return _config_file_option(options)
+            if os.path.splitext(options)[1] or "/" in options or "\\" in options:
+                raise FileNotFoundError(options)
+        return options
     raise TypeError(
         "options must be a Mapping, str, PathLike, or None; "
         f"got {type(options).__name__}"

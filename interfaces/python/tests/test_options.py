@@ -230,10 +230,23 @@ def test_normalize_str_passthrough():
     assert normalize_options(raw) == raw
 
 
-def test_normalize_path_reads_file(tmp_path):
-    fp = tmp_path / "opts.yml"
+def test_normalize_paths_are_passed_to_c_without_reading(tmp_path):
+    for name in ("opts.yml", "opts.YAML"):
+        fp = tmp_path / name
+        fp.write_text("general:\n  statistics: on\n", encoding="utf-8")
+        assert normalize_options(fp) == str(fp)
+        assert normalize_options(str(fp)) == str(fp)
+
+
+@pytest.mark.parametrize(
+    "relpath", ["opts.cfg", "My Configs/opts.yml", "run..1/opts.yml"]
+)
+def test_normalize_paths_the_c_layer_rejects_are_read(tmp_path, relpath):
+    fp = tmp_path / relpath
+    fp.parent.mkdir(exist_ok=True)
     fp.write_text("general:\n  statistics: on\n", encoding="utf-8")
-    assert normalize_options(fp).strip() == "general:\n  statistics: on".strip()
+    assert normalize_options(fp) == "general:\n  statistics: on\n"
+    assert normalize_options(str(fp)) == "general:\n  statistics: on\n"
 
 
 def test_normalize_missing_pathlike_raises(tmp_path):

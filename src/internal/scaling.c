@@ -1104,6 +1104,23 @@ ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
 }
 #endif
 
+#if HYPRE_CHECK_MIN_VERSION(30000, 0)
+static void
+ScalingSystemMatrices(HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
+                      HYPRE_ParCSRMatrix *par_A, HYPRE_ParCSRMatrix *par_M)
+{
+   void *obj_A = NULL, *obj_M = NULL;
+   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
+   *par_A = (HYPRE_ParCSRMatrix)obj_A;
+   *par_M = *par_A;
+   if (mat_M && mat_M != mat_A)
+   {
+      HYPRE_IJMatrixGetObject(mat_M, &obj_M);
+      *par_M = (HYPRE_ParCSRMatrix)obj_M;
+   }
+}
+#endif
+
 static void
 ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatrix mat_M,
                        HYPRE_IJVector vec_b, HYPRE_IJVector vec_x, int apply)
@@ -1133,18 +1150,11 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
       hypredrv_ErrorCodeReset(saved_error);
    }
 
-   if (apply)
-   {
-      HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply begin (type=%d)",
-                    (int)ctx->type);
-   }
-   else
-   {
-      HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling undo begin (type=%d)", (int)ctx->type);
-   }
+   const char *action = apply ? "apply" : "undo";
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling %s begin (type=%d)", action,
+                 (int)ctx->type);
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   void              *obj_A = NULL, *obj_M = NULL;
    HYPRE_ParCSRMatrix par_A = NULL, par_M = NULL;
 
    if (!ScalingSystemReady(ctx, apply, log_rank))
@@ -1152,18 +1162,7 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
       goto done;
    }
 
-   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
-   par_A = (HYPRE_ParCSRMatrix)obj_A;
-
-   if (mat_M != mat_A)
-   {
-      HYPRE_IJMatrixGetObject(mat_M, &obj_M);
-      par_M = (HYPRE_ParCSRMatrix)obj_M;
-   }
-   else
-   {
-      par_M = par_A;
-   }
+   ScalingSystemMatrices(mat_A, mat_M, &par_A, &par_M);
 
    if (apply)
    {
@@ -1181,16 +1180,8 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
    (void)mat_M;
    (void)vec_b;
    (void)vec_x;
-   if (apply)
-   {
-      HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                    "scaling apply failed: requires Hypre >= v3.0.0");
-   }
-   else
-   {
-      HYPREDRV_LOGF(2, log_rank, NULL, 0,
-                    "scaling undo failed: requires Hypre >= v3.0.0");
-   }
+   HYPREDRV_LOGF(2, log_rank, NULL, 0, "scaling %s failed: requires Hypre >= v3.0.0",
+                 action);
 #endif
 
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
@@ -1201,16 +1192,8 @@ done:
    {
       ScalingRestoreErrorCode(saved_error);
    }
-   if (apply)
-   {
-      HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling apply end (is_applied=%d)",
-                    ctx->is_applied);
-   }
-   else
-   {
-      HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling undo end (is_applied=%d)",
-                    ctx->is_applied);
-   }
+   HYPREDRV_LOGF(3, log_rank, NULL, 0, "scaling %s end (is_applied=%d)", action,
+                 ctx->is_applied);
    /* GCOVR_EXCL_BR_STOP */
 }
 

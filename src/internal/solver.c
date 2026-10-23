@@ -492,7 +492,7 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
    }
    ops->setup(solver, par_M, par_b, par_x);
 
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(log_comm);
    HYPREDRV_LOGF(3, log_rank, log_object_name, ls_id, "solver setup end");
 }
 
@@ -565,7 +565,7 @@ hypredrv_SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMa
    ops->solve(solver, par_A, par_b, par_x);
    ops->get_num_iterations(solver, &iters);
 
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(log_comm);
 
    return iters;
 }

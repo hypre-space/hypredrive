@@ -27,6 +27,12 @@ enum
    LSSEQ_FLAG_HAS_INFO      = 1u << 2,
 };
 
+/* Bound schedule allocations for both text and binary inputs. */
+enum
+{
+   LSSEQ_MAX_TIMESTEPS = 1024u * 1024u,
+};
+
 typedef struct LSSeqHeader_struct
 {
    uint64_t magic;

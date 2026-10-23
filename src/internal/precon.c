@@ -328,6 +328,11 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
       return;
    }
 
+   if (method == PRECON_BOOMERAMG)
+   {
+      hypredrv_AMGDestroyRBMs(&args->amg);
+   }
+
    /* Only MGR keeps runtime state (cached component solvers) in its args. */
    if (method == PRECON_MGR)
    {
@@ -434,12 +439,29 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
  * hypredrv_PreconCreate
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofmap,
-                      HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr, const Stats *stats,
-                      int next_ls_id, const PreconOperators *ops)
+static int
+PreconMainIsValid(HYPRE_Precon precon)
 {
-   if (!PreconHasConfiguredComponentReuse(precon_method, args))
+   if (precon->method == PRECON_NONE || precon->main)
+   {
+      return 1;
+   }
+   if (!hypredrv_ErrorCodeActive())
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Preconditioner creation failed (method=%d)",
+                           (int)precon->method);
+   }
+   return 0;
+}
+
+void
+hypredrv_PreconCreate(MPI_Comm comm, precon_t precon_method, precon_args *args,
+                      IntArray *dofmap, HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr,
+                      const Stats *stats, int next_ls_id, const PreconOperators *ops)
+{
+   if (precon_method == PRECON_MGR &&
+       !PreconHasConfiguredComponentReuse(precon_method, args))
    {
       hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
    }
@@ -476,7 +498,7 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
          hypredrv_MGRSetDofmap(&args->mgr, dofmap);
          hypredrv_MGRSetNearNullSpace(&args->mgr, vec_nn);
          hypredrv_MGRSetCoarseSchur(&args->mgr, ops ? ops->coarse_schur : NULL);
-         hypredrv_MGRCreate(&args->mgr, &precon->main, stats, next_ls_id);
+         hypredrv_MGRCreate(comm, &args->mgr, &precon->main, stats, next_ls_id);
          break;
 
       case PRECON_ILU:
@@ -526,14 +548,8 @@ hypredrv_PreconCreate(precon_t precon_method, precon_args *args, IntArray *dofma
     * into hypre and crash. A NULL main for any method other than PRECON_NONE is the
     * reliable failure signal here (the process-global error state is sticky and may
     * reflect an unrelated earlier failure, so it must not be used for this check). */
-   if (precon_method != PRECON_NONE && !precon->main)
+   if (!PreconMainIsValid(precon))
    {
-      if (!hypredrv_ErrorCodeActive())
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("Preconditioner creation failed (method=%d)",
-                              (int)precon_method);
-      }
       hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
       free(precon);
       *precon_ptr = NULL;
@@ -809,7 +825,7 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 
    ops->setup(prec, par_A, par_b, par_x);
 
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(hypre_ParCSRMatrixComm(par_A));
 #if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
    if (par_b)
    {

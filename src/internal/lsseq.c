@@ -42,7 +42,6 @@ enum
    LSSEQ_MAX_PARTS              = 1024u * 1024u,
    LSSEQ_MAX_SYSTEMS            = 1024u * 1024u,
    LSSEQ_MAX_PATTERNS           = 1024u * 1024u,
-   LSSEQ_MAX_TIMESTEPS          = 1024u * 1024u,
 };
 
 static int
@@ -591,6 +590,27 @@ LSSeqOpenHeader(const char *filename, LSSeqHeader *header)
    return fp;
 }
 
+/* Readers size buffers from both the row range and nrows. */
+static int
+LSSeqValidatePartRows(const LSSeqData *seq)
+{
+   for (uint32_t p = 0; p < seq->header.num_parts; p++)
+   {
+      const LSSeqPartMeta *part = &seq->parts[p];
+      if (part->row_upper < part->row_lower ||
+          part->nrows != part->row_upper - part->row_lower + 1u)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd(
+            "Invalid LSSeq part %u row range [%llu, %llu] for %llu rows", p,
+            (unsigned long long)part->row_lower, (unsigned long long)part->row_upper,
+            (unsigned long long)part->nrows);
+         return 0;
+      }
+   }
+   return 1;
+}
+
 static int
 LSSeqDataLoad(const char *filename, LSSeqData *seq)
 {
@@ -631,23 +651,11 @@ LSSeqDataLoad(const char *filename, LSSeqData *seq)
       return 0;
    }
 
-   /* Readers size buffers from both the row range and nrows: reject parts
-    * whose range is inverted (it would wrap) or disagrees with nrows. */
-   for (uint32_t p = 0; p < seq->header.num_parts; p++)
+   if (!LSSeqValidatePartRows(seq))
    {
-      const LSSeqPartMeta *part = &seq->parts[p];
-      if (part->row_upper < part->row_lower ||
-          part->nrows != part->row_upper - part->row_lower + 1u)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd(
-            "Invalid LSSeq part %u row range [%llu, %llu] for %llu rows", p,
-            (unsigned long long)part->row_lower, (unsigned long long)part->row_upper,
-            (unsigned long long)part->nrows);
-         fclose(fp);
-         LSSeqDataDestroy(seq);
-         return 0;
-      }
+      fclose(fp);
+      LSSeqDataDestroy(seq);
+      return 0;
    }
 
    /* GCOVR_EXCL_BR_START */

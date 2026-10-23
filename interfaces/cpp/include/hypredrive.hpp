@@ -10,6 +10,7 @@
 
 #include <HYPREDRV.h>
 
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <vector>
 
 namespace hypredrive
@@ -45,6 +47,48 @@ looks_like_yaml_file_path(std::string_view value)
           value.find(':') == std::string_view::npos &&
           value.find('{') == std::string_view::npos &&
           value.find('[') == std::string_view::npos;
+}
+
+/// Whether HYPREDRV_InputArgsParse reads @p path as a file: mirrors
+/// hypredrv_IsYAMLFilename (no spaces, .yml/.yaml in any case) and the C
+/// rejection of resolved paths containing "..".
+inline bool
+c_reads_yaml_file_path(const std::filesystem::path &path)
+{
+   std::string ext = path.extension().string();
+   for (char &c : ext)
+   {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+   }
+   std::error_code             ec;
+   const std::filesystem::path resolved = std::filesystem::canonical(path, ec);
+   return path.string().find(' ') == std::string::npos &&
+          (ext == ".yml" || ext == ".yaml") && !ec &&
+          resolved.string().find("..") == std::string::npos;
+}
+
+/// The argv[0] that makes HYPREDRV_InputArgsParse load @p path: the path itself
+/// when the C layer reads it (includes resolve next to the file), otherwise the
+/// file's text.
+inline std::string
+yaml_file_argument(const std::filesystem::path &path)
+{
+   std::ifstream file(path);
+   if (!file)
+   {
+      throw std::runtime_error("failed to open hypredrive YAML file: " + path.string());
+   }
+   if (c_reads_yaml_file_path(path))
+   {
+      return path.string();
+   }
+   std::ostringstream buffer;
+   buffer << file.rdbuf();
+   if (file.bad())
+   {
+      throw std::runtime_error("failed to read hypredrive YAML file: " + path.string());
+   }
+   return buffer.str();
 }
 
 } // namespace detail
@@ -262,29 +306,9 @@ class driver
          throw std::invalid_argument(
             "hypredrive YAML text must not contain embedded NUL bytes");
       }
-      std::string text;
-      if (detail::looks_like_yaml_file_path(yaml))
-      {
-         const std::filesystem::path path{std::string(yaml)};
-         std::ifstream               file(path);
-         if (!file)
-         {
-            throw std::runtime_error("failed to open hypredrive YAML file: " +
-                                     path.string());
-         }
-         std::ostringstream buffer;
-         buffer << file.rdbuf();
-         if (file.bad())
-         {
-            throw std::runtime_error("failed to read hypredrive YAML file: " +
-                                     path.string());
-         }
-         text = buffer.str();
-      }
-      else
-      {
-         text.assign(yaml);
-      }
+      std::string       text = detail::looks_like_yaml_file_path(yaml)
+                                  ? detail::yaml_file_argument(std::string(yaml))
+                                  : std::string(yaml);
       const std::size_t first =
          (args.front() == "-a" || args.front() == "--args") ? 1 : 0;
       std::vector<std::string> tokens(args.begin() + static_cast<std::ptrdiff_t>(first),
@@ -338,13 +362,9 @@ class driver
    void
    parse_yaml(const std::filesystem::path &path)
    {
-      std::ifstream yaml(path);
-      if (!yaml)
-      {
-         throw std::runtime_error("failed to open hypredrive YAML file: " +
-                                  path.string());
-      }
-      parse_yaml(yaml);
+      std::string argument = detail::yaml_file_argument(path);
+      char       *argv[]   = {argument.data()};
+      parse_args(1, argv);
    }
    /// @brief C++ wrapper for HYPREDRV_SetLibraryMode.
    /// @see HYPREDRV_SetLibraryMode

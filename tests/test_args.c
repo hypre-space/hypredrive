@@ -1542,6 +1542,22 @@ test_hypredrv_InputArgsApplyPreconPreset_lazy_alloc_and_apply(void)
 }
 
 static void
+test_hypredrv_InputArgsPreconPresetIsValid(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_InputArgsPreconPresetIsValid("elasticity-2D"));
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   ASSERT_FALSE(hypredrv_InputArgsPreconPresetIsValid("__no_such_preset__"));
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_FALSE(hypredrv_InputArgsPreconPresetIsValid(NULL));
+   ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL) != 0);
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
 test_hypredrv_InputArgsApplyPreconPreset_unknown_preset(void)
 {
    input_args *args = NULL;
@@ -2261,6 +2277,7 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_bad_variant_idx);
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_lazy_alloc_and_apply);
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_unknown_preset);
+   RUN_TEST(test_hypredrv_InputArgsPreconPresetIsValid);
    RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_null_args);
    RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_null_preset);
    RUN_TEST(test_hypredrv_InputArgsApplySolverPreset_apply);

@@ -108,6 +108,11 @@ static void
 NestedKrylovParsePrecon(NestedKrylov_args *args, YAMLnode *precon_node)
 {
    YAML_NODE_SET_VALID(precon_node);
+   if (args->has_precon)
+   {
+      hypredrv_PreconArgsDestroyOwnedConfig(args->precon_method, &args->precon);
+      args->has_precon = 0;
+   }
 
    if (strcmp(precon_node->val, "") != 0)
    {
@@ -271,7 +276,13 @@ NestedKrylovCreateSetupVector(HYPRE_Matrix A, HYPRE_ParVector *vector_ptr)
       partitioning[0] = row_start;
       partitioning[1] = row_end + 1;
       rc |= HYPRE_ParVectorCreate(comm, global_rows, partitioning, vector_ptr);
+#if HYPRE_CHECK_MIN_VERSION(22000, 0)
+      rc |= hypre_ParVectorInitialize_v2(
+         (hypre_ParVector *)*vector_ptr,
+         hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)A));
+#else
       rc |= HYPRE_ParVectorInitialize(*vector_ptr);
+#endif
    }
 
    if (rc && *vector_ptr)
@@ -383,6 +394,8 @@ hypredrv_NestedKrylovSetArgsFromYAML(NestedKrylov_args *args, YAMLnode *solver_n
       return;
    }
 
+   /* Release runtime objects while their original solver method is still set. */
+   hypredrv_NestedKrylovDestroy(args);
    args->is_set        = 1;
    args->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
       hypredrv_SolverGetValidTypeIntMap(), solver_node->key);
@@ -455,7 +468,7 @@ hypredrv_NestedKrylovCreate(MPI_Comm comm, NestedKrylov_args *args, IntArray *do
    /* Create preconditioner object if needed */
    if (args->has_precon)
    {
-      hypredrv_PreconCreate(args->precon_method, &args->precon, dofmap, vec_nn,
+      hypredrv_PreconCreate(comm, args->precon_method, &args->precon, dofmap, vec_nn,
                             &args->precon_obj, NULL, 0, NULL); /* GCOVR_EXCL_BR_LINE */
       if (hypredrv_ErrorCodeActive()) /* GCOVR_EXCL_BR_LINE */ /* PreconCreate failure
                                                                   injection */

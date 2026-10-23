@@ -1192,14 +1192,22 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
          file_not_found = 1;
       }
    }
-   /* GCOVR_EXCL_BR_START */
-   else if (args->type == 3) /* GCOVR_EXCL_BR_STOP */
+   else if (args->type == 3)
    {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
       HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
 #else
       HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
 #endif
+   }
+   else
+   {
+      /* online and parcsr have no file reader of their own; use ASCII IJ. */
+      if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+      {
+         return 0;
+      }
+      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
    }
 
    if (HYPRE_GetError() || file_not_found)
@@ -3105,16 +3113,8 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    {
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: '%s'", matrix_filename);
-      if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+      if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, precmat_ptr))
       {
-         return;
-      }
-      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, precmat_ptr);
-      /* GCOVR_EXCL_BR_START */
-      if (HYPRE_GetError()) /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
          *precmat_ptr = NULL;
          HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
                             "preconditioner matrix read failed from '%s'",
@@ -3605,6 +3605,14 @@ BlockResidualAccumulateAndReport(MPI_Comm comm, const IntArray *dofmap,
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "block residual L2 norms end");
 }
 
+static int
+BlockResidualVectorsValid(const hypre_Vector *local_b, const hypre_Vector *local_r,
+                          const IntArray *dofmap)
+{
+   return local_b && local_r && hypre_VectorSize(local_r) >= 0 &&
+          dofmap->size == (size_t)hypre_VectorSize(local_r);
+}
+
 void
 hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm comm, HYPRE_IJMatrix mat_A,
                                            HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
@@ -3640,7 +3648,7 @@ hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm comm, HYPRE_IJMatrix mat_A,
    hypre_Vector *local_b = hypre_ParVectorLocalVector(par_b);
    hypre_Vector *local_r = hypre_ParVectorLocalVector(par_r);
    HYPRE_Int     size    = local_r ? hypre_VectorSize(local_r) : -1;
-   local_valid = local_b && local_r && size >= 0 && dofmap->size == (size_t)size;
+   local_valid           = BlockResidualVectorsValid(local_b, local_r, dofmap);
    MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
    if (!global_valid)
    {
@@ -3688,6 +3696,14 @@ cleanup:
  * Load a timestep schedule (timestep id, first linear-system id) from a file
  *-----------------------------------------------------------------------------*/
 
+static int
+LinearSystemReadTimestepCount(FILE *fp, int *total)
+{
+   char count_text[64];
+   return fscanf(fp, "%63s", count_text) == 1 && hypredrv_ParseInt(count_text, total) &&
+          *total > 0 && *total <= (int)LSSEQ_MAX_TIMESTEPS;
+}
+
 /* timestep_ids is optional: pass NULL to skip loading per-timestep IDs (caller
  * then derives IDs from array position).  timestep_starts is required. */
 uint32_t
@@ -3727,7 +3743,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
    }
 
    int total = 0;
-   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
+   if (!LinearSystemReadTimestepCount(fp, &total))
    {
       fclose(fp);
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);

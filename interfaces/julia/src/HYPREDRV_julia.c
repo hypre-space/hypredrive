@@ -336,9 +336,16 @@ HYPREDRV_JuliaSetMatrixFromCSR(HYPREDRV_t hypredrv, int64_t row_start_i64,
     * bridge; these opaque casts keep the C ABI stable across HYPRE integer
     * widths.
     */
-   return HYPREDRV_LinearSystemSetMatrixFromCSR(
+   code = HYPREDRV_AnnotateBegin(hypredrv, "matrix", -1);
+   if (code != 0u)
+   {
+      return code;
+   }
+   code = HYPREDRV_LinearSystemSetMatrixFromCSR(
       hypredrv, row_start, row_end, (const HYPRE_BigInt *)indptr,
       (const HYPRE_BigInt *)col_indices, (const HYPRE_Real *)data);
+   uint32_t end_code = HYPREDRV_AnnotateEnd(hypredrv, "matrix", -1);
+   return code != 0u ? code : end_code;
 }
 
 /** @brief Install an RHS slab from int64 row bounds and HYPRE_Real values. */

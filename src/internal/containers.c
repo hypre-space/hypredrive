@@ -381,6 +381,17 @@ IntArrayGatherBuffer(int nprocs, const int *counts, int *displs, int **gathered,
    return *gathered ? ERROR_NONE : ERROR_ALLOCATION;
 }
 
+static uint32_t
+IntArrayUniqueAllocationError(int rank, const IntArray *array, const int *counts,
+                              const int *displs)
+{
+   if (!array->unique_data || (rank == 0 && (!counts || !displs)))
+   {
+      return ERROR_ALLOCATION;
+   }
+   return ERROR_NONE;
+}
+
 static bool
 IntArrayUnique(MPI_Comm comm, IntArray *array)
 {
@@ -407,9 +418,7 @@ IntArrayUnique(MPI_Comm comm, IntArray *array)
       displs = malloc((size_t)nprocs * sizeof(int));
    }
    if (!IntArrayCollectiveCheck(
-          comm, (!array->unique_data || (rank == 0 && (!counts || !displs)))
-                   ? ERROR_ALLOCATION
-                   : ERROR_NONE))
+          comm, IntArrayUniqueAllocationError(rank, array, counts, displs)))
    {
       goto cleanup;
    }
@@ -797,6 +806,20 @@ StrBufferAppend(char **pos, size_t *remaining, const char *format, ...)
  * caller, or NULL when the map has no printable entry.
  *--------------------------------------------------------------------------*/
 
+static bool
+StrIntMapHasEarlierAlias(const StrIntMapArray valid, size_t i)
+{
+   for (size_t j = 0; j < i; j++)
+   {
+      if (valid.data[j].num == valid.data[i].num && valid.data[j].str &&
+          valid.data[j].str[0] != '\0')
+      {
+         return true;
+      }
+   }
+   return false;
+}
+
 char *
 hypredrv_StrIntMapArrayDomainToString(const StrIntMapArray valid)
 {
@@ -829,26 +852,15 @@ hypredrv_StrIntMapArrayDomainToString(const StrIntMapArray valid)
    size_t remaining = length;
    for (size_t i = 0; i < valid.size; i++)
    {
-      const char *str          = valid.data[i].str;
-      int         num          = valid.data[i].num;
-      bool        already_seen = false;
+      const char *str = valid.data[i].str;
+      int         num = valid.data[i].num;
 
       if (!str || str[0] == '\0')
       {
          continue;
       }
 
-      /* Skip entries whose alias group has already been emitted */
-      for (size_t j = 0; j < i; j++)
-      {
-         if (valid.data[j].num == num && valid.data[j].str &&
-             valid.data[j].str[0] != '\0')
-         {
-            already_seen = true;
-            break;
-         }
-      }
-      if (already_seen)
+      if (StrIntMapHasEarlierAlias(valid, i))
       {
          continue;
       }

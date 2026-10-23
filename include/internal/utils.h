@@ -92,12 +92,13 @@ hypredrv_MultipartRange(uint64_t num_parts, int num_procs, int rank, uint64_t *f
    *num_local_parts = base + (urank < rem ? 1u : 0u);
 }
 
-/* Clear hypre's sticky error flag after a public setup/solve boundary call.
+/* Collectively clear hypre's sticky error flag on the caller's communicator
+ * after a public setup/solve boundary call.
  * Convergence and argument-flag warnings are treated as soft results.
  * Use this at API edges that previously called HYPRE_ClearAllErrors(). For
  * nested/inexact solvers that should only discard HYPRE_ERROR_CONV, call
  * hypredrv_HypreClearConvergenceErrors() instead. */
-void hypredrv_HypreConsumeErrors(void);
+void hypredrv_HypreConsumeErrors(MPI_Comm);
 
 /* Clear hypre's sticky error flag only when it is exclusively HYPRE_ERROR_CONV.
  * Harder hypre failures are left intact. Prefer hypredrv_HypreConsumeErrors() at

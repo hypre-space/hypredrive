@@ -55,17 +55,25 @@ hypredrv_MGRSetDofLabels(const DofLabelMap *labels)
 static bool
 MGRlvlResolveDofToken(const char *tok, StackIntArray *arr)
 {
-   char *end  = NULL;
-   long  ival = strtol(tok, &end, 10);
-
-   if (end != tok && *end == '\0')
+   if (arr->size >= MAX_STACK_ARRAY_LENGTH)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("f_dofs exceeds maximum length %d", MAX_STACK_ARRAY_LENGTH);
+      return false;
+   }
+   int ival = 0;
+   if (hypredrv_ParseInt(tok, &ival))
    {
       /* Plain integer */
-      if (arr->size < MAX_STACK_ARRAY_LENGTH)
-      {
-         arr->data[arr->size++] = (int)ival;
-      }
+      arr->data[arr->size++] = ival;
       return true;
+   }
+
+   if (tok[0] != '\0' && strspn(tok, "+-0123456789") == strlen(tok))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("f_dofs: invalid integer '%s'", tok);
+      return false;
    }
 
    /* Symbolic label */
@@ -85,10 +93,7 @@ MGRlvlResolveDofToken(const char *tok, StackIntArray *arr)
       return false;
    }
 
-   if (arr->size < MAX_STACK_ARRAY_LENGTH)
-   {
-      arr->data[arr->size++] = val;
-   }
+   arr->data[arr->size++] = val;
    return true;
 }
 
@@ -105,8 +110,7 @@ MGRlvlFDofsSet(void *field, YAMLnode *node)
     * Each "-" child carries the token in its val (already lowercased). */
    if (node->children)
    {
-      for (const YAMLnode *item                                     = node->children;
-           item != NULL && arr->size < MAX_STACK_ARRAY_LENGTH; item = item->next)
+      for (const YAMLnode *item = node->children; item != NULL; item = item->next)
       {
          if (!strcmp(item->key, "-") && !MGRlvlResolveDofToken(item->val, arr))
          {
@@ -129,7 +133,7 @@ MGRlvlFDofsSet(void *field, YAMLnode *node)
    /* GCOVR_EXCL_STOP */
    char       *saveptr = NULL;
    const char *tok     = strtok_r(buf, "[], ", &saveptr);
-   while (tok && arr->size < MAX_STACK_ARRAY_LENGTH)
+   while (tok)
    {
       if (!MGRlvlResolveDofToken(tok, arr))
       {
@@ -1003,6 +1007,7 @@ hypredrv_MGRlvlSetDefaultArgs(MGRlvl_args *args)
 void
 hypredrv_MGRSetDefaultArgs(MGR_args *args)
 {
+   args->comm              = MPI_COMM_NULL;
    args->dofmap            = NULL;
    args->max_iter          = 1;
    args->num_levels        = 0;
@@ -1152,6 +1157,9 @@ MGRComponentSetArgsFromYAML(const MGRComponentParseOps *ops, void *vargs,
       if (MGRIsNestedKrylovKey(child->key))
       {
          YAML_NODE_SET_VALID(child);
+         MGRNestedKrylovRelease(
+            (NestedKrylov_args **)((char *)vargs + ops->krylov_offset),
+            (int *)((char *)vargs + ops->use_krylov_offset));
          *(int *)((char *)vargs + ops->use_krylov_offset) = 1;
          if (ops->krylov_selected)
          {

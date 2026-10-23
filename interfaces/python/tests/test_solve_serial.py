@@ -332,3 +332,39 @@ def test_explicit_initialize_finalize_is_noop_when_redundant(base_options, lapla
         # Driver close happens at __exit__.
     # Don't call finalize() here: leave it to atexit so the process can run
     # multiple tests that each create their own HypreDrive.
+
+
+@pytest.mark.parametrize("as_path", [True, False])
+def test_yaml_path_preserves_includes_and_indentation(tmp_path, laplacian_1d, as_path):
+    (tmp_path / "solver.yml").write_text(
+        "solver:\n    pcg:\n        max_iter: 100\n        relative_tol: 1.0e-10\n",
+        encoding="utf-8",
+    )
+    path = tmp_path / "options.yml"
+    path.write_text(
+        "general:\n    statistics: off\ninclude: solver.yml\n"
+        "preconditioner:\n    amg:\n        print_level: 0\n",
+        encoding="utf-8",
+    )
+    indptr, cols, data, rhs, n = laplacian_1d
+    result = hd.solve((indptr, cols, data), rhs, options=path if as_path else str(path),
+                      row_start=0, row_end=n - 1)
+    assert result.converged
+    assert result.final_res_norm < 1.0e-10
+
+
+@pytest.mark.parametrize("relpath", ["My Configs/options.yml", "options.cfg"])
+def test_yaml_path_the_c_layer_rejects_still_solves(tmp_path, laplacian_1d, relpath):
+    path = tmp_path / relpath
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(
+        "general:\n  statistics: off\n"
+        "solver:\n  pcg:\n    max_iter: 100\n    relative_tol: 1.0e-10\n"
+        "preconditioner:\n  amg:\n    print_level: 0\n",
+        encoding="utf-8",
+    )
+    indptr, cols, data, rhs, n = laplacian_1d
+    result = hd.solve((indptr, cols, data), rhs, options=path,
+                      row_start=0, row_end=n - 1)
+    assert result.converged
+    assert result.final_res_norm < 1.0e-10

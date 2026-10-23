@@ -1261,6 +1261,36 @@ PreconReuseNormalizedDistance(PreconReuseDirection direction, double aggregate,
    return normalized > 0.0 ? normalized : 0.0;
 }
 
+static int
+PreconReuseAdaptiveTimestepGuard(const PreconReuse_args *args,
+                                 const IntArray *timestep_starts, const Stats *stats,
+                                 PreconReuseState *state, int next_ls_id,
+                                 PreconReuseDecision *decision, int *rebuild)
+{
+   if (args->guards.rebuild_on_new_timestep && state->count > 0) /* GCOVR_EXCL_BR_LINE */
+   {
+      int current_timestep_idx   = -1;
+      int current_timestep_start = -1; /* GCOVR_EXCL_BR_LINE */
+      if (PreconReuseResolveTimestepContext(
+             timestep_starts, stats, next_ls_id,                /* GCOVR_EXCL_BR_LINE */
+             &current_timestep_idx, &current_timestep_start) && /* GCOVR_EXCL_BR_LINE */
+          current_timestep_idx >= 0 &&
+          state->last_observation.timestep_index >= 0 &&
+          current_timestep_idx !=
+             state->last_observation.timestep_index) /* GCOVR_EXCL_BR_LINE */
+      {
+         decision->should_rebuild = 1;
+         snprintf(decision->summary, sizeof(decision->summary),
+                  "guard=new_timestep previous=%d current=%d start=%d",
+                  state->last_observation.timestep_index, current_timestep_idx,
+                  current_timestep_start);
+         *rebuild = 1;
+         return 1;
+      }
+   }
+   return 0;
+}
+
 /* First half of the guard cascade: event-driven rules that force a rebuild
  * regardless of the recorded history. Returns 1 when a decision was reached
  * (stored in *rebuild), or 0 to continue evaluating. */
@@ -1299,26 +1329,10 @@ PreconReuseAdaptiveEventGuards(const PreconReuse_args *args,
       *rebuild = 1;
       return 1;
    }
-   if (args->guards.rebuild_on_new_timestep && state->count > 0) /* GCOVR_EXCL_BR_LINE */
+   if (PreconReuseAdaptiveTimestepGuard(args, timestep_starts, stats, state, next_ls_id,
+                                        decision, rebuild))
    {
-      int current_timestep_idx   = -1;
-      int current_timestep_start = -1; /* GCOVR_EXCL_BR_LINE */
-      if (PreconReuseResolveTimestepContext(
-             timestep_starts, stats, next_ls_id,                /* GCOVR_EXCL_BR_LINE */
-             &current_timestep_idx, &current_timestep_start) && /* GCOVR_EXCL_BR_LINE */
-          current_timestep_idx >= 0 &&
-          state->last_observation.timestep_index >= 0 &&
-          current_timestep_idx !=
-             state->last_observation.timestep_index) /* GCOVR_EXCL_BR_LINE */
-      {
-         decision->should_rebuild = 1;
-         snprintf(decision->summary, sizeof(decision->summary),
-                  "guard=new_timestep previous=%d current=%d start=%d",
-                  state->last_observation.timestep_index, current_timestep_idx,
-                  current_timestep_start);
-         *rebuild = 1;
-         return 1;
-      }
+      return 1;
    }
 
    if (args->guards.rebuild_on_new_level)

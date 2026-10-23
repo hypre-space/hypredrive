@@ -838,9 +838,9 @@ end
 
 function solve!(x::AbstractVector{Float64}, session::HypreDriveSession)
     drv = _require_open(session)
-    setup!(session)
     _check(ccall((:HYPREDRV_JuliaResetInitialGuess, _lib()), UInt32,
                  (Ptr{Cvoid},), drv), "reset initial guess")
+    setup!(session)
     _check(ccall((:HYPREDRV_JuliaLinearSolverApply, _lib()), UInt32,
                  (Ptr{Cvoid},), drv), "apply solver")
     _read_solution!(x, session)

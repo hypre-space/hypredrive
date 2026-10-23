@@ -598,6 +598,15 @@ PrintSystemBasisUsesThreshold(int basis)
           basis == PRINT_SYSTEM_BASIS_SOLVE_TIME;
 }
 
+static int
+PrintSystemParseLevel(const char *value, int *level)
+{
+   /* GCOVR_EXCL_BR_START */
+   return (hypredrv_ParseInt(value, level) &&
+           /* GCOVR_EXCL_BR_STOP */
+           *level >= 0 && *level < STATS_MAX_LEVELS);
+}
+
 /* Applies one key of a selector mapping. Returns zero on an invalid key or
  * value; `seen` records which optional keys were present. */
 static int
@@ -615,10 +624,7 @@ PrintSystemApplySelectorKey(DumpSelector_args *selector_out, const YAMLnode *chi
    }
    if (!strcmp(child->key, "level"))
    {
-      /* GCOVR_EXCL_BR_START */
-      return (hypredrv_ParseInt(value, &selector_out->level) &&
-              /* GCOVR_EXCL_BR_STOP */
-              selector_out->level >= 0 && selector_out->level < STATS_MAX_LEVELS);
+      return PrintSystemParseLevel(value, &selector_out->level);
    }
    if (!strcmp(child->key, "every"))
    {

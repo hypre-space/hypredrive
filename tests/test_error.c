@@ -81,21 +81,21 @@ test_HypreConsumeErrors_classifies_soft_and_hard_flags(void)
    HYPRE_ClearAllErrors();
 
    /* Also exercise the no-sticky-error path that drains buffered messages. */
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypre_error(HYPRE_ERROR_CONV);
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(HYPRE_GetError(), 0);
 
    hypre_error(HYPRE_ERROR_ARG);
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(HYPRE_GetError(), 0);
 
    hypre_error(HYPRE_ERROR_GENERIC | HYPRE_ERROR_ARG);
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
    ASSERT_EQ(HYPRE_GetError(), 0);
 
