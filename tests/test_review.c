@@ -143,6 +143,16 @@ test_mgr_repeated_nested_and_dof_bounds(void)
 static void
 test_preconditioner_matrix_file_formats_and_read_default(void)
 {
+   char ascii_path[4096], binary_path[4096];
+   snprintf(ascii_path, sizeof(ascii_path), "%s/data/ps3d10pt7/np1/IJ.out.A.00000",
+            HYPREDRIVE_SOURCE_DIR);
+   snprintf(binary_path, sizeof(binary_path),
+            "%s/data/poromech2k/np1/ls_00000/IJ.out.A.00000.bin", HYPREDRIVE_SOURCE_DIR);
+   if (access(ascii_path, F_OK) || access(binary_path, F_OK))
+   {
+      fprintf(stderr, "SKIP: optional matrix datasets are unavailable\n");
+      return;
+   }
    HYPREDRV_t obj = NULL;
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
    char yaml[4096];
