@@ -231,7 +231,7 @@ EigspecCloseOutput(FILE *fp, const char *path)
 /*-----------------------------------------------------------------------------
  *-----------------------------------------------------------------------------*/
 
-uint32_t
+static uint32_t
 hypredrv_WriteValuesASCII(const char *prefix, int n, const double *wr, const double *wi)
 {
    char  path[MAX_FILENAME_LENGTH];
@@ -551,6 +551,25 @@ EigSpecApplyPreconditioner(HYPRE_IJMatrix mat_A, MPI_Comm comm, void *precon_ctx
    return 0;
 }
 
+static void
+EigSpecComputeAndWriteSymmetric(const EigSpec_args *eargs, int myid, int n, double *A_cm)
+{
+   double *w    = NULL; /* eigenvalues */
+   double *Z_cm = NULL; /* eigenvectors in column-major (returned in A_cm) */
+   hypredrv_EigSpecComputeSymmetric(n, A_cm, eargs->vectors, &w, &Z_cm);
+   if (!hypredrv_ErrorCodeActive() && myid == 0)
+   {
+      const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
+      hypredrv_WriteValuesASCII(prefix, n, w, NULL);
+      if (eargs->vectors && Z_cm)
+      {
+         hypredrv_WriteRealVectorsBin(prefix, n, Z_cm);
+      }
+   }
+   free(w);
+   free(A_cm);
+}
+
 uint32_t
 hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ctx,
                         hypredrv_PreconApplyFn precon_apply, Stats *stats)
@@ -610,20 +629,7 @@ hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ct
 
    if (eargs->hermitian)
    {
-      double *w    = NULL; /* eigenvalues */
-      double *Z_cm = NULL; /* eigenvectors in column-major (returned in A_cm) */
-      hypredrv_EigSpecComputeSymmetric(n, A_cm, eargs->vectors, &w, &Z_cm);
-      if (!hypredrv_ErrorCodeActive() && myid == 0)
-      {
-         const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
-         hypredrv_WriteValuesASCII(prefix, n, w, NULL);
-         if (eargs->vectors && Z_cm)
-         {
-            hypredrv_WriteRealVectorsBin(prefix, n, Z_cm);
-         }
-      }
-      free(w);
-      free(A_cm);
+      EigSpecComputeAndWriteSymmetric(eargs, myid, n, A_cm);
    }
    else
    {

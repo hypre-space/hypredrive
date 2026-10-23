@@ -2219,6 +2219,26 @@ typedef struct YAMLOverridePathCtx_struct
 } YAMLOverridePathCtx;
 
 static void
+YAMLnodeOverrideLeaf(YAMLnode *node, const char *seg_const, const char *value)
+{
+   YAMLnode *leaf = NULL;
+   for (YAMLnode *walker = node->children; walker; walker = walker->next)
+   {
+      if (!strcmp(walker->key, seg_const))
+      {
+         YAMLnodeDestroyChildren(walker);
+         YAMLnodeSetScalarValue(walker, value);
+         leaf = walker;
+      }
+   }
+   if (!leaf)
+   {
+      leaf = hypredrv_YAMLnodeCreate(seg_const, value, node->level + 1);
+      hypredrv_YAMLnodeAddChild(node, leaf);
+   }
+}
+
+static void
 YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int start_idx,
                               const char *value)
 {
@@ -2286,41 +2306,13 @@ YAMLtreeUpdateApplyPathToNode(YAMLOverridePathCtx *ctx, YAMLnode *node, int star
          /* GCOVR_EXCL_BR_START */
          if (!strcmp(seq_walk->key, "-")) /* GCOVR_EXCL_BR_STOP */
          {
-            YAMLnode *item_leaf = NULL;
-            for (YAMLnode *walker = seq_walk->children; walker; walker = walker->next)
-            {
-               if (!strcmp(walker->key, seg_const))
-               {
-                  YAMLnodeDestroyChildren(walker);
-                  YAMLnodeSetScalarValue(walker, value);
-                  item_leaf = walker;
-               }
-            }
-            if (!item_leaf)
-            {
-               item_leaf = hypredrv_YAMLnodeCreate(seg_const, value, seq_walk->level + 1);
-               hypredrv_YAMLnodeAddChild(seq_walk, item_leaf);
-            }
+            YAMLnodeOverrideLeaf(seq_walk, seg_const, value);
          }
       }
       return;
    }
 
-   YAMLnode *leaf = NULL;
-   for (YAMLnode *walker = node->children; walker; walker = walker->next)
-   {
-      if (!strcmp(walker->key, seg_const))
-      {
-         YAMLnodeDestroyChildren(walker);
-         YAMLnodeSetScalarValue(walker, value);
-         leaf = walker;
-      }
-   }
-   if (!leaf)
-   {
-      leaf = hypredrv_YAMLnodeCreate(seg_const, value, node->level + 1);
-      hypredrv_YAMLnodeAddChild(node, leaf);
-   }
+   YAMLnodeOverrideLeaf(node, seg_const, value);
 }
 
 /* Resolves the two calling conventions into a [start, end) slice of argv that

@@ -439,6 +439,22 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
  * hypredrv_PreconCreate
  *-----------------------------------------------------------------------------*/
 
+static int
+PreconMainIsValid(HYPRE_Precon precon)
+{
+   if (precon->method == PRECON_NONE || precon->main)
+   {
+      return 1;
+   }
+   if (!hypredrv_ErrorCodeActive())
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Preconditioner creation failed (method=%d)",
+                           (int)precon->method);
+   }
+   return 0;
+}
+
 void
 hypredrv_PreconCreate(MPI_Comm comm, precon_t precon_method, precon_args *args,
                       IntArray *dofmap, HYPRE_IJVector vec_nn, HYPRE_Precon *precon_ptr,
@@ -532,14 +548,8 @@ hypredrv_PreconCreate(MPI_Comm comm, precon_t precon_method, precon_args *args,
     * into hypre and crash. A NULL main for any method other than PRECON_NONE is the
     * reliable failure signal here (the process-global error state is sticky and may
     * reflect an unrelated earlier failure, so it must not be used for this check). */
-   if (precon_method != PRECON_NONE && !precon->main)
+   if (!PreconMainIsValid(precon))
    {
-      if (!hypredrv_ErrorCodeActive())
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("Preconditioner creation failed (method=%d)",
-                              (int)precon_method);
-      }
       hypredrv_PreconArgsDestroyRuntimeState(precon_method, args);
       free(precon);
       *precon_ptr = NULL;

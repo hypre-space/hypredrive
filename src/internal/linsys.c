@@ -3605,6 +3605,14 @@ BlockResidualAccumulateAndReport(MPI_Comm comm, const IntArray *dofmap,
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "block residual L2 norms end");
 }
 
+static int
+BlockResidualVectorsValid(const hypre_Vector *local_b, const hypre_Vector *local_r,
+                          const IntArray *dofmap)
+{
+   return local_b && local_r && hypre_VectorSize(local_r) >= 0 &&
+          dofmap->size == (size_t)hypre_VectorSize(local_r);
+}
+
 void
 hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm comm, HYPRE_IJMatrix mat_A,
                                            HYPRE_IJVector vec_b, HYPRE_IJVector vec_x,
@@ -3640,7 +3648,7 @@ hypredrv_LinearSystemLogBlockResidualNorms(MPI_Comm comm, HYPRE_IJMatrix mat_A,
    hypre_Vector *local_b = hypre_ParVectorLocalVector(par_b);
    hypre_Vector *local_r = hypre_ParVectorLocalVector(par_r);
    HYPRE_Int     size    = local_r ? hypre_VectorSize(local_r) : -1;
-   local_valid = local_b && local_r && size >= 0 && dofmap->size == (size_t)size;
+   local_valid           = BlockResidualVectorsValid(local_b, local_r, dofmap);
    MPI_Allreduce(&local_valid, &global_valid, 1, MPI_INT, MPI_MIN, comm);
    if (!global_valid)
    {
@@ -3688,6 +3696,14 @@ cleanup:
  * Load a timestep schedule (timestep id, first linear-system id) from a file
  *-----------------------------------------------------------------------------*/
 
+static int
+LinearSystemReadTimestepCount(FILE *fp, int *total)
+{
+   char count_text[64];
+   return fscanf(fp, "%63s", count_text) == 1 && hypredrv_ParseInt(count_text, total) &&
+          *total > 0 && *total <= (int)LSSEQ_MAX_TIMESTEPS;
+}
+
 /* timestep_ids is optional: pass NULL to skip loading per-timestep IDs (caller
  * then derives IDs from array position).  timestep_starts is required. */
 uint32_t
@@ -3726,10 +3742,8 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
       return hypredrv_ErrorCodeGet();
    }
 
-   int  total = 0;
-   char count_text[64];
-   if (fscanf(fp, "%63s", count_text) != 1 || !hypredrv_ParseInt(count_text, &total) ||
-       total <= 0 || total > (int)LSSEQ_MAX_TIMESTEPS)
+   int total = 0;
+   if (!LinearSystemReadTimestepCount(fp, &total))
    {
       fclose(fp);
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);

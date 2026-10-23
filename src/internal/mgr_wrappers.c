@@ -293,6 +293,14 @@ MGRFRelaxEquilSetupPreconditionsOk(MGRFRelaxEquilWrapper *wrapper, hypre_ParCSRM
    return 1;
 }
 
+static int
+MGRFRelaxEquilDiagonalValid(const hypre_CSRMatrix *diag, HYPRE_Int n,
+                            const HYPRE_Int *rows, const HYPRE_Int *cols,
+                            const HYPRE_Complex *data)
+{
+   return diag && (n == 0 || (rows && cols && data));
+}
+
 static HYPRE_Int
 MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
 {
@@ -325,8 +333,8 @@ MGRFRelaxEquilWrapperSetup(void *wrapper_v, void *A_v, void *b_v, void *x_v)
    HYPRE_Int       *A_j    = A_diag ? hypre_CSRMatrixJ(A_diag) : NULL;
    HYPRE_Complex   *A_data = A_diag ? hypre_CSRMatrixData(A_diag) : NULL;
 
-   local_ok = MGRFRelaxEquilWorkCreate(A, n, &work) && A_diag &&
-              (n == 0 || (A_i && A_j && A_data));
+   local_ok = MGRFRelaxEquilWorkCreate(A, n, &work) &&
+              MGRFRelaxEquilDiagonalValid(A_diag, n, A_i, A_j, A_data);
    if (!MGRFRelaxEquilAllRanksOk(comm, local_ok))
    {
       hypre_error_w_msg(HYPRE_ERROR_MEMORY,

@@ -447,23 +447,10 @@ DestroyOwnedMatrices(HYPREDRV_t hypredrv)
    }
 }
 
-/* Vectors and auxiliary operators created by HYPREDRV itself, plus the ones the
- * caller handed over ownership of. State vectors are always caller-owned. */
+/* Releases owned Schur, gradient, and curl operators. */
 static void
-DestroyOwnedVectors(HYPREDRV_t hypredrv)
+DestroyOwnedAuxiliaryOperators(HYPREDRV_t hypredrv)
 {
-   if (hypredrv->vec_x && hypredrv->owns_vec_x)
-   {
-      HYPRE_IJVectorDestroy(hypredrv->vec_x);
-   }
-   if (hypredrv->vec_x0 && hypredrv->owns_vec_x0)
-   {
-      HYPRE_IJVectorDestroy(hypredrv->vec_x0);
-   }
-   if (hypredrv->vec_nn)
-   {
-      HYPRE_IJVectorDestroy(hypredrv->vec_nn);
-   }
    for (int i = 0; i < MAX_MGR_LEVELS - 1; i++)
    {
       if (hypredrv->mat_coarse_schur[i] && hypredrv->owns_mat_coarse_schur[i])
@@ -481,6 +468,25 @@ DestroyOwnedVectors(HYPREDRV_t hypredrv)
    {
       HYPRE_IJMatrixDestroy(hypredrv->mat_C);
    }
+}
+
+/* Releases owned solution, near-nullspace, and coordinate vectors. */
+static void
+DestroyOwnedVectors(HYPREDRV_t hypredrv)
+{
+   if (hypredrv->vec_x && hypredrv->owns_vec_x)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_x);
+   }
+   if (hypredrv->vec_x0 && hypredrv->owns_vec_x0)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_x0);
+   }
+   if (hypredrv->vec_nn)
+   {
+      HYPRE_IJVectorDestroy(hypredrv->vec_nn);
+   }
+   DestroyOwnedAuxiliaryOperators(hypredrv);
    if (hypredrv->owns_vec_coord)
    {
       for (int i = 0; i < 3; i++)

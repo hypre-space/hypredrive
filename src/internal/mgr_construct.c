@@ -983,6 +983,42 @@ MGRConfigManagedGRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int active_lvl
  * Configure the global relaxation solver of each active MGR level.
  *-----------------------------------------------------------------------------*/
 
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+static int
+MGRConfigKrylovGRelax(MGR_args *args, HYPRE_Solver precon, HYPRE_Int i,
+                      HYPRE_Int orig_lvl, const Stats *stats, int next_ls_id)
+{
+   MGRlvl_args *level_args = &args->level[orig_lvl];
+   int krylov_was_cached   = (level_args->g_relaxation.krylov->base_solver != NULL);
+   if (!krylov_was_cached)
+   {
+      if (!hypredrv_MGRProjectNestedRemainingRBMs(level_args->g_relaxation.krylov, args,
+                                                  i))
+      {
+         return 0;
+      }
+      hypredrv_NestedKrylovCreate(args->comm, level_args->g_relaxation.krylov,
+                                  args->dofmap, args->vec_nn,
+                                  &level_args->g_relaxation.krylov->base_solver);
+      /* GCOVR_EXCL_START */
+      if (hypredrv_ErrorCodeActive())
+      {
+         return 0;
+      }
+      /* GCOVR_EXCL_STOP */
+   }
+   else
+   {
+      HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
+                         "reusing cached MGR G-relax nested Krylov handle at level %d",
+                         (int)orig_lvl);
+   }
+   HYPRE_MGRSetGlobalSmootherAtLevel(precon,
+                                     (HYPRE_Solver)level_args->g_relaxation.krylov, i);
+   return 1;
+}
+#endif
+
 static int
 MGRConfigGRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan *plan,
                        const Stats *stats, int next_ls_id)
@@ -995,33 +1031,10 @@ MGRConfigGRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
 
       if (level_args->g_relaxation.use_krylov && level_args->g_relaxation.krylov)
       {
-         int krylov_was_cached = (level_args->g_relaxation.krylov->base_solver != NULL);
-         if (!krylov_was_cached)
+         if (!MGRConfigKrylovGRelax(args, precon, i, orig_lvl, stats, next_ls_id))
          {
-            if (!hypredrv_MGRProjectNestedRemainingRBMs(level_args->g_relaxation.krylov,
-                                                        args, i))
-            {
-               return 0;
-            }
-            hypredrv_NestedKrylovCreate(args->comm, level_args->g_relaxation.krylov,
-                                        args->dofmap, args->vec_nn,
-                                        &level_args->g_relaxation.krylov->base_solver);
-            /* GCOVR_EXCL_START */
-            if (hypredrv_ErrorCodeActive())
-            {
-               return 0;
-            }
-            /* GCOVR_EXCL_STOP */
+            return 0;
          }
-         else
-         {
-            HYPREDRV_LOG_COMMF(
-               2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
-               "reusing cached MGR G-relax nested Krylov handle at level %d",
-               (int)orig_lvl);
-         }
-         HYPRE_MGRSetGlobalSmootherAtLevel(
-            precon, (HYPRE_Solver)level_args->g_relaxation.krylov, i);
       }
       else if (level_args->g_relaxation.type == 20 || level_args->g_relaxation.type == 16)
       {

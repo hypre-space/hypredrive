@@ -218,6 +218,38 @@ ErrorBacktraceExePath(char *exe_path, size_t exe_path_size)
    }
 }
 
+static unsigned long
+ErrorBacktraceOffset(const char *symbol, void *trace, unsigned long base_addr)
+{
+   unsigned long offset = 0;
+   /* Parse offset from symbol string (format: "executable(+0xoffset)" or
+    * "executable[+0xoffset]") */
+   if (symbol)
+   {
+      const char *plus = strstr(symbol, "(+0x");
+      if (!plus)
+      {
+         plus = strstr(symbol, "[+0x");
+      }
+      if (plus)
+      {
+         offset = strtoul(plus + 4, NULL, 16);
+      }
+   }
+
+   /* Fallback: if we couldn't parse offset from symbol string, compute it from base
+    * address */
+   if (offset == 0 && base_addr > 0)
+   {
+      unsigned long addr = (unsigned long)trace;
+      if (addr >= base_addr)
+      {
+         offset = addr - base_addr;
+      }
+   }
+   return offset;
+}
+
 static void
 ErrorBacktraceSymbolsPrint(void)
 {
@@ -249,33 +281,7 @@ ErrorBacktraceSymbolsPrint(void)
       {
          char          func[256] = "";
          char          file[256] = "";
-         unsigned long offset    = 0;
-
-         /* Parse offset from symbol string (format: "executable(+0xoffset)" or
-          * "executable[+0xoffset]") */
-         if (symbols[i])
-         {
-            const char *plus = strstr(symbols[i], "(+0x");
-            if (!plus)
-            {
-               plus = strstr(symbols[i], "[+0x");
-            }
-            if (plus)
-            {
-               offset = strtoul(plus + 4, NULL, 16);
-            }
-         }
-
-         /* Fallback: if we couldn't parse offset from symbol string, compute it from base
-          * address */
-         if (offset == 0 && base_addr > 0)
-         {
-            unsigned long addr = (unsigned long)trace[i];
-            if (addr >= base_addr)
-            {
-               offset = addr - base_addr;
-            }
-         }
+         unsigned long offset    = ErrorBacktraceOffset(symbols[i], trace[i], base_addr);
 
          /* If we found an offset, use addr2line with it */
          if (offset > 0)

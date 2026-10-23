@@ -181,6 +181,30 @@ IJVectorSourceInsertPart(HYPRE_IJVector vec, HYPRE_MemoryLocation memory_locatio
    return 1;
 }
 
+static void
+IJVectorSourceBuffersCreate(uint64_t nrows_max, HYPRE_MemoryLocation memory_location,
+                            IJVectorSourceBuffers *buffers)
+{
+   buffers->indices = (HYPRE_BigInt *)malloc((size_t)nrows_max * sizeof(HYPRE_BigInt));
+   buffers->wide    = (HYPRE_Complex *)malloc((size_t)nrows_max * sizeof(HYPRE_Complex));
+   /* GCOVR_EXCL_BR_START */
+   if (!buffers->indices || !buffers->wide) /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                   /* GCOVR_EXCL_LINE */
+      hypredrv_ErrorMsgAdd("Failed to allocate vector buffers"); /* GCOVR_EXCL_LINE */
+   }
+#ifdef HYPRE_USING_GPU
+   if (memory_location == HYPRE_MEMORY_DEVICE)
+   {
+      buffers->d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
+      buffers->d_vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
+   }
+#endif
+#ifndef HYPRE_USING_GPU
+   (void)memory_location;
+#endif
+}
+
 void
 hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSource *src,
                                  HYPRE_MemoryLocation memory_location,
@@ -198,21 +222,7 @@ hypredrv_IJVectorBuildFromSource(MPI_Comm comm, const hypredrv_IJVectorPartSourc
    IJVectorSourceScanMetadata(src, &nrows_sum, &nrows_max);
    if (!hypredrv_ErrorCodeActive() && nrows_max > 0)
    {
-      buffers.indices = (HYPRE_BigInt *)malloc((size_t)nrows_max * sizeof(HYPRE_BigInt));
-      buffers.wide = (HYPRE_Complex *)malloc((size_t)nrows_max * sizeof(HYPRE_Complex));
-      /* GCOVR_EXCL_BR_START */
-      if (!buffers.indices || !buffers.wide) /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                   /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd("Failed to allocate vector buffers"); /* GCOVR_EXCL_LINE */
-      }
-#ifdef HYPRE_USING_GPU
-      if (memory_location == HYPRE_MEMORY_DEVICE)
-      {
-         buffers.d_indices = hypre_TAlloc(HYPRE_BigInt, nrows_max, memory_location);
-         buffers.d_vals    = hypre_TAlloc(HYPRE_Complex, nrows_max, memory_location);
-      }
-#endif
+      IJVectorSourceBuffersCreate(nrows_max, memory_location, &buffers);
    }
    if (!IJVectorAllRanksOk(comm))
    {
