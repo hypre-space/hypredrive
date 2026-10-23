@@ -139,8 +139,8 @@ typedef struct AMG_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_AMGSetDefaultArgs(AMG_args *);
-void hypredrv_AMGSetArgs(void *, const struct YAMLnode_struct *);
-void hypredrv_AMGCreate(const AMG_args *, HYPRE_Solver *);
+void hypredrv_AMGSetArgs(void *, struct YAMLnode_struct *);
+void hypredrv_AMGCreate(AMG_args *, HYPRE_Solver *);
 void hypredrv_AMGSetRBMs(AMG_args *, HYPRE_IJVector);
 void hypredrv_AMGSetProjectedRBMs(AMG_args *, HYPRE_IJVector, const IntArray *, uint64_t,
                                   const int *, size_t);

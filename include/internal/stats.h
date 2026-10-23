@@ -84,9 +84,9 @@ extern "C++"
 
 typedef struct
 {
-   const char *name;
-   double      start_time;
-   int         level;
+   char  *name; /* owned copy */
+   double start_time;
+   int    level;
 } AnnotationContext;
 
 /*--------------------------------------------------------------------------

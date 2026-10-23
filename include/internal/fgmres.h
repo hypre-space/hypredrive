@@ -33,7 +33,7 @@ typedef struct FGMRES_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_FGMRESSetDefaultArgs(FGMRES_args *);
-void hypredrv_FGMRESSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_FGMRESSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_FGMRESCreate(MPI_Comm, const FGMRES_args *, HYPRE_Solver *);
 
 #endif /* FGMRES_HEADER */

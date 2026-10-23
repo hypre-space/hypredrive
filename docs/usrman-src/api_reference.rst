@@ -39,10 +39,21 @@ For a full library-mode walkthrough and complete code examples, see
 Follow these two rules when you use the application programming interface (API) directly:
 
 - Call ``HYPREDRV_SetLibraryMode`` before ``HYPREDRV_InputArgsParse`` when your application
-  owns the HYPRE matrices and vectors.
+  owns the HYPRE matrices and vectors. A call made after a matrix or vector is attached
+  fails, because each setter fixes ownership when it runs. Without library mode,
+  hypredrive owns and destroys the objects passed to the ``HYPREDRV_LinearSystemSet*``
+  setters; state vectors passed to ``HYPREDRV_StateVectorSet`` always stay caller-owned.
 - Do not call ``HYPREDRV_PreconDestroy`` after ``HYPREDRV_LinearSolverDestroy`` unless you
   manage the preconditioner separately. The solver destroy function also destroys its
   preconditioner.
+
+Error codes accumulate in one sticky, process-wide state shared by every ``HYPREDRV_t``
+object. An error left unhandled by one call can show up in the return value of a later,
+successful call on any object until ``HYPREDRV_ErrorCodeClear`` resets it.
+``HYPREDRV_Create``, ``HYPREDRV_Destroy``, the configuration calls
+(``HYPREDRV_InputArgsParse``, ``HYPREDRV_InputArgsSet*Preset``) and the solver lifecycle
+calls (``HYPREDRV_Precon*`` and ``HYPREDRV_LinearSolver*`` create/setup/apply) clear the
+error state on entry.
 
 An embedded application can keep multiple ``HYPREDRV_t`` objects active. Use the applicable
 handle with the annotation and hierarchical statistics APIs. The ``HYPREDRV_Annotate*`` and
@@ -69,7 +80,7 @@ Lifecycle and Setup
 - :cpp:func:`HYPREDRV_Destroy` - Destroy a hypredrive object and release its managed resources.
 - :cpp:func:`HYPREDRV_Finalize` - Auto-destroy any remaining live handles and tear down global runtime state.
 - :cpp:func:`HYPREDRV_ErrorCodeDescribe` - Print a human-readable description for a hypredrive error code.
-- :cpp:func:`HYPREDRV_ErrorCodeClear` - Clear the current error state.
+- :cpp:func:`HYPREDRV_ErrorCodeClear` - Clear the sticky, process-wide error state shared by all objects.
 - :cpp:func:`HYPREDRV_ErrorInvalidValue` - Report an invalid argument value.
 - :cpp:func:`HYPREDRV_SafeCallHandleError` - Handle an error returned by a safe API call.
 - :cpp:func:`HYPREDRV_PrintLibInfo` - Print version and startup information for hypredrive and hypre.

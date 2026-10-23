@@ -43,7 +43,7 @@ enum
 };
 
 static void
-LinearSystemSetSuffixSet(void *field, const YAMLnode *node)
+LinearSystemSetSuffixSet(void *field, YAMLnode *node)
 {
    IntArray **ptr = (IntArray **)field;
    /* GCOVR_EXCL_BR_START */
@@ -324,8 +324,8 @@ static const FieldOffsetMap ls_field_offset_map[] = {
  * hypredrv_LinearSystemSetFieldByName
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_LinearSystemSetFieldByName(LS_args *args, const YAMLnode *node)
+static void
+hypredrv_LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
 {
    /* GCOVR_EXCL_BR_START */
    for (size_t i = 0; i < LS_NUM_FIELDS; i++) /* GCOVR_EXCL_BR_STOP */
@@ -1012,28 +1012,60 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
       return 0; /* GCOVR_EXCL_LINE */
    }
 
+   int len     = -1;
    resolved[0] = '\0';
    if (args->dirname[0] != '\0' && filename[0] != '\0')
    {
       int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
-      snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s", (int)strlen(args->dirname),
-               args->dirname, (int)args->digits_suffix, suffix, (int)strlen(filename),
-               filename);
-      return 1;
+      len        = snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s",
+                            (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
+                            suffix, (int)strlen(filename), filename);
    }
-   if (filename[0] != '\0')
+   else if (filename[0] != '\0')
    {
-      snprintf(resolved, resolved_size, "%s", filename);
-      return 1;
+      len = snprintf(resolved, resolved_size, "%s", filename);
    }
-   if (basename[0] != '\0')
+   else if (basename[0] != '\0')
    {
       int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
-      snprintf(resolved, resolved_size, "%.*s_%0*d", (int)strlen(basename), basename,
-               (int)args->digits_suffix, suffix);
-      return 1;
+      len        = snprintf(resolved, resolved_size, "%.*s_%0*d", (int)strlen(basename),
+                            basename, (int)args->digits_suffix, suffix);
+   }
+   else
+   {
+      return 0;
    }
 
+   if (len < 0 || (size_t)len >= resolved_size)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Data file path exceeds %zu characters: '%s'",
+                           resolved_size - 1, resolved);
+      resolved[0] = '\0';
+      return 0;
+   }
+
+   return 1;
+}
+
+/* hypre's ASCII readers open one part per rank, so the part count must equal the
+ * rank count (multi-part binary input has no such restriction). */
+static int
+LinearSystemASCIIPartsMatchRanks(MPI_Comm comm, const char *prefixname)
+{
+   int nprocs = 0;
+   int nparts = hypredrv_CountNumberOfPartitions(prefixname);
+
+   MPI_Comm_size(comm, &nprocs);
+   if (nparts == 0 || nparts == nprocs)
+   {
+      return 1; /* a missing file is reported by the reader itself */
+   }
+
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd("ASCII input '%s' has %d part(s) but runs on %d MPI rank(s); "
+                        "use matching ranks or binary input",
+                        prefixname, nparts, nprocs);
    return 0;
 }
 
@@ -1048,7 +1080,7 @@ LinearSystemMultipartCanRead(MPI_Comm comm, const char *prefixname)
    return (nparts >= nprocs) != 0;
 }
 
-static void
+static int
 LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
                                  HYPRE_MemoryLocation memory_location,
                                  HYPRE_IJVector      *vector_ptr)
@@ -1070,10 +1102,15 @@ LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
 #endif
       }
    }
-   else
+   else if (LinearSystemASCIIPartsMatchRanks(comm, filename))
    {
       HYPRE_IJVectorRead(filename, comm, HYPRE_PARCSR, vector_ptr);
    }
+   else
+   {
+      return 0;
+   }
+   return 1;
 }
 
 static void
@@ -1144,6 +1181,10 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
       }
       else if (hypredrv_CheckASCIIDataExists(matrix_filename))
       {
+         if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+         {
+            return 0;
+         }
          HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
       }
       else
@@ -1279,7 +1320,8 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
             /* GCOVR_EXCL_BR_START */
             if (close) *close = '\0';
             /* GCOVR_EXCL_BR_STOP */
-            char *pair = strtok(inner, ",");
+            char *saveptr = NULL;
+            char *pair    = strtok_r(inner, ",", &saveptr);
             while (pair)
             {
                while (*pair == ' ') pair++;
@@ -1303,7 +1345,7 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
                   }
                   hypredrv_DofLabelMapAdd(args->dof_labels, pair_key, val_int);
                }
-               pair = strtok(NULL, ",");
+               pair = strtok_r(NULL, ",", &saveptr);
             }
             free(buf);
          }
@@ -2108,8 +2150,8 @@ LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix m
    }
    else
    {
-      LinearSystemIJVectorReadFromFile(comm, rhs_filename,
-                                       LinearSystemMemoryLocationGet(args), rhs_ptr);
+      ok = LinearSystemIJVectorReadFromFile(comm, rhs_filename,
+                                            LinearSystemMemoryLocationGet(args), rhs_ptr);
    }
 
    if (HYPRE_GetError())
@@ -2334,7 +2376,10 @@ hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatri
    {
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "initial guess source: '%s'",
                          args->x0_filename);
-      LinearSystemIJVectorReadFromFile(comm, args->x0_filename, memloc, x0_ptr);
+      if (!LinearSystemIJVectorReadFromFile(comm, args->x0_filename, memloc, x0_ptr))
+      {
+         return;
+      }
       if (HYPRE_GetError())
       {
          hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
@@ -2412,8 +2457,11 @@ hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "reference solution source: '%s'",
                       xref_filename);
 
-   LinearSystemIJVectorReadFromFile(comm, xref_filename,
-                                    LinearSystemMemoryLocationGet(args), xref_ptr);
+   if (!LinearSystemIJVectorReadFromFile(comm, xref_filename,
+                                         LinearSystemMemoryLocationGet(args), xref_ptr))
+   {
+      return;
+   }
 
    /* Check if hypre had problems reading the input file */
    /* GCOVR_EXCL_START */
@@ -3057,6 +3105,10 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    {
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: '%s'", matrix_filename);
+      if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+      {
+         return;
+      }
       HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, precmat_ptr);
       /* GCOVR_EXCL_BR_START */
       if (HYPRE_GetError()) /* GCOVR_EXCL_BR_STOP */

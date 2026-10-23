@@ -8,13 +8,17 @@
 #ifndef TEST_HELPERS_HEADER
 #define TEST_HELPERS_HEADER
 
+#include <dirent.h>
+#include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "HYPRE.h"
@@ -243,5 +247,71 @@ cleanup_temp_files(void)
       } \
       tmp_file; \
    })
+
+/*-----------------------------------------------------------------------------
+ * Scratch directory helpers: every test process writes under its own private
+ * directory, so parallel ctest runs never share paths and no shell is needed.
+ *-----------------------------------------------------------------------------*/
+
+static char test_scratch_dir[64];
+
+/* Remove a file or directory tree without following symlinks; missing paths
+ * are ignored. */
+static inline void
+test_rmtree(const char *path)
+{
+   struct stat st;
+   DIR        *dir = (lstat(path, &st) == 0 && S_ISDIR(st.st_mode)) ? opendir(path) : NULL;
+   if (dir)
+   {
+      struct dirent *entry = NULL;
+      while ((entry = readdir(dir)))
+      {
+         if (strcmp(entry->d_name, ".") && strcmp(entry->d_name, ".."))
+         {
+            char child[PATH_MAX];
+            snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+            test_rmtree(child);
+         }
+      }
+      closedir(dir);
+   }
+   (void)remove(path);
+}
+
+static inline void
+test_scratch_cleanup(void)
+{
+   test_rmtree(test_scratch_dir);
+}
+
+/* Fill buf with "<scratch>/<name>". The private scratch directory is created
+ * exclusively on first use and removed at exit; the returned path itself does
+ * not exist yet. The name is lowercase (unlike mkdtemp's) because the YAML layer
+ * lowercases values such as output_dir. */
+static inline char *
+test_scratch_path(char *buf, size_t size, const char *name)
+{
+   for (int i = 0; !test_scratch_dir[0]; i++)
+   {
+      snprintf(test_scratch_dir, sizeof(test_scratch_dir), "/tmp/hypredrv-test-%ld-%d",
+               (long)getpid(), i);
+      if (mkdir(test_scratch_dir, 0700) == 0)
+      {
+         atexit(test_scratch_cleanup);
+      }
+      else if (errno == EEXIST)
+      {
+         test_scratch_dir[0] = '\0';
+      }
+      else
+      {
+         perror(test_scratch_dir);
+         exit(1);
+      }
+   }
+   snprintf(buf, size, "%s/%s", test_scratch_dir, name);
+   return buf;
+}
 
 #endif /* TEST_HELPERS_HEADER */

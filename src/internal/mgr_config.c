@@ -93,7 +93,7 @@ MGRlvlResolveDofToken(const char *tok, StackIntArray *arr)
 }
 
 static void
-MGRlvlFDofsSet(void *field, const YAMLnode *node)
+MGRlvlFDofsSet(void *field, YAMLnode *node)
 {
    StackIntArray *arr = (StackIntArray *)field;
    arr->size          = 0;
@@ -127,7 +127,8 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
       return;
    }
    /* GCOVR_EXCL_STOP */
-   const char *tok = strtok(buf, "[], ");
+   char       *saveptr = NULL;
+   const char *tok     = strtok_r(buf, "[], ", &saveptr);
    while (tok && arr->size < MAX_STACK_ARRAY_LENGTH)
    {
       if (!MGRlvlResolveDofToken(tok, arr))
@@ -135,7 +136,7 @@ MGRlvlFDofsSet(void *field, const YAMLnode *node)
          free(buf);
          return;
       }
-      tok = strtok(NULL, "[], ");
+      tok = strtok_r(NULL, "[], ", &saveptr);
    }
    free(buf);
 }
@@ -159,9 +160,8 @@ DEFINE_TYPED_SETTER(MGRfrlxSchwarzSetArgs, MGRfrlx_args, schwarz, MGR_SOLVER_TYP
 DEFINE_TYPED_SETTER(MGRgrlxSchwarzSetArgs, MGRgrlx_args, schwarz, MGR_SOLVER_TYPE_SCHWARZ,
                     hypredrv_SchwarzSetArgs)
 #endif
-static void MGRfrlxMGRSetArgs(void *, const YAMLnode *);
-static void MGRCycleSet(void *, const YAMLnode *);
-void        hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
+static void MGRfrlxMGRSetArgs(void *, YAMLnode *);
+static void MGRCycleSet(void *, YAMLnode *);
 
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 #define MGRcls_SCHWARZ_FIELD(_prefix) \
@@ -300,7 +300,7 @@ hypredrv_MGRfrlxReleaseArgs(MGRfrlx_args *args)
 GENERATE_PREFIXED_LIST_MGR                             // LCOV_EXCL_LINE
 hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
 
-   static void MGRCycleSet(void *field, const YAMLnode *node)
+   static void MGRCycleSet(void *field, YAMLnode *node)
 {
    MGR_args *args =
       (MGR_args *)((char *)field - offsetof(MGR_args, cycle)); /* field is args->cycle */
@@ -364,9 +364,6 @@ hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
    }
 }
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
 /* GCOVR_EXCL_BR_START */
 static bool
 MGRIsNestedKrylovKey(const char *key)
@@ -389,9 +386,6 @@ MGRIsNestedKrylovKey(const char *key)
    free(tmp);
    return is_valid;
 }
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 static NestedKrylov_args *
 MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
@@ -418,9 +412,6 @@ MGRGetOrCreateNestedKrylov(NestedKrylov_args **ptr)
 
    return *ptr;
 }
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 static MGR_args *
 MGRGetOrCreateNestedMGR(MGR_args **ptr)
@@ -827,9 +818,6 @@ cleanup:
 }
 /* GCOVR_EXCL_BR_STOP */
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
 /* GCOVR_EXCL_BR_START */
 /*-----------------------------------------------------------------------------
  * (Re)initialize the union storage of an MGR component when YAML parsing
@@ -931,12 +919,6 @@ hypredrv_MGRLevelInterpTypeCompat(HYPRE_Int interp_type, const Stats *stats,
    return interp_type;
 }
 /* GCOVR_EXCL_BR_STOP */
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 /*-----------------------------------------------------------------------------
  * MGRclsSetDefaultArgs
@@ -1059,12 +1041,9 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
    args->point_marker_data    = NULL;
 }
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
 /* GCOVR_EXCL_START */
 static void
-MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
+MGRfrlxMGRSetArgs(void *field, YAMLnode *node)
 {
    MGRfrlx_args *parent = (MGRfrlx_args *)((char *)field - offsetof(MGRfrlx_args, mgr));
    MGR_args    **nested_ptr = (MGR_args **)field;
@@ -1079,12 +1058,9 @@ MGRfrlxMGRSetArgs(void *field, const YAMLnode *node)
    }
 
    parent->type = MGR_FRLX_TYPE_NESTED_MGR;
-   hypredrv_MGRSetArgsFromYAML(nested_mgr, (YAMLnode *)node);
+   hypredrv_MGRSetArgsFromYAML(nested_mgr, node);
 }
 /* GCOVR_EXCL_STOP */
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 static void
 MGRComponentReuseSetArgsFromYAML(MGRComponentReuse_args *reuse, YAMLnode *node)
@@ -1094,9 +1070,6 @@ MGRComponentReuseSetArgsFromYAML(MGRComponentReuse_args *reuse, YAMLnode *node)
    reuse->present = 1;
    hypredrv_PreconReuseSetArgsFromYAML(&reuse->args, node);
 }
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 /* GCOVR_EXCL_BR_START */
 /*-----------------------------------------------------------------------------
@@ -1110,7 +1083,7 @@ typedef struct
 {
    StrArray (*get_valid_keys)(void);
    StrIntMapArray (*get_valid_values)(const char *);
-   void (*set_field_by_name)(void *, const YAMLnode *);
+   void (*set_field_by_name)(void *, YAMLnode *);
    void (*apply_type_defaults)(void *, HYPRE_Int);
    void (*krylov_selected)(void *); /* optional type adjustment, may be NULL */
    size_t type_offset;
@@ -1221,9 +1194,6 @@ hypredrv_MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
    MGRComponentSetArgsFromYAML(&cls_parse_ops, vargs, parent);
 }
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
 void
 hypredrv_MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
 {
@@ -1241,9 +1211,6 @@ hypredrv_MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
 
    MGRComponentSetArgsFromYAML(&frlx_parse_ops, vargs, parent);
 }
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
 
 void
 hypredrv_MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)

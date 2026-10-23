@@ -300,62 +300,30 @@ endif()
 
 if(CALIPER_FOUND)
     if(TARGET caliper::caliper)
-        target_link_libraries(HYPREDRV PRIVATE caliper::caliper)
-        # Ensure Caliper headers are visible to dependents when HYPRE enables Caliper
-        get_target_property(CALIPER_INCLUDE_DIRS caliper::caliper INTERFACE_INCLUDE_DIRECTORIES)
-        if(CALIPER_INCLUDE_DIRS)
-            target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIRS}>)
-        endif()
-        # Caliper is a C++ library - ensure C++ standard library is available
-        # Enable C++ language support for linking C++ libraries
-        enable_language(CXX OPTIONAL)
-        if(CMAKE_CXX_COMPILER)
-        # Link C++ standard library PUBLIC so it propagates to dependents (examples, etc.)
-        # For Clang, check if we're using libstdc++ (GNU's) or libc++ (Clang's)
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            target_link_libraries(HYPREDRV PUBLIC stdc++)
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-            # Clang can use either libstdc++ or libc++
-            # Try to detect which one, but default to stdc++ on Linux
-            if(UNIX AND NOT APPLE)
-                target_link_libraries(HYPREDRV PUBLIC stdc++)
-            else()
-                target_link_libraries(HYPREDRV PUBLIC c++)
-            endif()
-        endif()
-        endif()
-    elseif(TARGET caliper)
-        # Caliper was built via FetchContent - add include directories
-        get_property(CALIPER_INCLUDE_DIR_FOR_HYPRE CACHE CALIPER_INCLUDE_DIR_FOR_HYPRE PROPERTY VALUE)
-        if(CALIPER_INCLUDE_DIR_FOR_HYPRE)
-            target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
-        endif()
-        target_link_libraries(HYPREDRV PRIVATE caliper)
-        # Enable C++ and link standard library PUBLIC
-        enable_language(CXX OPTIONAL)
-        if(CMAKE_CXX_COMPILER)
-            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-                target_link_libraries(HYPREDRV PUBLIC stdc++)
-            elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-                if(UNIX AND NOT APPLE)
-                    target_link_libraries(HYPREDRV PUBLIC stdc++)
-                else()
-                    target_link_libraries(HYPREDRV PUBLIC c++)
-                endif()
-            endif()
+        set(_hypredrv_caliper_lib caliper::caliper)
+        get_target_property(_hypredrv_caliper_inc caliper::caliper INTERFACE_INCLUDE_DIRECTORIES)
+    elseif(TARGET caliper) # built via FetchContent, or an install without the namespace
+        set(_hypredrv_caliper_lib caliper)
+        get_property(_hypredrv_caliper_inc CACHE CALIPER_INCLUDE_DIR_FOR_HYPRE PROPERTY VALUE)
+        if(NOT _hypredrv_caliper_inc)
+            get_target_property(_hypredrv_caliper_inc caliper INTERFACE_INCLUDE_DIRECTORIES)
         endif()
     else()
-        target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR}>)
-        target_link_libraries(HYPREDRV PRIVATE ${CALIPER_LIBRARY})
-        # Enable C++ and link standard library PUBLIC for manual linking case
-        enable_language(CXX OPTIONAL)
-        if(CMAKE_CXX_COMPILER)
-            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-                target_link_libraries(HYPREDRV PUBLIC stdc++)
-            elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-                target_link_libraries(HYPREDRV PUBLIC c++)
-            endif()
-        endif()
+        set(_hypredrv_caliper_lib ${CALIPER_LIBRARY})
+        set(_hypredrv_caliper_inc ${CALIPER_INCLUDE_DIR})
+    endif()
+    target_link_libraries(HYPREDRV PRIVATE ${_hypredrv_caliper_lib})
+    # Public build-tree include paths reach hypredrive-cli, tests and examples.
+    if(_hypredrv_caliper_inc)
+        target_include_directories(HYPREDRV PUBLIC $<BUILD_INTERFACE:${_hypredrv_caliper_inc}>)
+    endif()
+    # Caliper is a C++ library: propagate the C++ runtime to every dependent.
+    enable_language(CXX OPTIONAL)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
+       (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND UNIX AND NOT APPLE))
+        target_link_libraries(HYPREDRV PUBLIC stdc++)
+    elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_link_libraries(HYPREDRV PUBLIC c++)
     endif()
 endif()
 
@@ -389,11 +357,12 @@ if(_hypredrv_object_link_libraries AND
     target_link_libraries(HYPREDRV_objects
         PRIVATE ${_hypredrv_object_link_libraries})
 endif()
-# The library sources are kept -Wall -Wextra clean on every supported hypre
-# version; enable the warnings for them (not for consumers) so regressions
-# surface, and become errors under CMAKE_COMPILE_WARNING_AS_ERROR.
+# The library sources are kept warning-clean (including -Wmissing-prototypes and
+# -Wcast-qual) on every supported hypre version; enable the warnings for them (not
+# for consumers) so regressions surface, and become errors under
+# CMAKE_COMPILE_WARNING_AS_ERROR.
 target_compile_options(HYPREDRV_objects PRIVATE
-    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra>)
+    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wmissing-prototypes -Wcast-qual>)
 if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_EXPORTS)
 else()
@@ -459,41 +428,6 @@ endif()
 # Ensure dataset-driven examples/tests have data available before running hypredrive-cli.
 if(HYPREDRV_ENABLE_DATA AND TARGET data)
     add_dependencies(hypredrive-cli data)
-endif()
-
-# Add Caliper include directories if Caliper is enabled
-if(HYPREDRV_ENABLE_CALIPER AND CALIPER_FOUND)
-    if(TARGET caliper)
-        # Caliper was built via FetchContent - get include dir from cache
-        get_property(CALIPER_INCLUDE_DIR_FOR_HYPRE CACHE CALIPER_INCLUDE_DIR_FOR_HYPRE PROPERTY VALUE)
-        if(CALIPER_INCLUDE_DIR_FOR_HYPRE)
-            target_include_directories(hypredrive-cli PRIVATE $<BUILD_INTERFACE:${CALIPER_INCLUDE_DIR_FOR_HYPRE}>)
-        endif()
-    elseif(TARGET caliper::caliper)
-        # Caliper was found via find_package
-        target_include_directories(hypredrive-cli PRIVATE caliper::caliper)
-    elseif(CALIPER_INCLUDE_DIR)
-        # Caliper was found via find_path
-        target_include_directories(hypredrive-cli PRIVATE ${CALIPER_INCLUDE_DIR})
-    endif()
-endif()
-
-# If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
-if(HYPREDRV_ENABLE_CALIPER)
-    enable_language(CXX OPTIONAL)
-    if(CMAKE_CXX_COMPILER)
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            target_link_options(hypredrive-cli PRIVATE "-lstdc++")
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-            # Clang can use either libstdc++ or libc++
-            # Default to stdc++ on Linux
-            if(UNIX AND NOT APPLE)
-                target_link_options(hypredrive-cli PRIVATE "-lstdc++")
-            else()
-                target_link_options(hypredrive-cli PRIVATE "-lc++")
-            endif()
-        endif()
-    endif()
 endif()
 
 # Ensure Caliper is built before hypredrive-cli if Caliper is enabled

@@ -11,6 +11,21 @@
 #include <mpi.h>
 #include <stdint.h> // For: uint32_t
 
+// Keep hypre's autotools package macros out of the consumer's namespace while
+// preserving any definitions the consumer made before including this header.
+#pragma push_macro("PACKAGE_NAME")
+#pragma push_macro("PACKAGE_BUGREPORT")
+#pragma push_macro("PACKAGE_STRING")
+#pragma push_macro("PACKAGE_TARNAME")
+#pragma push_macro("PACKAGE_URL")
+#pragma push_macro("PACKAGE_VERSION")
+#undef PACKAGE_NAME
+#undef PACKAGE_BUGREPORT
+#undef PACKAGE_STRING
+#undef PACKAGE_TARNAME
+#undef PACKAGE_URL
+#undef PACKAGE_VERSION
+
 #include <HYPRE.h>
 #include <HYPRE_IJ_mv.h>
 #include <HYPRE_config.h>
@@ -19,13 +34,12 @@
 #include <HYPRE_parcsr_mv.h>
 #include <HYPRE_utilities.h>
 
-// Undefine autotools package macros from hypre
-#undef PACKAGE_NAME
-#undef PACKAGE_BUGREPORT
-#undef PACKAGE_STRING
-#undef PACKAGE_TARNAME
-#undef PACKAGE_URL
-#undef PACKAGE_VERSION
+#pragma pop_macro("PACKAGE_NAME")
+#pragma pop_macro("PACKAGE_BUGREPORT")
+#pragma pop_macro("PACKAGE_STRING")
+#pragma pop_macro("PACKAGE_TARNAME")
+#pragma pop_macro("PACKAGE_URL")
+#pragma pop_macro("PACKAGE_VERSION")
 
 #include "HYPREDRV_config.h"
 
@@ -179,7 +193,11 @@ extern "C"
     * call, and failures are shared across all HYPREDRV_t objects in the process.
     * This routine resets both the accumulated error code and the queued messages
     * so a consumer can recover after inspecting/handling an error, without
-    * needing the internal error headers.
+    * needing the internal error headers. HYPREDRV_Create, HYPREDRV_Destroy, the
+    * configuration calls (HYPREDRV_InputArgsParse, HYPREDRV_InputArgsSet*Preset)
+    * and the solver lifecycle calls (HYPREDRV_Precon* and HYPREDRV_LinearSolver*
+    * create/setup/apply) clear the error state on entry, so a stale error never
+    * fails them.
     *
     * @note Thread safety: the error state is process-global and not thread-safe;
     * call this from a single thread or provide external synchronization.
@@ -411,7 +429,9 @@ extern "C"
     *
     * @note This flag is a one-way latch: once set it cannot be unset for the
     * lifetime of the HYPREDRV_t object. Create a new object if you need to
-    * switch back to owned mode.
+    * switch back to owned mode. Call it before attaching any matrix or vector:
+    * ownership is fixed when an object is set, so a late call returns
+    * ERROR_INVALID_VAL.
     *
     * @param hypredrv The HYPREDRV_t object (passed by value - it is an opaque
     *                 pointer, not a pointer-to-pointer).
@@ -1562,7 +1582,8 @@ extern "C"
     *
     * @note The state vectors must be created and initialized by the caller before
     * calling this function. Typically, these are HYPRE_IJVector objects created with
-    * the same row range as the linear system.
+    * the same row range as the linear system. The caller keeps ownership in every
+    * mode: HYPREDRV never destroys them, so destroy them after HYPREDRV_Destroy.
     *
     * @note This function must be called before using other state vector functions
     * such as HYPREDRV_StateVectorGetValues, HYPREDRV_StateVectorCopy, etc.

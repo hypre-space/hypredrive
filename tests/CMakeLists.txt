@@ -23,24 +23,6 @@ function(setup_test_executable target_name source_file)
     target_link_libraries(${target_name} PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
     hypredrv_add_hypre_build_dependency(${target_name})
 
-    # If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
-    if(HYPREDRV_ENABLE_CALIPER)
-        enable_language(CXX OPTIONAL)
-        if(CMAKE_CXX_COMPILER)
-            if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-                target_link_libraries(${target_name} PRIVATE stdc++)
-            elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-                # Clang can use either libstdc++ or libc++
-                # Default to stdc++ on Linux
-                if(UNIX AND NOT APPLE)
-                    target_link_libraries(${target_name} PRIVATE stdc++)
-                else()
-                    target_link_libraries(${target_name} PRIVATE c++)
-                endif()
-            endif()
-        endif()
-    endif()
-
     # Apply sanitizer link flags if sanitizers are enabled
     # This ensures the sanitizer runtime libraries are linked
     get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)

@@ -1074,7 +1074,7 @@ AMGApplyGridPointSchedule(HYPRE_Solver precon, const AMG_args *args)
 /* Nodal coarsening with rigid-body-mode interpolation, used for both a top-level
  * elasticity AMG and an MGR subblock AMG. */
 static void
-AMGApplyNodalInterpolation(HYPRE_Solver precon, const AMG_args *args)
+AMGApplyNodalInterpolation(HYPRE_Solver precon, AMG_args *args)
 {
    /* Configurable GM/LN rigid-body-mode interpolation, used for both a
       top-level elasticity AMG and an MGR subblock AMG. The "auto" defaults
@@ -1114,11 +1114,11 @@ AMGApplyNodalInterpolation(HYPRE_Solver precon, const AMG_args *args)
 #else
    (void)smooth;
 #endif
-   HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, (HYPRE_ParVector *)args->rbms);
+   HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, args->rbms);
 }
 
 void
-hypredrv_AMGCreate(const AMG_args *args, HYPRE_Solver *precon_ptr)
+hypredrv_AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
 {
    HYPRE_Solver precon = NULL;
 

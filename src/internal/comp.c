@@ -468,9 +468,9 @@ decompress_zlib(size_t isize, const void *input, size_t header_size, size_t *ori
 {
 #ifdef HYPREDRV_USING_ZLIB
    uLongf zorig_size = (uLongf)*orig_size;
-   int    ierr =
-      uncompress((unsigned char *)(*output_ptr), &zorig_size,
-                 (unsigned char *)input + header_size, (uLong)(isize - header_size));
+   int    ierr       = uncompress((unsigned char *)(*output_ptr), &zorig_size,
+                                  (const unsigned char *)input + header_size,
+                                  (uLong)(isize - header_size));
    /* GCOVR_EXCL_START */
    if (ierr != Z_OK)
    {
@@ -504,7 +504,7 @@ decompress_zstd(size_t isize, const void *input, size_t header_size, size_t orig
 #ifdef HYPREDRV_USING_ZSTD
    size_t result =
       ZSTD_decompress((unsigned char *)(*output_ptr), orig_size,
-                      (unsigned char *)input + header_size, isize - header_size);
+                      (const unsigned char *)input + header_size, isize - header_size);
    /* GCOVR_EXCL_START */
    if (ZSTD_isError(result))
    {

@@ -290,17 +290,16 @@ DEFINE_FIELD_OFFSET_MAP(solver)
 #define solver_NUM_FIELDS \
    (sizeof(solver_field_offset_map) / sizeof(solver_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_SolverSetFieldByName, solver_args,
-                              solver_field_offset_map, solver_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(hypredrv_SolverGetValidKeys, solver_NUM_FIELDS,
-                           solver_field_offset_map)
+static DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_SolverSetFieldByName, solver_args,
+                                     solver_field_offset_map, solver_NUM_FIELDS)
+   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_SolverGetValidKeys, solver_NUM_FIELDS,
+                              solver_field_offset_map)
 
-/*-----------------------------------------------------------------------------
- * SolverGetValidTypeIntMap
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * SolverGetValidTypeIntMap
+    *-----------------------------------------------------------------------------*/
 
-StrIntMapArray
-hypredrv_SolverGetValidTypeIntMap(void)
+   StrIntMapArray hypredrv_SolverGetValidTypeIntMap(void)
 {
    static StrIntMap map[] = {
       {"pcg", (int)SOLVER_PCG},

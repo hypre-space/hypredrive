@@ -14,7 +14,7 @@
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeIntSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeIntSet(void *field, YAMLnode *node)
 {
    const char *src = (node && node->mapped_val) ? node->mapped_val : "";
    if (!hypredrv_ParseInt(src, (int *)field))
@@ -34,7 +34,7 @@ hypredrv_FieldTypeIntSet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 static void
-FieldTypeIntSetMin(void *field, const YAMLnode *node, int min_value)
+FieldTypeIntSetMin(void *field, YAMLnode *node, int min_value)
 {
    const char *src   = (node && node->mapped_val) ? node->mapped_val : "";
    int         value = 0;
@@ -60,7 +60,7 @@ FieldTypeIntSetMin(void *field, const YAMLnode *node, int min_value)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeNonNegIntSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeNonNegIntSet(void *field, YAMLnode *node)
 {
    FieldTypeIntSetMin(field, node, 0);
 }
@@ -70,7 +70,7 @@ hypredrv_FieldTypeNonNegIntSet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypePositiveIntSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypePositiveIntSet(void *field, YAMLnode *node)
 {
    FieldTypeIntSetMin(field, node, 1);
 }
@@ -86,7 +86,7 @@ hypredrv_FieldTypePositiveIntSet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldOffsetMapSet(const FieldOffsetMap *entry, void *base, const YAMLnode *node)
+hypredrv_FieldOffsetMapSet(const FieldOffsetMap *entry, void *base, YAMLnode *node)
 {
    void *field = (char *)base + entry->offset;
 
@@ -116,7 +116,7 @@ hypredrv_FieldOffsetMapSet(const FieldOffsetMap *entry, void *base, const YAMLno
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeIntArraySet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeIntArraySet(void *field, YAMLnode *node)
 {
    IntArray *int_array = NULL;
 
@@ -137,7 +137,7 @@ hypredrv_FieldTypeIntArraySet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeStackIntArraySet(void *field, YAMLnode *node)
 {
    StackIntArray *int_array = ((StackIntArray *)field);
 
@@ -149,7 +149,7 @@ hypredrv_FieldTypeStackIntArraySet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeDoubleSet(void *field, YAMLnode *node)
 {
    const char *src = (node && node->mapped_val) ? node->mapped_val : "";
    if (!hypredrv_ParseDouble(src, (double *)field))
@@ -165,7 +165,7 @@ hypredrv_FieldTypeDoubleSet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeCharSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeCharSet(void *field, YAMLnode *node)
 {
    sscanf(node->mapped_val, "%c", (char *)field);
 }
@@ -175,7 +175,7 @@ hypredrv_FieldTypeCharSet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeStringSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeStringSet(void *field, YAMLnode *node)
 {
    const char *src = (node && node->mapped_val) ? node->mapped_val : "";
    int         n   = snprintf((char *)field, MAX_FILENAME_LENGTH, "%s", src);
@@ -201,7 +201,7 @@ hypredrv_FieldTypeStringSet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeDoubleArraySet(void *field, YAMLnode *node)
 {
    DoubleArray *double_array = NULL;
 
@@ -225,7 +225,7 @@ hypredrv_FieldTypeDoubleArraySet(void *field, const YAMLnode *node)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_FieldTypeNoopSet(void *field, const YAMLnode *node)
+hypredrv_FieldTypeNoopSet(void *field, YAMLnode *node)
 {
    (void)field;
    (void)node;

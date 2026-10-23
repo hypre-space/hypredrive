@@ -49,18 +49,17 @@ DEFINE_FIELD_OFFSET_MAP(precon)
 #define precon_NUM_FIELDS \
    (sizeof(precon_field_offset_map) / sizeof(precon_field_offset_map[0]))
 
-DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, precon_args,
-                              precon_field_offset_map, precon_NUM_FIELDS)
-DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, precon_NUM_FIELDS,
-                           precon_field_offset_map)
-/* GCOVR_EXCL_STOP */
+static DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_PreconSetFieldByName, precon_args,
+                                     precon_field_offset_map, precon_NUM_FIELDS)
+   DEFINE_GET_VALID_KEYS_FUNC(hypredrv_PreconGetValidKeys, precon_NUM_FIELDS,
+                              precon_field_offset_map)
+   /* GCOVR_EXCL_STOP */
 
-/*-----------------------------------------------------------------------------
- * hypredrv_PreconGetValidValues
- *-----------------------------------------------------------------------------*/
+   /*-----------------------------------------------------------------------------
+    * hypredrv_PreconGetValidValues
+    *-----------------------------------------------------------------------------*/
 
-StrIntMapArray
-hypredrv_PreconGetValidValues(const char *key)
+   StrIntMapArray hypredrv_PreconGetValidValues(const char *key)
 {
    (void)key;
    /* The "preconditioner" entry does not hold values, so we create a void map */

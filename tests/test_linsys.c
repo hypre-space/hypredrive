@@ -42,12 +42,15 @@ write_text_file(const char *path, const char *contents)
    fclose(fp);
 }
 
-/* Satisfy warn_unused_result on system() without changing cleanup semantics */
+/* Save the working directory in cwd and move into a fresh "<scratch>/<name>",
+ * so tests that write relative paths never touch the source tree. */
 static void
-test_system_ignore(const char *cmd)
+linsys_test_enter_scratch(char *cwd, size_t size, const char *name)
 {
-   int r = system(cmd);
-   (void)r;
+   char dir[256];
+   ASSERT_NOT_NULL(getcwd(cwd, size));
+   ASSERT_EQ(mkdir(test_scratch_path(dir, sizeof(dir), name), 0775), 0);
+   ASSERT_EQ(chdir(dir), 0);
 }
 
 static int
@@ -1550,6 +1553,69 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 }
 
 static void
+test_hypredrv_LinearSystemRead_ascii_part_count_mismatch(void)
+{
+   char prefix[512];
+   char part0[600];
+   snprintf(prefix, sizeof(prefix), "%s/data/alcontact1k/np4/IJ.out", HYPREDRIVE_SOURCE_DIR);
+   snprintf(part0, sizeof(part0), "%s.A.00000", prefix);
+   if (access(part0, F_OK) != 0)
+   {
+      return; /* dataset not fetched */
+   }
+
+   TEST_HYPRE_INIT();
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   args.type     = 1;
+   args.rhs_mode = 2; /* file */
+   snprintf(args.matrix_filename, sizeof(args.matrix_filename), "%s.A", prefix);
+   snprintf(args.rhs_filename, sizeof(args.rhs_filename), "%s.b", prefix);
+
+   /* Four ASCII parts on one rank must fail cleanly instead of aborting in hypre */
+   HYPRE_IJMatrix mat = NULL;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(mat);
+
+   HYPRE_IJVector rhs = NULL, xref = NULL;
+   mat                = create_test_ijmatrix_1x1(1.0);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(rhs);
+
+   hypredrv_ErrorCodeResetAll();
+   HYPRE_IJMatrixDestroy(mat);
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
+test_hypredrv_LinearSystemReadMatrix_path_truncation_error(void)
+{
+   TEST_HYPRE_INIT();
+
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   HYPRE_IJMatrix mat = NULL;
+
+   /* dirname + "_00000/" + filename no longer fits: fail instead of truncating */
+   memset(args.dirname, 'd', sizeof(args.dirname) - 1);
+   args.dirname[sizeof(args.dirname) - 1] = '\0';
+   strncpy(args.matrix_filename, "matrix.A", sizeof(args.matrix_filename) - 1);
+
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(mat);
+
+   hypredrv_ErrorCodeResetAll();
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_hypredrv_LinearSystemReadMatrix_no_filename_error(void)
 {
    TEST_HYPRE_INIT();
@@ -1581,7 +1647,8 @@ test_hypredrv_LinearSystemReadMatrix_partition_count_errors(void)
    HYPRE_IJMatrix mat = NULL;
 
    /* Create a fake binary file with wrong partition count */
-   char fake_file[] = "/tmp/fake_matrix.bin";
+   char fake_file[256];
+   test_scratch_path(fake_file, sizeof(fake_file), "fake_matrix.bin");
    FILE *fp = fopen(fake_file, "wb");
    if (fp)
    {
@@ -2000,9 +2067,10 @@ test_hypredrv_LinearSystemPrintData_series_dir_and_null_objects(void)
 {
    TEST_HYPRE_INIT();
 
-   /* Ensure series dir does not exist so we hit the mkdir(root) branch */
-   int ret = system("rm -rf hypre-data");
-   (void)ret; /* Ignore cleanup failures in tests */
+   /* Run in a fresh directory so the series dir does not exist yet and we hit
+    * the mkdir(root) branch */
+   char cwd[PATH_MAX];
+   linsys_test_enter_scratch(cwd, sizeof(cwd), "series_dir");
 
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args); /* basenames empty => use_series_dir=true */
@@ -2074,12 +2142,7 @@ test_hypredrv_LinearSystemPrintData_series_dir_and_null_objects(void)
    HYPRE_IJVectorDestroy(vec_b);
    HYPRE_IJMatrixDestroy(mat);
 
-   remove("A_base.out.00000");
-   remove("b_base.out.00000");
-   remove("d_base.out.00000");
-
-   ret = system("rm -rf hypre-data");
-   (void)ret; /* Ignore cleanup failures in tests */
+   ASSERT_EQ(chdir(cwd), 0);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -2089,11 +2152,7 @@ test_hypredrv_LinearSystemDumpScheduled_ranges_and_artifacts(void)
    TEST_HYPRE_INIT();
 
    char outdir[256];
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_sched_%d", (int)getpid());
-   char cleanup_cmd[320];
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-   int cleanup_rc = system(cleanup_cmd);
-   (void)cleanup_rc;
+   test_scratch_path(outdir, sizeof(outdir), "hypredrive_dump_sched");
 
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
@@ -2176,8 +2235,7 @@ test_hypredrv_LinearSystemDumpScheduled_ranges_and_artifacts(void)
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
    hypredrv_PrintSystemDestroyArgs(&args.print_system);
-   cleanup_rc = system(cleanup_cmd);
-   (void)cleanup_rc;
+   test_rmtree(outdir);
 
    TEST_HYPRE_FINALIZE();
 }
@@ -2188,11 +2246,7 @@ test_hypredrv_LinearSystemDumpScheduled_overwrite_reuses_dump_series(void)
    TEST_HYPRE_INIT();
 
    char outdir[256];
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_overwrite_%d", (int)getpid());
-   char cleanup_cmd[320];
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-   int cleanup_rc = system(cleanup_cmd);
-   (void)cleanup_rc;
+   test_scratch_path(outdir, sizeof(outdir), "hypredrive_dump_overwrite");
 
    PrintSystemContext ctx;
    memset(&ctx, 0, sizeof(ctx));
@@ -2288,8 +2342,7 @@ test_hypredrv_LinearSystemDumpScheduled_overwrite_reuses_dump_series(void)
    ASSERT_TRUE(access(unexpected_dir, F_OK) != 0);
 
    hypredrv_PrintSystemDestroyArgs(&args.print_system);
-   cleanup_rc = system(cleanup_cmd);
-   (void)cleanup_rc;
+   test_rmtree(outdir);
 
    TEST_HYPRE_FINALIZE();
 }
@@ -2300,11 +2353,7 @@ test_hypredrv_LinearSystemDumpScheduled_threshold_types_and_selectors(void)
    TEST_HYPRE_INIT();
 
    char outdir[256];
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_dump_thresholds_%d", (int)getpid());
-   char cleanup_cmd[320];
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-   int cleanup_rc = system(cleanup_cmd);
-   (void)cleanup_rc;
+   test_scratch_path(outdir, sizeof(outdir), "hypredrive_dump_thresholds");
 
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
@@ -2417,8 +2466,7 @@ test_hypredrv_LinearSystemDumpScheduled_threshold_types_and_selectors(void)
    ASSERT_TRUE(file_contains_substr(metadata_file, "last_solve_time=0.75"));
 
    hypredrv_PrintSystemDestroyArgs(&args.print_system);
-   cleanup_rc = system(cleanup_cmd);
-   (void)cleanup_rc;
+   test_rmtree(outdir);
 
    TEST_HYPRE_FINALIZE();
 }
@@ -2736,10 +2784,7 @@ test_hypredrv_LinearSystemDumpScheduled_branch_and_filesystem_coverage(void)
    TEST_HYPRE_INIT();
 
    char outdir[256];
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_lsp_br_%d", (int)getpid());
-   char cleanup_cmd[320];
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-   test_system_ignore(cleanup_cmd);
+   test_scratch_path(outdir, sizeof(outdir), "hypredrive_lsp_br");
 
    /* NULL args / NULL ctx */
    {
@@ -3103,7 +3148,7 @@ test_hypredrv_LinearSystemDumpScheduled_branch_and_filesystem_coverage(void)
       hypredrv_PrintSystemDestroyArgs(&args.print_system);
    }
 
-   test_system_ignore(cleanup_cmd);
+   test_rmtree(outdir);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -3113,10 +3158,7 @@ test_hypredrv_LinearSystemDumpScheduled_selector_basis_names_and_sanitize(void)
    TEST_HYPRE_INIT();
 
    char outdir[256];
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_lsp_sb_%d", (int)getpid());
-   char cleanup_cmd[320];
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-   test_system_ignore(cleanup_cmd);
+   test_scratch_path(outdir, sizeof(outdir), "hypredrive_lsp_sb");
 
    /* Selector type=selectors: exercise PrintSystemBasisName() strings in decision reasons */
    {
@@ -3343,7 +3385,7 @@ test_hypredrv_LinearSystemDumpScheduled_selector_basis_names_and_sanitize(void)
       hypredrv_PrintSystemDestroyArgs(&args.print_system);
    }
 
-   test_system_ignore(cleanup_cmd);
+   test_rmtree(outdir);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -3352,8 +3394,8 @@ test_hypredrv_LinearSystemPrintData_series_scan_and_object_dir_edge_cases(void)
 {
    TEST_HYPRE_INIT();
 
-   int ret = system("rm -rf hypre-data");
-   (void)ret;
+   char cwd[PATH_MAX];
+   linsys_test_enter_scratch(cwd, sizeof(cwd), "series_scan");
 
    (void)mkdir("hypre-data", 0775);
    /* Invalid / odd ls_* names for max index scan */
@@ -3385,8 +3427,7 @@ test_hypredrv_LinearSystemPrintData_series_scan_and_object_dir_edge_cases(void)
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
 
-   ret = system("rm -rf hypre-data");
-   (void)ret;
+   ASSERT_EQ(chdir(cwd), 0);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -3396,10 +3437,7 @@ test_hypredrv_LinearSystemDumpScheduled_artifacts_all_writes_and_skips_and_fs(vo
    TEST_HYPRE_INIT();
 
    char outdir[256];
-   snprintf(outdir, sizeof(outdir), "/tmp/hypredrive_lsp_art_%d", (int)getpid());
-   char cleanup_cmd[320];
-   snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf %s", outdir);
-   test_system_ignore(cleanup_cmd);
+   test_scratch_path(outdir, sizeof(outdir), "hypredrive_lsp_art");
 
    /* Nested output_dir path */
    {
@@ -3470,7 +3508,7 @@ test_hypredrv_LinearSystemDumpScheduled_artifacts_all_writes_and_skips_and_fs(vo
    {
       char rootbad[384];
       snprintf(rootbad, sizeof(rootbad), "%s/rootbad", outdir);
-      test_system_ignore(cleanup_cmd);
+      test_rmtree(outdir);
       (void)mkdir(outdir, 0775);
       {
          FILE *fp = fopen(rootbad, "w");
@@ -3502,7 +3540,7 @@ test_hypredrv_LinearSystemDumpScheduled_artifacts_all_writes_and_skips_and_fs(vo
       hypredrv_PrintSystemDestroyArgs(&args.print_system);
    }
 
-   test_system_ignore(cleanup_cmd);
+   test_rmtree(outdir);
 
    /* Full artifact set: write all branches */
    {
@@ -3554,7 +3592,7 @@ test_hypredrv_LinearSystemDumpScheduled_artifacts_all_writes_and_skips_and_fs(vo
       hypredrv_PrintSystemDestroyArgs(&args.print_system);
    }
 
-   test_system_ignore(cleanup_cmd);
+   test_rmtree(outdir);
 
    /* Skip branches: request all artifact bits but pass NULL handles */
    {
@@ -3614,7 +3652,7 @@ test_hypredrv_LinearSystemDumpScheduled_artifacts_all_writes_and_skips_and_fs(vo
       snprintf(objdir, sizeof(objdir), "%s/nested-ow", outdir);
       char lsdir[448];
       snprintf(lsdir, sizeof(lsdir), "%s/ls_00000", objdir);
-      test_system_ignore(cleanup_cmd);
+      test_rmtree(outdir);
       (void)mkdir(outdir, 0775);
       (void)mkdir(objdir, 0775);
       (void)mkdir(lsdir, 0775);
@@ -3649,7 +3687,7 @@ test_hypredrv_LinearSystemDumpScheduled_artifacts_all_writes_and_skips_and_fs(vo
       hypredrv_PrintSystemDestroyArgs(&args.print_system);
    }
 
-   test_system_ignore(cleanup_cmd);
+   test_rmtree(outdir);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -5461,6 +5499,17 @@ test_hypredrv_Scaling_dofmap_mag_missing_dofmap_and_size_mismatch(void)
       hypredrv_IntArrayDestroy(&dofmap2);
    }
 
+   {
+      /* Negative labels would index hypre's per-tag arrays out of bounds */
+      int       dm_neg[1] = {-1};
+      IntArray *dofmap3   = NULL;
+      hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, dm_neg, &dofmap3);
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap3);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      hypredrv_IntArrayDestroy(&dofmap3);
+   }
+
    hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
@@ -6066,6 +6115,8 @@ run_linsys_matrix_and_rhs_io_tests(void)
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_filename_patterns);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_no_filename_error);
+   RUN_TEST(test_hypredrv_LinearSystemRead_ascii_part_count_mismatch);
+   RUN_TEST(test_hypredrv_LinearSystemReadMatrix_path_truncation_error);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_partition_count_errors);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_sequence_ls_id_out_of_range);
    RUN_TEST(test_LinearSystemReadRHS_file_patterns);

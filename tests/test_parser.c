@@ -9,6 +9,7 @@
 #include "internal/error.h"
 #include "internal/fgmres.h"
 #include "internal/fsai.h"
+#include "internal/gen_macros.h"
 #include "internal/gmres.h"
 #include "internal/ilu.h"
 #include "internal/krylov.h"
@@ -17,64 +18,10 @@
 #include "internal/yaml.h"
 #include "test_helpers.h"
 
-/* Internal/generated functions not in public headers */
-void           hypredrv_AMGSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_AMGintSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_AMGaggSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_AMGcsnSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_AMGrlxSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_AMGsmtSetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_AMGGetValidKeys(void);
-StrIntMapArray hypredrv_AMGGetValidValues(const char *);
-StrArray       hypredrv_AMGintGetValidKeys(void);
-StrIntMapArray hypredrv_AMGintGetValidValues(const char *);
-StrArray       hypredrv_AMGaggGetValidKeys(void);
-StrIntMapArray hypredrv_AMGaggGetValidValues(const char *);
-StrArray       hypredrv_AMGcsnGetValidKeys(void);
-StrIntMapArray hypredrv_AMGcsnGetValidValues(const char *);
-StrArray       hypredrv_AMGrlxGetValidKeys(void);
-StrIntMapArray hypredrv_AMGrlxGetValidValues(const char *);
-StrArray       hypredrv_AMGsmtGetValidKeys(void);
-StrIntMapArray hypredrv_AMGsmtGetValidValues(const char *);
-void           hypredrv_FSAISetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_FSAIGetValidKeys(void);
-StrIntMapArray hypredrv_FSAIGetValidValues(const char *);
-void           hypredrv_ILUSetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_ILUGetValidKeys(void);
-StrIntMapArray hypredrv_ILUGetValidValues(const char *);
-void           hypredrv_ILUSetDefaultArgs(ILU_args *);
-void           hypredrv_FSAISetDefaultArgs(FSAI_args *);
-void           hypredrv_PCGSetDefaultArgs(PCG_args *);
-void           hypredrv_PCGSetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_PCGGetValidKeys(void);
-StrIntMapArray hypredrv_PCGGetValidValues(const char *);
-void           hypredrv_GMRESSetDefaultArgs(GMRES_args *);
-void           hypredrv_GMRESSetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_GMRESGetValidKeys(void);
-StrIntMapArray hypredrv_GMRESGetValidValues(const char *);
-void           hypredrv_FGMRESSetDefaultArgs(FGMRES_args *);
-void           hypredrv_FGMRESSetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_FGMRESGetValidKeys(void);
-StrIntMapArray hypredrv_FGMRESGetValidValues(const char *);
-void           hypredrv_BiCGSTABSetDefaultArgs(BiCGSTAB_args *);
-void           hypredrv_BiCGSTABSetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_BiCGSTABGetValidKeys(void);
-StrIntMapArray hypredrv_BiCGSTABGetValidValues(const char *);
-void           hypredrv_ChebySetArgsFromYAML(void *, YAMLnode *);
-StrArray       hypredrv_ChebyGetValidKeys(void);
-StrIntMapArray hypredrv_ChebyGetValidValues(const char *);
-
-/* MGR (custom YAML parser + generated sub-components) */
-void           hypredrv_MGRSetDefaultArgs(MGR_args *);
-void           hypredrv_MGRSetArgsFromYAML(void *, YAMLnode *);
+/* Generated MGR sub-component defaults not in public headers */
 void           hypredrv_MGRclsSetDefaultArgs(MGRcls_args *);
 void           hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
 void           hypredrv_MGRgrlxSetDefaultArgs(MGRgrlx_args *);
-void           hypredrv_MGRclsSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_MGRfrlxSetArgsFromYAML(void *, YAMLnode *);
-void           hypredrv_MGRgrlxSetArgsFromYAML(void *, YAMLnode *);
-StrIntMapArray hypredrv_MGRGetValidValues(const char *);
-StrIntMapArray hypredrv_MGRlvlGetValidValues(const char *);
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)

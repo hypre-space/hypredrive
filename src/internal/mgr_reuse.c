@@ -311,24 +311,24 @@ MGRComponentReuseLabel(const MGRComponentRef *ref, char *buf, size_t buf_size)
    }
 }
 
+/* Shared accessor body; the result keeps the constness of _args. */
+#define MGR_COMPONENT_REUSE_ARGS(_args, _ref)                 \
+   ((_ref)->kind == MGR_COMPONENT_FRELAX                      \
+       ? &(_args)->level[(_ref)->orig_lvl].f_relaxation.reuse \
+    : (_ref)->kind == MGR_COMPONENT_GRELAX                    \
+       ? &(_args)->level[(_ref)->orig_lvl].g_relaxation.reuse \
+       : &(_args)->coarsest_level.reuse)
+
 static const MGRComponentReuse_args *
 MGRComponentReuseArgsConst(const MGR_args *args, const MGRComponentRef *ref)
 {
-   switch (ref->kind)
-   {
-      case MGR_COMPONENT_FRELAX:
-         return &args->level[ref->orig_lvl].f_relaxation.reuse;
-      case MGR_COMPONENT_GRELAX:
-         return &args->level[ref->orig_lvl].g_relaxation.reuse;
-      default:
-         return &args->coarsest_level.reuse;
-   }
+   return MGR_COMPONENT_REUSE_ARGS(args, ref);
 }
 
 static MGRComponentReuse_args *
 MGRComponentReuseArgs(MGR_args *args, const MGRComponentRef *ref)
 {
-   return (MGRComponentReuse_args *)MGRComponentReuseArgsConst(args, ref);
+   return MGR_COMPONENT_REUSE_ARGS(args, ref);
 }
 
 static int

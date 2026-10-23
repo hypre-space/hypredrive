@@ -449,6 +449,10 @@ cdef class HypreDriveCore:
         device pointer to NumPy would be a footgun for v1.
         """
         self._require_open()
+        if not cnp.PyArray_IS_C_CONTIGUOUS(out):
+            raise ValueError("out must be C-contiguous")
+        if <size_t>cnp.PyArray_ITEMSIZE(out) != _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE:
+            raise ValueError("out dtype does not match the HYPRE solution entry type")
         cdef const void *src = NULL
         cdef size_t src_length = 0
         _check(

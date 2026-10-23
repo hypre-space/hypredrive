@@ -582,13 +582,13 @@ static int QueryIntelXeMemoryByOrdinal(int gpu_ordinal, size_t *total, size_t *u
 #ifndef __APPLE__
 
 static int
-ParseLscpuFallback(const char *lscpu_path, int *num_sockets, char *model_name,
+ParseLscpuFallback(char *lscpu_path, int *num_sockets, char *model_name,
                    size_t model_name_len)
 {
    char  output[32768];
    char *line    = NULL;
    char *saveptr = NULL;
-   char *argv[]  = {(char *)lscpu_path, NULL};
+   char *argv[]  = {lscpu_path, NULL};
    int   found   = 0;
 
    if (!lscpu_path || !num_sockets || !model_name || model_name_len == 0)
@@ -742,7 +742,7 @@ AppendUniqueString(char ***items, int *count, int *capacity, const char *value)
  * Linux: Use dl_iterate_phdr to list dynamic libraries
  *--------------------------------------------------------------------------*/
 
-int
+static int
 hypredrv_dlpi_callback(struct dl_phdr_info *info, size_t size, void *data)
 {
    (void)size;
@@ -946,8 +946,7 @@ QueryNvidiaMemoryByBusId(const char *pci_busid, int *gpu_index, size_t *total,
 }
 
 static int
-QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
-                            size_t *used)
+QueryAmdMetricMemoryByIndex(char *amd_path, int gpu_index, size_t *total, size_t *used)
 {
    char output[32768];
    char gpu_idx[32];
@@ -959,7 +958,7 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
 
    snprintf(gpu_idx, sizeof(gpu_idx), "%d", gpu_index);
    {
-      char *argv[] = {(char *)amd_path, "metric", "-g", gpu_idx, "-m", "--json", NULL};
+      char *argv[] = {amd_path, "metric", "-g", gpu_idx, "-m", "--json", NULL};
       if (!RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
       {
          return 0;
@@ -1012,7 +1011,7 @@ QueryAmdMetricMemoryByIndex(const char *amd_path, int gpu_index, size_t *total,
 /* Walks the amd-smi JSON listing for the GPU object whose BDF matches
  * `pci_busid`, reporting its index and memory usage. Returns 1 on a match. */
 static int
-AmdSmiScanGpuObjects(const char *json, const char *amd_path, const char *pci_busid,
+AmdSmiScanGpuObjects(const char *json, char *amd_path, const char *pci_busid,
                      int *gpu_index, size_t *total, size_t *used)
 {
    const char *ptr = json;
@@ -1202,6 +1201,8 @@ CompareIntelXeCards(const void *lhs, const void *rhs)
    return 0;
 }
 
+#endif
+
 static int
 ReadUeventValue(const char *uevent_path, const char *key, char *value, size_t len)
 {
@@ -1246,6 +1247,7 @@ ReadUeventValue(const char *uevent_path, const char *key, char *value, size_t le
    return found;
 }
 
+#ifdef HYPREDRV_HAVE_INTEL_XE_QUERY
 static int
 CollectIntelXeCards(IntelXeCard *cards, int max_cards)
 {
@@ -4783,7 +4785,8 @@ PrintAmdRuntimeInfo(void)
             char *argv[] = {amd_path, "version", NULL};
             if (RunCommandCapture(amd_path, argv, 1, output, sizeof(output)))
             {
-               char *first_line = strtok(output, "\n");
+               char *saveptr    = NULL;
+               char *first_line = strtok_r(output, "\n", &saveptr);
                if (first_line)
                {
                   const char *rocm_ver = strstr(first_line, "ROCm version:");

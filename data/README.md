@@ -5,6 +5,7 @@ This directory hosts small datasets used by hypredrive examples and tests. All m
 - RHS prefix: `IJ.out.b`
 - Partitioned runs store per-rank parts in subdirectories like `np4/`, with file suffixes `.00000[.bin]`, `.00001[.bin]`, etc.
 - Single-rank ASCII uses files without `.bin`; multi-rank (and some single-rank cases) use binary `.bin`.
+- ASCII input must run on exactly one MPI rank per part (for example 4 ranks for `np4/`); hypredrive rejects a mismatch. Binary parts can be read by fewer ranks than parts.
 
 **Important:** The datasets are not included in the repository. You must download them from Zenodo before running examples that use these datasets.
 

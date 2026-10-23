@@ -84,7 +84,7 @@ Use ``HYPRE_LIBRARY`` instead of ``HYPRE_LIBRARIES`` for one library file.
             -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
             -B build -S .
 
-To pin a specific HYPRE revision:
+This fetches HYPRE ``master`` by default. To pin a specific HYPRE revision:
 
 .. code-block:: bash
 

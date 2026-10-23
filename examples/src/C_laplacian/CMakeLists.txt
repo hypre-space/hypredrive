@@ -25,24 +25,6 @@ if(COMMAND hypredrv_set_relative_install_rpath)
     hypredrv_set_relative_install_rpath(laplacian)
 endif()
 
-# If Caliper is enabled, we need to link C++ standard library (Caliper is C++)
-if(HYPREDRV_ENABLE_CALIPER)
-    enable_language(CXX OPTIONAL)
-    if(CMAKE_CXX_COMPILER)
-        if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-            target_link_libraries(laplacian PRIVATE stdc++)
-        elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-            # Clang can use either libstdc++ or libc++
-            # Default to stdc++ on Linux
-            if(UNIX AND NOT APPLE)
-                target_link_libraries(laplacian PRIVATE stdc++)
-            else()
-                target_link_libraries(laplacian PRIVATE c++)
-            endif()
-        endif()
-    endif()
-endif()
-
 # Add opt-in OpenMP support for parallel assembly
 if(NOT COMMAND hypredrv_link_example_omp)
     include("${CMAKE_CURRENT_LIST_DIR}/../../../cmake/HYPREDRV_Platform.cmake")

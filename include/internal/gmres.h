@@ -37,7 +37,7 @@ typedef struct GMRES_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_GMRESSetDefaultArgs(GMRES_args *);
-void hypredrv_GMRESSetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_GMRESSetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_GMRESCreate(MPI_Comm, const GMRES_args *, HYPRE_Solver *);
 void hypredrv_GMRESSetRefSolution(HYPRE_Solver, HYPRE_IJVector);
 

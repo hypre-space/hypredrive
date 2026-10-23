@@ -48,7 +48,8 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml
    HYPREDRV_InputArgsParse(1, yaml_argv, hdrv); // Solver options are parsed here
 
    // 2. Setup linear system ("A" and "b" are built previously)
-   // The application retains ownership of these objects in library mode.
+   // The application retains ownership of these objects in library mode
+   // (enable it before attaching objects); otherwise hypredrive destroys them.
    HYPREDRV_LinearSystemSetMatrix(hdrv, (HYPRE_Matrix) A);
    HYPREDRV_LinearSystemSetRHS(hdrv, (HYPRE_Vector) b);
 

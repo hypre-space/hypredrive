@@ -37,7 +37,7 @@ typedef struct FSAI_args_struct
  *--------------------------------------------------------------------------*/
 
 void hypredrv_FSAISetDefaultArgs(FSAI_args *);
-void hypredrv_FSAISetArgs(void *, const struct YAMLnode_struct *);
+void hypredrv_FSAISetArgs(void *, struct YAMLnode_struct *);
 void hypredrv_FSAICreate(const FSAI_args *, HYPRE_Solver *);
 
 #endif /* FSAI_HEADER */

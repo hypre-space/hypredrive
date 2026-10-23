@@ -14,12 +14,12 @@
 #include "internal/error.h"
 #include "internal/mgr.h"
 #include "internal/yaml.h"
+#include "internal/gen_macros.h"
 #include "test_helpers.h"
 
-/* Generated MGR parsing functions used by the available-values test (these are
- * defined in mgr_config.c but not exposed in mgr.h; see tests/test_parser.c) */
+/* Generated MGR default setter used by the available-values test (defined in
+ * mgr_config.c but not exposed in mgr.h) */
 void hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
-void hypredrv_MGRfrlxSetArgsFromYAML(void *, YAMLnode *);
 
 static void
 capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len);
@@ -251,7 +251,7 @@ capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
 #ifdef __APPLE__
    if (!tmp)
    {
-      char path[] = "/tmp/hypredrv_test_error.txt";
+      char path[] = "/tmp/hypredrv_test_error_XXXXXX";
       int fd = mkstemp(path);
       ASSERT_TRUE(fd != -1);
       tmp = fdopen(fd, "w+");
