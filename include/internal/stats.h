@@ -166,16 +166,16 @@ Stats *hypredrv_StatsCreate(void);
 void   hypredrv_StatsDestroy(Stats **stats_ptr);
 
 /* Annotation functions */
-void     hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action,
+uint32_t hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action,
                                 const char *name);
-void     hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action,
+uint32_t hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action,
                                  const char *name, va_list args);
 uint32_t hypredrv_StatsAnnotateWithId(Stats *stats, HYPREDRV_AnnotateAction action,
                                       const char *name, int id);
 uint32_t hypredrv_StatsAnnotateLevelWithId(Stats *stats, HYPREDRV_AnnotateAction action,
                                            int level, const char *name, int id);
-void     hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
-void     hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
+uint32_t hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name);
+uint32_t hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name);
 
 /* Timer configuration */
 void hypredrv_StatsTimerSetMilliseconds(Stats *stats);

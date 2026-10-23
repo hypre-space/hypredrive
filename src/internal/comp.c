@@ -102,9 +102,8 @@ CompressAllocOutput(size_t isize, size_t header_size, size_t bound, void **outpu
    /* GCOVR_EXCL_BR_START */
    if (*output_ptr == NULL) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__,
-                           __LINE__, header_size + bound);
+      hypredrv_AllocationFailure("Memory allocation failed at %s:%d (%zu bytes)",
+                                 __FILE__, __LINE__, header_size + bound);
       return 0;
    }
 
@@ -1004,11 +1003,9 @@ hypredrv_SliceStreamRead(hypredrv_SliceStream *st, const hypredrv_SliceSource *s
    {
       return 1;
    }
-   out = (unsigned char *)malloc(size);
+   out = (unsigned char *)hypredrv_Malloc(size, "slice buffer");
    if (!out) /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate slice buffer (%zu bytes)", size);
       return 0;
    }
 
@@ -1121,8 +1118,7 @@ hypredrv_decompress_slice(comp_alg_t algo, size_t isize, const void *input, size
       *output = malloc(size);
       if (!*output) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate slice buffer (%zu bytes)", size);
+         hypredrv_AllocationFailure("Failed to allocate slice buffer (%zu bytes)", size);
          return 0;
       }
       memcpy(*output, (const unsigned char *)input + offset, size);

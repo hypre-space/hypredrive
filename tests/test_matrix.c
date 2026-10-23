@@ -846,7 +846,8 @@ typedef struct
    int change_on_values;
    int fail_want;
    int invalid_metadata;
-   int change_column;
+   int index_loads;
+   int value_loads;
 } MatrixSourceFixture;
 
 static int
@@ -890,11 +891,11 @@ load_matrix_source_fixture(void *ctx, uint32_t p, int want,
    }
    if (want & HYPREDRV_PART_INDICES)
    {
+      fixture->index_loads++;
       HYPRE_BigInt row = (HYPRE_BigInt)p;
-      HYPRE_BigInt col =
-         fixture->change_column && (want & HYPREDRV_PART_VALUES) ? 2 : (HYPRE_BigInt)p;
-      part->rows = malloc(sizeof(row));
-      part->cols = malloc(sizeof(col));
+      HYPRE_BigInt col = (HYPRE_BigInt)p;
+      part->rows       = malloc(sizeof(row));
+      part->cols       = malloc(sizeof(col));
       ASSERT_NOT_NULL(part->rows);
       ASSERT_NOT_NULL(part->cols);
       memcpy(part->rows, &row, sizeof(row));
@@ -902,6 +903,7 @@ load_matrix_source_fixture(void *ctx, uint32_t p, int want,
    }
    if (want & HYPREDRV_PART_VALUES)
    {
+      fixture->value_loads++;
       double value = 10.0 + p;
       part->vals   = malloc(sizeof(value));
       ASSERT_NOT_NULL(part->vals);
@@ -950,13 +952,6 @@ test_matrix_source_rejects_changed_parts(void)
       ASSERT_NULL(mat);
       ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
    }
-   fixture.fail_want     = -1;
-   fixture.change_column = 1;
-   source.nparts         = 2;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, HYPRE_MEMORY_HOST, &mat);
-   ASSERT_NULL(mat);
-   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 }
@@ -980,9 +975,12 @@ test_matrix_source_values_and_communicator(void)
    ASSERT_TRUE(hypredrv_IJMatrixComm(NULL) == MPI_COMM_NULL);
    for (size_t i = 0; i < sizeof(locations) / sizeof(locations[0]); i++)
    {
+      fixture.index_loads = fixture.value_loads = 0;
       hypredrv_ErrorCodeResetAll();
       hypredrv_IJMatrixBuildFromSource(MPI_COMM_SELF, &source, locations[i], &mat);
       ASSERT_NOT_NULL(mat);
+      ASSERT_EQ(fixture.index_loads, 2);
+      ASSERT_EQ(fixture.value_loads, 2);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
       ASSERT_TRUE(hypredrv_IJMatrixComm(mat) == MPI_COMM_SELF);
       ASSERT_EQ(HYPRE_IJMatrixGetValues(mat, 2, ncols, rows, cols, vals), 0);
@@ -1032,7 +1030,8 @@ main(int argc, char **argv)
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_truncated_bigint_cols_host);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_truncated_float_coefs_host);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_truncated_double_coefs_host);
-   RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_device_invalid_index_dtype_zero_nnz);
+   RUN_TEST(
+      test_hypredrv_IJMatrixReadMultipartBinary_device_invalid_index_dtype_zero_nnz);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_negative_row_rejected);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_negative_col_rejected);
    RUN_TEST(test_hypredrv_IJMatrixReadMultipartBinary_row_oob_rejected);

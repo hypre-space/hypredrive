@@ -189,8 +189,8 @@ PreconReuseSetAlwaysLinearSystemIDs(PreconReuse_args *args)
    if (!ids || !ids->data)
    {
       hypredrv_IntArrayDestroy(&ids);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate preconditioner.reuse.always selector");
+      hypredrv_AllocationFailure(
+         "Failed to allocate preconditioner.reuse.always selector");
       return 0;
    }
 
@@ -214,8 +214,7 @@ PreconReuseInstallDefaultAdaptiveComponents(PreconReuseAdaptive_args *adaptive)
       2, sizeof(*components)); /* GCOVR_EXCL_BR_LINE */
    if (!components)            /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate default adaptive reuse components");
+      hypredrv_AllocationFailure("Failed to allocate default adaptive reuse components");
       return 0;
    }
 
@@ -751,8 +750,7 @@ hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
             new_capacity * sizeof(*new_observations)); /* GCOVR_EXCL_BR_LINE */
          if (!new_observations)                        /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-            hypredrv_ErrorMsgAdd("Failed to grow adaptive preconditioner history");
+            hypredrv_AllocationFailure("Failed to grow adaptive preconditioner history");
             return;
          }
          state->observations = new_observations;
@@ -1480,8 +1478,7 @@ PreconReuseAdaptiveScore(const PreconReuse_args *args, const Stats *stats,
    {
       free(samples);
       free(values);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate adaptive reuse working buffers");
+      hypredrv_AllocationFailure("Failed to allocate adaptive reuse working buffers");
       return 1;
    }
 
@@ -2030,8 +2027,7 @@ PreconReuseParseRebuildOnNewLevel(YAMLnode *child, const char *value,
       levels = hypredrv_IntArrayCreate(count); /* GCOVR_EXCL_BR_LINE */
       if (!levels)                             /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate guard levels");
+         hypredrv_AllocationFailure("Failed to allocate guard levels");
          return 0;
       }
       size_t idx = 0;
@@ -2277,8 +2273,7 @@ PreconReuseParseAdaptiveNode(YAMLnode *node, PreconReuseAdaptive_args *adaptive)
                count, sizeof(*components)); /* GCOVR_EXCL_BR_LINE */
          if (!components)                   /* GCOVR_EXCL_BR_LINE */
          {
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-            hypredrv_ErrorMsgAdd("Failed to allocate adaptive components");
+            hypredrv_AllocationFailure("Failed to allocate adaptive components");
             return 0;
          }
          size_t idx = 0;

@@ -2,14 +2,14 @@
 
 set -euo pipefail
 
-SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIGURE_TIMEOUT="${CONFIGURE_TIMEOUT:-300s}"
 export ASAN_OPTIONS="${ASAN_OPTIONS:-symbolize=1:print_stacktrace=1:abort_on_error=1}"
 export UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:abort_on_error=1}"
 
 usage() {
     cat <<'USAGE'
-Usage: ./build.sh [all|analysis|coverage|v310|v220] [CMake options...]
+Usage: ./scripts/run_regression.sh [all|analysis|coverage|v310|v220] [CMake options...]
 
 By default, run all four configurations in a unique directory under /tmp.
 Set HYPREDRV_BUILD_ROOT to reuse an existing temporary build tree.

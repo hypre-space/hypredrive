@@ -624,8 +624,7 @@ hypredrv_ScalingCompute(MPI_Comm comm, Scaling_args *args, Scaling_context *ctx,
             HYPRE_ParVectorDestroy(ctx->inverse_scaling_vector);
             ctx->inverse_scaling_vector = NULL;
          }
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to cache the inverse scaling vector");
+         hypredrv_AllocationFailure("Failed to cache the inverse scaling vector");
       }
    }
 #else

@@ -543,8 +543,7 @@ PresetLoadTypeNode(const char *preset_name, hypredrv_PresetKind kind, const char
    /* GCOVR_EXCL_START */
    if (!text)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate preset YAML text");
+      hypredrv_AllocationFailure("Failed to allocate preset YAML text");
       return NULL;
    }
    /* GCOVR_EXCL_STOP */
@@ -764,8 +763,7 @@ PreconParsePresetNode(const YAMLnode *preset_node, precon_t *method_out,
    /* GCOVR_EXCL_START */
    if (!preset_name)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate preset name");
+      hypredrv_AllocationFailure("Failed to allocate preset name");
       return 0;
    }
    /* GCOVR_EXCL_STOP */
@@ -1136,8 +1134,7 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
          free(methods);
          free(variants);
          hypredrv_PreconArgsDestroyOwnedConfig(method, &args);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate preconditioner variants");
+         hypredrv_AllocationFailure("Failed to allocate preconditioner variants");
          return;
       }
       /* GCOVR_EXCL_STOP */
@@ -1289,9 +1286,8 @@ hypredrv_InputArgsRead(MPI_Comm comm, char *filename, int *base_indent_ptr,
    MPI_Allreduce(MPI_IN_PLACE, &bcast_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!bcast_ok)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate configuration text buffer (%zu bytes)",
-                           text_size + 1);
+      hypredrv_AllocationFailure(
+         "Failed to allocate configuration text buffer (%zu bytes)", text_size + 1);
       free(text);
       free(dirname);
       free(basename);

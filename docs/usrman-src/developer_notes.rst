@@ -21,10 +21,10 @@ Release Workflow
 ----------------
 
 Use the following checklist when preparing a release.  It spells out the
-release gate explicitly because ``build.sh`` is a local convenience script,
-not the upstream release contract.  Run the commands from a clean release
-branch checkout and keep the final candidate commit identifiable throughout
-the process.
+release gate explicitly because ``scripts/run_regression.sh`` is a local
+convenience script, not the upstream release contract.  Run the commands
+from a clean release branch checkout and keep the final candidate commit
+identifiable throughout the process.
 
 1. **Finish the release notes.**
 
@@ -276,7 +276,8 @@ Automatic HYPRE build
 For a local build, CMake uses `FetchContent` to retrieve and build HYPRE when
 ``HYPRE_ROOT`` is not set. This process:
 
-- Downloads HYPRE from the default ``master`` branch on GitHub.
+- Downloads the HYPRE ``v3.2.0`` release from GitHub by default. CI also tests
+  ``master`` explicitly.
 - Passes the CMake arguments from the parent project to HYPRE.
 - Builds HYPRE in the same build tree.
 - Selects the HYPRE version with ``-DHYPRE_VERSION=<version>``.

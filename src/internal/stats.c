@@ -103,9 +103,8 @@ EnsureCapacity(Stats *stats)
       /* GCOVR_EXCL_BR_START */
       if (failed) /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Stats capacity growth failed (%d -> %d)", old_capacity,
-                              new_capacity);
+         hypredrv_AllocationFailure("Stats capacity growth failed (%d -> %d)",
+                                    old_capacity, new_capacity);
          return 0;
       }
 
@@ -317,7 +316,7 @@ AssignCurrentSolveEntryPath(Stats *stats)
 /* Vector-timer annotations (rhs, dofmap, prec) all attach to the current entry.
  * The array is taken by address because EnsureCapacity() reallocates it: reading
  * the member before that call would leave a dangling pointer. */
-static void
+static uint32_t
 AnnotationStartVectorPhase(Stats *stats, double **timer_array)
 {
    if (stats->counter < 0)
@@ -327,15 +326,17 @@ AnnotationStartVectorPhase(Stats *stats, double **timer_array)
    /* GCOVR_EXCL_BR_START */
    if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_ALLOCATION;
    }
    StartVectorTimer(stats, *timer_array, stats->counter);
+
+   return ERROR_NONE;
 }
 
 /* Start of a new linear system build:
  * - reset repetition counter
  * - reserve the next stats entry so build timers attach to the upcoming solve entry */
-static void
+static uint32_t
 AnnotationBeginSystemBuild(Stats *stats)
 {
    stats->reps = 0;
@@ -344,17 +345,19 @@ AnnotationBeginSystemBuild(Stats *stats)
    /* GCOVR_EXCL_BR_START */
    if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_ALLOCATION;
    }
    SetCurrentEntryPath(stats, NULL);
    ResetPendingTimestepContext(stats);
    StartVectorTimer(stats, stats->matrix, stats->counter);
+
+   return ERROR_NONE;
 }
 
 /* Beginning of a solve entry (one repetition / one variant):
  * - advance entry index for all but the first repetition after a build
  * - keep indices contiguous: 0,1,2,... across repetitions and variants */
-static void
+static uint32_t
 AnnotationBeginSolveEntry(Stats *stats)
 {
    if (stats->counter < 0)
@@ -369,17 +372,19 @@ AnnotationBeginSolveEntry(Stats *stats)
    /* GCOVR_EXCL_BR_START */
    if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_ALLOCATION;
    }
    SetCurrentEntryPath(stats, NULL);
    ResetPendingTimestepContext(stats);
    StartScalarTimer(&stats->reset_x0);
+
+   return ERROR_NONE;
 }
 
 /* Increment the linear system counter only on the first solve for a new system
  * (reset_x0 has already set reps=1 for the first repetition), which is detected
  * by the entry index still matching the last "matrix" annotation. */
-static void
+static uint32_t
 AnnotationBeginSolve(Stats *stats)
 {
    if (stats->reps == 1 && stats->counter == stats->matrix_counter)
@@ -394,7 +399,7 @@ AnnotationBeginSolve(Stats *stats)
    /* GCOVR_EXCL_BR_START */
    if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_ALLOCATION;
    }
    StartVectorTimer(stats, stats->solve, stats->counter);
 
@@ -405,72 +410,77 @@ AnnotationBeginSolve(Stats *stats)
       stats->entry_ls_id[stats->counter] = stats->ls_counter - 1;
    }
    AssignCurrentSolveEntryPath(stats);
+
+   return ERROR_NONE;
 }
 
 /* Scalar-timer annotations (initialize, finalize) are entry-independent. */
-static void
+static uint32_t
 AnnotationStartScalarPhase(Stats *stats, double *timer)
 {
    /* GCOVR_EXCL_BR_START */
    if (!EnsureCapacity(stats)) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_ALLOCATION;
    }
    StartScalarTimer(timer);
+
+   return ERROR_NONE;
 }
 
-static void
+static uint32_t
 HandleAnnotationBegin(Stats *stats, const char *name)
 {
    /* GCOVR_EXCL_BR_START */
    if (!name) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* Ignore the top-level iteration annotation (any "Run"-prefixed name). */
    if (strncmp(name, "Run", 3) == 0)
    {
-      return;
+      return ERROR_NONE;
    }
 
    if (!strcmp(name, "matrix") || !strcmp(name, "system"))
    {
-      AnnotationBeginSystemBuild(stats);
+      return AnnotationBeginSystemBuild(stats);
    }
    else if (!strcmp(name, "reset_x0"))
    {
-      AnnotationBeginSolveEntry(stats);
+      return AnnotationBeginSolveEntry(stats);
    }
    else if (!strcmp(name, "rhs"))
    {
-      AnnotationStartVectorPhase(stats, &stats->rhs);
+      return AnnotationStartVectorPhase(stats, &stats->rhs);
    }
    else if (!strcmp(name, "dofmap"))
    {
-      AnnotationStartVectorPhase(stats, &stats->dofmap);
+      return AnnotationStartVectorPhase(stats, &stats->dofmap);
    }
    else if (!strcmp(name, "prec"))
    {
-      AnnotationStartVectorPhase(stats, &stats->prec);
+      return AnnotationStartVectorPhase(stats, &stats->prec);
    }
    else if (!strcmp(name, "solve"))
    {
-      AnnotationBeginSolve(stats);
+      return AnnotationBeginSolve(stats);
    }
    else if (!strcmp(name, "initialize"))
    {
-      AnnotationStartScalarPhase(stats, &stats->initialize);
+      return AnnotationStartScalarPhase(stats, &stats->initialize);
    }
    else if (!strcmp(name, "finalize"))
    {
-      AnnotationStartScalarPhase(stats, &stats->finalize);
+      return AnnotationStartScalarPhase(stats, &stats->finalize);
    }
    else
    {
       /* Unknown annotation - set error but don't fail */
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_TIMING);
       hypredrv_ErrorMsgAdd("Unknown timer key: '%s'", name);
+      return ERROR_UNKNOWN_TIMING;
    }
 }
 
@@ -478,19 +488,19 @@ HandleAnnotationBegin(Stats *stats, const char *name)
  * Helper: Handle annotation end
  *--------------------------------------------------------------------------*/
 
-static void
+static uint32_t
 HandleAnnotationEnd(Stats *stats, const char *name)
 {
    /* GCOVR_EXCL_BR_START */
    if (!name) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* Ignore the top-level iteration annotation (any "Run"-prefixed name). */
    if (strncmp(name, "Run", 3) == 0)
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* Stop timers based on annotation name */
@@ -531,7 +541,10 @@ HandleAnnotationEnd(Stats *stats, const char *name)
       /* Unknown annotation - set error but don't fail */
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_TIMING);
       hypredrv_ErrorMsgAdd("Unknown timer key: '%s'", name);
+      return ERROR_UNKNOWN_TIMING;
    }
+
+   return ERROR_NONE;
 }
 
 /*--------------------------------------------------------------------------
@@ -721,10 +734,9 @@ hypredrv_StatsCreate(void)
 {
    int capacity = REALLOC_EXPAND_FACTOR;
 
-   Stats *stats = (Stats *)malloc(sizeof(Stats));
+   Stats *stats = (Stats *)hypredrv_Malloc(sizeof(Stats), "stats");
    if (!stats)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return NULL;
    }
    memset(stats, 0, sizeof(Stats));
@@ -787,7 +799,7 @@ hypredrv_StatsCreate(void)
    }
    if (!alloc_ok)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       hypredrv_StatsDestroy(&stats);
       return NULL;
    }
@@ -839,21 +851,24 @@ hypredrv_StatsDestroy(Stats **stats_ptr)
  * name that has already been formatted (no further printf processing).
  *--------------------------------------------------------------------------*/
 
-static void
+static uint32_t
 AnnotateFormatted(Stats *stats, HYPREDRV_AnnotateAction action,
                   const char *formatted_name)
 {
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
       HYPREDRV_ANNOTATE_REGION_BEGIN("HYPREDRV_%.1014s", formatted_name)
-      HandleAnnotationBegin(stats, formatted_name);
+      return HandleAnnotationBegin(stats, formatted_name);
    }
    /* GCOVR_EXCL_BR_START */
    else if (action == HYPREDRV_ANNOTATE_END) /* GCOVR_EXCL_BR_STOP */
    {
-      HandleAnnotationEnd(stats, formatted_name);
+      uint32_t status = HandleAnnotationEnd(stats, formatted_name);
       HYPREDRV_ANNOTATE_REGION_END("HYPREDRV_%.1014s", formatted_name)
+      return status;
    }
+
+   return ERROR_NONE;
 }
 
 /*--------------------------------------------------------------------------
@@ -863,13 +878,13 @@ AnnotateFormatted(Stats *stats, HYPREDRV_AnnotateAction action,
  * not a pointer type on all ABIs (e.g., AArch64), so it cannot be NULL.
  *--------------------------------------------------------------------------*/
 
-void
+uint32_t
 hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char *name,
                         va_list args)
 {
    if (!stats)
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* Format the name string with the variadic arguments */
@@ -879,26 +894,26 @@ hypredrv_StatsAnnotateV(Stats *stats, HYPREDRV_AnnotateAction action, const char
    vsnprintf(formatted_name, sizeof(formatted_name), name, args_copy);
    va_end(args_copy);
 
-   AnnotateFormatted(stats, action, formatted_name);
+   return AnnotateFormatted(stats, action, formatted_name);
 }
 
 /*--------------------------------------------------------------------------
  * hypredrv_StatsAnnotate
  *--------------------------------------------------------------------------*/
 
-void
+uint32_t
 hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char *name)
 {
    if (!stats)
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* No variadic args - use name as-is (do not interpret '%' in name) */
    char formatted_name[1024];
    snprintf(formatted_name, sizeof(formatted_name), "%s", name);
 
-   AnnotateFormatted(stats, action, formatted_name);
+   return AnnotateFormatted(stats, action, formatted_name);
 }
 
 /*--------------------------------------------------------------------------
@@ -930,9 +945,7 @@ hypredrv_StatsAnnotateWithId(Stats *stats, HYPREDRV_AnnotateAction action,
 {
    char formatted_name[1024];
    FormatAnnotationNameWithId(formatted_name, sizeof(formatted_name), name, id);
-   hypredrv_StatsAnnotate(stats, action, formatted_name);
-
-   return hypredrv_ErrorCodeGet();
+   return hypredrv_StatsAnnotate(stats, action, formatted_name);
 }
 
 /*--------------------------------------------------------------------------
@@ -948,26 +961,24 @@ hypredrv_StatsAnnotateLevelWithId(Stats *stats, HYPREDRV_AnnotateAction action, 
 
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
-      hypredrv_StatsAnnotateLevelBegin(stats, level, formatted_name);
+      return hypredrv_StatsAnnotateLevelBegin(stats, level, formatted_name);
    }
    else
    {
-      hypredrv_StatsAnnotateLevelEnd(stats, level, formatted_name);
+      return hypredrv_StatsAnnotateLevelEnd(stats, level, formatted_name);
    }
-
-   return hypredrv_ErrorCodeGet();
 }
 
 /*--------------------------------------------------------------------------
  * hypredrv_StatsAnnotateLevelBegin - Hierarchical annotation with level
  *--------------------------------------------------------------------------*/
 
-void
+uint32_t
 hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
 {
    if (!stats)
    {
-      return;
+      return ERROR_NONE;
    }
 
    if (level < 0 || level >= STATS_MAX_LEVELS)
@@ -975,7 +986,7 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level,
                            STATS_MAX_LEVELS);
-      return;
+      return ERROR_INVALID_VAL;
    }
 
    /* Check if level is already active */
@@ -984,17 +995,17 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Level %d already has active annotation '%s'", level,
                            stats->level_stack[level].name);
-      return;
+      return ERROR_INVALID_VAL;
    }
 
    /* Push onto level stack - allocate memory for name */
    size_t name_len                = strlen(name) + 1;
-   stats->level_stack[level].name = (char *)malloc(name_len);
-   /* GCOVR_EXCL_BR_START */
-   if (stats->level_stack[level].name) /* GCOVR_EXCL_BR_STOP */
+   stats->level_stack[level].name = (char *)hypredrv_Malloc(name_len, "annotation name");
+   if (!stats->level_stack[level].name)
    {
-      memcpy(stats->level_stack[level].name, name, name_len);
+      return ERROR_ALLOCATION;
    }
+   memcpy(stats->level_stack[level].name, name, name_len);
    stats->level_stack[level].level      = level;
    stats->level_stack[level].start_time = MPI_Wtime();
    /* GCOVR_EXCL_BR_START */
@@ -1015,6 +1026,8 @@ hypredrv_StatsAnnotateLevelBegin(Stats *stats, int level, const char *name)
    }
 
    /* Commenting out for now to avoid multiple caliper regions for each solve call */
+
+   return ERROR_NONE;
 }
 
 /*--------------------------------------------------------------------------
@@ -1051,7 +1064,7 @@ EnsureLevelCapacity(Stats *stats, int level)
    /* GCOVR_EXCL_BR_START */
    if (!new_ptr) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       return 0;
    }
    stats->level_entries[level]  = new_ptr;
@@ -1063,12 +1076,13 @@ EnsureLevelCapacity(Stats *stats, int level)
  * hypredrv_StatsAnnotateLevelEnd - End hierarchical annotation
  *--------------------------------------------------------------------------*/
 
-void
+uint32_t
 hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
 {
+   uint32_t status = ERROR_NONE;
    if (!stats)
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* GCOVR_EXCL_BR_START */
@@ -1077,7 +1091,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Annotation level %d out of range [0, %d)", level,
                            STATS_MAX_LEVELS);
-      return;
+      return ERROR_INVALID_VAL;
    }
 
    /* If no annotation is active at this level, treat the end as a no-op. This
@@ -1085,7 +1099,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
     * then ends it after the first solver object has been created. */
    if (stats->level_stack[level].name == NULL)
    {
-      return;
+      return ERROR_NONE;
    }
 
    /* Check if level matches */
@@ -1094,7 +1108,7 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Level %d annotation mismatch: expected '%s', got '%s'", level,
                            stats->level_stack[level].name, name);
-      return;
+      return ERROR_INVALID_VAL;
    }
 
    /* Save level entry if this level is active */
@@ -1109,6 +1123,10 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
          stats->level_entries[level][idx].solve_end   = stats->ls_counter;
 
          stats->level_count[level]++;
+      }
+      else
+      {
+         status = ERROR_ALLOCATION;
       }
       stats->level_active &= ~(1 << level);
    }
@@ -1134,6 +1152,8 @@ hypredrv_StatsAnnotateLevelEnd(Stats *stats, int level, const char *name)
          stats->level_depth--;
       }
    }
+
+   return status;
 }
 
 /*--------------------------------------------------------------------------
@@ -1602,14 +1622,14 @@ hypredrv_StatsLevelGetCountChecked(const Stats *stats, int level, int *count,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("%s: count pointer is NULL", caller);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    if (!stats)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("%s: no active stats context", caller);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    /* GCOVR_EXCL_BR_START */
@@ -1618,11 +1638,11 @@ hypredrv_StatsLevelGetCountChecked(const Stats *stats, int level, int *count,
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("%s: invalid level %d (max %d)", caller, level,
                            STATS_MAX_LEVELS - 1);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    *count = hypredrv_StatsLevelGetCount(stats, level);
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 /*--------------------------------------------------------------------------
@@ -1673,7 +1693,7 @@ hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("StatsLevelGetEntry: no active stats context");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    LevelEntry entry;
@@ -1682,7 +1702,7 @@ hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("StatsLevelGetEntry: invalid level %d or index %d", level,
                            index);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    if (entry_id)
@@ -1692,7 +1712,7 @@ hypredrv_StatsLevelGetEntrySummary(const Stats *stats, int level, int index,
 
    ComputeLevelStats(stats, &entry, num_solves, linear_iters, setup_time, solve_time);
 
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 /*--------------------------------------------------------------------------

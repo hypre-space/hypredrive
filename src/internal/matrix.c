@@ -187,15 +187,14 @@ IJMatrixIndexArrayToBigInt(void **data, uint64_t nnz, uint64_t isize)
       return 1;
    }
 
-   HYPRE_BigInt *dst = (isize > sizeof(HYPRE_BigInt))
-                          ? (HYPRE_BigInt *)*data
-                          : (HYPRE_BigInt *)malloc((size_t)nnz * sizeof(HYPRE_BigInt));
+   HYPRE_BigInt *dst =
+      (isize > sizeof(HYPRE_BigInt))
+         ? (HYPRE_BigInt *)*data
+         : (HYPRE_BigInt *)hypredrv_Calloc((size_t)nnz, sizeof(HYPRE_BigInt),
+                                           "matrix index conversion");
    if (!dst) /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd(
-         "Failed to allocate matrix index conversion buffer"); /* GCOVR_EXCL_LINE */
-      return 0;                                                /* GCOVR_EXCL_LINE */
+      return 0; /* GCOVR_EXCL_LINE */
    }
    const unsigned char *src = (const unsigned char *)*data;
    if (isize == sizeof(uint32_t))
@@ -256,7 +255,8 @@ IJMatrixRowRuns(HYPRE_BigInt *rows, uint64_t nnz, HYPRE_Int *nruns_ptr)
       nruns += (rows[k] != rows[k - 1]);
    }
 
-   HYPRE_Int *ncols = (HYPRE_Int *)malloc(nruns * sizeof(HYPRE_Int));
+   HYPRE_Int *ncols =
+      (HYPRE_Int *)hypredrv_Calloc(nruns, sizeof(HYPRE_Int), "matrix row runs");
    if (!ncols) /* GCOVR_EXCL_BR_LINE */
    {
       return NULL; /* GCOVR_EXCL_LINE */
@@ -294,8 +294,9 @@ IJMatrixIndicesToBigInt(hypredrv_IJMatrixMemPart *part)
  * Parts come from a hypredrv_IJMatrixPartSource one at a time over three
  * passes: metadata (row range), indices (validation, plus host sparsity
  * pre-sizing), then values (inserted through device staging buffers for
- * device matrices). A rank owning a single part keeps its indices from the
- * second pass, so they are loaded only once. Collective over `comm`.
+ * device matrices). Converted indices are retained between the last two passes
+ * within a bounded cache, including ranks that own several parts. Collective
+ * over `comm`.
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -350,7 +351,8 @@ IJMatrixLoadPart(const hypredrv_IJMatrixPartSource *src, uint32_t p, int want,
 typedef struct
 {
    hypredrv_IJMatrixMemPart *meta;
-   hypredrv_IJMatrixMemPart  cached;
+   size_t                    cached_index_bytes;
+   uint32_t                  nparts;
    uint64_t                  nrows_sum, nrows, nnz_max;
    HYPRE_BigInt              ilower, iupper;
    HYPRE_IJMatrix            mat;
@@ -396,16 +398,10 @@ IJMatrixSourceReadIndices(const hypredrv_IJMatrixPartSource *src,
    const uint32_t nparts = src->nparts;
    if (build->host)
    {
-      build->dsizes = (HYPRE_Int *)calloc(
-         build->nrows_sum ? (size_t)build->nrows_sum : 1u, sizeof(HYPRE_Int));
-      build->osizes = (HYPRE_Int *)calloc(
-         build->nrows_sum ? (size_t)build->nrows_sum : 1u, sizeof(HYPRE_Int));
-      if (!build->dsizes || !build->osizes) /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Failed to allocate matrix host sparsity buffers"); /* GCOVR_EXCL_LINE */
-      }
+      build->dsizes = (HYPRE_Int *)hypredrv_Calloc(
+         (size_t)build->nrows_sum, sizeof(HYPRE_Int), "matrix sparsity buffers");
+      build->osizes = (HYPRE_Int *)hypredrv_Calloc(
+         (size_t)build->nrows_sum, sizeof(HYPRE_Int), "matrix sparsity buffers");
    }
    for (uint32_t p = 0; p < nparts && !hypredrv_ErrorCodeActive(); p++)
    {
@@ -435,14 +431,18 @@ IJMatrixSourceReadIndices(const hypredrv_IJMatrixPartSource *src,
             }
          }
       }
-      if (nparts == 1)
+      /* Bound retained storage while avoiding repeated I/O and conversion for
+       * the common multi-part case. A part beyond the budget is read again. */
+      const size_t cache_limit = (size_t)64 * 1024u * 1024u;
+      size_t       index_bytes = (size_t)part.nnz * 2u * sizeof(HYPRE_BigInt);
+      if (index_bytes <= cache_limit - build->cached_index_bytes)
       {
-         build->cached = part; /* reused by the values pass */
+         build->meta[p].rows = part.rows;
+         build->meta[p].cols = part.cols;
+         part.rows = part.cols = NULL;
+         build->cached_index_bytes += index_bytes;
       }
-      else
-      {
-         IJMatrixMemPartFree(&part);
-      }
+      IJMatrixMemPartFree(&part);
    }
    if (build->host && !hypredrv_ErrorCodeActive())
    {
@@ -484,17 +484,29 @@ IJMatrixSourceInsertPart(IJMatrixSourceBuild *build, const hypredrv_IJMatrixMemP
          HYPRE_IJMatrixSetValues(build->mat, nruns, ncols, rows, cols, vals);
          free(ncols);
       }
-      else /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                    /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd("Failed to allocate matrix row runs"); /* GCOVR_EXCL_LINE */
-      }
    }
    else
    {
       HYPRE_IJMatrixSetValues(build->mat, (HYPRE_Int)part->nnz, NULL, set_rows, set_cols,
                               set_vals);
    }
+}
+
+/* Consume retained converted indices, or reload a part outside the cache budget. */
+static int
+IJMatrixSourceLoadValues(const hypredrv_IJMatrixPartSource *src,
+                         IJMatrixSourceBuild *build, uint32_t p, int cached,
+                         hypredrv_IJMatrixMemPart *part)
+{
+   if (cached)
+   {
+      *part               = build->meta[p];
+      build->meta[p].rows = build->meta[p].cols = NULL;
+      return IJMatrixLoadPart(src, p, HYPREDRV_PART_VALUES, &build->meta[p], part);
+   }
+   return IJMatrixLoadPart(src, p, HYPREDRV_PART_INDICES | HYPREDRV_PART_VALUES,
+                           &build->meta[p], part) &&
+          IJMatrixIndicesToBigInt(part);
 }
 
 static void
@@ -517,20 +529,8 @@ IJMatrixSourceReadValues(const hypredrv_IJMatrixPartSource *src,
       HYPRE_Complex           *wide = NULL, *vals = NULL;
       int                      ok = 0;
 
-      if (nparts == 1)
-      {
-         /* The cached single part already holds HYPRE_BigInt indices; the
-          * reload is checked against the metadata so its nnz still matches them. */
-         part          = build->cached;
-         build->cached = (hypredrv_IJMatrixMemPart){0};
-         ok = IJMatrixLoadPart(src, p, HYPREDRV_PART_VALUES, &build->meta[p], &part);
-      }
-      else
-      {
-         ok = IJMatrixLoadPart(src, p, HYPREDRV_PART_INDICES | HYPREDRV_PART_VALUES,
-                               &build->meta[p], &part) &&
-              IJMatrixIndicesToBigInt(&part);
-      }
+      int cached = build->meta[p].rows != NULL || build->meta[p].nnz == 0;
+      ok         = IJMatrixSourceLoadValues(src, build, p, cached, &part);
       if (!ok)
       {
          IJMatrixMemPartFree(&part);
@@ -544,8 +544,8 @@ IJMatrixSourceReadValues(const hypredrv_IJMatrixPartSource *src,
 
       HYPRE_BigInt *rows = (HYPRE_BigInt *)part.rows;
       HYPRE_BigInt *cols = (HYPRE_BigInt *)part.cols;
-      /* Indices re-loaded for multi-part ranks are re-validated. */
-      for (size_t k = 0; nparts > 1 && k < (size_t)part.nnz; k++)
+      /* Only parts that exceeded the cache budget need validation again. */
+      for (size_t k = 0; !cached && k < (size_t)part.nnz; k++)
       {
          if (!IJMatrixValidateEntry(rows[k], cols[k], build->nrows, part.label))
          {
@@ -557,7 +557,8 @@ IJMatrixSourceReadValues(const hypredrv_IJMatrixPartSource *src,
       if (part.value_size != sizeof(HYPRE_Complex))
 #endif
       {
-         wide = (HYPRE_Complex *)malloc((size_t)part.nnz * sizeof(HYPRE_Complex));
+         wide = (HYPRE_Complex *)hypredrv_Calloc((size_t)part.nnz, sizeof(HYPRE_Complex),
+                                                 "matrix values");
          vals = wide;
       }
       /* GCOVR_EXCL_BR_START */
@@ -567,12 +568,6 @@ IJMatrixSourceReadValues(const hypredrv_IJMatrixPartSource *src,
       /* GCOVR_EXCL_BR_STOP */
       {
          IJMatrixSourceInsertPart(build, &part, vals);
-      }
-      else if (!vals) /* GCOVR_EXCL_BR_LINE */
-      {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Failed to allocate matrix value buffer"); /* GCOVR_EXCL_LINE */
       }
       free(wide);
       IJMatrixMemPartFree(&part);
@@ -591,7 +586,10 @@ IJMatrixSourceBuildFree(IJMatrixSourceBuild *build)
    {
       HYPRE_IJMatrixDestroy(build->mat);
    }
-   IJMatrixMemPartFree(&build->cached);
+   for (uint32_t p = 0; build->meta && p < build->nparts; p++)
+   {
+      IJMatrixMemPartFree(&build->meta[p]);
+   }
    free(build->meta);
    free(build->dsizes);
    free(build->osizes);
@@ -607,17 +605,13 @@ hypredrv_IJMatrixBuildFromSource(MPI_Comm comm, const hypredrv_IJMatrixPartSourc
    const uint32_t      nparts       = src->nparts;
 
    *mat_ptr              = NULL;
+   build.nparts          = nparts;
    build.memory_location = memory_location;
    build.host            = (memory_location == HYPRE_MEMORY_HOST);
 
    /* 1) Metadata: validate every part and size the local row range. */
-   build.meta = (hypredrv_IJMatrixMemPart *)calloc(nparts ? (size_t)nparts : 1u,
-                                                   sizeof(*build.meta));
-   if (!build.meta) /* GCOVR_EXCL_BR_LINE */
-   {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                     /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate matrix part list"); /* GCOVR_EXCL_LINE */
-   }
+   build.meta = (hypredrv_IJMatrixMemPart *)hypredrv_Calloc(nparts, sizeof(*build.meta),
+                                                            "matrix part metadata");
    IJMatrixSourceScanMetadata(src, &build);
    if (!IJMatrixAllRanksOk(comm))
    {

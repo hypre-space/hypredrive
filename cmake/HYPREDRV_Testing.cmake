@@ -1046,6 +1046,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(30000 0)
     hypredrv_check_hypre_version(30100 0)
     hypredrv_check_hypre_version(30200 0)
+    hypredrv_check_hypre_version(30200 1)
     hypredrv_check_hypre_version(30100 5)
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
@@ -1504,7 +1505,16 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             # MPI-layout directory.  Use the configured data list instead of
             # globbing the source tree: datasets are downloaded after configure
             # in CI and are intentionally ignored by git.
+            get_property(_sanitizer_enabled GLOBAL PROPERTY HYPREDRV_SANITIZER_ENABLED)
             foreach(_dataset_name IN LISTS HYPREDRV_DATASETS)
+                # Upstream column-lumped MGR restriction leaks through v3.2.0.
+                # Keep these datasets in normal runs, and exercise them under
+                # LSan on master where the upstream fix is available.
+                if(_sanitizer_enabled AND NOT HYPREDRV_HAVE_HYPRE_30200_DEV1 AND
+                   _dataset_name MATCHES "^(tcmpf1k|tcmpres1k|tmpporo1k)$")
+                    message(STATUS "Skipping ${_dataset_name} under sanitizers: requires hypre > 3.2.0")
+                    continue()
+                endif()
                 # These datasets use different input arrangements and have
                 # dedicated regressions elsewhere in this file.
                 if(_dataset_name STREQUAL "compflow6k" OR

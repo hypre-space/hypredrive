@@ -162,9 +162,10 @@ jobs:
       fail-fast: false
       matrix:
         compiler: [clang] # gcc, clang
+        hypre: [v3.2.0, master]
     env:
-      HYPRE_VERSION: master
-      BUILD_DIR: build-sanitizers-${{ matrix.compiler }}
+      HYPRE_VERSION: ${{ matrix.hypre }}
+      BUILD_DIR: build-sanitizers-${{ matrix.compiler }}-${{ matrix.hypre }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -219,7 +220,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: sanitizer-logs-${{ matrix.compiler }}
+          name: sanitizer-logs-${{ matrix.compiler }}-${{ matrix.hypre }}
           path: |
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log

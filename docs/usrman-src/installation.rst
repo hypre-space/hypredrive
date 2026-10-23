@@ -84,12 +84,12 @@ Use ``HYPRE_LIBRARY`` instead of ``HYPRE_LIBRARIES`` for one library file.
             -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
             -B build -S .
 
-This fetches HYPRE ``master`` by default. To pin a specific HYPRE revision:
+This fetches HYPRE ``v3.2.0`` by default. To select a different HYPRE revision:
 
 .. code-block:: bash
 
     $ cmake -DCMAKE_BUILD_TYPE=Release \
-            -DHYPRE_VERSION=v3.2.0 \
+            -DHYPRE_VERSION=master \
             -DCMAKE_INSTALL_PREFIX=${HYPREDRIVE_INSTALL_DIR} \
             -B build -S .
 

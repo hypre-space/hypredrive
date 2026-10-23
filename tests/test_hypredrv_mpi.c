@@ -12,6 +12,8 @@
 #include "internal/error.h"
 #include "logging.h"
 #include "object.h"
+#include "vector_tags.h"
+#include "_hypre_parcsr_mv.h"
 #include "test_helpers.h"
 
 static HYPREDRV_t
@@ -95,8 +97,8 @@ assert_local_system_restored(HYPREDRV_t obj)
    HYPRE_BigInt            index        = (HYPRE_BigInt)rank;
    HYPRE_Complex           matrix_value = 0.0, rhs_value = 0.0;
    ASSERT_EQ(
-      HYPRE_IJMatrixGetValues(state->mat_A, 1, &ncols, &index, &index, &matrix_value), 0);
-   ASSERT_EQ(HYPRE_IJVectorGetValues(state->vec_b, 1, &index, &rhs_value), 0);
+      HYPRE_IJMatrixGetValues(state->mat_A.handle, 1, &ncols, &index, &index, &matrix_value), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(state->vec_b.handle, 1, &index, &rhs_value), 0);
    ASSERT_EQ_DOUBLE((double)matrix_value, 2.0, 1.0e-12);
    ASSERT_EQ_DOUBLE((double)rhs_value, 1.0, 1.0e-12);
 }
@@ -291,7 +293,8 @@ test_rank_local_schedule_error_is_collective(void)
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
    HYPREDRV_t obj = NULL;
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
-   char path[] = "/tmp/hypredrive-schedule-mpi-XXXXXX";
+   char path[256];
+   test_scratch_path(path, sizeof(path), "hypredrive-schedule-mpi-XXXXXX");
    int  fd     = mkstemp(path);
    ASSERT_TRUE(fd >= 0);
    FILE *fp = fdopen(fd, "w");
@@ -314,6 +317,46 @@ test_rank_local_schedule_error_is_collective(void)
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 }
 
+static void
+test_tagged_reduction_with_empty_rank(void)
+{
+#if HYPRE_CHECK_MIN_VERSION(30000, 0) && !defined(HYPRE_USING_GPU)
+   int rank = 0, nprocs = 1;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   char *argv[] = {"solver:\n  gmres:\n    print_level: 3\npreconditioner: amg\n"};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   HYPRE_IJVector rhs = NULL;
+   HYPRE_BigInt lower = rank ? rank - 1 : 0, upper = rank - 1;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_WORLD, lower, upper, &rhs), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(rhs, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(rhs), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(rhs), 0);
+   void *object = NULL;
+   ASSERT_EQ(HYPRE_IJVectorGetObject(rhs, &object), 0);
+   ASSERT_EQ(HYPRE_ParVectorSetConstantValues((HYPRE_ParVector)object, 1.0), 0);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHS(obj, (HYPRE_Vector)rhs), ERROR_NONE);
+   int label = 1;
+   ASSERT_EQ(HYPREDRV_LinearSystemSetDofmap(obj, rank ? 1 : 0, rank ? &label : NULL), ERROR_NONE);
+   ASSERT_EQ(hypredrv_VectorTagsSet(obj), ERROR_NONE);
+   ASSERT_NOT_NULL(obj->vector_tags);
+   HYPRE_Int num_tags = 0;
+   HYPRE_Complex *norms = NULL;
+   ASSERT_EQ(hypre_ParVectorInnerProdTagged((hypre_ParVector *)object,
+              (hypre_ParVector *)object, &num_tags, &norms), 0);
+   ASSERT_EQ(num_tags, 2);
+   ASSERT_NOT_NULL(norms);
+   ASSERT_EQ_DOUBLE(norms[0], (double)(nprocs - 1), 1e-12);
+   hypre_TFree(norms, HYPRE_MEMORY_HOST);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_NULL(hypre_ParVectorTags((hypre_ParVector *)object));
+   HYPRE_IJVectorDestroy(rhs);
+#endif
+}
+
 int
 main(int argc, char **argv)
 {
@@ -324,7 +367,8 @@ main(int argc, char **argv)
    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
    if (nprocs >= 2)
    {
-      RUN_TEST(test_independent_self_solve_and_recycled_log_comm);
+      RUN_TEST(test_tagged_reduction_with_empty_rank);
+   RUN_TEST(test_independent_self_solve_and_recycled_log_comm);
       RUN_TEST(test_rank_local_schedule_error_is_collective);
       RUN_TEST(test_PreconSetup_synchronizes_rank_local_hypre_error);
       RUN_TEST(test_LinearSolverSetup_synchronizes_rank_local_hypre_error);
