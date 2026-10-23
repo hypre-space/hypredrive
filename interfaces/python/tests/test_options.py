@@ -230,20 +230,12 @@ def test_normalize_str_passthrough():
     assert normalize_options(raw) == raw
 
 
-def test_normalize_path_reads_file(tmp_path):
+def test_normalize_paths_are_passed_to_c_without_reading(tmp_path):
     fp = tmp_path / "opts.yml"
+    assert normalize_options(fp) == str(fp)
+    assert normalize_options(str(fp)) == str(fp)
     fp.write_text("general:\n  statistics: on\n", encoding="utf-8")
-    assert normalize_options(fp).strip() == "general:\n  statistics: on".strip()
-
-
-def test_normalize_missing_pathlike_raises(tmp_path):
-    with pytest.raises(FileNotFoundError):
-        normalize_options(tmp_path / "missing.yml")
-
-
-def test_normalize_missing_path_string_raises(tmp_path):
-    with pytest.raises(FileNotFoundError):
-        normalize_options(str(tmp_path / "missing.yml"))
+    assert normalize_options(fp) == str(fp)
 
 
 def test_normalize_single_line_yaml_literal_still_passes_through():

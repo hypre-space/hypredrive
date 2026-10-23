@@ -115,6 +115,7 @@ end
         set_rhs!(session, [8.0, 12.0])
         solve!(x, session)
         @test x ≈ [2.0, 2.0]
+        @test info(session).setup_time > 0.0
     finally
         HypreDrive.close(session)
     end

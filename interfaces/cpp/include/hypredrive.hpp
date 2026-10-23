@@ -262,29 +262,7 @@ class driver
          throw std::invalid_argument(
             "hypredrive YAML text must not contain embedded NUL bytes");
       }
-      std::string text;
-      if (detail::looks_like_yaml_file_path(yaml))
-      {
-         const std::filesystem::path path{std::string(yaml)};
-         std::ifstream               file(path);
-         if (!file)
-         {
-            throw std::runtime_error("failed to open hypredrive YAML file: " +
-                                     path.string());
-         }
-         std::ostringstream buffer;
-         buffer << file.rdbuf();
-         if (file.bad())
-         {
-            throw std::runtime_error("failed to read hypredrive YAML file: " +
-                                     path.string());
-         }
-         text = buffer.str();
-      }
-      else
-      {
-         text.assign(yaml);
-      }
+      std::string       text(yaml);
       const std::size_t first =
          (args.front() == "-a" || args.front() == "--args") ? 1 : 0;
       std::vector<std::string> tokens(args.begin() + static_cast<std::ptrdiff_t>(first),
@@ -338,13 +316,9 @@ class driver
    void
    parse_yaml(const std::filesystem::path &path)
    {
-      std::ifstream yaml(path);
-      if (!yaml)
-      {
-         throw std::runtime_error("failed to open hypredrive YAML file: " +
-                                  path.string());
-      }
-      parse_yaml(yaml);
+      std::string filename = path.string();
+      char       *argv[]   = {filename.data()};
+      parse_args(1, argv);
    }
    /// @brief C++ wrapper for HYPREDRV_SetLibraryMode.
    /// @see HYPREDRV_SetLibraryMode

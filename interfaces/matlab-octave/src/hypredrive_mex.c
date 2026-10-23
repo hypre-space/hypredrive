@@ -429,6 +429,12 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
                                          &drv, indptr, cols, data, yaml);
    }
 
+   code = HYPREDRV_LinearSystemResetInitialGuess(drv);
+   if (code != HYPREDRV_SUCCESS)
+   {
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemResetInitialGuess",
+                                         &drv, indptr, cols, data, yaml);
+   }
    code = HYPREDRV_LinearSolverCreate(drv);
    if (code != HYPREDRV_SUCCESS)
    {
