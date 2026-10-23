@@ -216,8 +216,11 @@ test_SplitFilename_root_dir(void)
 {
    char *dirname, *basename;
    hypredrv_SplitFilename("/file.txt", &dirname, &basename);
-   ASSERT_STREQ(dirname, "");
+   ASSERT_STREQ(dirname, "/");
    ASSERT_STREQ(basename, "file.txt");
+   ASSERT_TRUE(hypredrv_PathIsUnderRoot("/file.txt", dirname));
+   ASSERT_FALSE(hypredrv_PathIsUnderRoot("relative.txt", dirname));
+   ASSERT_FALSE(hypredrv_PathIsUnderRoot("/root-other/file", "/root"));
    free(dirname);
    free(basename);
 }

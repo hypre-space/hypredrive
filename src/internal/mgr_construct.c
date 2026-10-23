@@ -690,7 +690,7 @@ MGRConfigNestedKrylovFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *le
       {
          return 0;
       }
-      hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->f_relaxation.krylov,
+      hypredrv_NestedKrylovCreate(args->comm, level_args->f_relaxation.krylov,
                                   args->dofmap, args->vec_nn,
                                   &level_args->f_relaxation.krylov->base_solver);
       /* GCOVR_EXCL_START */
@@ -768,7 +768,7 @@ MGRConfigNestedMGRFRelax(MGR_args *args, HYPRE_Solver precon, MGRlvl_args *level
                       "(coarsest=%s)",
                       (int)orig_lvl,
                       hypredrv_MGRCoarseSolverTypeName(&nested_args->coarsest_level));
-   hypredrv_MGRCreate(nested_args, &frelax, stats, next_ls_id);
+   hypredrv_MGRCreate(args->comm, nested_args, &frelax, stats, next_ls_id);
    nested_args->dofmap = saved_dofmap;
    nested_args->vec_nn = saved_vec_nn;
    /* GCOVR_EXCL_START */
@@ -1003,7 +1003,7 @@ MGRConfigGRelaxSolvers(MGR_args *args, HYPRE_Solver precon, const MGRCreatePlan 
             {
                return 0;
             }
-            hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, level_args->g_relaxation.krylov,
+            hypredrv_NestedKrylovCreate(args->comm, level_args->g_relaxation.krylov,
                                         args->dofmap, args->vec_nn,
                                         &level_args->g_relaxation.krylov->base_solver);
             /* GCOVR_EXCL_START */
@@ -1186,7 +1186,7 @@ MGRConfigCoarsestSolver(MGR_args *args, HYPRE_Solver precon, const Stats *stats,
          {
             return 0;
          }
-         hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, args->coarsest_level.krylov,
+         hypredrv_NestedKrylovCreate(args->comm, args->coarsest_level.krylov,
                                      args->dofmap, args->vec_nn,
                                      &args->coarsest_level.krylov->base_solver);
          /* GCOVR_EXCL_START */
@@ -1623,10 +1623,11 @@ MGRValidateConfiguration(const MGR_args *args, const MGRCreatePlan *plan,
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
-                   int next_ls_id)
+hypredrv_MGRCreate(MPI_Comm comm, MGR_args *args, HYPRE_Solver *precon_ptr,
+                   const Stats *stats, int next_ls_id)
 {
 #if !HYPRE_CHECK_MIN_VERSION(21900, 0)
+   (void)comm;
    (void)args;
    (void)stats;
    (void)next_ls_id;
@@ -1635,6 +1636,7 @@ hypredrv_MGRCreate(MGR_args *args, HYPRE_Solver *precon_ptr, const Stats *stats,
    *precon_ptr = NULL;
    return;
 #else
+   args->comm            = comm;
    HYPRE_Solver   precon = NULL;
    MGRCreatePlan  plan   = {0};
    MGRFeatureScan scan   = {0, 0, 0, 0, 0, -1, 0};
@@ -1708,6 +1710,6 @@ cleanup:
       hypredrv_MGRDestroyWithCachedSolvers(args, precon, 0);
    }
    /* Soft hypre convergence leftovers should not poison later calls. */
-   hypredrv_HypreConsumeErrors();
+   hypredrv_HypreConsumeErrors(comm);
 #endif /* !HYPRE_CHECK_MIN_VERSION(21900, 0) */
 }

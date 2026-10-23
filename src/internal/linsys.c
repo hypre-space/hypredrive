@@ -3105,16 +3105,8 @@ hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJM
    {
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: '%s'", matrix_filename);
-      if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+      if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, precmat_ptr))
       {
-         return;
-      }
-      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, precmat_ptr);
-      /* GCOVR_EXCL_BR_START */
-      if (HYPRE_GetError()) /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
          *precmat_ptr = NULL;
          HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
                             "preconditioner matrix read failed from '%s'",
@@ -3726,8 +3718,10 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
       return hypredrv_ErrorCodeGet();
    }
 
-   int total = 0;
-   if (fscanf(fp, "%d", &total) != 1 || total <= 0)
+   int  total = 0;
+   char count_text[64];
+   if (fscanf(fp, "%63s", count_text) != 1 || !hypredrv_ParseInt(count_text, &total) ||
+       total <= 0 || total > (int)LSSEQ_MAX_TIMESTEPS)
    {
       fclose(fp);
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);

@@ -874,7 +874,7 @@ ScalingDiagScaleMatrices(HYPRE_ParCSRMatrix par_A, HYPRE_ParCSRMatrix par_M,
                          hypre_ParVector *left, hypre_ParVector *right)
 {
    hypre_ParCSRMatrixDiagScale(par_A, left, right);
-   if (par_M != par_A)
+   if (par_M && par_M != par_A)
    {
       hypre_ParCSRMatrixDiagScale(par_M, left, right);
    }
@@ -1002,7 +1002,7 @@ ScalingApplyToSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
    {
       HYPRE_Complex s2 = ctx->scalar_factor * ctx->scalar_factor;
       hypre_ParCSRMatrixScale(par_A, s2);
-      if (par_M != par_A)
+      if (par_M && par_M != par_A)
       {
          hypre_ParCSRMatrixScale(par_M, s2);
       }
@@ -1084,7 +1084,7 @@ ScalingUndoOnSystem(Scaling_context *ctx, HYPRE_ParCSRMatrix par_A,
       HYPRE_Complex s2     = ctx->scalar_factor * ctx->scalar_factor;
       HYPRE_Complex inv_s2 = 1.0 / s2;
       hypre_ParCSRMatrixScale(par_A, inv_s2);
-      if (par_M != par_A)
+      if (par_M && par_M != par_A)
       {
          hypre_ParCSRMatrixScale(par_M, inv_s2);
       }
@@ -1155,7 +1155,7 @@ ScalingTransformSystem(Scaling_context *ctx, HYPRE_IJMatrix mat_A, HYPRE_IJMatri
    HYPRE_IJMatrixGetObject(mat_A, &obj_A);
    par_A = (HYPRE_ParCSRMatrix)obj_A;
 
-   if (mat_M != mat_A)
+   if (mat_M && mat_M != mat_A)
    {
       HYPRE_IJMatrixGetObject(mat_M, &obj_M);
       par_M = (HYPRE_ParCSRMatrix)obj_M;

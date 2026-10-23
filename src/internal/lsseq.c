@@ -42,7 +42,6 @@ enum
    LSSEQ_MAX_PARTS              = 1024u * 1024u,
    LSSEQ_MAX_SYSTEMS            = 1024u * 1024u,
    LSSEQ_MAX_PATTERNS           = 1024u * 1024u,
-   LSSEQ_MAX_TIMESTEPS          = 1024u * 1024u,
 };
 
 static int

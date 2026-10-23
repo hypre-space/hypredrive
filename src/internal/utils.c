@@ -99,16 +99,16 @@ hypredrv_HypreClearConvergenceErrors(void)
 }
 
 void
-hypredrv_HypreConsumeErrors(void)
+hypredrv_HypreConsumeErrors(MPI_Comm comm)
 {
+   (void)comm; /* Diagnostics are local on older hypre releases. */
    HYPRE_Int hypre_error = HYPRE_GetError();
    HYPRE_Int hard_error  = hypre_error & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
 
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
    int local_hard_error  = hard_error != 0;
    int global_hard_error = 0;
-   MPI_Allreduce(&local_hard_error, &global_hard_error, 1, MPI_INT, MPI_LOR,
-                 MPI_COMM_WORLD);
+   MPI_Allreduce(&local_hard_error, &global_hard_error, 1, MPI_INT, MPI_LOR, comm);
 #endif
 
    if (!hypre_error)
@@ -122,7 +122,7 @@ hypredrv_HypreConsumeErrors(void)
 #if HYPRE_CHECK_MIN_VERSION(22900, 0)
       if (global_hard_error)
       {
-         HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+         HYPRE_PrintErrorMessages(comm);
          fflush(stderr);
       }
 #endif
@@ -145,7 +145,7 @@ hypredrv_HypreConsumeErrors(void)
     * after all ranks have agreed that at least one hard error occurred. */
    if (global_hard_error)
    {
-      HYPRE_PrintErrorMessages(MPI_COMM_WORLD);
+      HYPRE_PrintErrorMessages(comm);
       fflush(stderr);
    }
 #endif
@@ -442,6 +442,16 @@ hypredrv_SplitFilename(const char *filename, char **dirname_ptr, char **basename
    {
       /* Allocate memory and copy dirname */
       int dirname_length = (int)(last_slash - filename);
+      if (dirname_length == 0)
+      {
+         dirname_length = 1; /* Preserve the filesystem root. */
+      }
+#ifdef _WIN32
+      else if (dirname_length == 2 && filename[1] == ':')
+      {
+         dirname_length = 3; /* Preserve a drive root (C:\\). */
+      }
+#endif
 
       dirname = (char *)malloc((size_t)dirname_length + 1);
       if (dirname)
@@ -600,8 +610,18 @@ hypredrv_IsYAMLFilename(const char *str)
    }
 
    /* Check for .yaml or .yml extension */
-   const char *ext = dot + 1;
-   return (strcmp(ext, "yaml") == 0 || strcmp(ext, "yml") == 0) != 0;
+   const char *ext          = dot + 1;
+   char        lower_ext[5] = {0};
+   size_t      len          = strlen(ext);
+   if (len != 3 && len != 4)
+   {
+      return false;
+   }
+   for (size_t i = 0; i < len; i++)
+   {
+      lower_ext[i] = (char)tolower((unsigned char)ext[i]);
+   }
+   return (strcmp(lower_ext, "yaml") == 0 || strcmp(lower_ext, "yml") == 0) != 0;
 }
 
 bool
@@ -624,7 +644,12 @@ hypredrv_PathIsUnderRoot(const char *path, const char *root)
       return false;
    }
 
-   return (path[root_len] == '\0' || path[root_len] == '/' ||
+   /* A root that ends in a separator already establishes the boundary. */
+   return (root[root_len - 1] == '/' ||
+#ifdef _WIN32
+           root[root_len - 1] == '\\' ||
+#endif
+           path[root_len] == '\0' || path[root_len] == '/' ||
 #ifdef _WIN32
            path[root_len] == '\\'
 #else

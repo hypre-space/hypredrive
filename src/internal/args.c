@@ -164,13 +164,26 @@ hypredrv_InputArgsDestroy(input_args **iargs_ptr)
       input_args *iargs = *iargs_ptr;
       if (iargs->precon_methods && iargs->precon_variants)
       {
+         /* The active copy holds current runtime handles; its variant slot may
+          * still contain stale handles from the previous activation. */
+         int active = iargs->active_precon_variant;
+         if (active >= 0 && active < iargs->num_precon_variants)
+         {
+            iargs->precon_methods[active]  = iargs->precon_method;
+            iargs->precon_variants[active] = iargs->precon;
+         }
          for (int i = 0; i < iargs->num_precon_variants; i++)
          {
-            if (iargs->precon_methods[i] == PRECON_MGR)
-            {
-               hypredrv_MGRDestroyNestedSolverArgs(&iargs->precon_variants[i].mgr);
-            }
+            hypredrv_PreconArgsDestroyRuntimeState(iargs->precon_methods[i],
+                                                   &iargs->precon_variants[i]);
+            hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_methods[i],
+                                                  &iargs->precon_variants[i]);
          }
+      }
+      else
+      {
+         hypredrv_PreconArgsDestroyRuntimeState(iargs->precon_method, &iargs->precon);
+         hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_method, &iargs->precon);
       }
       if (iargs->precon_methods)
       {
@@ -1078,35 +1091,51 @@ hypredrv_InputArgsApplyPreconPreset(input_args *iargs, const char *preset,
    had_variant_storage = (iargs->precon_methods && iargs->precon_variants);
    variant_is_active   = (variant_idx == iargs->active_precon_variant);
 
-   if (!iargs->precon_methods || !iargs->precon_variants)
+   PreconPresetBuildArgs(preset, &method, &args);
+   if (hypredrv_ErrorCodeGet())
    {
-      iargs->precon_methods =
-         (precon_t *)malloc(sizeof(precon_t) * (size_t)iargs->num_precon_variants);
-      iargs->precon_variants =
-         (precon_args *)malloc(sizeof(precon_args) * (size_t)iargs->num_precon_variants);
+      hypredrv_PreconArgsDestroyOwnedConfig(method, &args);
+      return;
+   }
+
+   if (!had_variant_storage)
+   {
+      precon_t    *methods = calloc((size_t)iargs->num_precon_variants, sizeof(*methods));
+      precon_args *variants =
+         calloc((size_t)iargs->num_precon_variants, sizeof(*variants));
       /* GCOVR_EXCL_START */
-      if (!iargs->precon_methods || !iargs->precon_variants)
+      if (!methods || !variants)
       {
-         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         free(methods);
+         free(variants);
+         hypredrv_PreconArgsDestroyOwnedConfig(method, &args);
+         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
          hypredrv_ErrorMsgAdd("Failed to allocate preconditioner variants");
          return;
       }
       /* GCOVR_EXCL_STOP */
-   }
-
-   PreconPresetBuildArgs(preset, &method, &args);
-   if (hypredrv_ErrorCodeGet())
-   {
-      return;
+      for (int i = 0; i < iargs->num_precon_variants; i++)
+      {
+         methods[i] = PRECON_NONE;
+      }
+      iargs->precon_methods  = methods;
+      iargs->precon_variants = variants;
    }
 
    if (had_variant_storage)
    {
+      if (variant_is_active)
+      {
+         iargs->precon_variants[variant_idx] = iargs->precon;
+      }
+      hypredrv_PreconArgsDestroyRuntimeState(iargs->precon_methods[variant_idx],
+                                             &iargs->precon_variants[variant_idx]);
       hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_methods[variant_idx],
                                             &iargs->precon_variants[variant_idx]);
    }
    else if (variant_is_active)
    {
+      hypredrv_PreconArgsDestroyRuntimeState(iargs->precon_method, &iargs->precon);
       hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_method, &iargs->precon);
    }
 

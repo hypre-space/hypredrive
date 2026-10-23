@@ -13,11 +13,8 @@
 #include <string.h>
 #include "object.h"
 
-static int      g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
-static bool     g_hypredrv_log_stdout = false;
-static MPI_Comm g_last_log_comm;
-static bool     g_last_log_comm_valid = false;
-static int      g_last_log_rank       = -1;
+static int  g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
+static bool g_hypredrv_log_stdout = false;
 
 static void LogVf(int level, int mypid, const char *object_name, int ls_id,
                   const char *fmt, va_list args);
@@ -122,8 +119,6 @@ hypredrv_LogReset(void)
 {
    g_hypredrv_log_level  = HYPREDRV_LOG_LEVEL_OFF;
    g_hypredrv_log_stdout = false;
-   g_last_log_comm_valid = false;
-   g_last_log_rank       = -1;
 }
 
 int
@@ -169,21 +164,12 @@ hypredrv_LogRankFromComm(MPI_Comm comm)
       return -1;
    }
 
-   if (g_last_log_comm_valid && comm == g_last_log_comm)
-   {
-      return g_last_log_rank;
-   }
-
    int mypid = -1;
    /* GCOVR_EXCL_BR_START */
    if (MPI_Comm_rank(comm, &mypid) != MPI_SUCCESS) /* GCOVR_EXCL_BR_STOP */
    {
       return -1;
    }
-
-   g_last_log_comm       = comm;
-   g_last_log_comm_valid = true;
-   g_last_log_rank       = mypid;
 
    return mypid;
 }

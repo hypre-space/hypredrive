@@ -737,7 +737,7 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args,
    {
       return 0;
    }
-   hypredrv_NestedKrylovCreate(MPI_COMM_WORLD, krylov, mgr_args->dofmap, mgr_args->vec_nn,
+   hypredrv_NestedKrylovCreate(mgr_args->comm, krylov, mgr_args->dofmap, mgr_args->vec_nn,
                                &krylov->base_solver);
    return !hypredrv_ErrorCodeActive();
 }

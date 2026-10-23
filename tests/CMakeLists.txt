@@ -103,6 +103,7 @@ set(_hypredrv_unit_test_cases
     "test_mgr_nested_yaml|test_mgr_nested_yaml.c|TRUE"
     "test_solver|test_solver.c|TRUE"
     "test_hypredrv|test_hypredrv.c|TRUE"
+    "test_review|test_review.c|TRUE"
     "test_comp|test_comp.c|FALSE"
     "test_matrix|test_matrix.c|TRUE"
     "test_lsseq|test_lsseq.c|TRUE"
@@ -155,6 +156,7 @@ add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_hypredrv_mpi test_hypredrv_mpi.c)
 add_executable_test(hypredrv_mpi_2proc test_hypredrv_mpi 2 RUN_SERIAL)
+set_tests_properties(hypredrv_mpi_2proc PROPERTIES TIMEOUT 30)
 
 setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)
 add_executable_test(setmatrix_from_csr_mpi_2proc test_setmatrix_from_csr_mpi 2 RUN_SERIAL)
