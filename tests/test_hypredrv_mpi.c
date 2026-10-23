@@ -275,7 +275,7 @@ test_independent_self_solve_and_recycled_log_comm(void)
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
-      ASSERT_EQ(obj->iargs->precon.mgr.comm, MPI_COMM_SELF);
+      ASSERT_TRUE(obj->iargs->precon.mgr.comm == MPI_COMM_SELF);
 #endif
       ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
