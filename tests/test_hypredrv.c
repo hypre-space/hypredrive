@@ -3990,6 +3990,101 @@ test_HYPREDRV_fixed_precmat_sequence_reuses_matrix(void)
 }
 
 static void
+test_HYPREDRV_fixed_precmat_sequence_survives_system_build(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   char       main_path[PATH_MAX], prec_path[PATH_MAX];
+   snprintf(main_path, sizeof(main_path), "/tmp/hypredrive_fixed_precmat_main_%d.lsseq",
+            (int)getpid());
+   snprintf(prec_path, sizeof(prec_path), "/tmp/hypredrive_fixed_precmat_prec_%d.lsseq",
+            (int)getpid());
+   write_test_lsseq_with_timesteps(main_path);
+   write_test_lsseq_with_timesteps(prec_path);
+
+   char yaml_config[2 * PATH_MAX + 768];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  sequence_filename: %s\n"
+            "  precmat_sequence_filename: %s\n"
+            "  precmat_sequence_system_id: 0\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 1\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            main_path, prec_path);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+   struct hypredrv_struct *state  = (struct hypredrv_struct *)obj;
+   HYPRE_IJMatrix          cached = state->mat_M;
+   ASSERT_NOT_NULL(cached);
+   ASSERT_TRUE(cached != state->mat_A);
+   ASSERT_TRUE(state->owns_mat_M);
+
+   /* The driver loop rebuilds every system; reading the next matrix must keep the
+    * cached M, or the unreadable archive fails the second build. */
+   ASSERT_EQ(remove(prec_path), 0);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+   ASSERT_TRUE(state->mat_M == cached);
+   ASSERT_TRUE(state->mat_M != state->mat_A);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   remove(main_path);
+}
+
+static void
+test_HYPREDRV_LinearSystemReadMatrix_keeps_borrowed_matrix(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   char seq_path[PATH_MAX];
+   snprintf(seq_path, sizeof(seq_path), "/tmp/hypredrive_borrowed_read_%d.lsseq",
+            (int)getpid());
+   write_test_lsseq_with_timesteps(seq_path);
+
+   char yaml_config[PATH_MAX + 256];
+   snprintf(yaml_config, sizeof(yaml_config),
+            "general:\n"
+            "  statistics: off\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  sequence_filename: %s\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 1\n"
+            "preconditioner:\n"
+            "  amg:\n"
+            "    print_level: 0\n",
+            seq_path);
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix borrowed = create_test_ijmatrix_1x1(3.0);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrix(obj, (HYPRE_Matrix)borrowed), ERROR_NONE);
+   ASSERT_FALSE(obj->owns_mat_A);
+   ASSERT_EQ(HYPREDRV_LinearSystemReadMatrix(obj), ERROR_NONE);
+   ASSERT_TRUE(obj->mat_A != borrowed);
+   ASSERT_TRUE(obj->owns_mat_A);
+   ASSERT_TRUE(obj->mat_M == obj->mat_A);
+
+   /* The caller's matrix is still alive and still the caller's to destroy. */
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(borrowed), 3.0, 1.0e-15);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(borrowed), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   remove(seq_path);
+}
+
+static void
 test_HYPREDRV_print_system_uses_timestep_filename_without_reuse(void)
 {
    reset_state();
@@ -4901,6 +4996,48 @@ test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref(void)
 }
 
 static void
+test_HYPREDRV_reset_after_scaled_setup_keeps_initial_guess(void)
+{
+   reset_state();
+
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+
+   char yaml_config[] = "general:\n"
+                        "  statistics: off\n"
+                        "  exec_policy: host\n"
+                        "linear_system:\n"
+                        "  init_guess_mode: ones\n"
+                        "solver:\n"
+                        "  scaling:\n"
+                        "    enabled: 1\n"
+                        "    type: rhs_l2\n"
+                        "  pcg:\n"
+                        "    max_iter: 0\n"
+                        "preconditioner:\n"
+                        "  amg:\n"
+                        "    print_level: 0\n";
+   parse_yaml_into_obj(obj, yaml_config);
+
+   HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, mat_A, vec_b);
+
+   /* Setup scales the working solution; a reset afterwards must land in the same
+    * space, so a zero-iteration solve returns the configured guess unchanged. */
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x), 1.0, 1.0e-12);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(mat_A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_scaled_setup_failure_restores_borrowed_system(void)
 {
    reset_state();
@@ -5703,6 +5840,8 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_library_mode_finalize_prints_named_statistics_summary);
    RUN_TEST(test_HYPREDRV_InputArgsParse_loads_lsseq_timesteps_for_print_system);
    RUN_TEST(test_HYPREDRV_fixed_precmat_sequence_reuses_matrix);
+   RUN_TEST(test_HYPREDRV_fixed_precmat_sequence_survives_system_build);
+   RUN_TEST(test_HYPREDRV_LinearSystemReadMatrix_keeps_borrowed_matrix);
    RUN_TEST(test_HYPREDRV_InputArgsParse_timestep_schedule_negative_cases);
    RUN_TEST(test_HYPREDRV_print_system_uses_timestep_filename_without_reuse);
    RUN_TEST(test_HYPREDRV_print_system_timestep_selector_loads_schedule);
@@ -5720,6 +5859,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverDestroy_without_precon);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref);
+   RUN_TEST(test_HYPREDRV_reset_after_scaled_setup_keeps_initial_guess);
    RUN_TEST(test_HYPREDRV_scaled_setup_failure_restores_borrowed_system);
    RUN_TEST(test_HYPREDRV_scaled_solve_failure_restores_borrowed_system);
 #endif

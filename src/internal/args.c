@@ -1060,6 +1060,33 @@ finalize_reuse:
 }
 
 /*-----------------------------------------------------------------------------
+ * hypredrv_InputArgsPreconPresetIsValid
+ *
+ * Builds the preset's arguments and discards them; returns 0 with the error
+ * state set when the preset cannot be applied.
+ *-----------------------------------------------------------------------------*/
+
+int
+hypredrv_InputArgsPreconPresetIsValid(const char *preset)
+{
+   precon_t    method = PRECON_NONE;
+   precon_args args;
+
+   if (!preset)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner preset name must be non-NULL");
+      return 0;
+   }
+
+   memset(&args, 0, sizeof(args));
+   PreconPresetBuildArgs(preset, &method, &args);
+   hypredrv_PreconArgsDestroyOwnedConfig(method, &args);
+
+   return !hypredrv_ErrorCodeGet();
+}
+
+/*-----------------------------------------------------------------------------
  * hypredrv_InputArgsApplyPreconPreset
  *-----------------------------------------------------------------------------*/
 

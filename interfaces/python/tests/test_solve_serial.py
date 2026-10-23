@@ -351,3 +351,20 @@ def test_yaml_path_preserves_includes_and_indentation(tmp_path, laplacian_1d, as
                       row_start=0, row_end=n - 1)
     assert result.converged
     assert result.final_res_norm < 1.0e-10
+
+
+@pytest.mark.parametrize("relpath", ["My Configs/options.yml", "options.cfg"])
+def test_yaml_path_the_c_layer_rejects_still_solves(tmp_path, laplacian_1d, relpath):
+    path = tmp_path / relpath
+    path.parent.mkdir(exist_ok=True)
+    path.write_text(
+        "general:\n  statistics: off\n"
+        "solver:\n  pcg:\n    max_iter: 100\n    relative_tol: 1.0e-10\n"
+        "preconditioner:\n  amg:\n    print_level: 0\n",
+        encoding="utf-8",
+    )
+    indptr, cols, data, rhs, n = laplacian_1d
+    result = hd.solve((indptr, cols, data), rhs, options=path,
+                      row_start=0, row_end=n - 1)
+    assert result.converged
+    assert result.final_res_norm < 1.0e-10

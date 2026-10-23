@@ -32,13 +32,23 @@ esac
 CMAKE_OPTIONS=("$@")
 HYPREDRV_BUILD_ROOT="${HYPREDRV_BUILD_ROOT:-$(mktemp -d /tmp/hypredrive-build-XXXXXXXX)}"
 
+# GNU timeout is optional (absent on stock macOS).
+with_configure_timeout() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$CONFIGURE_TIMEOUT" "$@"
+    else
+        "$@"
+    fi
+}
+
 build_configuration() {
     local suffix="$1"
     shift
     HYPREDRV_BUILD="$HYPREDRV_BUILD_ROOT/build-$suffix"
     local install_dir="$HYPREDRV_BUILD_ROOT/install-$suffix"
 
-    timeout "$CONFIGURE_TIMEOUT" cmake -S "$SOURCE_DIR" -B "$HYPREDRV_BUILD" -G Ninja \
+    # The ${arr[@]+...} form keeps an empty array legal under set -u on bash < 4.4.
+    with_configure_timeout cmake -S "$SOURCE_DIR" -B "$HYPREDRV_BUILD" -G Ninja \
         -DCMAKE_INSTALL_PREFIX="$install_dir" \
         -DCMAKE_BUILD_TYPE=RelWithDebInfo \
         -DCMAKE_VERBOSE_MAKEFILE=OFF \
@@ -51,7 +61,7 @@ build_configuration() {
         -DHYPREDRV_ENABLE_COMPRESSION=OFF \
         -DHYPREDRV_ENABLE_DOCS=OFF \
         -DCLANG_FORMAT=clang-format-18 \
-        "$@" "${CMAKE_OPTIONS[@]}"
+        "$@" ${CMAKE_OPTIONS[@]+"${CMAKE_OPTIONS[@]}"}
     cmake --build "$HYPREDRV_BUILD" --parallel
     cmake --install "$HYPREDRV_BUILD"
 }

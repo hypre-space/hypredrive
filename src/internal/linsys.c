@@ -1192,14 +1192,22 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
          file_not_found = 1;
       }
    }
-   /* GCOVR_EXCL_BR_START */
-   else if (args->type == 3) /* GCOVR_EXCL_BR_STOP */
+   else if (args->type == 3)
    {
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
       HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
 #else
       HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
 #endif
+   }
+   else
+   {
+      /* online and parcsr have no file reader of their own; use ASCII IJ. */
+      if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+      {
+         return 0;
+      }
+      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
    }
 
    if (HYPRE_GetError() || file_not_found)

@@ -49,6 +49,35 @@ test_aggressive_integer_and_preset_retry(void)
 }
 
 static void
+test_invalid_preset_keeps_live_preconditioner(void)
+{
+   HYPREDRV_t obj = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
+   char yaml[] = "general:\n  statistics: off\nlinear_system:\n  init_guess_mode: zeros\n"
+                 "solver:\n  pcg:\n    max_iter: 5\n"
+                 "preconditioner:\n  amg:\n    print_level: 0\n";
+   char *argv[] = {yaml};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   HYPRE_BigInt rows[] = {0, 1}, cols[] = {0};
+   HYPRE_Real   values[] = {2.0}, rhs[] = {4.0};
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, rows, cols, values),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 0, rhs), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+
+   /* A typo is rejected before the set-up preconditioner is discarded. */
+   ASSERT_NE(HYPREDRV_InputArgsSetPreconPreset(obj, "poison"), ERROR_NONE);
+   hypredrv_ErrorStateReset();
+   ASSERT_NOT_NULL(obj->precon);
+   ASSERT_TRUE(obj->precon_is_setup);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+}
+
+static void
 test_setters_before_parse(void)
 {
    HYPREDRV_t obj = NULL;
@@ -184,6 +213,16 @@ test_preconditioner_matrix_file_formats_and_read_default(void)
    ASSERT_TRUE(hypredrv_LinearSystemMatrixGetNumRows(M) > 1);
    HYPRE_IJMatrixDestroy(M);
    M = NULL;
+   /* Types without a reader of their own still read ASCII IJ. */
+   args.type = 2;
+   snprintf(args.precmat_filename, sizeof(args.precmat_filename),
+            "%s/data/ps3d10pt7/np1/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
+   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, main, &M, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(M);
+   ASSERT_TRUE(hypredrv_LinearSystemMatrixGetNumRows(M) > 1);
+   HYPRE_IJMatrixDestroy(M);
+   M = NULL;
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    /* A generated one-entry matrix keeps this format regression independent
     * of any optional Matrix Market dataset. */
@@ -212,6 +251,7 @@ main(int argc, char **argv)
    MPI_Init(&argc, &argv);
    ASSERT_EQ(HYPREDRV_Initialize(), ERROR_NONE);
    RUN_TEST(test_aggressive_integer_and_preset_retry);
+   RUN_TEST(test_invalid_preset_keeps_live_preconditioner);
    RUN_TEST(test_setters_before_parse);
    RUN_TEST(test_partial_attachments);
    RUN_TEST(test_schedule_allocation_bound);

@@ -290,6 +290,15 @@ LinearSystemDropOwnedPrecMatrix(HYPREDRV_t hypredrv)
    hypredrv->precmat_sequence_cache_args = NULL;
 }
 
+/* True when mat_M is the fixed preconditioner matrix cached from a sequence file
+ * for the current input arguments; it does not depend on mat_A. */
+static bool
+LinearSystemHasCachedPrecMatrix(HYPREDRV_t hypredrv)
+{
+   return (bool)(hypredrv->mat_M && hypredrv->owns_mat_M &&
+                 hypredrv->precmat_sequence_cache_args == hypredrv->iargs);
+}
+
 static MGR_args *
 LinearSystemMGRArgs(HYPREDRV_t hypredrv)
 {
@@ -1142,8 +1151,6 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
       hypredrv->iargs->active_precon_variant = 0;
    }
 
-   DropActivePrecon(
-      hypredrv, "discarding cached MGR handles before applying preconditioner preset");
    if (hypredrv->iargs->num_precon_variants <= 0) /* GCOVR_EXCL_BR_LINE */
    {
       hypredrv->iargs->num_precon_variants   = 1;
@@ -1159,6 +1166,14 @@ HYPREDRV_InputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
       return hypredrv_ErrorCodeGet();
    }
 
+   /* Validate before discarding the live preconditioner, so a bad name leaves the
+    * object usable. */
+   if (!hypredrv_InputArgsPreconPresetIsValid(preset))
+   {
+      return hypredrv_ErrorCodeGet();
+   }
+   DropActivePrecon(
+      hypredrv, "discarding cached MGR handles before applying preconditioner preset");
    hypredrv_InputArgsApplyPreconPreset(hypredrv->iargs, preset, variant_idx);
    if (!hypredrv_ErrorCodeGet() && created_input_args)
    {
@@ -1558,12 +1573,26 @@ HYPREDRV_LinearSystemReadMatrix(HYPREDRV_t hypredrv)
    HYPREDRV_CHECK_ARGS();
    HYPREDRV_RETURN_ON_ERROR(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
 
-   LinearSystemDropOwnedPrecMatrix(hypredrv);
+   /* Keep a cached fixed preconditioner matrix so the next SetPrecMatrix(NULL)
+    * reuses it; any other M is replaced by the new A. */
+   bool keep_mat_M = LinearSystemHasCachedPrecMatrix(hypredrv);
+   if (!keep_mat_M)
+   {
+      LinearSystemDropOwnedPrecMatrix(hypredrv);
+   }
+   /* The reader destroys the matrix it replaces, so never hand it a borrowed one. */
+   if (!hypredrv->owns_mat_A)
+   {
+      hypredrv->mat_A = NULL;
+   }
    hypredrv_LinearSystemReadMatrix(hypredrv->comm, &hypredrv->iargs->ls, &hypredrv->mat_A,
                                    hypredrv->stats);
    hypredrv->owns_mat_A = (hypredrv->mat_A != NULL);
-   hypredrv->mat_M      = hypredrv->mat_A;
-   hypredrv->owns_mat_M = false;
+   if (!keep_mat_M)
+   {
+      hypredrv->mat_M      = hypredrv->mat_A;
+      hypredrv->owns_mat_M = false;
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2131,6 +2160,13 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
 
    hypredrv_LinearSystemResetInitialGuess(hypredrv->vec_x0, hypredrv->vec_x,
                                           hypredrv->stats);
+   /* After setup, vec_x lives in the scaled unknown space until the next solve
+    * restores it; move the reset guess there too. */
+   if (hypredrv->scaling_ctx && hypredrv->scaling_ctx->x_is_scaled)
+   {
+      hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_x,
+                                    SCALING_VECTOR_UNKNOWN);
+   }
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2321,8 +2357,7 @@ HYPREDRV_LinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, HYPRE_Matrix mat)
       const LS_args *ls             = &hypredrv->iargs->ls;
       bool           fixed_sequence = (bool)((ls->precmat_sequence_filename[0] != '\0') &&
                                    (ls->precmat_sequence_system_id >= 0));
-      if (fixed_sequence && hypredrv->mat_M && hypredrv->owns_mat_M &&
-          hypredrv->precmat_sequence_cache_args == hypredrv->iargs)
+      if (fixed_sequence && LinearSystemHasCachedPrecMatrix(hypredrv))
       {
          HYPREDRV_LOG_OBJECTF(3, hypredrv,
                               "reusing fixed preconditioner matrix from sequence file "

@@ -704,6 +704,10 @@ extern "C"
     * @param hypredrv The HYPREDRV_t object for which the linear system matrix is to be
     * read.
     *
+    * A matrix previously attached with HYPREDRV_LinearSystemSetMatrix in library mode
+    * is released, not destroyed. The preconditioner matrix becomes the new matrix,
+    * except for a fixed one read from \e precmat_sequence_filename, which is kept.
+    *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
@@ -1056,6 +1060,10 @@ extern "C"
     *
     * @param hypredrv The HYPREDRV_t object for which the initial guess of the solution
     * vector is to be reset.
+    *
+    * The reset may happen before or after HYPREDRV_LinearSolverSetup. When setup has
+    * scaled the system, the guess is mapped into the scaled space, so the next solve
+    * still starts from the configured initial guess.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
