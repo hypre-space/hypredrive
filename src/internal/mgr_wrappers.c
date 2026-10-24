@@ -557,8 +557,7 @@ hypredrv_MGRFRelaxEquilWrapperCreate(HYPRE_Solver inner)
    if (!wrapper)
    {
       HYPRE_BoomerAMGDestroy(inner);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate symmetric F-block scaling wrapper");
+      hypredrv_AllocationFailure("Failed to allocate symmetric F-block scaling wrapper");
       return NULL;
    }
 
@@ -693,13 +692,11 @@ hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_I
       return;
    }
 
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    if (level == 0 && f_relax_type == 32)
    {
       HYPRE_MGRSetFSolver(precon, HYPRE_ILUSolve, HYPRE_ILUSetup, fsolver);
       return;
    }
-#endif
 
    (void)f_relax_type;
    (void)fine_grid_solver_solve;
@@ -722,8 +719,7 @@ hypredrv_MGRNestedFRelaxWrapperCreate(HYPRE_Solver inner_mgr, MGR_args *nested_a
    MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)calloc(1, sizeof(*wrapper));
    if (!wrapper)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate nested MGR F-relaxation wrapper");
+      hypredrv_AllocationFailure("Failed to allocate nested MGR F-relaxation wrapper");
       return NULL;
    }
 
@@ -869,8 +865,7 @@ hypredrv_MGRSchwarzWrapperCreate(const Schwarz_args *args)
    MGRSchwarzWrapper *wrapper = (MGRSchwarzWrapper *)calloc(1, sizeof(*wrapper));
    if (!wrapper)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate MGR Schwarz solver wrapper");
+      hypredrv_AllocationFailure("Failed to allocate MGR Schwarz solver wrapper");
       return NULL;
    }
 
@@ -905,17 +900,12 @@ hypredrv_MGRFRelaxInstall(HYPRE_Solver precon, const MGRfrlx_args *f_relaxation,
 #if HYPRE_CHECK_MIN_VERSION(23100, 9)
    hypredrv_MGRSetFSolverAtLevel(precon, frelax, active_lvl, f_relaxation->type, NULL,
                                  NULL);
-#elif HYPRE_CHECK_MIN_VERSION(21900, 0)
+#else
    /* Only the level-0 AMG F-solver slot is available on this hypre version. */
    if (f_relaxation->type == 2)
    {
       HYPRE_MGRSetFSolver(precon, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup, frelax);
    }
-   (void)active_lvl;
-#else
-   (void)precon;
-   (void)f_relaxation;
-   (void)frelax;
    (void)active_lvl;
 #endif
 }

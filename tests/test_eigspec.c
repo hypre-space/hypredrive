@@ -4,6 +4,7 @@
 #include "internal/eigspec.h"
 #include "internal/yaml.h"
 #include "test_helpers.h"
+#include "test_ij_helpers.h"
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
@@ -77,11 +78,59 @@ test_EigSpecSetArgsFromYAML_invalid_toggle_sets_error(void)
    hypredrv_ErrorStateReset();
 }
 
-int
-main(void)
+#ifdef HYPREDRV_ENABLE_EIGSPEC
+static uint32_t
+fail_preconditioner(void *ctx, void *b, void *x)
 {
+   (void)ctx; (void)b; (void)x;
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   return ERROR_INVALID_PRECON;
+}
+
+static void
+test_EigSpecCompute_own_status(void)
+{
+   HYPRE_IJMatrix matrix = create_test_ijmatrix_2x2(2.0, 0.0, 0.0, 3.0);
+   EigSpec_args args;
+   hypredrv_EigSpecSetDefaultArgs(&args);
+   args.enable = args.vectors = 1;
+   test_scratch_path(args.output_prefix, sizeof(args.output_prefix), "eig-status");
+   for (int symmetric = 0; symmetric < 2; symmetric++)
+   {
+      args.hermitian = symmetric;
+      hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
+      ASSERT_EQ(hypredrv_EigSpecCompute(&args, matrix, NULL, NULL, NULL), ERROR_NONE);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_DOFMAP);
+      char path[2 * MAX_FILENAME_LENGTH];
+      snprintf(path, sizeof(path), "%s.values.txt", args.output_prefix);
+      FILE *fp = fopen(path, "r");
+      ASSERT_NOT_NULL(fp);
+      double v1 = 0, v2 = 0, imaginary = 0;
+      ASSERT_EQ(fscanf(fp, symmetric ? "%lf" : "%lf %lf", &v1, &imaginary), symmetric ? 1 : 2);
+      ASSERT_EQ(fscanf(fp, symmetric ? "%lf" : "%lf %lf", &v2, &imaginary), symmetric ? 1 : 2);
+      ASSERT_EQ_DOUBLE(v1 + v2, 5.0, 1e-12);
+      fclose(fp);
+   }
+   args.preconditioned = 1;
+   ASSERT_EQ(hypredrv_EigSpecCompute(&args, matrix, NULL, fail_preconditioner, NULL), ERROR_INVALID_PRECON);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_DOFMAP | ERROR_INVALID_PRECON);
+   HYPRE_IJMatrixDestroy(matrix);
+   hypredrv_ErrorStateReset();
+}
+#endif
+
+int
+main(int argc, char **argv)
+{
+   MPI_Init(&argc, &argv);
+   TEST_HYPRE_INIT();
    RUN_TEST(test_EigSpecSetDefaultArgs);
    RUN_TEST(test_EigSpecSetArgsFromYAML_sets_fields);
    RUN_TEST(test_EigSpecSetArgsFromYAML_invalid_toggle_sets_error);
+#ifdef HYPREDRV_ENABLE_EIGSPEC
+   RUN_TEST(test_EigSpecCompute_own_status);
+#endif
+   TEST_HYPRE_FINALIZE();
+   MPI_Finalize();
    return 0;
 }

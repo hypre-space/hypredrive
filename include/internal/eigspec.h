@@ -35,7 +35,7 @@ void hypredrv_EigSpecSetArgs(void *, struct YAMLnode_struct *);
 
 /* Internal helpers */
 #ifdef HYPREDRV_ENABLE_EIGSPEC
-typedef void (*hypredrv_PreconApplyFn)(void *ctx, void *b, void *x);
+typedef uint32_t (*hypredrv_PreconApplyFn)(void *ctx, void *b, void *x);
 uint32_t hypredrv_EigSpecCompute(const EigSpec_args *, void *, void *,
                                  hypredrv_PreconApplyFn, struct Stats_struct *);
 #endif

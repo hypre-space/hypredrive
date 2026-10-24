@@ -379,7 +379,8 @@ test_IntArray_partition_reads(void)
    int rank, nprocs;
    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-   char directory[128] = "/tmp/hypredrv-containers-XXXXXX";
+   char directory[128];
+   test_scratch_path(directory, sizeof(directory), "hypredrv-containers-XXXXXX");
    if (rank == 0) ASSERT_NOT_NULL(hypredrv_Mkdtemp(directory));
    MPI_Bcast(directory, sizeof(directory), MPI_CHAR, 0, MPI_COMM_WORLD);
    char prefix[160], filename[192];

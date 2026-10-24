@@ -2763,9 +2763,9 @@ test_lsseq_truncated_file_and_missing_path(void)
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_FALSE(
-      hypredrv_LSSeqReadSummary("/tmp/hypredrive_lsseq_nonexistent_path_12345.bin", NULL, NULL,
-                                NULL, NULL));
+   char missing[PATH_MAX];
+   test_scratch_path(missing, sizeof(missing), "hypredrive_lsseq_nonexistent.bin");
+   ASSERT_FALSE(hypredrv_LSSeqReadSummary(missing, NULL, NULL, NULL, NULL));
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
 }
 
@@ -3266,7 +3266,8 @@ test_lsseq_timesteps_read_optional_ids_null(void)
 static void
 test_lsseq_read_missing_file_paths(void)
 {
-   const char    *gone = "/tmp/hypredrive_lsseq_missing_read_paths_998877.bin";
+   char gone[PATH_MAX];
+   test_scratch_path(gone, sizeof(gone), "hypredrive_lsseq_missing_read_paths.bin");
    char            *payload = NULL;
    size_t           nbytes  = 0;
    HYPRE_IJMatrix   mat     = NULL;

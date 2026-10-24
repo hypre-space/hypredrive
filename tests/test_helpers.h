@@ -253,7 +253,7 @@ cleanup_temp_files(void)
  * directory, so parallel ctest runs never share paths and no shell is needed.
  *-----------------------------------------------------------------------------*/
 
-static char test_scratch_dir[64];
+static char test_scratch_dir[PATH_MAX];
 
 /* Remove a file or directory tree without following symlinks; missing paths
  * are ignored. */
@@ -285,32 +285,36 @@ test_scratch_cleanup(void)
    test_rmtree(test_scratch_dir);
 }
 
-/* Fill buf with "<scratch>/<name>". The private scratch directory is created
- * exclusively on first use and removed at exit; the returned path itself does
- * not exist yet. The name is lowercase (unlike mkdtemp's) because the YAML layer
- * lowercases values such as output_dir. */
+/* Each test process owns a private TMPDIR-aware directory. Paths returned
+ * here do not exist until the caller creates them. */
 static inline char *
 test_scratch_path(char *buf, size_t size, const char *name)
 {
-   for (int i = 0; !test_scratch_dir[0]; i++)
+   if (!test_scratch_dir[0])
    {
-      snprintf(test_scratch_dir, sizeof(test_scratch_dir), "/tmp/hypredrv-test-%ld-%d",
-               (long)getpid(), i);
-      if (mkdir(test_scratch_dir, 0700) == 0)
+      const char *base = getenv("TMPDIR");
+#ifdef _WIN32
+      if (!base || !*base) { base = getenv("TEMP"); }
+      if (!base || !*base) { base = "."; }
+      for (int i = 0; ; i++)
       {
-         atexit(test_scratch_cleanup);
+         ASSERT_TRUE(snprintf(test_scratch_dir, sizeof(test_scratch_dir),
+                              "%s/hypredrv-test-%ld-%d", base, (long)getpid(), i)
+                     < (int)sizeof(test_scratch_dir));
+         if (mkdir(test_scratch_dir, 0700) == 0) { break; }
+         ASSERT_EQ(errno, EEXIST);
       }
-      else if (errno == EEXIST)
-      {
-         test_scratch_dir[0] = '\0';
-      }
-      else
-      {
-         perror(test_scratch_dir);
-         exit(1);
-      }
+#else
+      if (!base || !*base) { base = "/tmp"; }
+      ASSERT_TRUE(snprintf(test_scratch_dir, sizeof(test_scratch_dir),
+                           "%s/hypredrv-test-XXXXXX", base)
+                  < (int)sizeof(test_scratch_dir));
+      ASSERT_NOT_NULL(mkdtemp(test_scratch_dir));
+#endif
+      ASSERT_EQ(atexit(test_scratch_cleanup), 0);
    }
-   snprintf(buf, size, "%s/%s", test_scratch_dir, name);
+   int written = snprintf(buf, size, "%s/%s", test_scratch_dir, name);
+   ASSERT_TRUE(written >= 0 && (size_t)written < size);
    return buf;
 }
 

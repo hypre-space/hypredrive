@@ -7,6 +7,8 @@
 # This module provides Doxygen and Sphinx documentation generation
 
 if(HYPREDRV_ENABLE_DOCS)
+    find_program(HYPREDRV_DOCS_MAKE NAMES make gmake)
+
     # Find Doxygen
     find_package(Doxygen QUIET)
 
@@ -43,13 +45,6 @@ if(HYPREDRV_ENABLE_DOCS)
 
         configure_file(${DOXYFILE_IN} ${DOXYFILE_OUT} @ONLY)
 
-        # Post-process Doxyfile to fix OUTPUT_DIRECTORY (in case @top_srcdir@/docs wasn't replaced)
-        # Doxygen runs from CMAKE_BINARY_DIR, so OUTPUT_DIRECTORY should be relative
-        # file(READ ${DOXYFILE_OUT} DOXYFILE_CONTENT)
-        # string(REPLACE "@top_srcdir@/docs" "docs" DOXYFILE_CONTENT "${DOXYFILE_CONTENT}")
-        # string(REPLACE "${CMAKE_SOURCE_DIR}/docs" "docs" DOXYFILE_CONTENT "${DOXYFILE_CONTENT}")
-        # file(WRITE ${DOXYFILE_OUT} "${DOXYFILE_CONTENT}")
-
         # Doxygen output directory
         set(DOXYGEN_OUTPUT_DIR ${CMAKE_BINARY_DIR}/docs)
 
@@ -81,7 +76,7 @@ if(HYPREDRV_ENABLE_DOCS)
             "elseif(EXISTS \"${LATEX_DIR}/Makefile\")\n"
             "  message(STATUS \"Building LaTeX PDF from Doxygen-generated sources...\")\n"
             "  execute_process(\n"
-            "    COMMAND ${CMAKE_MAKE_PROGRAM}\n"
+            "    COMMAND ${HYPREDRV_DOCS_MAKE}\n"
             "    WORKING_DIRECTORY \"${LATEX_DIR}\"\n"
             "    RESULT_VARIABLE MAKE_RESULT\n"
             "    OUTPUT_VARIABLE MAKE_OUTPUT\n"
@@ -142,7 +137,7 @@ if(HYPREDRV_ENABLE_DOCS)
                     -b html
                     ${SPHINX_SOURCE_DIR}
                     ${SPHINX_BUILD_DIR}/html
-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 COMMENT "Building Sphinx user manual"
                 VERBATIM
             )
@@ -154,10 +149,10 @@ if(HYPREDRV_ENABLE_DOCS)
                     HYPREDRV_DOCS_RELEASE=${PROJECT_VERSION}
                     HYPREDRV_DOCS_VERSION=${PROJECT_VERSION}
                     ${SPHINX_BUILD_EXECUTABLE}
-                    -b latexpdf
+                    -M latexpdf
                     ${SPHINX_SOURCE_DIR}
-                    ${SPHINX_BUILD_DIR}/latex
-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                    ${SPHINX_BUILD_DIR}
+                WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
                 COMMENT "Building Sphinx user manual PDF"
                 VERBATIM
             )
@@ -175,48 +170,12 @@ if(HYPREDRV_ENABLE_DOCS)
             message(WARNING "Sphinx source directory not found: ${SPHINX_SOURCE_DIR}")
         endif()
 
-        # Combined docs target (like Makefile: docs: doxygen-doc)
         if(DOXYGEN_FOUND AND EXISTS ${SPHINX_SOURCE_DIR})
-            # Use docs/Makefile if it exists (following the pattern from docs/Makefile)
-            set(DOCS_MAKEFILE ${CMAKE_SOURCE_DIR}/docs/Makefile)
-            if(EXISTS ${DOCS_MAKEFILE})
-                # Use the Makefile approach (like autotools: docs: doxygen-doc; cd docs && make latexpdf)
-                find_program(MAKE_EXECUTABLE NAMES make gmake)
-                if(MAKE_EXECUTABLE)
-                    add_custom_target(docs
-                        COMMAND ${CMAKE_COMMAND} -E echo "Built developer's manual documentation (Doxygen)"
-                        COMMAND ${CMAKE_COMMAND} -E env
-                            HYPREDRV_DOXYGEN_XML=${DOXYGEN_OUTPUT_DIR}/xml
-                            HYPREDRV_DOCS_RELEASE=${PROJECT_VERSION}
-                            HYPREDRV_DOCS_VERSION=${PROJECT_VERSION}
-                            ${CMAKE_COMMAND} -E chdir ${CMAKE_SOURCE_DIR}/docs
-                            ${MAKE_EXECUTABLE} latexpdf
-                        COMMAND ${CMAKE_COMMAND} -E echo "Built user's manual documentation (Sphinx)"
-                        DEPENDS doxygen-doc
-                        COMMENT "Building all documentation (Doxygen + Sphinx)"
-                        VERBATIM
-                    )
-                else()
-                    # Fallback to direct sphinx-build if make is not available
-                    add_custom_target(docs
-                        COMMAND ${CMAKE_COMMAND} -E echo "Built developer's manual documentation (Doxygen)"
-                        COMMAND ${CMAKE_COMMAND} -E echo "Building user's manual documentation (Sphinx)"
-                        DEPENDS doxygen-doc sphinx-latexpdf
-                        COMMENT "Building all documentation (Doxygen + Sphinx)"
-                        VERBATIM
-                    )
-                endif()
-            else()
-                # Fallback to direct sphinx-build if Makefile doesn't exist
-                add_custom_target(docs
-                    COMMAND ${CMAKE_COMMAND} -E echo "Built developer's manual documentation (Doxygen)"
-                    COMMAND ${CMAKE_COMMAND} -E echo "Building user's manual documentation (Sphinx)"
-                    DEPENDS doxygen-doc sphinx-latexpdf
-                    COMMENT "Building all documentation (Doxygen + Sphinx)"
-                    VERBATIM
-                )
-            endif()
-
+            # Sphinx consumes Doxygen XML. Keep the source tree read-only and
+            # serialize this dependency even when the build runs in parallel.
+            add_dependencies(sphinx-doc doxygen-doc)
+            add_dependencies(sphinx-latexpdf doxygen-doc)
+            add_custom_target(docs DEPENDS doxygen-doc sphinx-latexpdf)
             message(STATUS "Combined documentation target 'docs' is available")
         endif()
     else()

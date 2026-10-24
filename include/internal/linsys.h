@@ -213,7 +213,6 @@ void hypredrv_LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix,
 void hypredrv_LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *,
                                                HYPRE_IJVector *, const Stats *);
 void hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector, Stats *);
-void hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector, IntArray *);
 void hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm, HYPRE_IJMatrix, const IntArray *,
                                             const DofLabelMap *, const char *, int);
 void hypredrv_LinearSystemSetPrecMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix,

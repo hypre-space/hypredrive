@@ -158,6 +158,7 @@ set(SOURCE_FILES
     src/internal/containers.c
     src/internal/yaml.c
     src/internal/field.c
+    src/internal/vector_tags.c
     src/internal/vector.c
     src/internal/matrix.c
     src/internal/linsys.c

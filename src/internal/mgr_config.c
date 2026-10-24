@@ -126,8 +126,7 @@ MGRlvlFDofsSet(void *field, YAMLnode *node)
    char *buf = strdup(node->mapped_val);
    if (!buf)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate temporary buffer for f_dofs");
+      hypredrv_AllocationFailure("Failed to allocate temporary buffer for f_dofs");
       return;
    }
    /* GCOVR_EXCL_STOP */
@@ -504,8 +503,7 @@ MGRDofmapDenseFallback(const IntArray *dofmap, size_t *label_space_size_out,
    /* GCOVR_EXCL_START */
    if (!label_mask)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
+      hypredrv_AllocationFailure("Failed to allocate MGR dof label presence mask");
       return 0;
    }
    /* GCOVR_EXCL_STOP */
@@ -607,8 +605,7 @@ hypredrv_MGRBuildDofLabelPresenceMask(const IntArray *dofmap,
    /* GCOVR_EXCL_START */
    if (!label_mask)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate MGR dof label presence mask");
+      hypredrv_AllocationFailure("Failed to allocate MGR dof label presence mask");
       return 0;
    }
    /* GCOVR_EXCL_STOP */
@@ -700,8 +697,7 @@ MGRFillProjectedUniqueLabels(IntArray *nested_dofmap, const HYPRE_Int *keep_labe
    /* GCOVR_EXCL_START */
    if (!nested_dofmap->unique_data || !nested_dofmap->g_unique_data)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate nested MGR dof label arrays");
+      hypredrv_AllocationFailure("Failed to allocate nested MGR dof label arrays");
       return 0;
    }
    /* GCOVR_EXCL_STOP */
@@ -759,8 +755,8 @@ hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    /* GCOVR_EXCL_START */
    if (!keep_label)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate nested MGR dof label selection mask");
+      hypredrv_AllocationFailure(
+         "Failed to allocate nested MGR dof label selection mask");
       goto cleanup;
    }
    /* GCOVR_EXCL_STOP */
@@ -786,8 +782,7 @@ hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
    /* GCOVR_EXCL_START */
    if (!nested_dofmap || (nested_size > 0 && !nested_dofmap->data))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate nested MGR projected dofmap");
+      hypredrv_AllocationFailure("Failed to allocate nested MGR projected dofmap");
       goto cleanup;
    }
    /* GCOVR_EXCL_STOP */
@@ -1056,8 +1051,7 @@ MGRfrlxMGRSetArgs(void *field, YAMLnode *node)
 
    if (!nested_mgr)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd(
+      hypredrv_AllocationFailure(
          "Failed to allocate nested MGR arguments for MGR f_relaxation");
       return;
    }
@@ -1724,7 +1718,7 @@ hypredrv_MGRSetNearNullSpace(MGR_args *args, HYPRE_IJVector vec_nn)
 }
 
 void
-hypredrv_MGRSetCoarseSchur(MGR_args *args, const HYPRE_IJMatrix *coarse_schur)
+hypredrv_MGRSetCoarseSchur(MGR_args *args, const hypredrv_MatrixSlot *coarse_schur)
 {
    args->coarse_schur = coarse_schur;
 }

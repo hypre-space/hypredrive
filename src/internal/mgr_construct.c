@@ -24,8 +24,6 @@
 #include "internal/stats.h"
 #include "logging.h"
 
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-
 typedef struct
 {
    HYPRE_Int *label_present;     /* presence mask over the dof label space */
@@ -75,8 +73,7 @@ MGRPlanInitInactiveDofs(MGRCreatePlan *plan)
    /* GCOVR_EXCL_START */
    if (plan->num_dofs > 0 && !plan->inactive_dofs)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate MGR inactive dof label mask");
+      hypredrv_AllocationFailure("Failed to allocate MGR inactive dof label mask");
       return 0;
    }
    /* GCOVR_EXCL_STOP */
@@ -240,8 +237,8 @@ MGRPlanCoarsening(MGR_args *args, MGRCreatePlan *plan, const Stats *stats, int n
       plan->num_c_dofs[lvl] = num_dofs_last;
       if (plan->num_dofs > 0 && !plan->c_dofs[lvl])
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate MGR level %d C-point buffer", (int)lvl);
+         hypredrv_AllocationFailure("Failed to allocate MGR level %d C-point buffer",
+                                    (int)lvl);
          return 0;
       }
 
@@ -290,8 +287,7 @@ MGRPlanRemapSparseLabels(MGRCreatePlan *plan, const Stats *stats, int next_ls_id
    /* GCOVR_EXCL_START */
    if (!plan->label_to_dense)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate MGR dense label remap");
+      hypredrv_AllocationFailure("Failed to allocate MGR dense label remap");
       return 0;
    }
    /* GCOVR_EXCL_STOP */
@@ -363,8 +359,7 @@ MGRPlanPointMarkers(MGR_args *args, MGRCreatePlan *plan, const Stats *stats,
       /* GCOVR_EXCL_START */
       if (!plan->dofmap_data)
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate MGR point-marker array");
+         hypredrv_AllocationFailure("Failed to allocate MGR point-marker array");
          return 0;
       }
       /* GCOVR_EXCL_STOP */
@@ -455,9 +450,7 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
          "MGR cycle control APIs");
    }
 #endif
-#if HYPRE_CHECK_MIN_VERSION(22000, 0)
    HYPRE_MGRSetTruncateCoarseGridThreshold(precon, args->coarse_th);
-#endif
    HYPRE_MGRSetRelaxType(precon, relax_type); /* TODO: we shouldn't need this */
    HYPREDRV_LOG_COMMF(4, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
                       "MGR stage after base hypre setup: code=0x%x",
@@ -588,8 +581,9 @@ MGRInstallUserCoarseMatrices(HYPRE_Solver precon, MGR_args *args,
       return 0;
 #else
       HYPRE_ParCSRMatrix coarse_par = NULL;
-      if (!args->coarse_schur || !args->coarse_schur[orig_lvl] ||
-          HYPRE_IJMatrixGetObject(args->coarse_schur[orig_lvl], (void **)&coarse_par) ||
+      if (!args->coarse_schur || !args->coarse_schur[orig_lvl].handle ||
+          HYPRE_IJMatrixGetObject(args->coarse_schur[orig_lvl].handle,
+                                  (void **)&coarse_par) ||
           !coarse_par)
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -1629,8 +1623,6 @@ MGRValidateConfiguration(const MGR_args *args, const MGRCreatePlan *plan,
 }
 /* GCOVR_EXCL_BR_STOP */
 
-#endif /* HYPRE_CHECK_MIN_VERSION(21900, 0) */
-
 /*-----------------------------------------------------------------------------
  * hypredrv_MGRCreate
  *-----------------------------------------------------------------------------*/
@@ -1639,16 +1631,6 @@ void
 hypredrv_MGRCreate(MPI_Comm comm, MGR_args *args, HYPRE_Solver *precon_ptr,
                    const Stats *stats, int next_ls_id)
 {
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
-   (void)comm;
-   (void)args;
-   (void)stats;
-   (void)next_ls_id;
-   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-   hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-   *precon_ptr = NULL;
-   return;
-#else
    args->comm            = comm;
    HYPRE_Solver   precon = NULL;
    MGRCreatePlan  plan   = {0};
@@ -1724,5 +1706,4 @@ cleanup:
    }
    /* Soft hypre convergence leftovers should not poison later calls. */
    hypredrv_HypreConsumeErrors(comm);
-#endif /* !HYPRE_CHECK_MIN_VERSION(21900, 0) */
 }

@@ -1056,21 +1056,35 @@ ErrorMsgNodePush(ErrorState *state, ErrorMsgNode *node)
  * hypredrv_ErrorMsgAdd
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_ErrorMsgAdd(const char *format, ...)
+static void
+ErrorMsgAddV(const char *format, va_list args)
 {
    ErrorState   *state = ErrorStateGet();
-   ErrorMsgNode *node  = NULL;
-   va_list       args;
-
-   va_start(args, format);
-   node = ErrorMsgNodeFormatV(state, format, args);
-   va_end(args);
-
+   ErrorMsgNode *node  = ErrorMsgNodeFormatV(state, format, args);
    if (node)
    {
       ErrorMsgNodePush(state, node);
    }
+}
+
+void
+hypredrv_ErrorMsgAdd(const char *format, ...)
+{
+   va_list args;
+   va_start(args, format);
+   ErrorMsgAddV(format, args);
+   va_end(args);
+}
+
+uint32_t
+hypredrv_AllocationFailure(const char *format, ...)
+{
+   hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+   va_list args;
+   va_start(args, format);
+   ErrorMsgAddV(format, args);
+   va_end(args);
+   return ERROR_ALLOCATION;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1239,4 +1253,32 @@ hypredrv_ErrorMsgClear(void)
    }
    state->msg_head          = NULL;
    state->dropped_msg_count = 0;
+}
+
+/* Keep the platform allocation-failure path in one place. */
+static void *
+AllocationCheck(void *ptr, const char *what)
+{
+   if (!ptr) /* GCOVR_EXCL_BR_LINE */
+   {
+      hypredrv_AllocationFailure("Failed to allocate %s", what);
+   }
+   return ptr;
+}
+
+void *
+hypredrv_Calloc(size_t count, size_t size, const char *what)
+{
+   void *ptr = NULL;
+   if (!size || count <= SIZE_MAX / size)
+   {
+      ptr = calloc(count ? count : 1u, size ? size : 1u);
+   }
+   return AllocationCheck(ptr, what);
+}
+
+void *
+hypredrv_Malloc(size_t size, const char *what)
+{
+   return AllocationCheck(malloc(size ? size : 1u), what);
 }

@@ -177,6 +177,9 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --exclude-branches-by-pattern ".*HYPRE_SAFE_CALL\\("
             # Stats annotations are bookkeeping; both enter/exit paths are low signal for linsys.
             --exclude-branches-by-pattern ".*hypredrv_StatsAnnotate.*"
+            # Dedicated allocation-failure reporting is shared by checked host
+            # allocators and by cleanup paths for external/device allocators.
+            --exclude-lines-by-pattern ".*hypredrv_AllocationFailure\\(.*"
             # Malloc failure paths are impractical without fault injection.
             --exclude-branches-by-pattern ".*HYPREDRV_MALLOC_AND_CHECK.*"
             # Honor explicit branch-exclusion annotations placed inline on branch lines.

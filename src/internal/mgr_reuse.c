@@ -547,12 +547,10 @@ MGRDestroyDetachedFSolver(const MGRfrlx_args *f_relaxation, HYPRE_Solver *solver
       HYPRE_MGRDirectSolverDestroy(*solver_ptr);
    }
 #endif
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    else if (f_relaxation->type == 32)
    {
       HYPRE_ILUDestroy(*solver_ptr);
    }
-#endif
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
    else if (f_relaxation->type == 33)
    {
@@ -592,12 +590,10 @@ MGRDestroyDetachedGSolver(const MGRgrlx_args *g_relaxation, HYPRE_Solver *solver
    {
       HYPRE_BoomerAMGDestroy(*solver_ptr);
    }
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    else if (g_relaxation->type == 16)
    {
       HYPRE_ILUDestroy(*solver_ptr);
    }
-#endif
 #ifdef HYPRE_USING_DSUPERLU
    /* GCOVR_EXCL_START */
    else if (g_relaxation->type == 29)
@@ -654,7 +650,7 @@ hypredrv_MGRProjectNestedRemainingRBMs(NestedKrylov_args *krylov, MGR_args *mgr_
    size_t num_remaining = 0;
    if (source_size && !remaining)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
    }
    else
    {
@@ -835,12 +831,10 @@ hypredrv_MGRGRelaxSolverCreateByType(MGRgrlx_args *g_relaxation)
    {
       hypredrv_AMGCreate(&g_relaxation->amg, &solver);
    }
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    else if (g_relaxation->type == 16)
    {
       hypredrv_ILUCreate(&g_relaxation->ilu, &solver);
    }
-#endif
 #ifdef HYPRE_USING_DSUPERLU
    /* GCOVR_EXCL_START */
    else if (g_relaxation->type == 29)
@@ -880,12 +874,10 @@ hypredrv_MGRCoarseSolverCreateByType(MGRcls_args *coarsest_level, HYPRE_Int type
    {
       hypredrv_AMGCreate(&coarsest_level->amg, &solver);
    }
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    else if (type == 32)
    {
       hypredrv_ILUCreate(&coarsest_level->ilu, &solver);
    }
-#endif
 #if defined(HYPRE_USING_DSUPERLU)
    /* GCOVR_EXCL_START */
    else if (type == 29)
@@ -925,12 +917,10 @@ hypredrv_MGRCoarseSolverInstall(HYPRE_Solver mgr_solver, HYPRE_Int type,
       HYPRE_MGRSetCoarseSolver(mgr_solver, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
                                coarse_solver);
    }
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    else if (type == 32)
    {
       HYPRE_MGRSetCoarseSolver(mgr_solver, HYPRE_ILUSolve, HYPRE_ILUSetup, coarse_solver);
    }
-#endif
 #if defined(HYPRE_USING_DSUPERLU)
    /* GCOVR_EXCL_START */
    else if (type == 29)
@@ -977,12 +967,10 @@ hypredrv_MGRCoarseSolverDestroyByType(HYPRE_Int type, HYPRE_Solver *solver_ptr)
       HYPRE_MGRDirectSolverDestroy(*solver_ptr);
    }
 #endif
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
    else if (type == 32)
    {
       HYPRE_ILUDestroy(*solver_ptr);
    }
-#endif
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
    else if (type == 33)
    {

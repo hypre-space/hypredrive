@@ -63,13 +63,6 @@ hypredrv_ILUGetValidValues(const char *key)
 void
 hypredrv_ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
 {
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
-   (void)args;
-   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-   hypredrv_ErrorMsgAdd("ILU requires hypre >= 2.19.0");
-   *precon_ptr = NULL;
-   return;
-#else
    HYPRE_Solver precon = NULL;
    int          uses_schur_solver;
    int          uses_nsh;
@@ -111,5 +104,4 @@ hypredrv_ILUCreate(const ILU_args *args, HYPRE_Solver *precon_ptr)
    }
 
    *precon_ptr = precon;
-#endif
 }

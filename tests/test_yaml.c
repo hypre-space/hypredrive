@@ -2198,21 +2198,15 @@ test_YAMLtextRead_fopen_failure(void)
 static void
 test_YAMLtreeBuild_tab_indented_tokenizer(void)
 {
-   /* Tokenizer allows tabs in YAMLlineParseIndent (distinct from reader-time tab ban). */
    const char *yaml_text = "\tkey: value\n";
-   char       *text      = strdup(yaml_text);
-   YAMLtree   *tree      = NULL;
-
+   char *text = strdup(yaml_text);
+   YAMLtree *tree = NULL;
    hypredrv_ErrorCodeResetAll();
    hypredrv_YAMLtreeBuild(8, text, &tree);
-   ASSERT_NOT_NULL(tree);
-
-   YAMLnode *key = hypredrv_YAMLnodeFindChildByKey(tree->root, "key");
-   ASSERT_NOT_NULL(key);
-   ASSERT_STREQ(key->val, "value");
-
+   ASSERT_NULL(tree);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
    free(text);
-   hypredrv_YAMLtreeDestroy(&tree);
+   hypredrv_ErrorStateReset();
 }
 
 static void

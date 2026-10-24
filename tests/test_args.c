@@ -1641,7 +1641,7 @@ static void
 test_InputArgsParse_invalid_yaml_file_on_disk(void)
 {
    char path[256];
-   (void)snprintf(path, sizeof(path), "/tmp/hypred_args_bad_%d.yml", (int)getpid());
+   test_scratch_path(path, sizeof(path), "hypred_args_bad_local.yml");
 
    FILE *fp = fopen(path, "w");
    ASSERT_NOT_NULL(fp);
@@ -1667,7 +1667,7 @@ test_InputArgsParse_include_from_subdirectory(void)
    char dir[256];
    char outer[288];
    char inner[288];
-   (void)snprintf(dir, sizeof(dir), "/tmp/hypred_args_inc_%d", (int)getpid());
+   test_scratch_path(dir, sizeof(dir), "hypred_args_inc_local");
    (void)snprintf(outer, sizeof(outer), "%s/outer.yml", dir);
    (void)snprintf(inner, sizeof(inner), "%s/inner.yml", dir);
 
@@ -1713,7 +1713,7 @@ test_InputArgsParse_parent_relative_config_path(void)
 
    ASSERT_NOT_NULL(getcwd(cwd, sizeof(cwd)));
 
-   (void)snprintf(dir, sizeof(dir), "/tmp/hypred_args_parent_%d", (int)getpid());
+   test_scratch_path(dir, sizeof(dir), "hypred_args_parent_local");
    (void)snprintf(subdir, sizeof(subdir), "%s/run", dir);
    (void)snprintf(config, sizeof(config), "%s/config.yml", dir);
 
@@ -1751,8 +1751,7 @@ static void
 test_InputArgsParse_driver_mode_config_not_argv0_with_overrides(void)
 {
    char yaml_file[256];
-   (void)snprintf(yaml_file, sizeof(yaml_file), "/tmp/hypred_args_drv_%d.yml",
-                  (int)getpid());
+   test_scratch_path(yaml_file, sizeof(yaml_file), "hypred_args_drv_local.yml");
 
    FILE *fp = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
@@ -1783,8 +1782,7 @@ static void
 test_InputArgsParse_driver_mode_overrides_stop_at_info_flag(void)
 {
    char yaml_file[256];
-   (void)snprintf(yaml_file, sizeof(yaml_file), "/tmp/hypred_args_info_%d.yml",
-                  (int)getpid());
+   test_scratch_path(yaml_file, sizeof(yaml_file), "hypred_args_info_local.yml");
 
    FILE *fp = fopen(yaml_file, "w");
    ASSERT_NOT_NULL(fp);
@@ -1922,7 +1920,9 @@ test_InputArgsRead_rejects_missing_and_unsafe_filename(void)
    char *text        = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsRead(MPI_COMM_SELF, "/tmp/hypredrive_no_such_config.yml",
+   char missing[PATH_MAX];
+   test_scratch_path(missing, sizeof(missing), "hypredrive_no_such_config.yml");
+   hypredrv_InputArgsRead(MPI_COMM_SELF, missing,
                           &base_indent, &text);
    ASSERT_NULL(text);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
@@ -1998,7 +1998,9 @@ static void
 test_InputArgsParse_driver_mode_missing_config_file(void)
 {
    input_args *args   = NULL;
-   char       *argv[] = {"hypredrive", "-i", "/tmp/hypred_args_missing_config_xyz.yml"};
+   char missing[PATH_MAX];
+   test_scratch_path(missing, sizeof(missing), "hypred_args_missing_config.yml");
+   char *argv[] = {"hypredrive", "-i", missing};
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
@@ -2027,7 +2029,7 @@ test_InputArgsParse_file_include_target_missing(void)
 {
    /* hypredrv_YAMLtextRead fails during include expansion -> InputArgsRead error path. */
    char path[256];
-   (void)snprintf(path, sizeof(path), "/tmp/hypred_args_inc_miss_%d.yml", (int)getpid());
+   test_scratch_path(path, sizeof(path), "hypred_args_inc_miss_local.yml");
 
    FILE *fp = fopen(path, "w");
    ASSERT_NOT_NULL(fp);

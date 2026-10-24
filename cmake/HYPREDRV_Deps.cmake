@@ -475,7 +475,6 @@ endfunction()
 ############################################################
 # Propagate HYPREDRV dependency options
 ############################################################
-
 # Keep accelerator selection at the HYPREDRV level and propagate it to every
 # bundled dependency that supports the selected backend. HYPRE forwards these
 # options to its own nested dependencies (for example, Umpire).
@@ -511,7 +510,6 @@ endif()
 ############################################################
 # Sync Caliper options between HYPREDRV and HYPRE
 ############################################################
-
 # Bidirectional sync: HYPREDRV_ENABLE_CALIPER <-> HYPRE_ENABLE_CALIPER
 # Priority: HYPREDRV_ENABLE_CALIPER takes precedence if both are defined
 # Note: We need to handle both cache variables and command-line -D flags
@@ -539,7 +537,6 @@ endif()
 ############################################################
 # Find and configure Caliper (must be before HYPRE)
 ############################################################
-
 # Option to specify Caliper version/branch/tag for FetchContent
 set(CALIPER_VERSION "master" CACHE STRING "Caliper version/branch/tag to fetch (e.g., master, v2.12.0)")
 
@@ -949,8 +946,8 @@ endif()
 ############################################################
 # Find and configure HYPRE
 ############################################################
-
-# Option to specify HYPRE version/branch/tag for FetchContent
+# Intentionally default to master for development-only HYPRE APIs and MGR options.
+# Keep master as the default; callers can pin a release with -DHYPRE_VERSION=<tag>.
 set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v3.2.0)")
 
 if(HYPRE_ENABLE_MIXEDINT AND HYPRE_ENABLE_BIGINT)
@@ -983,6 +980,13 @@ if(NOT HYPRE_FOUND)
 endif()
 
 if(NOT HYPRE_FOUND)
+    if(HYPRE_VERSION MATCHES "^v?([0-9]+)\\.([0-9]+)\\.([0-9]+)")
+        math(EXPR _requested_release
+            "${CMAKE_MATCH_1} * 10000 + ${CMAKE_MATCH_2} * 100 + ${CMAKE_MATCH_3}")
+        if(_requested_release LESS 22000)
+            message(FATAL_ERROR "hypredrive requires hypre >= 2.20.0")
+        endif()
+    endif()
     # HYPRE not found via find_package - automatically fetch and build
     message(STATUS "HYPRE not found. Fetching and building HYPRE from source (version: ${HYPRE_VERSION})...")
 

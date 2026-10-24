@@ -123,11 +123,9 @@ LSSeqBuildPartOrder(const LSSeqData *seq, uint32_t **order_ptr)
    *order_ptr = NULL;
    n          = seq->header.num_parts;
 
-   order = (uint32_t *)malloc((size_t)n * sizeof(*order));
+   order = (uint32_t *)hypredrv_Malloc((size_t)n * sizeof(*order), "part order");
    if (!order) /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate part order (%u entries)", n);
       return 0;
    }
 
@@ -407,14 +405,13 @@ LSSeqLoadInfoHeader(FILE *fp, LSSeqData *seq, const char *filename, uint64_t inf
    {
       uint64_t hash          = UINT64_C(1469598103934665603);
       seq->info_payload_size = (size_t)seq->info_header.payload_size;
-      seq->info_payload      = (char *)malloc(seq->info_payload_size + 1u);
+      seq->info_payload =
+         (char *)hypredrv_Malloc(seq->info_payload_size + 1u, "LSSeq info payload");
       /* GCOVR_EXCL_BR_START */
       if (!seq->info_payload) /* GCOVR_EXCL_BR_STOP */
       {
          fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate LSSeq info payload (%zu bytes)",
-                              seq->info_payload_size);
+
          return 0;
       }
 
@@ -462,14 +459,13 @@ LSSeqAllocMetadata(FILE *fp, LSSeqData *seq, size_t *n_sys_parts_out)
          return 0;
       }
    }
-   seq->parts =
-      (LSSeqPartMeta *)calloc((size_t)seq->header.num_parts, sizeof(LSSeqPartMeta));
+   seq->parts = (LSSeqPartMeta *)hypredrv_Calloc(
+      (size_t)seq->header.num_parts, sizeof(LSSeqPartMeta), "LSSeq part metadata");
    /* GCOVR_EXCL_BR_START */
    if (!seq->parts) /* GCOVR_EXCL_BR_STOP */
    {
       fclose(fp);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate LSSeq part metadata");
+
       return 0;
    }
 
@@ -488,13 +484,12 @@ LSSeqAllocMetadata(FILE *fp, LSSeqData *seq, size_t *n_sys_parts_out)
          fclose(fp);
          return 0;
       }
-      seq->patterns =
-         (LSSeqPatternMeta *)calloc(seq->header.num_patterns, sizeof(LSSeqPatternMeta));
+      seq->patterns = (LSSeqPatternMeta *)hypredrv_Calloc(
+         seq->header.num_patterns, sizeof(LSSeqPatternMeta), "LSSeq pattern metadata");
       if (!seq->patterns) /* GCOVR_EXCL_BR_LINE */
       {
          fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate LSSeq pattern metadata");
+
          return 0;
       }
    }
@@ -523,13 +518,12 @@ LSSeqAllocMetadata(FILE *fp, LSSeqData *seq, size_t *n_sys_parts_out)
          return 0;
       }
    }
-   seq->sys_parts =
-      (LSSeqSystemPartMeta *)calloc(n_sys_parts, sizeof(LSSeqSystemPartMeta));
+   seq->sys_parts = (LSSeqSystemPartMeta *)hypredrv_Calloc(
+      n_sys_parts, sizeof(LSSeqSystemPartMeta), "LSSeq system-part metadata");
    if (!seq->sys_parts) /* GCOVR_EXCL_BR_LINE */
    {
       fclose(fp);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate LSSeq system-part metadata");
+
       return 0;
    }
 
@@ -549,13 +543,13 @@ LSSeqAllocMetadata(FILE *fp, LSSeqData *seq, size_t *n_sys_parts_out)
          fclose(fp);
          return 0;
       }
-      seq->timesteps = (LSSeqTimestepEntry *)calloc(seq->header.num_timesteps,
-                                                    sizeof(LSSeqTimestepEntry));
+      seq->timesteps = (LSSeqTimestepEntry *)hypredrv_Calloc(seq->header.num_timesteps,
+                                                             sizeof(LSSeqTimestepEntry),
+                                                             "LSSeq timesteps metadata");
       if (!seq->timesteps) /* GCOVR_EXCL_BR_LINE */
       {
          fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate LSSeq timesteps metadata");
+
          return 0;
       }
    }
@@ -767,11 +761,10 @@ hypredrv_LSSeqReadInfo(const char *filename, char **payload_ptr, size_t *payload
    /* An empty payload is still returned as a terminated string */
    if (!seq.info_payload)
    {
-      seq.info_payload = (char *)calloc(1, 1);
+      seq.info_payload = (char *)hypredrv_Calloc(1, 1, "seq.info_payload");
       if (!seq.info_payload) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-         return 0;                                /* GCOVR_EXCL_LINE */
+         return 0; /* GCOVR_EXCL_LINE */
       }
    }
    *payload_ptr  = seq.info_payload;
@@ -810,11 +803,9 @@ LSSeqLocalPartIDs(MPI_Comm comm, uint32_t g_nparts, int **partids_ptr, int *npar
       return 0;
    }
 
-   partids = (int *)calloc((size_t)nparts, sizeof(int));
+   partids = (int *)hypredrv_Calloc((size_t)nparts, sizeof(int), "partids array");
    if (!partids) /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate partids array");
       return 0;
    }
 
@@ -886,12 +877,9 @@ LSSeqReadBlob(FILE *fp, comp_alg_t codec, uint64_t offset, uint64_t blob_size,
       return 1;
    }
 
-   blob_data = malloc((size_t)blob_size);
+   blob_data = hypredrv_Malloc((size_t)blob_size, "blob_data");
    if (!blob_data) /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate %llu bytes for blob read",
-                           (unsigned long long)blob_size);
       return 0;
    }
 
@@ -1161,12 +1149,9 @@ LSSeqDecodeBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_offset, uint64_t 
    {
       /* No file identity (no caching) or no resumable decoder for this codec:
        * read the whole blob and decode just the slice from memory. */
-      blob = malloc((size_t)c_size);
+      blob = hypredrv_Malloc((size_t)c_size, "blob");
       if (!blob) /* GCOVR_EXCL_BR_LINE */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate %llu bytes for blob read",
-                              (unsigned long long)c_size);
          return 0;
       }
       /* GCOVR_EXCL_BR_START */
@@ -1639,8 +1624,7 @@ LSSeqAppendDofmapPart(FILE *fp, const LSSeqData *seq, int ls_id, uint32_t part_i
    if (!grown) /* GCOVR_EXCL_BR_LINE */
    {
       free(dof_data);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate LSSeq dofmap buffer");
+      hypredrv_AllocationFailure("Failed to allocate LSSeq dofmap buffer");
       return 0;
    }
    memcpy(grown + *count, dof_data, entries * sizeof(int));
@@ -1789,8 +1773,7 @@ hypredrv_LSSeqReadTimestepsWithIds(const char *filename, IntArray **timestep_ids
       if (!ids) /* GCOVR_EXCL_BR_LINE */
       {
          LSSeqDataDestroy(&seq);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate LSSeq timestep ids array");
+         hypredrv_AllocationFailure("Failed to allocate LSSeq timestep ids array");
          return 0;
       }
    }
@@ -1800,8 +1783,7 @@ hypredrv_LSSeqReadTimestepsWithIds(const char *filename, IntArray **timestep_ids
    {
       hypredrv_IntArrayDestroy(&ids);
       LSSeqDataDestroy(&seq);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate LSSeq timestep starts array");
+      hypredrv_AllocationFailure("Failed to allocate LSSeq timestep starts array");
       return 0;
    }
 

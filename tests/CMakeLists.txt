@@ -43,10 +43,12 @@ endfunction()
 # Some MPI abort paths can (incorrectly) return exit code 0 depending on the MPI
 # implementation; catch these via output regex as well.
 function(add_unit_test test_name target_name)
+    set(_work_dir "${CMAKE_CURRENT_BINARY_DIR}/work/${test_name}")
+    file(MAKE_DIRECTORY "${_work_dir}")
     add_test(NAME ${test_name} COMMAND ${target_name})
     set_tests_properties(${test_name}
         PROPERTIES
-            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            WORKING_DIRECTORY "${_work_dir}"
             FAIL_REGULAR_EXPRESSION "HYPREDRIVE Failure!!!|Abort\\("
             SKIP_RETURN_CODE 77
             LABELS "unit"
@@ -104,6 +106,7 @@ set(_hypredrv_unit_test_cases
     "test_solver|test_solver.c|TRUE"
     "test_hypredrv|test_hypredrv.c|TRUE"
     "test_review|test_review.c|TRUE"
+    "test_api_contract|test_api_contract.c|TRUE"
     "test_comp|test_comp.c|FALSE"
     "test_matrix|test_matrix.c|TRUE"
     "test_lsseq|test_lsseq.c|TRUE"
@@ -132,6 +135,16 @@ endforeach()
 
 find_package(Python3 QUIET COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
+    # Regenerate and compile the actual README code, including future edits.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_CURRENT_SOURCE_DIR}/generate_readme_example.py")
+    execute_process(COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/generate_readme_example.py"
+        "${CMAKE_SOURCE_DIR}/README.md" "${CMAKE_CURRENT_BINARY_DIR}/readme_example.c"
+        COMMAND_ERROR_IS_FATAL ANY)
+    setup_test_executable(test_readme_example "${CMAKE_CURRENT_BINARY_DIR}/readme_example.c")
+    target_include_directories(test_readme_example PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_unit_test(unit_test_readme_example test_readme_example)
     add_test(
         NAME unit_test_parse_logs
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_parse_logs.py

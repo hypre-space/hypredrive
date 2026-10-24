@@ -251,7 +251,8 @@ capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len)
 #ifdef __APPLE__
    if (!tmp)
    {
-      char path[] = "/tmp/hypredrv_test_error_XXXXXX";
+      char path[256];
+      test_scratch_path(path, sizeof(path), "hypredrv_test_error_XXXXXX");
       int fd = mkstemp(path);
       ASSERT_TRUE(fd != -1);
       tmp = fdopen(fd, "w+");
@@ -643,9 +644,22 @@ test_ErrorBacktracePrint_respects_no_backtrace_env(void)
  * Main test runner (CTest handles test counting and reporting)
  *-----------------------------------------------------------------------------*/
 
+static void
+test_checked_allocation(void)
+{
+   hypredrv_ErrorStateReset();
+   void *empty = hypredrv_Calloc(0, sizeof(int), "empty test array");
+   ASSERT_NOT_NULL(empty);
+   free(empty);
+   ASSERT_NULL(hypredrv_Calloc(SIZE_MAX, 2, "overflow test array"));
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_ALLOCATION);
+   hypredrv_ErrorStateReset();
+}
+
 int
 main(int argc, char **argv)
 {
+   RUN_TEST(test_checked_allocation);
    MPI_Init(&argc, &argv);
 
    RUN_TEST(test_ErrorCodeSet_get);

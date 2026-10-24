@@ -1504,7 +1504,7 @@ test_hypredrv_LinearSystemSetNearNullSpace_success(void)
 static void
 test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 {
-   TEST_REQUIRE_FILE("data/ps3d10pt7/np1/IJ.out.A.00000");
+   TEST_REQUIRE_FILE(HYPREDRIVE_SOURCE_DIR "/data/ps3d10pt7/np1/IJ.out.A.00000");
    TEST_HYPRE_INIT();
 
    LS_args args;
@@ -1536,7 +1536,7 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 
    /* Test direct filename branch */
    args.matrix_basename[0] = '\0';
-   strncpy(args.matrix_filename, "data/ps3d10pt7/np1/IJ.out.A",
+   strncpy(args.matrix_filename, HYPREDRIVE_SOURCE_DIR "/data/ps3d10pt7/np1/IJ.out.A",
            sizeof(args.matrix_filename) - 1);
 
    hypredrv_ErrorCodeResetAll();
@@ -1808,7 +1808,8 @@ test_hypredrv_LinearSystemReadMatrix_sequence_ls_id_out_of_range(void)
 {
    TEST_HYPRE_INIT();
 
-   char path[] = "/tmp/hypredrv_lsseq_mat_XXXXXX";
+   char path[256];
+   test_scratch_path(path, sizeof(path), "hypredrv_lsseq_mat_XXXXXX");
    int  fd     = mkstemp(path);
    ASSERT_TRUE(fd >= 0);
    close(fd);
@@ -1847,7 +1848,8 @@ test_hypredrv_LinearSystemSetRHS_sequence_ls_id_out_of_range(void)
 {
    TEST_HYPRE_INIT();
 
-   char path[] = "/tmp/hypredrv_lsseq_rhs_XXXXXX";
+   char path[256];
+   test_scratch_path(path, sizeof(path), "hypredrv_lsseq_rhs_XXXXXX");
    int  fd     = mkstemp(path);
    ASSERT_TRUE(fd >= 0);
    close(fd);
@@ -3709,7 +3711,7 @@ test_hypredrv_LinearSystemReadMatrix_mtx_success(void)
    HYPRE_ClearAllErrors();
 
    char matfile[256];
-   snprintf(matfile, sizeof(matfile), "/tmp/hypredrive_test_mat_%d.mtx", (int)getpid());
+   test_scratch_path(matfile, sizeof(matfile), "hypredrive_test_mat_local.mtx");
 
    /* Minimal 1x1 MatrixMarket matrix (coordinate) */
    write_text_file(matfile,
@@ -3750,7 +3752,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_file_success(void)
    HYPRE_ClearAllErrors();
 
    char rhsfile[256];
-   snprintf(rhsfile, sizeof(rhsfile), "/tmp/hypredrive_test_rhs_%d.mtx", (int)getpid());
+   test_scratch_path(rhsfile, sizeof(rhsfile), "hypredrive_test_rhs_local.mtx");
 
    write_text_file(rhsfile,
                    "% vector as a 1-column MM-like text\n"
@@ -3801,7 +3803,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_crlf_tabs(void)
    HYPRE_ClearAllErrors();
 
    char rhsfile[256];
-   snprintf(rhsfile, sizeof(rhsfile), "/tmp/hypredrive_test_rhs_crlf_%d.mtx", (int)getpid());
+   test_scratch_path(rhsfile, sizeof(rhsfile), "hypredrive_test_rhs_crlf_local.mtx");
 
    /* Tab-separated size line and CRLF/trailing-space value lines. */
    write_text_file(rhsfile,
@@ -3849,7 +3851,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_dim_mismatch_errors(void)
    HYPRE_ClearAllErrors();
 
    char rhsfile[256];
-   snprintf(rhsfile, sizeof(rhsfile), "/tmp/hypredrive_test_rhs_%d.mtx", (int)getpid());
+   test_scratch_path(rhsfile, sizeof(rhsfile), "hypredrive_test_rhs_local.mtx");
 
    /* Wrong vector dims: N != 1 */
    write_text_file(rhsfile,
@@ -3900,7 +3902,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
    HYPRE_ClearAllErrors();
 
    char rhsfile[256];
-   snprintf(rhsfile, sizeof(rhsfile), "/tmp/hypredrive_test_rhs_mm_%d.mtx", (int)getpid());
+   test_scratch_path(rhsfile, sizeof(rhsfile), "hypredrive_test_rhs_mm_local.mtx");
 
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
@@ -3922,9 +3924,8 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
    HYPRE_IJVector refsol = NULL, rhs = NULL;
 
    /* Missing RHS file */
-   strncpy(args.rhs_filename, "/tmp/hypredrive_rhs_missing_file_xyz_12345.mtx",
-           sizeof(args.rhs_filename) - 1);
-   args.rhs_filename[sizeof(args.rhs_filename) - 1] = '\0';
+   test_scratch_path(args.rhs_filename, sizeof(args.rhs_filename),
+                     "hypredrive_rhs_missing_file.mtx");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
    hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
@@ -4500,7 +4501,8 @@ test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
 {
    TEST_HYPRE_INIT();
 
-   char path[] = "/tmp/hypredrv_lsseq_precmat_XXXXXX";
+   char path[256];
+   test_scratch_path(path, sizeof(path), "hypredrv_lsseq_precmat_XXXXXX");
    int  fd     = mkstemp(path);
    ASSERT_TRUE(fd >= 0);
    close(fd);
