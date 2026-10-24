@@ -946,8 +946,9 @@ endif()
 ############################################################
 # Find and configure HYPRE
 ############################################################
-# Option to specify HYPRE version/branch/tag for FetchContent
-set(HYPRE_VERSION "v3.2.0" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v3.2.0)")
+# Intentionally default to master for development-only HYPRE APIs and MGR options.
+# Keep master as the default; callers can pin a release with -DHYPRE_VERSION=<tag>.
+set(HYPRE_VERSION "master" CACHE STRING "HYPRE version/branch/tag to fetch (e.g., master, v3.2.0)")
 
 if(HYPRE_ENABLE_MIXEDINT AND HYPRE_ENABLE_BIGINT)
     message(FATAL_ERROR "HYPRE_ENABLE_MIXEDINT and HYPRE_ENABLE_BIGINT are mutually exclusive")

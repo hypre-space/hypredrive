@@ -276,8 +276,7 @@ Automatic HYPRE build
 For a local build, CMake uses `FetchContent` to retrieve and build HYPRE when
 ``HYPRE_ROOT`` is not set. This process:
 
-- Downloads the HYPRE ``v3.2.0`` release from GitHub by default. CI also tests
-  ``master`` explicitly.
+- Downloads HYPRE from the ``master`` branch on GitHub by default.
 - Passes the CMake arguments from the parent project to HYPRE.
 - Builds HYPRE in the same build tree.
 - Selects the HYPRE version with ``-DHYPRE_VERSION=<version>``.
