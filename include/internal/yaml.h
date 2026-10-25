@@ -73,6 +73,7 @@ typedef struct YAMLnode_struct
    StrIntMapArray          avail_vals; /* valid values recorded at validation time */
    StrArray                avail_keys; /* valid keys recorded at validation time */
    int                     level;
+   int                     source_indent; /* -1 for programmatically created nodes */
    YAMLvalidity            valid;
    struct YAMLnode_struct *parent;
    struct YAMLnode_struct *children;

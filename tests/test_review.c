@@ -97,7 +97,7 @@ test_setters_before_parse(void)
    ASSERT_EQ(HYPREDRV_LinearSystemSetRHS(obj, (HYPRE_Vector)rhs), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, (HYPRE_Vector)guess), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetSolution(obj, NULL), ERROR_NONE);
-   ASSERT_NOT_NULL(obj->vec_x);
+   ASSERT_NOT_NULL(obj->vec_x.handle);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 }
 
@@ -109,7 +109,7 @@ test_partial_attachments(void)
    HYPRE_IJVector y = create_test_ijvector_1x1(1.0);
    ASSERT_EQ(HYPREDRV_LinearSystemSetCoordinates(obj, NULL, (HYPRE_Vector)y, NULL),
              ERROR_NONE);
-   ASSERT_TRUE(obj->owns_vec_coord);
+   ASSERT_TRUE(obj->vec_coord[1].owned);
    ASSERT_NE(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
    hypredrv_ErrorStateReset();
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -125,7 +125,8 @@ test_partial_attachments(void)
 static void
 test_schedule_allocation_bound(void)
 {
-   char filename[] = "/tmp/hypredrive-review-schedule-XXXXXX";
+   char filename[256];
+   test_scratch_path(filename, sizeof(filename), "hypredrive-review-schedule-XXXXXX");
    int  fd         = mkstemp(filename);
    ASSERT_TRUE(fd >= 0);
    FILE *fp = fdopen(fd, "w");
@@ -194,12 +195,12 @@ test_preconditioner_matrix_file_formats_and_read_default(void)
    char *argv[] = {yaml};
    ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemReadMatrix(obj), ERROR_NONE);
-   ASSERT_PTR_EQ(obj->mat_M, obj->mat_A);
+   ASSERT_PTR_EQ(obj->mat_M.handle, obj->mat_A.handle);
    HYPRE_IJMatrix separate = create_test_ijmatrix_1x1(2.0);
    ASSERT_EQ(HYPREDRV_LinearSystemSetPrecMatrix(obj, (HYPRE_Matrix)separate), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemReadMatrix(obj), ERROR_NONE);
-   ASSERT_PTR_EQ(obj->mat_M, obj->mat_A);
-   ASSERT_FALSE(obj->owns_mat_M);
+   ASSERT_PTR_EQ(obj->mat_M.handle, obj->mat_A.handle);
+   ASSERT_FALSE(obj->mat_M.owned);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 
    LS_args args;
@@ -226,7 +227,8 @@ test_preconditioner_matrix_file_formats_and_read_default(void)
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    /* A generated one-entry matrix keeps this format regression independent
     * of any optional Matrix Market dataset. */
-   char filename[] = "/tmp/hypredrive-review-matrix-XXXXXX";
+   char filename[256];
+   test_scratch_path(filename, sizeof(filename), "hypredrive-review-matrix-XXXXXX");
    int  fd         = mkstemp(filename);
    ASSERT_TRUE(fd >= 0);
    FILE *fp = fdopen(fd, "w");

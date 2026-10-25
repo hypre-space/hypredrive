@@ -16,6 +16,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 - [list_public_apis.sh](./list_public_apis.sh): Generates a sorted list of all public `HYPREDRV_` API function names by parsing `include/HYPREDRV.h`.
 - [node_scaling.sh](./node_scaling.sh): Runs single-node problem-size scaling studies on supported LLNL, ALCF, and OLCF machines.
 - [perf_laplacian.sh](./perf_laplacian.sh): Builds and runs a Laplacian driver across hypre versions with optional profiling and scaling summaries.
+- [run_regression.sh](./run_regression.sh): Runs local build, test, coverage, and analysis profiles, with build trees and installation prefixes under `/tmp`.
 
 ## Python Scripts
 

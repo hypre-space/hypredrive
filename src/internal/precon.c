@@ -108,26 +108,15 @@ static const PreconOps precon_ops[] = {
                          .destroy = HYPRE_BoomerAMGDestroy},
    [PRECON_MGR] =
       {
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
-         .setup = HYPRE_MGRSetup,
-         .solve = HYPRE_MGRSolve,
-#else
-         .setup = NULL,
-         .solve = NULL,
-#endif
+         .setup   = HYPRE_MGRSetup,
+         .solve   = HYPRE_MGRSolve,
          .destroy = NULL, /* MGR teardown is handled by PreconDestroyMGRSolver */
       },
    [PRECON_ILU] =
       {
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
          .setup   = HYPRE_ILUSetup,
          .solve   = HYPRE_ILUSolve,
          .destroy = HYPRE_ILUDestroy,
-#else
-         .setup   = NULL,
-         .solve   = NULL,
-         .destroy = NULL,
-#endif
       },
    [PRECON_FSAI] =
       {
@@ -469,7 +458,7 @@ hypredrv_PreconCreate(MPI_Comm comm, precon_t precon_method, precon_args *args,
    HYPRE_Precon precon = malloc(sizeof(hypre_Precon)); /* GCOVR_EXCL_BR_LINE */
    if (!precon)                                        /* GCOVR_EXCL_BR_LINE */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       *precon_ptr = NULL;
       return;
    }
@@ -890,13 +879,6 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
 static void
 PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_setup)
 {
-#if !HYPRE_CHECK_MIN_VERSION(21900, 0)
-   (void)mgr;
-   (void)solver_ptr;
-   (void)precon_was_setup;
-   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-   hypredrv_ErrorMsgAdd("MGR requires hypre >= 2.19.0");
-#else /* GCOVR_EXCL_BR_LINE */
    if (!mgr) /* GCOVR_EXCL_BR_LINE */
    {
       return;
@@ -923,7 +905,6 @@ PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_s
       free(mgr->point_marker_data);
       mgr->point_marker_data = NULL;
    }
-#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -984,9 +965,7 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
             HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
                           "preconditioner destroy dispatch: method=ilu");
             /* GCOVR_EXCL_STOP */
-#if HYPRE_CHECK_MIN_VERSION(21900, 0)
             HYPRE_ILUDestroy(precon->main);
-#endif
             break;
 
          case PRECON_FSAI:

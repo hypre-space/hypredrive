@@ -62,6 +62,11 @@ typedef enum hypredrv_error_enum
  * Error state is process-global and not thread-safe. Callers must invoke these
  * APIs from a single thread or provide external synchronization.
  */
+/* Checked host allocations normalize zero-sized requests and diagnose overflow. */
+void    *hypredrv_Calloc(size_t, size_t, const char *);
+void    *hypredrv_Malloc(size_t, const char *);
+uint32_t hypredrv_AllocationFailure(const char *, ...) HYPREDRV_PRINTF_FORMAT(1, 2);
+
 void     hypredrv_ErrorCodeSet(hypredrv_error_t);
 uint32_t hypredrv_ErrorCodeGet(void);
 bool     hypredrv_ErrorCodeActive(void);
@@ -95,17 +100,14 @@ void hypredrv_SafeCallHandleError(uint32_t, MPI_Comm, const char *, int, const c
 /*******************************************************************************
  *******************************************************************************/
 
-#define HYPREDRV_MALLOC_AND_CHECK(ptr, size)                                             \
-   do                                                                                    \
-   {                                                                                     \
-      (ptr) = malloc(size);                                                              \
-      if ((ptr) == NULL)                                                                 \
-      {                                                                                  \
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                                        \
-         hypredrv_ErrorMsgAdd("Memory allocation failed at %s:%d (%zu bytes)", __FILE__, \
-                              __LINE__, (size_t)(size));                                 \
-         return;                                                                         \
-      }                                                                                  \
+#define HYPREDRV_MALLOC_AND_CHECK(ptr, size) \
+   do                                        \
+   {                                         \
+      (ptr) = hypredrv_Malloc(size, #ptr);   \
+      if ((ptr) == NULL)                     \
+      {                                      \
+         return;                             \
+      }                                      \
    } while (0)
 
 #endif /* ERROR_H */

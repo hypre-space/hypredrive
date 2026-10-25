@@ -81,7 +81,8 @@ extern "C"
     * live-object registry, logging configuration, and a user-preset registry) that
     * is not internally synchronized. All HYPREDRV_* calls, including operations on
     * distinct HYPREDRV_t objects, must be made from a single thread or serialized
-    * externally by the caller.
+    * externally by the caller. Each public operation starts a fresh error scope;
+    * check and describe its return code before calling another operation.
     * @{
     **/
 
@@ -186,18 +187,11 @@ extern "C"
    /**
     * @brief Clear the process-global HYPREDRV error state.
     *
-    * HYPREDRV accumulates error codes and messages in a process-global, sticky
-    * state that most API calls expose through their uint32_t return value.
-    * Because the state is sticky, a failure left unhandled by one call can be
-    * observed as a (spurious) non-zero return by a later, otherwise-successful
-    * call, and failures are shared across all HYPREDRV_t objects in the process.
-    * This routine resets both the accumulated error code and the queued messages
-    * so a consumer can recover after inspecting/handling an error, without
-    * needing the internal error headers. HYPREDRV_Create, HYPREDRV_Destroy, the
-    * configuration calls (HYPREDRV_InputArgsParse, HYPREDRV_InputArgsSet*Preset)
-    * and the solver lifecycle calls (HYPREDRV_Precon* and HYPREDRV_LinearSolver*
-    * create/setup/apply) clear the error state on entry, so a stale error never
-    * fails them.
+    * Public operations start with a clean process-global error state and return
+    * the errors produced by that operation. Check each return code immediately;
+    * describe a failure before calling another operation, which clears its queued
+    * diagnostics. Error-reporting helpers preserve the current diagnostics.
+    * This routine explicitly clears both the error code and queued messages.
     *
     * @note Thread safety: the error state is process-global and not thread-safe;
     * call this from a single thread or provide external synchronization.

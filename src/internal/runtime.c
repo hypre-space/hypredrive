@@ -164,7 +164,7 @@ hypredrv_RuntimeInitialize(void)
       HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "runtime initialize end");
    }
 
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 uint32_t
@@ -173,21 +173,21 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
    if (!g_runtime_state.initialized)
    {
       hypredrv_ErrorCodeSet(ERROR_HYPREDRV_NOT_INITIALIZED);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_HYPREDRV_NOT_INITIALIZED;
    }
 
    if (!hypredrv)
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
       hypredrv_ErrorMsgAdd("Cannot register a NULL HYPREDRV object");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN_HYPREDRV_OBJ;
    }
 
    if (RuntimeListContains(hypredrv))
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN_HYPREDRV_OBJ);
       hypredrv_ErrorMsgAdd("HYPREDRV object is already registered");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN_HYPREDRV_OBJ;
    }
 
    hypredrv->runtime_object_id = g_runtime_state.next_object_id++;
@@ -198,7 +198,7 @@ hypredrv_RuntimeRegisterObject(HYPREDRV_t hypredrv)
    HYPREDRV_LOG_OBJECTF(2, hypredrv, "registered object (active=%d)",
                         g_runtime_state.active_count);
 
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 void
@@ -231,14 +231,15 @@ hypredrv_RuntimeUnregisterObject(HYPREDRV_t hypredrv)
 uint32_t
 hypredrv_RuntimeDestroyAllLiveObjects(hypredrv_RuntimeDestroyFunc destroy_fn)
 {
+   uint32_t status = ERROR_NONE;
    if (!g_runtime_state.initialized || !destroy_fn)
    {
-      return hypredrv_ErrorCodeGet();
+      return status;
    }
 
    if (g_runtime_state.finalize_in_progress)
    {
-      return hypredrv_ErrorCodeGet();
+      return status;
    }
 
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "finalize sweep begin (active=%d)",
@@ -249,14 +250,14 @@ hypredrv_RuntimeDestroyAllLiveObjects(hypredrv_RuntimeDestroyFunc destroy_fn)
    {
       HYPREDRV_t hypredrv = g_runtime_state.live_head;
       HYPREDRV_LOG_OBJECTF(2, hypredrv, "auto-destroying live object during finalize");
-      destroy_fn(hypredrv);
+      status |= destroy_fn(hypredrv);
    }
 
    g_runtime_state.finalize_in_progress = false;
    HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0, "finalize sweep end (active=%d)",
                       g_runtime_state.active_count);
 
-   return hypredrv_ErrorCodeGet();
+   return status;
 }
 
 uint32_t
@@ -274,7 +275,7 @@ hypredrv_RuntimeFinalizeState(void)
          HYPREDRV_LOG_COMMF(1, MPI_COMM_WORLD, NULL, 0,
                             "runtime finalize blocked: %d live object(s) remain",
                             g_runtime_state.active_count);
-         return hypredrv_ErrorCodeGet();
+         return ERROR_UNKNOWN;
       }
 
       hypredrv_PresetFreeUserPresets();
@@ -294,5 +295,5 @@ hypredrv_RuntimeFinalizeState(void)
    hypredrv_ErrorStateReset();
    hypredrv_LogReset();
 
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }

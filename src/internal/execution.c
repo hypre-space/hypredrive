@@ -118,7 +118,7 @@ hypredrv_ApplyConfiguredDeviceInitialization(HYPREDRV_t hypredrv)
    (void)hypredrv;
 #endif
 
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 /*-----------------------------------------------------------------------------
@@ -129,7 +129,7 @@ void
 hypredrv_PrepareExplicitObjectForConfiguredExecution(HYPREDRV_t hypredrv, void *obj,
                                                      int is_matrix)
 {
-#if !defined(HYPRE_USING_GPU) || !HYPRE_CHECK_MIN_VERSION(22000, 0)
+#if !defined(HYPRE_USING_GPU)
    (void)hypredrv;
    (void)obj;
    (void)is_matrix;

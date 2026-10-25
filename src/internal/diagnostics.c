@@ -209,10 +209,11 @@ hypredrv_MaybeDumpLinearSystem(HYPREDRV_t hypredrv, int stage)
       ctx.stage, ctx.system_index, ctx.stats_ls_id, ctx.timestep_index, ctx.last_iter,
       ctx.last_setup_time, ctx.last_solve_time, ctx.variant_index, ctx.repetition_index,
       ctx.level_ids[0], ctx.level_ids[1]);
-   hypredrv_LinearSystemDumpScheduled(
-      hypredrv->comm, &hypredrv->iargs->ls, hypredrv->mat_A, hypredrv->mat_M,
-      hypredrv->vec_b, hypredrv->vec_x0, hypredrv->vec_xref, hypredrv->vec_x,
-      hypredrv->dofmap, &ctx, object_name);
+   hypredrv_LinearSystemDumpScheduled(hypredrv->comm, &hypredrv->iargs->ls,
+                                      hypredrv->mat_A.handle, hypredrv->mat_M.handle,
+                                      hypredrv->vec_b.handle, hypredrv->vec_x0.handle,
+                                      hypredrv->vec_xref.handle, hypredrv->vec_x.handle,
+                                      hypredrv->dofmap, &ctx, object_name);
 }
 
 /*-----------------------------------------------------------------------------
@@ -246,15 +247,16 @@ hypredrv_ReportSolveDiagnostics(HYPREDRV_t hypredrv, double *x_norm, double *xre
    const char *solve_object_name = hypredrv_ResolveLogObjectName(
       hypredrv, residual_object_name, sizeof(residual_object_name));
    hypredrv_LinearSystemLogBlockResidualNorms(
-      hypredrv->comm, hypredrv->mat_A, hypredrv->vec_b, hypredrv->vec_x, hypredrv->dofmap,
-      hypredrv->iargs->ls.dof_labels, solve_object_name,
-      hypredrv_StatsGetLinearSystemID(hypredrv->stats));
+      hypredrv->comm, hypredrv->mat_A.handle, hypredrv->vec_b.handle,
+      hypredrv->vec_x.handle, hypredrv->dofmap, hypredrv->iargs->ls.dof_labels,
+      solve_object_name, hypredrv_StatsGetLinearSystemID(hypredrv->stats));
 
-   if (hypredrv->vec_xref)
+   if (hypredrv->vec_xref.handle)
    {
-      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref, "L2", xref_norm);
-      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x, "L2", x_norm);
-      hypredrv_LinearSystemComputeErrorNorm(hypredrv->vec_xref, hypredrv->vec_x, "L2",
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_xref.handle, "L2", xref_norm);
+      hypredrv_LinearSystemComputeVectorNorm(hypredrv->vec_x.handle, "L2", x_norm);
+      hypredrv_LinearSystemComputeErrorNorm(hypredrv->vec_xref.handle,
+                                            hypredrv->vec_x.handle, "L2",
                                             e_norm); /* GCOVR_EXCL_BR_LINE */
       if (!hypredrv->mypid)                          /* GCOVR_EXCL_BR_LINE */
       {

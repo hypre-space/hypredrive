@@ -63,9 +63,8 @@ YAMLpathStackReserve(char ***stack_ptr, int *capacity_ptr, int min_capacity)
    /* GCOVR_EXCL_BR_START */
    if (!new_stack) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                       /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate include path stack"); /* GCOVR_EXCL_LINE */
-      return false;                                                  /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate include path stack");
+      return false; /* GCOVR_EXCL_LINE */
    }
 
    *stack_ptr    = new_stack;
@@ -125,9 +124,8 @@ YAMLreadStackPush(YAMLincludeContext *ctx, const char *path)
    /* GCOVR_EXCL_BR_START */
    if (!ctx->read_stack[ctx->read_stack_size]) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);             /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to copy include path"); /* GCOVR_EXCL_LINE */
-      return false;                                        /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to copy include path");
+      return false; /* GCOVR_EXCL_LINE */
    }
    ctx->read_stack_size++;
    return true;
@@ -185,9 +183,8 @@ YAMLexpandStackPush(YAMLincludeContext *ctx, const char *path)
    /* GCOVR_EXCL_BR_START */
    if (!ctx->expand_stack[ctx->expand_stack_size]) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                       /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to copy include expansion path"); /* GCOVR_EXCL_LINE */
-      return false;                                                  /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to copy include expansion path");
+      return false; /* GCOVR_EXCL_LINE */
    }
    ctx->expand_stack_size++;
    return true;
@@ -307,9 +304,8 @@ YAMLtextBufferEnsureCapacity(char **text_ptr, size_t *capacity_ptr, size_t min_c
    /* GCOVR_EXCL_BR_START */
    if (!new_text) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                     /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate YAML text buffer"); /* GCOVR_EXCL_LINE */
-      return false;                                                /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate YAML text buffer");
+      return false; /* GCOVR_EXCL_LINE */
    }
 
    *text_ptr     = new_text;
@@ -344,10 +340,8 @@ YAMLincludeResolvePath(const YAMLincludeContext *ctx, const char *dirname,
    /* GCOVR_EXCL_BR_START */
    if (!combined) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to construct include path for '%s'",
-                           basename); /* GCOVR_EXCL_LINE */
-      return false;                   /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to construct include path for '%s'", basename);
+      return false; /* GCOVR_EXCL_LINE */
    }
 
    char *resolved = hypredrv_Realpath(combined);
@@ -515,10 +509,9 @@ hypredrv_YAMLtreeCreate(int base_indent)
 {
    YAMLtree *tree = NULL;
 
-   tree = malloc(sizeof(YAMLtree));
+   tree = hypredrv_Malloc(sizeof(YAMLtree), "tree");
    if (!tree)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return NULL;
    }
    tree->root = hypredrv_YAMLnodeCreate("", "", -1);
@@ -562,6 +555,32 @@ typedef struct
    int  prev_indent;
    bool first_indented_line;
 } YAMLIndentState;
+
+/* File and string inputs share one line-ending normalization boundary. */
+static void
+YAMLlineNormalize(char *line)
+{
+   size_t length = strlen(line);
+   if (length && line[length - 1] == '\n')
+   {
+      line[--length] = '\0';
+   }
+   if (length && line[length - 1] == '\r')
+   {
+      line[--length] = '\0';
+   }
+}
+
+static bool
+YAMLlineIsDocumentBoundary(const char *line)
+{
+   size_t length = strcspn(line, " \t");
+   if (length != 3 || (strncmp(line, "---", 3) != 0 && strncmp(line, "...", 3) != 0))
+   {
+      return false;
+   }
+   return line[length + strspn(line + length, " \t")] == '\0';
+}
 
 /* Strips the trailing newline and any end-of-line comment from `line`, keeping
  * `backup` (the verbatim copy that gets emitted) in sync. */
@@ -786,7 +805,7 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
    FILE           *fp  = NULL;
    char           *key = NULL, *val = NULL;
    char            line[MAX_LINE_LENGTH];
-   char            backup[MAX_LINE_LENGTH];
+   char            backup[MAX_LINE_LENGTH + 1];
    char           *resolved_path = NULL;
    char           *current_dir   = NULL;
    char           *current_base  = NULL;
@@ -819,11 +838,9 @@ YAMLtextReadWithContext(const char *dirname, const char *basename, int level,
 
    while (fgets(line, sizeof(line), fp))
    {
-      /* Save the original line */
-      memcpy(backup, line, sizeof(backup));
-
-      /* Remove trailing newline character */
-      line[strcspn(line, "\n")] = '\0';
+      YAMLlineNormalize(line);
+      /* The flattened include stream uses LF even when its sources use CRLF. */
+      snprintf(backup, sizeof(backup), "%s\n", line);
 
       YAMLlineStripComment(line, backup);
 
@@ -1004,9 +1021,8 @@ YAMLtokenArrayReserve(YAMLtokenArray *arr, int min_capacity)
    /* GCOVR_EXCL_BR_START */
    if (!new_data) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                      /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate YAML token buffer"); /* GCOVR_EXCL_LINE */
-      return false;                                                 /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate YAML token buffer");
+      return false; /* GCOVR_EXCL_LINE */
    }
 
    arr->data     = new_data;
@@ -1047,8 +1063,7 @@ YAMLlineIsBlank(const char *line)
    while (*line) /* GCOVR_EXCL_BR_STOP */
    {
       /* GCOVR_EXCL_BR_START */
-      if (*line != ' ' && *line != '\n' && *line != '\r' && *line != '\t')
-      /* GCOVR_EXCL_BR_STOP */
+      if (*line != ' ' && *line != '\n' && *line != '\t') /* GCOVR_EXCL_BR_STOP */
       {
          return false;
       }
@@ -1095,9 +1110,8 @@ YAMLtokenSetString(char **dst, const char *src)
    /* GCOVR_EXCL_BR_START */
    if (!copy) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                      /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate YAML token string"); /* GCOVR_EXCL_LINE */
-      return false;                                                 /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate YAML token string");
+      return false; /* GCOVR_EXCL_LINE */
    }
    *dst = copy;
    return true;
@@ -1162,10 +1176,8 @@ YAMLtokenParseSequenceItem(char *content, YAMLtoken *token_out)
       /* GCOVR_EXCL_BR_START */
       if (!inline_copy) /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Failed to allocate YAML inline mapping copy"); /* GCOVR_EXCL_LINE */
-         return -1;                                         /* GCOVR_EXCL_LINE */
+         hypredrv_AllocationFailure("Failed to allocate YAML inline mapping copy");
+         return -1; /* GCOVR_EXCL_LINE */
       }
 
       inline_sep = strchr(inline_copy, ':');
@@ -1261,7 +1273,7 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
 
    memset(token_out, 0, sizeof(*token_out));
 
-   line[strcspn(line, "\n")] = '\0';
+   YAMLlineNormalize(line);
    /* GCOVR_EXCL_BR_START */
    if ((line_ptr = strchr(line, '#')) != NULL) /* GCOVR_EXCL_BR_STOP */
    {
@@ -1269,11 +1281,15 @@ YAMLtokenParseLine(char *line, int base_indent, YAMLtoken *token_out)
    }
 
    /* GCOVR_EXCL_BR_START */
-   if (YAMLlineIsBlank(line)) /* GCOVR_EXCL_BR_STOP */
+   if (YAMLlineIsBlank(line) || YAMLlineIsDocumentBoundary(line)) /* GCOVR_EXCL_BR_STOP */
    {
       return 0;
    }
 
+   if (YAMLlineIndentWidth(line) < 0)
+   {
+      return -1;
+   }
    count   = YAMLlineParseIndent(line, &indent);
    content = line + count;
    /* GCOVR_EXCL_BR_START */
@@ -1316,10 +1332,8 @@ YAMLtokenizeText(const char *text, int base_indent, YAMLtokenArray *tokens)
    /* GCOVR_EXCL_BR_START */
    if (!text_copy) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd(
-         "Failed to allocate YAML text copy for tokenization"); /* GCOVR_EXCL_LINE */
-      return false;                                             /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate YAML text copy for tokenization");
+      return false; /* GCOVR_EXCL_LINE */
    }
 
    remaining = text_copy;
@@ -1377,22 +1391,19 @@ YAMLflowDupTrimmed(const char *begin, const char *end)
    char  *copy = NULL;
    size_t len  = 0;
 
-   while (begin < end && (*begin == ' ' || *begin == '\t' || *begin == '\r'))
+   while (begin < end && (*begin == ' ' || *begin == '\t'))
    {
       begin++;
    }
-   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t'))
    {
       end--;
    }
 
    len  = (size_t)(end - begin);
-   copy = (char *)malloc(len + 1);
+   copy = (char *)hypredrv_Malloc(len + 1, "YAML flow-mapping token");
    if (!copy)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd(                    /* GCOVR_EXCL_LINE */
-                           "Failed to allocate YAML flow-mapping token");
       return NULL; /* GCOVR_EXCL_LINE */
    }
    memcpy(copy, begin, len);
@@ -1416,7 +1427,7 @@ YAMLflowUnquoteKey(char *key)
 static const char *
 YAMLflowSkipSpace(const char *pos, const char *end)
 {
-   while (pos < end && (*pos == ' ' || *pos == '\t' || *pos == '\r'))
+   while (pos < end && (*pos == ' ' || *pos == '\t'))
    {
       pos++;
    }
@@ -1461,6 +1472,7 @@ YAMLflowAdvanceQuoted(const char **pos_ptr, const char *end, char *quote_ptr)
 }
 
 static bool YAMLflowMappingAddChildren(YAMLnode *, const char *);
+static void YAMLnodeCheckSourceMapping(YAMLnode *);
 
 static YAMLnode *
 YAMLnodeCreateWithFlowMapping(const char *key, const char *raw_val, int level)
@@ -1477,7 +1489,7 @@ YAMLnodeCreateWithFlowMapping(const char *key, const char *raw_val, int level)
    end = begin + strlen(begin);
 
    begin = YAMLflowSkipSpace(begin, end);
-   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t'))
    {
       end--;
    }
@@ -1536,6 +1548,7 @@ YAMLflowMappingAddEntry(YAMLnode *parent, const char *key_begin, const char *key
    }
 
    hypredrv_YAMLnodeAddChild(parent, child);
+   YAMLnodeCheckSourceMapping(child);
    return true;
 }
 
@@ -1650,7 +1663,7 @@ YAMLflowMappingBounds(YAMLnode *parent, const char *text, const char **begin_out
    const char *end   = begin + strlen(begin);
 
    begin = YAMLflowSkipSpace(begin, end);
-   while (end > begin && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r'))
+   while (end > begin && (end[-1] == ' ' || end[-1] == '\t'))
    {
       end--;
    }
@@ -1725,6 +1738,30 @@ YAMLflowMappingAddChildren(YAMLnode *parent, const char *text)
 }
 
 static void
+YAMLnodeCheckSourceMapping(YAMLnode *node)
+{
+   YAMLnode *parent = node->parent;
+   if (!parent)
+   {
+      return;
+   }
+   for (YAMLnode *sibling = parent->children; sibling != node; sibling = sibling->next)
+   {
+      if (sibling->source_indent >= 0 && node->source_indent >= 0 &&
+          sibling->source_indent != node->source_indent)
+      {
+         YAML_NODE_SET_INVALID_INDENT(node);
+      }
+      if (strcmp(node->key, "-") != 0 && strcmp(sibling->key, node->key) == 0)
+      {
+         fprintf(stderr, "WARNING: duplicate YAML key '%s'; last value wins\n",
+                 node->key);
+         break;
+      }
+   }
+}
+
+static void
 YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
                         YAMLtree **tree_ptr)
 {
@@ -1758,7 +1795,9 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
          return;
       }
 
+      node->source_indent = token->indent;
       hypredrv_YAMLnodeAppend(node, &parent);
+      YAMLnodeCheckSourceMapping(node);
 
       /* "- key: value" inline mapping under sequence item */
       /* GCOVR_EXCL_BR_START */
@@ -1772,6 +1811,7 @@ YAMLtreeBuildFromTokens(int base_indent, const YAMLtokenArray *tokens,
             *tree_ptr = tree;
             return;
          }
+         inline_node->source_indent = token->indent + 2;
          hypredrv_YAMLnodeAddChild(node, inline_node);
          parent          = inline_node;
          validation_node = inline_node;
@@ -2004,8 +2044,7 @@ YAMLnodeCollectIncludePaths(const YAMLnode *child, char ***paths_out, int *n_pat
       if (!paths || !(paths[0] = strdup(child->val))) /* GCOVR_EXCL_BR_STOP */
       {
          free(paths);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate memory for include paths");
+         hypredrv_AllocationFailure("Failed to allocate memory for include paths");
          return 0;
       }
       n_paths = 1;
@@ -2029,11 +2068,9 @@ YAMLnodeCollectIncludePaths(const YAMLnode *child, char ***paths_out, int *n_pat
             {
                free(paths[j]); /* GCOVR_EXCL_LINE */
             }
-            free(paths);                             /* GCOVR_EXCL_LINE */
-            hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-            hypredrv_ErrorMsgAdd(
-               "Failed to allocate memory for include paths"); /* GCOVR_EXCL_LINE */
-            return 0;                                          /* GCOVR_EXCL_LINE */
+            free(paths); /* GCOVR_EXCL_LINE */
+            hypredrv_AllocationFailure("Failed to allocate memory for include paths");
+            return 0; /* GCOVR_EXCL_LINE */
          }
          paths            = new_paths;
          paths[n_paths++] = strdup(inc_item->val);
@@ -2657,25 +2694,25 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
 {
    YAMLnode *node = NULL;
 
-   node = (YAMLnode *)malloc(sizeof(YAMLnode));
+   node = (YAMLnode *)hypredrv_Malloc(sizeof(YAMLnode), "node");
    if (!node)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return NULL;
    }
-   node->level      = level;
-   node->key        = hypredrv_StrTrim(strdup(key ? key : ""));
-   node->mapped_val = NULL;
-   node->avail_vals = STR_INT_MAP_ARRAY_VOID();
-   node->avail_keys = STR_ARRAY_VOID();
-   node->valid      = YAML_NODE_UNKNOWN;
-   node->parent     = NULL;
-   node->children   = NULL;
-   node->next       = NULL;
+   node->level         = level;
+   node->source_indent = -1;
+   node->key           = hypredrv_StrTrim(strdup(key ? key : ""));
+   node->mapped_val    = NULL;
+   node->avail_vals    = STR_INT_MAP_ARRAY_VOID();
+   node->avail_keys    = STR_ARRAY_VOID();
+   node->valid         = YAML_NODE_UNKNOWN;
+   node->parent        = NULL;
+   node->children      = NULL;
+   node->next          = NULL;
 
-   /* If the key contains "name", "node->val" will be the same as "val".
+   /* Path and name values retain their case.
       Otherwise, "node->val" will be set as "val" with all lowercase letters */
-   if (key && strstr(key, "name"))
+   if (key && (strstr(key, "name") || strstr(key, "_dir")))
    {
       node->val = hypredrv_StrTrim(strdup(val ? val : ""));
    }
@@ -2700,7 +2737,7 @@ hypredrv_YAMLnodeCreate(const char *key, const char *val, int level)
    /* Propagate allocation failure of the key/val strings. */
    if (!node->key || !node->val)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       free(node->key);
       free(node->val);
       free(node);

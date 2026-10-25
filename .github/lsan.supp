@@ -53,8 +53,3 @@ leak:__cxa_finalize
 # destroys the Pi matrix, not the orphaned col_starts buffer). graddiv destroys
 # its solver/preconditioner correctly, so this is purely a hypre defect.
 leak:hypre_ADSComputePi
-
-# hypre-internal MGR leak (fixed upstream after v3.2.0, hypre PR #1610):
-# hypre_MGRColLumpedRestrict() never frees its temporary block column-sum
-# matrix B_CF for column-lumped restriction (restriction_type: columped-partial).
-leak:hypre_MGRColLumpedRestrict

@@ -19,6 +19,7 @@
 #include "internal/ilu.h"
 #include "internal/mgr.h"
 #include "internal/precon_reuse.h"
+#include "internal/slots.h"
 #include "internal/utils.h"
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 #include "internal/schwarz.h"
@@ -51,10 +52,11 @@ typedef enum precon_type_enum
 
 typedef struct PreconOperators_struct
 {
-   HYPRE_IJMatrix        G;            /* discrete gradient (AMS, ADS) */
-   HYPRE_IJMatrix        C;            /* discrete curl (ADS) */
-   HYPRE_IJVector        coord[3];     /* vertex coordinate vectors (AMS, ADS) */
-   const HYPRE_IJMatrix *coarse_schur; /* per-level app-provided MGR coarse operators */
+   HYPRE_IJMatrix G;        /* discrete gradient (AMS, ADS) */
+   HYPRE_IJMatrix C;        /* discrete curl (ADS) */
+   HYPRE_IJVector coord[3]; /* vertex coordinate vectors (AMS, ADS) */
+   const hypredrv_MatrixSlot
+      *coarse_schur; /* per-level app-provided MGR coarse operators */
 } PreconOperators;
 
 /*--------------------------------------------------------------------------

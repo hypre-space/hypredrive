@@ -185,14 +185,10 @@ static void
 IJVectorSourceBuffersCreate(uint64_t nrows_max, HYPRE_MemoryLocation memory_location,
                             IJVectorSourceBuffers *buffers)
 {
-   buffers->indices = (HYPRE_BigInt *)malloc((size_t)nrows_max * sizeof(HYPRE_BigInt));
-   buffers->wide    = (HYPRE_Complex *)malloc((size_t)nrows_max * sizeof(HYPRE_Complex));
-   /* GCOVR_EXCL_BR_START */
-   if (!buffers->indices || !buffers->wide) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                   /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate vector buffers"); /* GCOVR_EXCL_LINE */
-   }
+   buffers->indices = (HYPRE_BigInt *)hypredrv_Calloc(
+      (size_t)nrows_max, sizeof(HYPRE_BigInt), "vector indices");
+   buffers->wide = (HYPRE_Complex *)hypredrv_Calloc(
+      (size_t)nrows_max, sizeof(HYPRE_Complex), "vector values");
 #ifdef HYPRE_USING_GPU
    if (memory_location == HYPRE_MEMORY_DEVICE)
    {

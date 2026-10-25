@@ -486,8 +486,8 @@ hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
       }
       if (!indices || (values == NULL && !zeros))
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate near-null-space index/value buffers");
+         hypredrv_AllocationFailure(
+            "Failed to allocate near-null-space index/value buffers");
          free(indices);
          free(zeros);
          return;
@@ -554,8 +554,7 @@ hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_ent
    /* GCOVR_EXCL_START */
    if (num_entries > 0 && !modes)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate null space modes buffer");
+      hypredrv_AllocationFailure("Failed to allocate null space modes buffer");
       return;
    }
    /* GCOVR_EXCL_STOP */
@@ -813,8 +812,7 @@ hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector vec_ns, int num_ns,
    MPI_Allreduce(MPI_IN_PLACE, &alloc_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!alloc_ok)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate null-space projection buffers");
+      hypredrv_AllocationFailure("Failed to allocate null-space projection buffers");
       free(xbuf);
       free(zbuf);
       free(indices);
@@ -1017,9 +1015,8 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    if (args->dirname[0] != '\0' && filename[0] != '\0')
    {
       int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
-      len        = snprintf(resolved, resolved_size, "%.*s_%0*d/%.*s",
-                            (int)strlen(args->dirname), args->dirname, (int)args->digits_suffix,
-                            suffix, (int)strlen(filename), filename);
+      len        = snprintf(resolved, resolved_size, "%s_%0*d/%s", args->dirname,
+                            (int)args->digits_suffix, suffix, filename);
    }
    else if (filename[0] != '\0')
    {
@@ -1028,8 +1025,8 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    else if (basename[0] != '\0')
    {
       int suffix = hypredrv_LinearSystemGetSuffix(args, ls_id);
-      len        = snprintf(resolved, resolved_size, "%.*s_%0*d", (int)strlen(basename),
-                            basename, (int)args->digits_suffix, suffix);
+      len        = snprintf(resolved, resolved_size, "%s_%0*d", basename,
+                            (int)args->digits_suffix, suffix);
    }
    else
    {
@@ -1523,6 +1520,7 @@ LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
       {                                                                           \
          char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                   \
          HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                          \
+         status = ERROR_HYPRE_INTERNAL;                                           \
          hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                             \
          hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, hypre_err_msg); \
          goto fail;                                                               \
@@ -1558,6 +1556,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         const HYPRE_BigInt *col_indices,
                                         const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr)
 {
+   uint32_t      status        = ERROR_NONE;
    HYPRE_Int    *ncols_per_row = NULL;
    HYPRE_BigInt *row_ids       = NULL;
    HYPRE_Int    *diag_sizes    = NULL;
@@ -1569,7 +1568,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    if (!LinearSystemCSRValidateArgs(row_start, row_end, indptr, col_indices, data,
                                     mat_ptr, &nrows, &nnz))
    {
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    /* Destroy any pre-existing matrix at *mat_ptr (caller pattern, like ReadMatrix) */
@@ -1595,7 +1594,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
                         HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
       LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
-      return hypredrv_ErrorCodeGet();
+      return status;
    }
 
    /* HYPRE_IJMatrixSetValues requires per-row counts and row ids on every call.
@@ -1617,6 +1616,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       HYPRE_BigInt row_nnz = indptr[i + 1] - indptr[i];
       if (row_nnz < 0)
       {
+         status = ERROR_INVALID_VAL;
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr is not monotonically "
                               "non-decreasing at row %lld",
@@ -1625,6 +1625,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       }
       if ((HYPRE_BigInt)((HYPRE_Int)row_nnz) != row_nnz)
       {
+         status = ERROR_INVALID_VAL;
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd(
             "BuildMatrixFromCSR: row %lld nonzero count (%lld) exceeds HYPRE_Int range",
@@ -1654,6 +1655,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
       HYPRE_BigInt col       = col_indices[indptr[0] + (HYPRE_BigInt)k];
       if (col < 0)
       {
+         status = ERROR_INVALID_VAL;
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd(
             "BuildMatrixFromCSR: col_indices[%lld] (%lld) must be nonnegative", col_index,
@@ -1712,7 +1714,7 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
    hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
    hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
-   return hypredrv_ErrorCodeGet();
+   return status;
 
 fail:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
@@ -1724,7 +1726,7 @@ fail:
       HYPRE_IJMatrixDestroy(*mat_ptr);
       *mat_ptr = NULL;
    }
-   return hypredrv_ErrorCodeGet();
+   return status;
 }
 
 /*-----------------------------------------------------------------------------
@@ -1737,18 +1739,19 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
+   uint32_t status = ERROR_NONE;
    if (!rhs_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("BuildRHSFromArray: rhs_ptr must be non-NULL");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
    if (row_end < row_start)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("BuildRHSFromArray: row_end (%lld) < row_start (%lld)",
                            (long long)row_end, (long long)row_start);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    HYPRE_BigInt nrows_big = row_end - row_start + 1;
@@ -1758,7 +1761,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
       hypredrv_ErrorMsgAdd(
          "BuildRHSFromArray: local row count (%lld) exceeds HYPRE_Int range",
          (long long)nrows_big);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    HYPRE_Int nrows = (HYPRE_Int)nrows_big;
@@ -1766,7 +1769,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("BuildRHSFromArray: values must be non-NULL");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    if (*rhs_ptr)
@@ -1789,7 +1792,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
    }
    LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(*rhs_ptr));
 
-   return hypredrv_ErrorCodeGet();
+   return status;
 
 fail:
    if (*rhs_ptr)
@@ -1797,7 +1800,7 @@ fail:
       HYPRE_IJVectorDestroy(*rhs_ptr);
       *rhs_ptr = NULL;
    }
-   return hypredrv_ErrorCodeGet();
+   return status;
 }
 
 #undef LINSYS_HYPRE_CALL
@@ -2542,81 +2545,6 @@ hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_p
 
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
    HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset end");
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemSetVectorTags
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemSetVectorTags(HYPRE_IJVector vec, IntArray *dofmap)
-{
-#if HYPRE_CHECK_MIN_VERSION(30000, 0)
-   /* A rank may legitimately own no rows, in which case its local dofmap is empty.
-    * Such a rank must still tag its vector: hypre reductions over tagged vectors
-    * (e.g. hypre_ParVectorInnerProdTagged) exchange num_tags + 1 values, so leaving
-    * one rank untagged makes it enter the collective with a different length than
-    * its peers, which deadlocks the solve and corrupts unrelated reductions.
-    * num_tags is derived below from the globally reduced label set, which every
-    * rank holds, so it is consistent even where the local dofmap is empty. */
-   /* GCOVR_EXCL_BR_START */
-   if (!vec || !dofmap || !dofmap->data) /* GCOVR_EXCL_BR_STOP */
-   {
-      return;
-   }
-
-   HYPRE_Int num_tags = 1;
-   /* GCOVR_EXCL_BR_START */
-   if (dofmap->g_unique_data && dofmap->g_unique_size > 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      int max_tag = dofmap->g_unique_data[dofmap->g_unique_size - 1];
-      /* GCOVR_EXCL_BR_START */
-      if (max_tag >= 0) /* GCOVR_EXCL_BR_STOP */
-      {
-         num_tags = (HYPRE_Int)max_tag + 1;
-      }
-   }
-   /* GCOVR_EXCL_START */
-   else if (dofmap->unique_data && dofmap->unique_size > 0)
-   {
-      int max_tag = dofmap->unique_data[dofmap->unique_size - 1];
-      if (max_tag >= 0)
-      {
-         num_tags = (HYPRE_Int)max_tag + 1;
-      }
-   }
-   /* GCOVR_EXCL_STOP */
-
-   /* Convert the application's fixed-width int labels to HYPRE_Int. This is
-    * required for bigint builds, where HYPRE_Int is 64-bit. Mode 2 transfers
-    * the allocation to the vector and also lets repeated tagging replace the
-    * vector's previous owned array safely. */
-   /* GCOVR_EXCL_START */
-   HYPRE_MemoryLocation vec_memloc = HYPRE_MEMORY_HOST;
-#if defined(HYPRE_USING_GPU) && HYPREDRV_HAVE_MEMORY_APIS
-   vec_memloc = hypre_IJVectorMemoryLocation((hypre_IJVector *)vec);
-#endif
-   HYPRE_Int *host_tags = hypre_TAlloc(HYPRE_Int, dofmap->size, HYPRE_MEMORY_HOST);
-   for (size_t i = 0; i < dofmap->size; i++)
-   {
-      host_tags[i] = (HYPRE_Int)dofmap->data[i];
-   }
-
-   HYPRE_Int *tags = host_tags;
-   if (hypre_GetActualMemLocation(vec_memloc) !=
-       hypre_GetActualMemLocation(HYPRE_MEMORY_HOST))
-   {
-      tags = hypre_TAlloc(HYPRE_Int, dofmap->size, vec_memloc);
-      hypre_TMemcpy(tags, host_tags, HYPRE_Int, dofmap->size, vec_memloc,
-                    HYPRE_MEMORY_HOST);
-      hypre_TFree(host_tags, HYPRE_MEMORY_HOST);
-   }
-   HYPRE_IJVectorSetTags(vec, 2, num_tags, tags);
-   /* GCOVR_EXCL_STOP */
-#else
-   (void)vec;
-   (void)dofmap;
-#endif
 }
 
 /*-----------------------------------------------------------------------------
@@ -3714,7 +3642,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid output pointer for timestep schedule");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    if (timestep_ids && *timestep_ids) /* GCOVR_EXCL_BR_LINE */
@@ -3731,7 +3659,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Missing timestep schedule filename");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    FILE *fp = fopen(filename, "r");
@@ -3739,7 +3667,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAdd("Could not open timestep file: '%s'", filename);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_FILE_NOT_FOUND;
    }
 
    int total = 0;
@@ -3748,7 +3676,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
       fclose(fp);
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid timestep file header in '%s'", filename);
-      return hypredrv_ErrorCodeGet();
+      return ERROR_INVALID_VAL;
    }
 
    IntArray *ids = NULL;
@@ -3758,9 +3686,8 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
       if (!ids) /* GCOVR_EXCL_BR_LINE */
       {
          fclose(fp);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to allocate timestep ids array");
-         return hypredrv_ErrorCodeGet();
+         hypredrv_AllocationFailure("Failed to allocate timestep ids array");
+         return ERROR_ALLOCATION;
       }
    }
 
@@ -3769,9 +3696,8 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
    {
       fclose(fp);
       hypredrv_IntArrayDestroy(&ids);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to allocate timestep starts array");
-      return hypredrv_ErrorCodeGet();
+      hypredrv_AllocationFailure("Failed to allocate timestep starts array");
+      return ERROR_ALLOCATION;
    }
 
    for (int i = 0; i < total; i++)
@@ -3787,7 +3713,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Invalid timestep entry in '%s' at line %d", filename,
                               i + 2);
-         return hypredrv_ErrorCodeGet();
+         return ERROR_INVALID_VAL;
       }
 
       if (ids) /* GCOVR_EXCL_BR_LINE */
@@ -3803,7 +3729,7 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
       *timestep_ids = ids;
    }
    *timestep_starts = starts;
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 /*-----------------------------------------------------------------------------
@@ -3821,7 +3747,7 @@ hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_s
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd(
          "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to query MPI communicator");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    const long long local_range[2] = {(long long)row_start, (long long)row_end};
@@ -3832,7 +3758,7 @@ hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_s
       hypredrv_ErrorMsgAdd(
          "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to allocate debug "
          "partition scratch space");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    int mpi_ierr =
@@ -3844,7 +3770,7 @@ hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_s
       hypredrv_ErrorMsgAdd(
          "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to gather debug row "
          "partition");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_UNKNOWN;
    }
 
    long long expected_start = 0;
@@ -3861,7 +3787,7 @@ hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_s
             "does not continue the global partition at %lld",
             rank, start, end, expected_start);
          hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
-         return hypredrv_ErrorCodeGet();
+         return ERROR_INVALID_VAL;
       }
       expected_start = end + 1;
    }
@@ -3872,5 +3798,5 @@ hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_s
    (void)row_start;
    (void)row_end;
 #endif
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }

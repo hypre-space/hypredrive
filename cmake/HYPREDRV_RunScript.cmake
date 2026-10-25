@@ -6,7 +6,8 @@
 # Wrapper to run hypredrive or example drivers with optional dataset checks.
 #
 # Inputs (passed via -D):
-#   LAUNCH_DIR       : repo root to use as working directory
+#   LAUNCH_DIR       : input root for configs and datasets
+#   WORK_DIR         : optional output directory (defaults to a private build-tree path)
 #   TARGET_BIN       : path to executable
 #   MPIEXEC          : MPI launcher executable
 #   MPI_NUMPROCS     : number of MPI processes
@@ -29,6 +30,25 @@ if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "" AND
     NOT DEFINED CONFIG_FILE OR CONFIG_FILE STREQUAL ""))
   message(FATAL_ERROR
     "HYPREDRV_RunScript.cmake: PACKER_BIN requires SEQ_OUTPUT and CONFIG_FILE")
+endif()
+
+# Keep fixtures and driver output isolated between tests and build configurations.
+# LAUNCH_DIR still names the input tree; it is never the default scratch area.
+if(NOT DEFINED WORK_DIR OR WORK_DIR STREQUAL "")
+  get_filename_component(_target_dir "${TARGET_BIN}" DIRECTORY)
+  string(SHA256 _work_key "${LAUNCH_DIR}|${TARGET_BIN}|${MPI_NUMPROCS}|${CONFIG_FILE}|${CONFIG_FILES}|${TARGET_ARGS}|${PACKER_BIN}|${SEQ_OUTPUT}|${REQUIRE_CONTAINS}|${REQUIRE_PATHS}")
+  string(SUBSTRING "${_work_key}" 0 16 _work_key)
+  set(WORK_DIR "${_target_dir}/test-work/${_work_key}")
+endif()
+file(MAKE_DIRECTORY "${WORK_DIR}")
+# Repository examples use data/<dataset> paths relative to the input root.
+# Link that read-only input tree, with a copy fallback on platforms that do
+# not allow directory symlinks.
+if(IS_DIRECTORY "${LAUNCH_DIR}/data" AND NOT EXISTS "${WORK_DIR}/data")
+  file(CREATE_LINK "${LAUNCH_DIR}/data" "${WORK_DIR}/data" SYMBOLIC RESULT _link_result)
+  if(NOT _link_result STREQUAL "0")
+    file(COPY "${LAUNCH_DIR}/data" DESTINATION "${WORK_DIR}")
+  endif()
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_TestLauncher.cmake")
@@ -93,7 +113,7 @@ if(DEFINED PACKER_BIN AND NOT PACKER_BIN STREQUAL "")
             --digits-suffix "5"
             --algo "none"
             --output "${SEQ_OUTPUT}"
-    WORKING_DIRECTORY "${LAUNCH_DIR}"
+    WORKING_DIRECTORY "${WORK_DIR}"
     RESULT_VARIABLE _pack_ret
     OUTPUT_VARIABLE _pack_out
     ERROR_VARIABLE _pack_err
@@ -118,6 +138,27 @@ if(DEFINED TARGET_ARGS AND NOT TARGET_ARGS STREQUAL "")
   endforeach()
 endif()
 list(APPEND _target_args ${_config_files})
+# Dataset regressions pass a YAML filename as a positional argument. Resolve
+# that input before entering the private output directory.
+set(_resolved_target_args "")
+foreach(_arg IN LISTS _target_args)
+  if(NOT IS_ABSOLUTE "${_arg}" AND _arg MATCHES "\\.ya?ml$" AND EXISTS "${LAUNCH_DIR}/${_arg}")
+    list(APPEND _resolved_target_args "${LAUNCH_DIR}/${_arg}")
+  else()
+    list(APPEND _resolved_target_args "${_arg}")
+  endif()
+endforeach()
+set(_target_args ${_resolved_target_args})
+# Dataset inputs keep their part files beside input.yml. Copy those small
+# fixtures so relative IJ filenames work without using the dataset as scratch.
+foreach(_arg IN LISTS _target_args)
+  get_filename_component(_input_name "${_arg}" NAME)
+  get_filename_component(_input_dir "${_arg}" DIRECTORY)
+  if(_input_name MATCHES "^input\\.ya?ml$" AND _input_dir STREQUAL LAUNCH_DIR)
+    file(GLOB _input_files LIST_DIRECTORIES FALSE "${LAUNCH_DIR}/*")
+    file(COPY ${_input_files} DESTINATION "${WORK_DIR}")
+  endif()
+endforeach()
 
 # For debugging purposes only
 message(STATUS "[test] TARGET_BIN=${TARGET_BIN}")
@@ -138,7 +179,7 @@ if(_capture_output)
   if(_launcher_command)
     execute_process(
       COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args} ${_launcher_postflags}
-      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      WORKING_DIRECTORY "${WORK_DIR}"
       RESULT_VARIABLE _ret
       OUTPUT_VARIABLE _out
       ERROR_VARIABLE _err
@@ -146,7 +187,7 @@ if(_capture_output)
   else()
     execute_process(
       COMMAND "${TARGET_BIN}" ${_target_args}
-      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      WORKING_DIRECTORY "${WORK_DIR}"
       RESULT_VARIABLE _ret
       OUTPUT_VARIABLE _out
       ERROR_VARIABLE _err
@@ -185,13 +226,13 @@ else()
   if(_launcher_command)
     execute_process(
       COMMAND ${_launcher_command} "${TARGET_BIN}" ${_target_args} ${_launcher_postflags}
-      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      WORKING_DIRECTORY "${WORK_DIR}"
       RESULT_VARIABLE _ret
     )
   else()
     execute_process(
       COMMAND "${TARGET_BIN}" ${_target_args}
-      WORKING_DIRECTORY "${LAUNCH_DIR}"
+      WORKING_DIRECTORY "${WORK_DIR}"
       RESULT_VARIABLE _ret
     )
   endif()
@@ -208,7 +249,7 @@ if(DEFINED REQUIRE_PATHS AND NOT REQUIRE_PATHS STREQUAL "")
       if(IS_ABSOLUTE "${_req_path}")
         set(_resolved_req_path "${_req_path}")
       else()
-        set(_resolved_req_path "${LAUNCH_DIR}/${_req_path}")
+        set(_resolved_req_path "${WORK_DIR}/${_req_path}")
       endif()
       if(NOT EXISTS "${_resolved_req_path}")
         message(FATAL_ERROR "Missing required path '${_req_path}' (resolved to '${_resolved_req_path}')")

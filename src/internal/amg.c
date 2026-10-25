@@ -573,8 +573,7 @@ AMGCreateRBMsFromHost(AMG_args *args, MPI_Comm comm, HYPRE_BigInt global_size,
             args->rbms[mode] = NULL;
          }
          hypredrv_AMGDestroyRBMs(args);
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-         hypredrv_ErrorMsgAdd("Failed to create rigid-body-mode vectors");
+         hypredrv_AllocationFailure("Failed to create rigid-body-mode vectors");
          return 0;
       }
 
@@ -638,8 +637,7 @@ hypredrv_AMGSetRBMs(AMG_args *args, HYPRE_IJVector vec_nn)
    MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!global_ok)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd("Failed to access near-null-space components on host");
+      hypredrv_AllocationFailure("Failed to access near-null-space components on host");
       hypre_TFree(host_values, HYPRE_MEMORY_HOST);
       return;
    }
@@ -845,8 +843,7 @@ hypredrv_AMGSetProjectedRBMs(AMG_args *args, HYPRE_IJVector vec_nn,
    MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
    if (!global_ok || (num_selected_dofs > 0 && !selected_labels))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
-      hypredrv_ErrorMsgAdd(
+      hypredrv_AllocationFailure(
          "Failed to allocate projected near-null-space buffers (%d entries)",
          (int)num_entries);
       free(selected);
@@ -1125,11 +1122,9 @@ hypredrv_AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGCreate(&precon);
    HYPRE_BoomerAMGSetInterpType(precon, args->interpolation.prolongation_type);
    HYPRE_BoomerAMGSetRestriction(precon, args->interpolation.restriction_type);
-#if HYPRE_CHECK_MIN_VERSION(21800, 0)
    /* Strength and filtering of the approximate ideal restriction operator */
    HYPRE_BoomerAMGSetStrongThresholdR(precon, args->interpolation.restrict_strong_th);
    HYPRE_BoomerAMGSetFilterThresholdR(precon, args->interpolation.restrict_filter_th);
-#endif
    HYPRE_BoomerAMGSetCoarsenType(precon, args->coarsening.type);
    HYPRE_BoomerAMGSetSabs(precon, args->coarsening.sabs);
    HYPRE_BoomerAMGSetTol(precon, args->tolerance);
@@ -1203,9 +1198,7 @@ hypredrv_AMGCreate(AMG_args *args, HYPRE_Solver *precon_ptr)
    HYPRE_BoomerAMGSetNumPaths(precon, args->aggressive.num_paths);
    HYPRE_BoomerAMGSetMaxIter(precon, args->max_iter);
    HYPRE_BoomerAMGSetRAP2(precon, args->coarsening.rap2);
-#if HYPRE_CHECK_MIN_VERSION(21800, 0)
    HYPRE_BoomerAMGSetModuleRAP2(precon, args->coarsening.mod_rap2);
-#endif
    HYPRE_BoomerAMGSetKeepTranspose(precon, args->coarsening.keep_transpose);
 
    AMGApplySweepCounts(precon, args);

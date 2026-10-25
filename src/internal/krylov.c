@@ -276,13 +276,9 @@ NestedKrylovCreateSetupVector(HYPRE_Matrix A, HYPRE_ParVector *vector_ptr)
       partitioning[0] = row_start;
       partitioning[1] = row_end + 1;
       rc |= HYPRE_ParVectorCreate(comm, global_rows, partitioning, vector_ptr);
-#if HYPRE_CHECK_MIN_VERSION(22000, 0)
       rc |= hypre_ParVectorInitialize_v2(
          (hypre_ParVector *)*vector_ptr,
          hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)A));
-#else
-      rc |= HYPRE_ParVectorInitialize(*vector_ptr);
-#endif
    }
 
    if (rc && *vector_ptr)

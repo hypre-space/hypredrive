@@ -5083,14 +5083,14 @@ test_PreconCreate_mgr_user_coarse_matrix_validation_and_compaction(void)
    ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 1, 0, 1, &unassembled), 0);
    ASSERT_EQ(HYPRE_IJMatrixSetObjectType(unassembled, HYPRE_PARCSR), 0);
 
-   HYPRE_IJMatrix slots[MAX_MGR_LEVELS - 1] = {0};
+   hypredrv_MatrixSlot slots[MAX_MGR_LEVELS - 1] = {0};
    PreconOperators ops                       = {0};
    ops.coarse_schur                          = slots;
    precon_args args;
    HYPRE_Precon precon = NULL;
 
    precon_test_configure_compacted_coarse_mgr(&args, 6);
-   slots[1] = assembled;
+   slots[1].handle = assembled;
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconCreate(MPI_COMM_WORLD, PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, &ops);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
@@ -5098,7 +5098,7 @@ test_PreconCreate_mgr_user_coarse_matrix_validation_and_compaction(void)
    hypredrv_PreconDestroy(PRECON_MGR, &args, &precon, NULL, 0);
 
    precon_test_configure_compacted_coarse_mgr(&args, 6);
-   slots[1] = unassembled;
+   slots[1].handle = unassembled;
    hypredrv_ErrorCodeResetAll();
    hypredrv_PreconCreate(MPI_COMM_WORLD, PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0, &ops);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_PRECON);

@@ -14,7 +14,7 @@ hypredrive_lsseq_LDADD = libHYPREDRV_internal.la
 noinst_LTLIBRARIES = libHYPREDRV_internal.la
 lib_LTLIBRARIES = libHYPREDRV.la
 libHYPREDRV_internal_la_SOURCES = src/internal/error.c src/internal/eigspec.c src/internal/info.c src/internal/stats.c src/internal/utils.c src/internal/containers.c src/internal/yaml.c\
-                         src/internal/field.c src/internal/vector.c src/internal/matrix.c src/internal/linsys.c src/internal/linsys_print.c src/internal/cheby.c src/internal/amg.c\
+                         src/internal/field.c src/internal/vector_tags.c src/internal/vector.c src/internal/matrix.c src/internal/linsys.c src/internal/linsys_print.c src/internal/cheby.c src/internal/amg.c\
                          src/internal/ams.c src/internal/ads.c src/internal/fsai.c src/internal/ilu.c src/internal/schwarz.c src/internal/mgr_config.c src/internal/mgr_wrappers.c src/internal/mgr_reuse.c src/internal/mgr_construct.c src/internal/precon.c \
 			 src/internal/precon_reuse.c src/internal/presets.c src/internal/krylov.c src/internal/pcg.c src/internal/gmres.c src/internal/fgmres.c \
 			 src/internal/bicgstab.c src/internal/solver.c src/internal/args.c src/internal/comp.c src/internal/lsseq.c src/internal/scaling.c src/internal/runtime.c \
@@ -48,9 +48,9 @@ INTERNAL_HEADER_FILES = include/internal/amg.h include/internal/args.h \
 			include/internal/pcg.h include/internal/precon.h \
 			include/internal/precon_reuse.h include/internal/presets.h \
 			include/internal/scaling.h include/internal/schwarz.h \
-			include/internal/solver.h include/internal/stats.h \
+			include/internal/slots.h include/internal/solver.h include/internal/stats.h \
 			include/internal/utils.h include/internal/yaml.h
-noinst_HEADERS = src/internal/object.h src/internal/runtime.h src/internal/logging.h src/internal/execution.h src/internal/diagnostics.h $(INTERNAL_HEADER_FILES)
+noinst_HEADERS = src/internal/vector_tags.h src/internal/object.h src/internal/runtime.h src/internal/logging.h src/internal/execution.h src/internal/diagnostics.h $(INTERNAL_HEADER_FILES)
 ACLOCAL_AMFLAGS = -I m4
 
 EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples utils

@@ -14,7 +14,7 @@
  * hypredrv_IntArrayWriteAsciiByRank
  *-----------------------------------------------------------------------------*/
 
-void
+uint32_t
 hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char *filename)
 {
    int   myid = 0, nprocs = 0;
@@ -23,7 +23,7 @@ hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char 
 
    /* An empty array (size 0) is valid and still produces a header-only file; only
     * a non-empty array with no backing storage is malformed. */
-   if (!ia || (ia->size > 0 && !ia->data)) return;
+   if (!ia || (ia->size > 0 && !ia->data)) return ERROR_NONE;
 
    MPI_Comm_rank(comm, &myid);
    MPI_Comm_size(comm, &nprocs);
@@ -34,7 +34,7 @@ hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char 
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAddInvalidFilename(fname);
-      return;
+      return ERROR_FILE_NOT_FOUND;
    }
 
    fprintf(fp, "%zu\n", ia->size);
@@ -42,7 +42,15 @@ hypredrv_IntArrayWriteAsciiByRank(MPI_Comm comm, const IntArray *ia, const char 
    {
       fprintf(fp, "%d\n", ia->data[i]);
    }
-   fclose(fp);
+   int ok = !ferror(fp);
+   ok     = fclose(fp) == 0 && ok;
+   if (!ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Could not write dofmap file: %s", fname);
+      return ERROR_FILE_UNEXPECTED_ENTRY;
+   }
+   return ERROR_NONE;
 }
 
 /*--------------------------------------------------------------------------
@@ -56,22 +64,20 @@ hypredrv_IntArrayCreate(size_t size)
 
    if (size > SIZE_MAX / sizeof(int))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       return NULL;
    }
-   int_array = malloc(sizeof(IntArray));
+   int_array = hypredrv_Malloc(sizeof(IntArray), "IntArray");
    if (!int_array)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return NULL;
    }
    /* Allocate at least one element so data is never NULL for a valid array; this
     * preserves the historical invariant that consumers rely on (an empty dofmap
     * still has a non-NULL data pointer). */
-   int_array->data = malloc((size > 0 ? size : 1) * sizeof(int));
+   int_array->data = hypredrv_Calloc(size, sizeof(int), "IntArray values");
    if (!int_array->data)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       free(int_array);
       return NULL;
    }
@@ -129,7 +135,7 @@ ArrayTokensCreate(const char *string, size_t *count)
    char *buffer = strdup(string);
    if (!buffer)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
    }
    return buffer;
 }
@@ -182,19 +188,17 @@ hypredrv_DoubleArrayCreate(size_t size)
 
    if (size > SIZE_MAX / sizeof(double))
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       return NULL;
    }
-   double_array = malloc(sizeof(DoubleArray));
+   double_array = hypredrv_Malloc(sizeof(DoubleArray), "DoubleArray");
    if (!double_array)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       return NULL;
    }
-   double_array->data = malloc((size > 0 ? size : 1) * sizeof(double));
+   double_array->data = hypredrv_Calloc(size, sizeof(double), "DoubleArray values");
    if (!double_array->data)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
       free(double_array);
       return NULL;
    }
@@ -976,7 +980,7 @@ hypredrv_DofLabelMapAdd(DofLabelMap *map, const char *name, int value)
          (DofLabelEntry *)realloc(map->data, new_capacity * sizeof(DofLabelEntry));
       if (!new_data)
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_AllocationFailure("Memory allocation failed");
          return;
       }
       map->data     = new_data;

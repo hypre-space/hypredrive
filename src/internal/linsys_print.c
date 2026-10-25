@@ -194,9 +194,8 @@ PrintSystemRangeArrayAppend(IntRangeArray *ranges, int begin, int end)
    /* GCOVR_EXCL_BR_START */
    if (!new_data) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);               /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate range list"); /* GCOVR_EXCL_LINE */
-      return 0;                                              /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate range list");
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    ranges->data                     = new_data;
@@ -314,9 +313,8 @@ PrintSystemParseIntArrayNode(const YAMLnode *node, IntArray **out)
       /* GCOVR_EXCL_BR_START */
       if (!ids) /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);            /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd("Failed to allocate id list"); /* GCOVR_EXCL_LINE */
-         return 0;                                           /* GCOVR_EXCL_LINE */
+         hypredrv_AllocationFailure("Failed to allocate id list");
+         return 0; /* GCOVR_EXCL_LINE */
       }
 
       size_t idx = 0;
@@ -514,10 +512,8 @@ PrintSystemParseArtifactsNode(const YAMLnode *node, int *artifacts_out)
       /* GCOVR_EXCL_BR_START */
       if (!buffer) /* GCOVR_EXCL_BR_STOP */
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION); /* GCOVR_EXCL_LINE */
-         hypredrv_ErrorMsgAdd(
-            "Failed to allocate artifact parser buffer"); /* GCOVR_EXCL_LINE */
-         return 0;                                        /* GCOVR_EXCL_LINE */
+         hypredrv_AllocationFailure("Failed to allocate artifact parser buffer");
+         return 0; /* GCOVR_EXCL_LINE */
       }
       char       *saveptr = NULL;
       const char *token   = strtok_r(buffer, "[], ", &saveptr);
@@ -1080,9 +1076,8 @@ PrintSystemApplySelectors(PrintSystem_args *args, const YAMLnode *child,
    /* GCOVR_EXCL_BR_START */
    if (!selectors) /* GCOVR_EXCL_BR_STOP */
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);                  /* GCOVR_EXCL_LINE */
-      hypredrv_ErrorMsgAdd("Failed to allocate selector list"); /* GCOVR_EXCL_LINE */
-      return 0;                                                 /* GCOVR_EXCL_LINE */
+      hypredrv_AllocationFailure("Failed to allocate selector list");
+      return 0; /* GCOVR_EXCL_LINE */
    }
 
    if (!PrintSystemParseSelectorList(child, selectors))
@@ -2604,7 +2599,7 @@ typedef struct
 /* Writes one artifact when it is both selected and available, logging why it
  * was skipped otherwise. Returns zero only when the output path could not be
  * built, which is a hard failure for the whole dump. */
-static int
+static uint32_t
 PrintSystemWriteArtifact(MPI_Comm comm, const PrintSystemArtifact *artifact,
                          int artifacts, const char *dump_dir, const char *object_name,
                          int ls_id_for_log)
@@ -2613,7 +2608,7 @@ PrintSystemWriteArtifact(MPI_Comm comm, const PrintSystemArtifact *artifact,
 
    if ((artifacts & artifact->bit) == 0)
    {
-      return 1;
+      return ERROR_NONE;
    }
 
    if (!artifact->matrix && !artifact->vector && !artifact->dofmap)
@@ -2623,7 +2618,7 @@ PrintSystemWriteArtifact(MPI_Comm comm, const PrintSystemArtifact *artifact,
                          /* GCOVR_EXCL_BR_STOP */
                          "print_system skip %s: %s", artifact->label,
                          artifact->null_note);
-      return 1;
+      return ERROR_NONE;
    }
 
    /* GCOVR_EXCL_BR_START */
@@ -2633,26 +2628,33 @@ PrintSystemWriteArtifact(MPI_Comm comm, const PrintSystemArtifact *artifact,
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND); /* GCOVR_EXCL_LINE */
       hypredrv_ErrorMsgAdd("print_system path too long for %s artifact",
                            artifact->label); /* GCOVR_EXCL_LINE */
-      return 0;                              /* GCOVR_EXCL_LINE */
+      return ERROR_FILE_NOT_FOUND;           /* GCOVR_EXCL_LINE */
    }
 
    HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log, "print_system write %s: %s",
                       artifact->label, path);
 
+   HYPRE_Int ierr = 0;
    if (artifact->matrix)
    {
-      HYPRE_IJMatrixPrint(artifact->matrix, path);
+      ierr = HYPRE_IJMatrixPrint(artifact->matrix, path);
    }
    else if (artifact->vector)
    {
-      HYPRE_IJVectorPrint(artifact->vector, path);
+      ierr = HYPRE_IJVectorPrint(artifact->vector, path);
    }
    else
    {
-      hypredrv_IntArrayWriteAsciiByRank(comm, artifact->dofmap, path);
+      return hypredrv_IntArrayWriteAsciiByRank(comm, artifact->dofmap, path);
    }
 
-   return 1;
+   if (ierr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("Could not write %s artifact to %s", artifact->label, path);
+      return ERROR_HYPRE_INTERNAL;
+   }
+   return ERROR_NONE;
 }
 
 /* Rank 0 owns the per-dump metadata file and the cumulative stage index. */
@@ -2696,7 +2698,7 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix 
 
    if (!args || !ctx)
    {
-      return hypredrv_ErrorCodeGet();
+      return ERROR_NONE;
    }
 
    cfg           = &args->print_system;
@@ -2713,7 +2715,7 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix 
          ctx->repetition_index, decision_reason);
       HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
                          "print_system skip: selection did not match");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_NONE;
    }
 
    HYPREDRV_LOG_COMMF(3, comm, object_name, ls_id_for_log,
@@ -2732,7 +2734,7 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix 
       HYPREDRV_LOG_COMMF(2, comm, object_name, ls_id_for_log,
                          /* GCOVR_EXCL_BR_STOP */
                          "print_system failed: cannot create dump directory");
-      return hypredrv_ErrorCodeGet();
+      return ERROR_FILE_NOT_FOUND;
    }
    HYPREDRV_LOG_COMMF(2, comm, object_name, ls_id_for_log, "print_system dump dir: %s",
                       dump_dir);
@@ -2757,10 +2759,11 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix 
 
       for (size_t i = 0; i < sizeof(artifacts) / sizeof(artifacts[0]); i++)
       {
-         if (!PrintSystemWriteArtifact(comm, &artifacts[i], cfg->artifacts, dump_dir,
-                                       object_name, ls_id_for_log))
+         uint32_t status = PrintSystemWriteArtifact(comm, &artifacts[i], cfg->artifacts,
+                                                    dump_dir, object_name, ls_id_for_log);
+         if (status)
          {
-            return hypredrv_ErrorCodeGet();
+            return status;
          }
       }
    }
@@ -2769,7 +2772,7 @@ hypredrv_LinearSystemDumpScheduled(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix 
 
    HYPREDRV_LOG_COMMF(2, comm, object_name, ls_id_for_log, "print_system dump complete");
 
-   return hypredrv_ErrorCodeGet();
+   return ERROR_NONE;
 }
 
 /*-----------------------------------------------------------------------------

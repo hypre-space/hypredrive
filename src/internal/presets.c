@@ -109,7 +109,7 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
    char *norm = strdup(name);
    if (!norm)
    {
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       return -1;
    }
    normalize_preset_name(norm);
@@ -141,7 +141,7 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
          (hypredrv_Preset *)realloc(g_user_presets, new_cap * sizeof(hypredrv_Preset));
       if (!tmp)
       {
-         hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+         hypredrv_AllocationFailure("Memory allocation failed");
          free(norm);
          return -1;
       }
@@ -156,7 +156,7 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
       free(norm);
       free(dup_text);
       free(dup_help);
-      hypredrv_ErrorCodeSet(ERROR_ALLOCATION);
+      hypredrv_AllocationFailure("Memory allocation failed");
       return -1;
    }
 
