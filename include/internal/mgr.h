@@ -188,6 +188,7 @@ struct MGR_args_struct
    HYPRE_Int    num_active_levels;
    HYPRE_Int    active_level_map[MAX_MGR_LEVELS - 1];
    HYPRE_Int   *point_marker_data;
+   size_t       point_marker_size; /* number of copied markers */
 };
 
 /* Number of fine levels in use (entries of MGR_args::level). Returns 0 for an
@@ -222,7 +223,9 @@ void hypredrv_MGRSelectCachedSolversToKeep(MGR_args *, const IntArray *,
 void hypredrv_MGRCountCachedSolvers(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRCountKeepFlags(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRDestroyCachedSolvers(MGR_args *, int);
-void hypredrv_MGRDestroyWithCachedSolvers(MGR_args *, HYPRE_Solver, int);
+/* Release the parent, cached components and owned marker buffer together.
+ * A NULL parent (or parent pointer) also supports partial-create cleanup. */
+void hypredrv_MGRDestroy(MGR_args *, HYPRE_Solver *, int);
 void hypredrv_MGRForgetCachedSolvers(MGR_args *);
 void hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
 int  hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);

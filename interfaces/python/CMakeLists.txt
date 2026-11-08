@@ -263,6 +263,7 @@ target_compile_definitions(_core PRIVATE
 
 set(_python_package_sources
     "${_package_src}/__init__.py"
+    "${_package_src}/_buffers.py"
     "${_package_src}/driver.py"
     "${_package_src}/errors.py"
     "${_package_src}/options.py"

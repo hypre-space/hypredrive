@@ -459,7 +459,7 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
 void
 hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
                             YAMLGetValidValuesFunc get_vals,
-                            YAMLSetFieldByNameFunc set_field)
+                            YAMLSetFieldByNameFunc set_field, const YAMLnode *ignored_child)
 {
    /* GCOVR_EXCL_BR_START */
    if (!parent) /* GCOVR_EXCL_BR_STOP */
@@ -472,6 +472,10 @@ hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc g
       /* Case 1: Nested structure - iterate over children */
       for (YAMLnode *child = parent->children; child != NULL; child = child->next)
       {
+         if (child == ignored_child)
+         {
+            continue;
+         }
          hypredrv_YAMLnodeValidateSchema(child, get_keys, get_vals);
          if (child->valid == YAML_NODE_VALID)
          {

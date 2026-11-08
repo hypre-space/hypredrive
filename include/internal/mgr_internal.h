@@ -39,6 +39,9 @@ HYPRE_Solver hypredrv_MGRSchwarzWrapperCreate(const Schwarz_args *args);
 HYPRE_Int    hypredrv_MGRSchwarzWrapperDestroy(HYPRE_Solver wrapper);
 #endif
 
+/* Collectively reject marker storage shorter than the local matrix rows. */
+int hypredrv_MGRValidatePointMarkerRows(const MGR_args *, HYPRE_ParCSRMatrix);
+
 int hypredrv_MGRGRelaxUsesUserSmoother(const MGRgrlx_args *args);
 int hypredrv_MGRProjectNestedRBMs(NestedKrylov_args *krylov, MGR_args *mgr_args,
                                   const int *selected_dofs, size_t num_selected_dofs);

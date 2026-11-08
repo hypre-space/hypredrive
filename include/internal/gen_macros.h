@@ -115,7 +115,7 @@
    {                                                                                     \
       _prefix##_args *args = (_prefix##_args *)vargs;                                    \
       hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,         \
-                                  _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName); \
+                                  _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName, NULL); \
    }
 
 /**

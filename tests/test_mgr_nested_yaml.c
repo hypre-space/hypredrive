@@ -23,7 +23,7 @@ parse_config(const char *yaml_text)
    char       *argv[1] = {argv0};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
    free(argv0);
    return args;
 }
@@ -41,7 +41,7 @@ test_mgr_nested_yaml_parse(void)
    int   argc   = 1;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, true, argc, argv, &iargs);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, true, argc, argv, &iargs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(iargs);
    ASSERT_EQ(iargs->precon_method, PRECON_MGR);
@@ -65,7 +65,7 @@ test_mgr_nested_mgr_yaml_parse(void)
    int   argc   = 1;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, true, argc, argv, &iargs);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, true, argc, argv, &iargs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(iargs);
    ASSERT_EQ(iargs->precon_method, PRECON_MGR);

@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include "internal/solver.h"
+#include "solver_ops.h"
 
 #include <math.h>
 #include "_hypre_IJ_mv.h"
@@ -24,10 +24,9 @@
 HYPRE_Int hypre_BiCGSTABGetConverged(void *bicgstab_vdata, HYPRE_Int *converged);
 #endif
 
-typedef HYPRE_Int (*KrylovPrecondFn)(void *, void *, void *, void *);
-
 static HYPRE_Int
-PreconSetupNoop(void *solver, void *A, void *b, void *x)
+PreconSetupNoop(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                 HYPRE_ParVector x)
 {
    (void)solver;
    (void)A;
@@ -42,42 +41,10 @@ SolverLinearSystemID(const Stats *stats)
    return stats ? hypredrv_StatsGetLinearSystemID(stats) : 0;
 }
 
-/* Per-method hypre entry points. Index by solver_t; keep in sync with the enum. */
-typedef HYPRE_Int (*SolverSetPrecondFn)(HYPRE_Solver, KrylovPrecondFn, KrylovPrecondFn,
-                                        HYPRE_Solver);
-typedef HYPRE_Int (*SolverParFn)(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
-                                 HYPRE_ParVector);
-typedef HYPRE_Int (*SolverDestroyFn)(HYPRE_Solver);
-typedef HYPRE_Int (*SolverGetIntFn)(HYPRE_Solver, HYPRE_Int *);
-typedef HYPRE_Int (*SolverGetRealFn)(HYPRE_Solver, HYPRE_Real *);
-typedef void (*SolverSetDefaultsFn)(solver_args *);
-typedef void (*SolverCreateFn)(MPI_Comm, const solver_args *, HYPRE_Solver *);
-
-typedef struct SolverOps_struct
-{
-   SolverSetDefaultsFn set_defaults;
-   SolverCreateFn      create;
-   SolverSetPrecondFn  set_precond;
-   SolverParFn         setup;
-   SolverParFn         solve;
-   SolverDestroyFn     destroy;
-   SolverGetIntFn      get_num_iterations;
-   SolverGetIntFn      get_converged;
-   SolverGetRealFn     get_final_rel_res_norm;
-} SolverOps;
-
 static void
 SolverPCGSetDefaults(solver_args *args)
 {
    hypredrv_PCGSetDefaultArgs(&args->pcg);
-}
-
-static HYPRE_Int
-SolverPCGSetPrecond(HYPRE_Solver solver, KrylovPrecondFn precond,
-                    KrylovPrecondFn precond_setup, HYPRE_Solver precond_solver)
-{
-   return HYPRE_PCGSetPrecond(solver, (HYPRE_PtrToSolverFcn)precond,
-                              (HYPRE_PtrToSolverFcn)precond_setup, precond_solver);
 }
 
 static void
@@ -92,14 +59,6 @@ SolverGMRESSetDefaults(solver_args *args)
    hypredrv_GMRESSetDefaultArgs(&args->gmres);
 }
 
-static HYPRE_Int
-SolverGMRESSetPrecond(HYPRE_Solver solver, KrylovPrecondFn precond,
-                      KrylovPrecondFn precond_setup, HYPRE_Solver precond_solver)
-{
-   return HYPRE_GMRESSetPrecond(solver, (HYPRE_PtrToSolverFcn)precond,
-                                (HYPRE_PtrToSolverFcn)precond_setup, precond_solver);
-}
-
 static void
 SolverGMRESCreate(MPI_Comm comm, const solver_args *args, HYPRE_Solver *solver_ptr)
 {
@@ -112,14 +71,6 @@ SolverFGMRESSetDefaults(solver_args *args)
    hypredrv_FGMRESSetDefaultArgs(&args->fgmres);
 }
 
-static HYPRE_Int
-SolverFGMRESSetPrecond(HYPRE_Solver solver, KrylovPrecondFn precond,
-                       KrylovPrecondFn precond_setup, HYPRE_Solver precond_solver)
-{
-   return HYPRE_FlexGMRESSetPrecond(solver, (HYPRE_PtrToSolverFcn)precond,
-                                    (HYPRE_PtrToSolverFcn)precond_setup, precond_solver);
-}
-
 static void
 SolverFGMRESCreate(MPI_Comm comm, const solver_args *args, HYPRE_Solver *solver_ptr)
 {
@@ -130,14 +81,6 @@ static void
 SolverBiCGSTABSetDefaults(solver_args *args)
 {
    hypredrv_BiCGSTABSetDefaultArgs(&args->bicgstab);
-}
-
-static HYPRE_Int
-SolverBiCGSTABSetPrecond(HYPRE_Solver solver, KrylovPrecondFn precond,
-                         KrylovPrecondFn precond_setup, HYPRE_Solver precond_solver)
-{
-   return HYPRE_BiCGSTABSetPrecond(solver, (HYPRE_PtrToSolverFcn)precond,
-                                   (HYPRE_PtrToSolverFcn)precond_setup, precond_solver);
 }
 
 static void
@@ -157,8 +100,11 @@ static const SolverOps solver_ops[] = {
    [SOLVER_PCG] =
       {
          .set_defaults           = SolverPCGSetDefaults,
+         .get_keys               = hypredrv_PCGGetValidKeys,
+         .get_values             = hypredrv_PCGGetValidValues,
+         .set_field              = hypredrv_PCGSetFieldByName,
          .create                 = SolverPCGCreate,
-         .set_precond            = SolverPCGSetPrecond,
+         .set_precond            = HYPRE_ParCSRPCGSetPrecond,
          .setup                  = HYPRE_ParCSRPCGSetup,
          .solve                  = HYPRE_ParCSRPCGSolve,
          .destroy                = HYPRE_ParCSRPCGDestroy,
@@ -169,8 +115,11 @@ static const SolverOps solver_ops[] = {
    [SOLVER_GMRES] =
       {
          .set_defaults           = SolverGMRESSetDefaults,
+         .get_keys               = hypredrv_GMRESGetValidKeys,
+         .get_values             = hypredrv_GMRESGetValidValues,
+         .set_field              = hypredrv_GMRESSetFieldByName,
          .create                 = SolverGMRESCreate,
-         .set_precond            = SolverGMRESSetPrecond,
+         .set_precond            = HYPRE_ParCSRGMRESSetPrecond,
          .setup                  = HYPRE_ParCSRGMRESSetup,
          .solve                  = HYPRE_ParCSRGMRESSolve,
          .destroy                = HYPRE_ParCSRGMRESDestroy,
@@ -181,8 +130,11 @@ static const SolverOps solver_ops[] = {
    [SOLVER_FGMRES] =
       {
          .set_defaults           = SolverFGMRESSetDefaults,
+         .get_keys               = hypredrv_FGMRESGetValidKeys,
+         .get_values             = hypredrv_FGMRESGetValidValues,
+         .set_field              = hypredrv_FGMRESSetFieldByName,
          .create                 = SolverFGMRESCreate,
-         .set_precond            = SolverFGMRESSetPrecond,
+         .set_precond            = HYPRE_ParCSRFlexGMRESSetPrecond,
          .setup                  = HYPRE_ParCSRFlexGMRESSetup,
          .solve                  = HYPRE_ParCSRFlexGMRESSolve,
          .destroy                = HYPRE_ParCSRFlexGMRESDestroy,
@@ -193,8 +145,11 @@ static const SolverOps solver_ops[] = {
    [SOLVER_BICGSTAB] =
       {
          .set_defaults           = SolverBiCGSTABSetDefaults,
+         .get_keys               = hypredrv_BiCGSTABGetValidKeys,
+         .get_values             = hypredrv_BiCGSTABGetValidValues,
+         .set_field              = hypredrv_BiCGSTABSetFieldByName,
          .create                 = SolverBiCGSTABCreate,
-         .set_precond            = SolverBiCGSTABSetPrecond,
+         .set_precond            = HYPRE_ParCSRBiCGSTABSetPrecond,
          .setup                  = HYPRE_ParCSRBiCGSTABSetup,
          .solve                  = HYPRE_ParCSRBiCGSTABSolve,
          .destroy                = HYPRE_ParCSRBiCGSTABDestroy,
@@ -204,8 +159,8 @@ static const SolverOps solver_ops[] = {
       },
 };
 
-static const SolverOps *
-SolverOpsLookup(solver_t method)
+const SolverOps *
+hypredrv_SolverOpsLookup(solver_t method)
 {
    if ((unsigned)method >= (unsigned)(sizeof(solver_ops) / sizeof(solver_ops[0])) ||
        !solver_ops[method].setup)
@@ -214,70 +169,6 @@ SolverOpsLookup(solver_t method)
    }
 
    return &solver_ops[method];
-}
-
-static HYPRE_Int
-PreconSetupDispatch(void *solver, void *A, void *b, void *x)
-{
-   HYPRE_Precon precon = (HYPRE_Precon)solver;
-
-   /* GCOVR_EXCL_BR_START */
-   if (!precon) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0;
-   }
-
-   /* Abort cleanly (instead of letting hypre dereference NULL) when an AMS/ADS
-    * preconditioner is set up without its required operator inputs. This is the
-    * Krylov-embedded counterpart of the guard in hypredrv_PreconSetup. */
-   if (hypredrv_PreconSetupOperatorGuard(precon))
-   {
-      return 1;
-   }
-
-   if (precon->stats)
-   {
-      hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
-   }
-
-   HYPRE_Int               ierr  = 0;
-   HYPRE_PtrToParSolverFcn setup = NULL;
-   hypredrv_PreconGetCallbacks(precon->method, &setup, NULL);
-   if (setup)
-   {
-      ierr = setup(precon->main, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
-                   (HYPRE_ParVector)x);
-   }
-
-   if (precon->stats)
-   {
-      hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_END, "prec");
-   }
-
-   if (precon->method != PRECON_NONE)
-   {
-      precon->is_setup = 1;
-   }
-
-   return ierr;
-}
-
-static HYPRE_Int
-PreconSolveDispatch(void *solver, void *A, void *b, void *x)
-{
-   HYPRE_Precon precon = (HYPRE_Precon)solver;
-
-   /* GCOVR_EXCL_BR_START */
-   if (!precon) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0;
-   }
-
-   HYPRE_PtrToParSolverFcn solve = NULL;
-   hypredrv_PreconGetCallbacks(precon->method, NULL, &solve);
-   return solve ? solve(precon->main, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
-                        (HYPRE_ParVector)x)
-                : 0;
 }
 
 #define solver_FIELDS(_prefix)                                     \
@@ -345,13 +236,34 @@ hypredrv_SolverArgsSetDefaultsForMethod(solver_t method, solver_args *args)
       return;
    }
 
-   ops = SolverOpsLookup(method);
+   ops = hypredrv_SolverOpsLookup(method);
    if (!ops)
    {
       return;
    }
 
    ops->set_defaults(args);
+}
+
+void
+hypredrv_SolverSetMethodArgs(solver_t method, solver_args *args, YAMLnode *body,
+                             const YAMLnode *ignored_child)
+{
+   const SolverOps *ops = hypredrv_SolverOpsLookup(method);
+   if (!ops || !args || !body)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid solver method arguments");
+      return;
+   }
+
+   ops->set_defaults(args);
+   YAML_NODE_SET_VALID(body);
+   if (body->children || body->val[0])
+   {
+      hypredrv_YAMLSetArgsGeneric(args, body, ops->get_keys, ops->get_values,
+                                  ops->set_field, ignored_child);
+   }
 }
 
 /*-----------------------------------------------------------------------------
@@ -383,7 +295,7 @@ hypredrv_SolverCreate(MPI_Comm comm, solver_t solver_method, solver_args *args,
       return;
    }
 
-   ops = SolverOpsLookup(solver_method);
+   ops = hypredrv_SolverOpsLookup(solver_method);
    /* GCOVR_EXCL_BR_START */
    if (!ops) /* GCOVR_EXCL_BR_STOP */
    {
@@ -456,7 +368,7 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
    void              *vM = NULL, *vb = NULL, *vx = NULL;
    HYPRE_ParCSRMatrix par_M = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
-   const SolverOps   *ops = SolverOpsLookup(solver_method);
+   const SolverOps   *ops = hypredrv_SolverOpsLookup(solver_method);
 
    HYPRE_IJMatrixGetObject(M, &vM);
    par_M = (HYPRE_ParCSRMatrix)vM;
@@ -484,25 +396,21 @@ hypredrv_SolverSetupWithReuse(precon_t precon_method, solver_t solver_method,
       return;
    }
 
+   if (precon_method != PRECON_NONE && !hypredrv_PreconValidateSetup(precon, par_M))
+   {
+      return;
+   }
+
    if (precon_method != PRECON_NONE)
    {
-      ops->set_precond(solver, PreconSolveDispatch,
-                       skip_precon_setup ? PreconSetupNoop : PreconSetupDispatch,
+      ops->set_precond(solver, hypredrv_PreconKrylovSolve,
+                       skip_precon_setup ? PreconSetupNoop : hypredrv_PreconKrylovSetup,
                        (HYPRE_Solver)precon);
    }
    ops->setup(solver, par_M, par_b, par_x);
 
    hypredrv_HypreConsumeErrors(log_comm);
    HYPREDRV_LOGF(3, log_rank, log_object_name, ls_id, "solver setup end");
-}
-
-void
-hypredrv_SolverSetup(precon_t precon_method, solver_t solver_method, HYPRE_Precon precon,
-                     HYPRE_Solver solver, HYPRE_IJMatrix M, HYPRE_IJVector b,
-                     HYPRE_IJVector x, Stats *stats)
-{
-   hypredrv_SolverSetupWithReuse(precon_method, solver_method, precon, solver, M, b, x,
-                                 stats, 0);
 }
 
 /*-----------------------------------------------------------------------------
@@ -543,7 +451,7 @@ hypredrv_SolverSolveOnly(solver_t solver_method, HYPRE_Solver solver, HYPRE_IJMa
    HYPRE_ParCSRMatrix par_A = NULL;
    HYPRE_ParVector    par_b = NULL, par_x = NULL;
    HYPRE_Int          iters = 0;
-   const SolverOps   *ops   = SolverOpsLookup(solver_method);
+   const SolverOps   *ops   = hypredrv_SolverOpsLookup(solver_method);
 
    HYPRE_IJMatrixGetObject(A, &vA);
    par_A = (HYPRE_ParCSRMatrix)vA;
@@ -674,7 +582,7 @@ hypredrv_SolverDestroy(solver_t solver_method, HYPRE_Solver *solver_ptr)
 
    if (*solver_ptr)
    {
-      const SolverOps *ops = SolverOpsLookup(solver_method);
+      const SolverOps *ops = hypredrv_SolverOpsLookup(solver_method);
 
       /* GCOVR_EXCL_BR_START */
       if (!ops) /* GCOVR_EXCL_BR_STOP */
@@ -713,7 +621,7 @@ hypredrv_SolverGetConverged(solver_t solver_method, HYPRE_Solver solver,
       return;
    }
 
-   ops = SolverOpsLookup(solver_method);
+   ops = hypredrv_SolverOpsLookup(solver_method);
    /* GCOVR_EXCL_BR_START */
    if (!ops) /* GCOVR_EXCL_BR_STOP */
    {
@@ -745,7 +653,7 @@ hypredrv_SolverGetFinalRelativeResidualNorm(solver_t solver_method, HYPRE_Solver
       return;
    }
 
-   ops = SolverOpsLookup(solver_method);
+   ops = hypredrv_SolverOpsLookup(solver_method);
    /* GCOVR_EXCL_BR_START */
    if (!ops) /* GCOVR_EXCL_BR_STOP */
    {

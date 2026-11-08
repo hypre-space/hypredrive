@@ -14,6 +14,7 @@
 #include "internal/ilu.h"
 #include "internal/krylov.h"
 #include "internal/mgr.h"
+#include "internal/mgr_internal.h"
 #include "internal/precon.h"
 #include "internal/yaml.h"
 #include "logging.h"
@@ -3348,6 +3349,47 @@ test_PreconDestroy_null_main(void)
    ASSERT_NULL(precon);
 }
 
+/* Partial creation can leave markers and cached components without a parent.
+ * Every owner must release both, and a repeated release must be harmless. */
+static void
+test_mgr_partial_runtime_release(void)
+{
+   TEST_HYPRE_INIT();
+   for (int path = 0; path < 3; path++)
+   {
+      precon_args args;
+      hypredrv_PreconArgsSetDefaultsForMethod(PRECON_MGR, &args);
+      args.mgr.point_marker_data = malloc(3 * sizeof(HYPRE_Int));
+      ASSERT_NOT_NULL(args.mgr.point_marker_data);
+      args.mgr.point_marker_size = 3;
+      ASSERT_EQ(HYPRE_BoomerAMGCreate(&args.mgr.csolver), 0);
+      args.mgr.csolver_type = 0;
+      if (path == 0)
+      {
+         HYPRE_Solver parent = NULL;
+         hypredrv_MGRDestroy(&args.mgr, &parent, 0);
+         ASSERT_NULL(parent);
+      }
+      else if (path == 1)
+      {
+         hypredrv_PreconArgsDestroyRuntimeState(PRECON_MGR, &args);
+      }
+      else
+      {
+         HYPRE_Solver wrapper = hypredrv_MGRNestedFRelaxWrapperCreate(NULL, &args.mgr, NULL);
+         ASSERT_NOT_NULL(wrapper);
+         hypredrv_MGRNestedFRelaxWrapperFree(&wrapper);
+         ASSERT_NULL(wrapper);
+      }
+      ASSERT_NULL(args.mgr.point_marker_data);
+      ASSERT_EQ_SIZE(args.mgr.point_marker_size, 0);
+      ASSERT_NULL(args.mgr.csolver);
+      hypredrv_MGRDestroy(&args.mgr, NULL, 0);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   }
+   TEST_HYPRE_FINALIZE();
+}
+
 static void
 test_PreconSetup_default_case(void)
 {
@@ -5137,7 +5179,7 @@ test_PreconDestroy_mgr_coarsest_use_krylov_without_krylov_ptr(void)
    hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
-   /* use_krylov true, krylov NULL: short-circuit branch of && in PreconDestroyMGRSolver
+   /* use_krylov true, krylov NULL: short-circuit in cached coarse-solver cleanup
     */
    args.mgr.coarsest_level.use_krylov = 1;
    args.mgr.coarsest_level.krylov     = NULL;
@@ -7692,6 +7734,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconSetArgsFromYAML_mgr_coarsest_level_ilu_nested_sets_type_and_args);
    RUN_TEST(test_PreconDestroy_null_precon);
    RUN_TEST(test_PreconDestroy_null_main);
+   RUN_TEST(test_mgr_partial_runtime_release);
    RUN_TEST(test_PreconCreate_invalid_method);
    RUN_TEST(test_PreconCreate_precon_none);
    RUN_TEST(test_PreconSetup_null_precon);

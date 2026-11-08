@@ -1682,15 +1682,7 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
       }
    }
 
-   /* Replacing mat_A invalidates any preconditioner matrix derived from it. */
-   LinearSystemDropOwnedPrecMatrix(hypredrv);
-
-   if (hypredrv->mat_A.handle && hypredrv->mat_A.owned)
-   {
-      HYPRE_IJMatrixDestroy(hypredrv->mat_A.handle);
-   }
-   hypredrv->mat_A.handle = NULL;
-   hypredrv->mat_A.owned  = false;
+   HYPRE_IJMatrix replacement = NULL;
 
    /* The caller's CSR buffers are host pointers, but we build the matrix directly
     * in the configured execution space: under device execution hypre assembles the
@@ -1703,18 +1695,22 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
       build_memloc = HYPRE_MEMORY_DEVICE;
    }
 #endif
-   (void)hypredrv_LinearSystemBuildMatrixFromCSR(hypredrv->comm, build_memloc, row_start,
-                                                 row_end, indptr, col_indices, data,
-                                                 &hypredrv->mat_A.handle);
+   HYPREDRV_RETURN_ON_ERROR(hypredrv_LinearSystemBuildMatrixFromCSR(
+      hypredrv->comm, build_memloc, row_start, row_end, indptr, col_indices, data,
+      &replacement));
+   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, replacement, 1);
+   hypredrv_HypreConsumeErrors(hypredrv->comm);
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+   {
+      HYPRE_IJMatrixDestroy(replacement);
+      return hypredrv_ErrorCodeGet();
+   }
 
-   hypredrv->mat_A.owned  = (hypredrv->mat_A.handle != NULL);
-   hypredrv->mat_M.handle = hypredrv->mat_A.handle;
-   hypredrv->mat_M.owned  = false;
-
-   /* Safety net: ensure the matrix matches the configured execution space (no-op
-    * when already built there). mat_M aliases mat_A here. */
-   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->mat_A.handle,
-                                                        1);
+   /* Publish only a complete replacement. Until here, both installed matrices
+    * and their ownership/alias decisions still describe the previous system. */
+   LinearSystemDropOwnedPrecMatrix(hypredrv);
+   hypredrv_MatrixSlotSet(&hypredrv->mat_A, replacement, true, NULL);
+   hypredrv_MatrixSlotSet(&hypredrv->mat_M, replacement, false, NULL);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -1723,20 +1719,16 @@ HYPREDRV_LinearSystemSetMatrixFromCSR(HYPREDRV_t hypredrv, HYPRE_BigInt row_star
  * Build the linear-system right-hand side from a per-rank values array
  *-----------------------------------------------------------------------------*/
 
-uint32_t
-HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
-                                     HYPRE_BigInt row_end, const HYPRE_Real *values)
+static void
+LinearSystemValidateRHSRange(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                             HYPRE_BigInt row_end)
 {
-   HYPREDRV_API_ENTER();
-   hypredrv_VectorTagsClear(hypredrv);
-   HYPREDRV_RETURN_ON_ERROR(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
-
    if (!hypredrv->mat_A.handle)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
          "HYPREDRV_LinearSystemSetRHSFromArray: matrix must be set before RHS");
-      return hypredrv_ErrorCodeGet();
+      return;
    }
 
    HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
@@ -1751,7 +1743,7 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
          "HYPREDRV_LinearSystemSetRHSFromArray: failed to query matrix local "
          "range: %s",
          hypre_err_msg);
-      return hypredrv_ErrorCodeGet();
+      return;
    }
    if (row_start != ilower || row_end != iupper)
    {
@@ -1760,25 +1752,39 @@ HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start
          "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
          "does not match matrix row range [%lld, %lld]",
          (long long)row_start, (long long)row_end, (long long)ilower, (long long)iupper);
+      return;
+   }
+}
+
+uint32_t
+HYPREDRV_LinearSystemSetRHSFromArray(HYPREDRV_t hypredrv, HYPRE_BigInt row_start,
+                                     HYPRE_BigInt row_end, const HYPRE_Real *values)
+{
+   HYPREDRV_API_ENTER();
+   HYPREDRV_RETURN_ON_ERROR(hypredrv_ApplyGlobalRuntimeSettings(hypredrv));
+
+   LinearSystemValidateRHSRange(hypredrv, row_start, row_end);
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+   {
       return hypredrv_ErrorCodeGet();
    }
 
+   HYPRE_IJVector replacement = NULL;
+   /* Build from host buffers, then prepare the replacement for the configured
+    * execution space before changing any installed vector or reference alias. */
+   HYPREDRV_RETURN_ON_ERROR(hypredrv_LinearSystemBuildRHSFromArray(
+      hypredrv->comm, HYPRE_MEMORY_HOST, row_start, row_end, values, &replacement));
+   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, replacement, 0);
+   hypredrv_HypreConsumeErrors(hypredrv->comm);
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+   {
+      HYPRE_IJVectorDestroy(replacement);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   hypredrv_VectorTagsClear(hypredrv);
    LinearSystemDropOwnedRHS(hypredrv, NULL);
-   hypredrv->vec_b.handle = NULL;
-   hypredrv->vec_b.owned  = false;
-
-   /* Caller-provided RHS buffers are host pointers, so the builder runs on host
-    * regardless of the configured execution policy. */
-   (void)hypredrv_LinearSystemBuildRHSFromArray(hypredrv->comm, HYPRE_MEMORY_HOST,
-                                                row_start, row_end, values,
-                                                &hypredrv->vec_b.handle);
-
-   hypredrv->vec_b.owned = (hypredrv->vec_b.handle != NULL);
-
-   /* The RHS was built on host above; migrate it to the configured execution
-    * space (e.g. device) to match the global memory/execution policy. */
-   hypredrv_PrepareExplicitObjectForConfiguredExecution(hypredrv, hypredrv->vec_b.handle,
-                                                        0);
+   hypredrv_VectorSlotSet(&hypredrv->vec_b, replacement, true, NULL);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2122,7 +2128,7 @@ HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_
    /* Ensure data is accessible on host before returning the pointer */
    hypredrv_IJVectorMigrate(hypredrv->vec_x.handle, HYPRE_MEMORY_HOST);
 #endif
-   hypredrv_LinearSystemGetSolutionValues(hypredrv->vec_x.handle, sol_data);
+   *sol_data = hypredrv_IJVectorData(hypredrv->vec_x.handle);
 
    return hypredrv_ErrorCodeGet();
 }
@@ -2228,7 +2234,7 @@ HYPREDRV_LinearSystemGetRHSValues(HYPREDRV_t hypredrv, HYPRE_Complex **rhs_data)
       return hypredrv_ErrorCodeGet();
    }
 
-   hypredrv_LinearSystemGetRHSValues(hypredrv->vec_b.handle, rhs_data);
+   *rhs_data = hypredrv_IJVectorData(hypredrv->vec_b.handle);
 
    return hypredrv_ErrorCodeGet();
 }

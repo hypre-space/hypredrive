@@ -876,8 +876,9 @@ extern "C"
     * indicates a failure, and the error code can be further described using
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
-    * @note When called multiple times, any previously owned system matrix
-    * (and the preconditioner matrix derived from it) is destroyed first.
+    * @note When called multiple times, the previous system matrix and its
+    * preconditioner-matrix association are replaced only after the new matrix
+    * is built successfully. Rejected input preserves the installed system.
     * Callers may release @p indptr, @p col_indices, and @p data as soon as
     * this call returns; HYPRE copies the values during IJ assembly.
     *
@@ -916,6 +917,7 @@ extern "C"
     * buffer may be released as soon as this call returns. HYPREDRV always takes
     * ownership of the resulting vector and destroys it on HYPREDRV_Destroy(),
     * regardless of library mode.
+    * Rejected input preserves the installed RHS and any reference-solution alias.
     *
     * @param hypredrv   The HYPREDRV_t object to associate the RHS with.
     * @param row_start  First locally-owned global row index (inclusive).
@@ -1141,6 +1143,8 @@ extern "C"
     * @note The dofmap labels the block structure used by MGR and, when BoomerAMG is
     * configured with `num_functions > 1`, it is also passed to hypre as the AMG
     * "dof_func" array provided that all labels fall inside [0, num_functions).
+    * For MGR, setup checks collectively that the marker storage covers the
+    * local rows of the preconditioner matrix.
     *
     * Example Usage:
     * @code

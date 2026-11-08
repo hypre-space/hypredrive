@@ -909,7 +909,7 @@ fuzz_lsseq_file(const uint8_t *data, size_t size)
          hypredrv_IntArrayDestroy(&ids);
          hypredrv_IntArrayDestroy(&starts);
          fuzz_reset_error_state();
-         (void)hypredrv_LSSeqReadTimesteps(path, &starts);
+         (void)hypredrv_LSSeqReadTimestepsWithIds(path, NULL, &starts);
          hypredrv_IntArrayDestroy(&starts);
          fuzz_reset_error_state();
       }

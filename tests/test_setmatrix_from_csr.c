@@ -18,10 +18,11 @@
 #include <stdlib.h>
 
 #include "HYPRE.h"
-#include "HYPRE_IJ_mv.h"
 #include "HYPREDRV.h"
+#include "HYPRE_IJ_mv.h"
 #include "internal/error.h"
 #include "internal/linsys.h"
+#include "object.h"
 #include "test_helpers.h"
 
 /* PCG + AMG with very low iteration counts; enough to demonstrate the API
@@ -530,10 +531,94 @@ test_setmatrix_from_csr_single_row(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+/* Failed array updates preserve the old owned objects, including aliases.
+ * A later successful update must still replace them and solve correctly. */
+static void
+test_array_updates_preserve_installed_system_on_failure(void)
+{
+   HYPREDRV_t   obj   = create_lib_obj();
+   HYPRE_BigInt ptr[] = {0, 1, 2}, bad[] = {0, 2, 1}, cols[] = {0, 1};
+   HYPRE_Real   values[] = {2.0, 2.0}, rhs[] = {1.0, 1.0};
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, ptr, cols, values),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 1, rhs), ERROR_NONE);
+   HYPRE_IJMatrix old_matrix = obj->mat_A.handle;
+   HYPRE_IJVector old_rhs    = obj->vec_b.handle;
+   ASSERT_EQ(HYPREDRV_LinearSystemSetReferenceSolution(obj, (HYPRE_Vector)old_rhs),
+             ERROR_NONE);
+
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, bad, cols, values) &
+               ERROR_INVALID_VAL);
+   ASSERT_TRUE(obj->mat_A.handle == old_matrix && obj->mat_A.owned);
+   ASSERT_TRUE(obj->mat_M.handle == old_matrix && !obj->mat_M.owned);
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 1, NULL) & ERROR_INVALID_VAL);
+   ASSERT_TRUE(obj->vec_b.handle == old_rhs && obj->vec_b.owned);
+   ASSERT_TRUE(obj->vec_xref.handle == old_rhs);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   HYPRE_Complex *solution = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(solution[0], 0.5, 1e-10);
+   ASSERT_EQ_DOUBLE(solution[1], 0.5, 1e-10);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+
+   values[0] = values[1] = 4.0;
+   rhs[0] = rhs[1] = 2.0;
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, ptr, cols, values),
+             ERROR_NONE);
+   ASSERT_TRUE(obj->mat_A.handle == obj->mat_M.handle);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 1, rhs), ERROR_NONE);
+   ASSERT_NULL(obj->vec_xref.handle);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(solution[0], 0.5, 1e-10);
+   ASSERT_EQ_DOUBLE(solution[1], 0.5, 1e-10);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_failed_array_updates_preserve_borrowed_handles(void)
+{
+   HYPREDRV_t     obj   = create_lib_obj();
+   HYPRE_BigInt   ptr[] = {0, 1}, col = 0;
+   HYPRE_Real     value  = 2.0;
+   HYPRE_IJMatrix matrix = NULL;
+   HYPRE_IJVector rhs    = NULL;
+   ASSERT_EQ(hypredrv_LinearSystemBuildMatrixFromCSR(MPI_COMM_SELF, HYPRE_MEMORY_HOST, 0,
+                                                     0, ptr, &col, &value, &matrix),
+             ERROR_NONE);
+   ASSERT_EQ(hypredrv_LinearSystemBuildRHSFromArray(MPI_COMM_SELF, HYPRE_MEMORY_HOST, 0,
+                                                    0, &value, &rhs),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrix(obj, (HYPRE_Matrix)matrix), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHS(obj, (HYPRE_Vector)rhs), ERROR_NONE);
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, NULL, NULL, NULL) &
+               ERROR_INVALID_VAL);
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 0, NULL) & ERROR_INVALID_VAL);
+   ASSERT_TRUE(obj->mat_A.handle == matrix && !obj->mat_A.owned);
+   ASSERT_TRUE(obj->vec_b.handle == rhs && !obj->vec_b.owned);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   HYPRE_Complex actual = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 1, &col, &actual), 0);
+   ASSERT_EQ_DOUBLE(actual, value, 1e-12);
+   HYPRE_IJVectorDestroy(rhs);
+   HYPRE_IJMatrixDestroy(matrix);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+
+   RUN_TEST(test_array_updates_preserve_installed_system_on_failure);
+   RUN_TEST(test_failed_array_updates_preserve_borrowed_handles);
 
    RUN_TEST(test_setmatrix_from_csr_basic_solve);
    RUN_TEST(test_setmatrix_from_csr_rebuild_no_leak);

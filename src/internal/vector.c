@@ -9,6 +9,7 @@
 #include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_parcsr_mv.h"
+#include "_hypre_parcsr_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/linsys.h"
 #include "internal/utils.h"
@@ -17,6 +18,14 @@ enum
 {
    IJVECTOR_MAX_PART_NROWS = 200u * 1000u * 1000u,
 };
+
+HYPRE_Complex *
+hypredrv_IJVectorData(HYPRE_IJVector vec)
+{
+   void *object = NULL;
+   HYPRE_IJVectorGetObject(vec, &object);
+   return hypre_VectorData(hypre_ParVectorLocalVector((hypre_ParVector *)object));
+}
 
 static int
 IJVectorValidateHeader(const uint64_t *header, const char *filename)

@@ -101,8 +101,10 @@ typedef void (*YAMLSetFieldByNameFunc)(void *, YAMLnode *);
 
 void hypredrv_YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc,
                                      YAMLGetValidValuesFunc);
+/* ignored_child belongs to the caller's schema and is left untouched. */
 void hypredrv_YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc,
-                                 YAMLGetValidValuesFunc, YAMLSetFieldByNameFunc);
+                                 YAMLGetValidValuesFunc, YAMLSetFieldByNameFunc,
+                                 const YAMLnode *ignored_child);
 
 /*-----------------------------------------------------------------------------
  * Public prototypes

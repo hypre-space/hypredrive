@@ -20,6 +20,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include "internal/containers.h"
@@ -1437,9 +1438,29 @@ hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
  * hypredrv_LinearSystemBuildMatrixFromCSR
  *-----------------------------------------------------------------------------*/
 
-/* Validates the CSR description and derives this rank's local row and nonzero
- * counts. Returns zero with the error state set when the inputs are unusable. */
+/* Derive a positive local row count without overflowing signed HYPRE_BigInt.
+ * Both array builders use this boundary before indexing caller-owned buffers. */
 static int
+LinearSystemArrayRowCount(const char *label, HYPRE_BigInt first, HYPRE_BigInt last,
+                          HYPRE_Int *count)
+{
+   const uintmax_t max_count = (UINTMAX_C(1) << (sizeof(HYPRE_Int) * CHAR_BIT - 1)) - 1;
+   const uintmax_t span      = (uintmax_t)last - (uintmax_t)first;
+   if (last < first || span >= max_count)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "%s: row range [%lld, %lld] has no positive HYPRE_Int-sized count", label,
+         (long long)first, (long long)last);
+      return 0;
+   }
+   *count = (HYPRE_Int)(span + 1);
+   return 1;
+}
+
+/* Validate all row offsets before construction or coefficient access. A later
+ * local rejection must not strand peer ranks in HYPRE_IJMatrixAssemble. */
+static uint32_t
 LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                             const HYPRE_BigInt *indptr, const HYPRE_BigInt *col_indices,
                             const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr,
@@ -1449,82 +1470,99 @@ LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: mat_ptr and indptr must be non-NULL");
-      return 0;
+      return ERROR_INVALID_VAL;
    }
-   if (row_end < row_start)
+   if (!LinearSystemArrayRowCount("BuildMatrixFromCSR", row_start, row_end, nrows_out))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: row_end (%lld) < row_start (%lld)",
-                           (long long)row_end, (long long)row_start);
-      return 0;
+      return ERROR_INVALID_VAL;
    }
 
-   HYPRE_BigInt nrows_big = row_end - row_start + 1;
-   if ((HYPRE_BigInt)((HYPRE_Int)nrows_big) != nrows_big)
+   HYPRE_Int nrows = *nrows_out;
+   if (indptr[0] < 0 || indptr[nrows] < indptr[0])
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "BuildMatrixFromCSR: local row count (%lld) is out of HYPRE_Int range",
-         (long long)nrows_big);
-      return 0;
+      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: invalid first/last row offsets");
+      return ERROR_INVALID_VAL;
    }
-
-   HYPRE_Int nrows = (HYPRE_Int)nrows_big;
-   if (indptr[0] < 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr[0] (%lld) must be nonnegative",
-                           (long long)indptr[0]);
-      return 0;
-   }
-
    HYPRE_BigInt nnz_big = indptr[nrows] - indptr[0];
-   if (nnz_big < 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr[nrows] (%lld) < indptr[0] (%lld)",
-                           (long long)indptr[nrows], (long long)indptr[0]);
-      return 0;
-   }
    if ((HYPRE_BigInt)((HYPRE_Int)nnz_big) != nnz_big)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
-         "BuildMatrixFromCSR: local nonzero count (%lld) exceeds HYPRE_Int range",
-         (long long)nnz_big);
-      return 0;
+         "BuildMatrixFromCSR: local nonzero count exceeds HYPRE_Int range");
+      return ERROR_INVALID_VAL;
    }
-
-   HYPRE_Int nnz = (HYPRE_Int)nnz_big;
-   if (nnz > 0 && (!col_indices || !data))
+   *nnz_out = (HYPRE_Int)nnz_big;
+   if (*nnz_out > 0 && (!col_indices || !data))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
          "BuildMatrixFromCSR: col_indices/data must be non-NULL when nnz > 0");
-      return 0;
+      return ERROR_INVALID_VAL;
    }
-
-   *nrows_out = nrows;
-   *nnz_out   = nnz;
-
-   return 1;
+   for (HYPRE_Int i = 0; i < nrows; i++)
+   {
+      if (indptr[i + 1] < indptr[i])
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "BuildMatrixFromCSR: indptr is not monotonically non-decreasing at row %lld",
+            (long long)i);
+         return ERROR_INVALID_VAL;
+      }
+   }
+#ifdef HYPREDRV_USING_DEBUG
+   for (HYPRE_Int k = 0; k < *nnz_out; k++)
+   {
+      if (col_indices[indptr[0] + (HYPRE_BigInt)k] < 0)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: column indices must be nonnegative");
+         return ERROR_INVALID_VAL;
+      }
+   }
+#endif
+   return ERROR_NONE;
 }
 
-/* Runs a HYPRE call inside the CSR/array builders below; on failure records the
- * HYPRE error description, prefixed by `label`, and jumps to `fail`. */
-#define LINSYS_HYPRE_CALL(label, call)                                            \
-   do                                                                             \
-   {                                                                              \
-      HYPRE_Int hypre_ierr = (call);                                              \
-      if (hypre_ierr != 0)                                                        \
-      {                                                                           \
-         char hypre_err_msg[HYPRE_MAX_MSG_LEN];                                   \
-         HYPRE_DescribeError(hypre_ierr, hypre_err_msg);                          \
-         status = ERROR_HYPRE_INTERNAL;                                           \
-         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);                             \
-         hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, hypre_err_msg); \
-         goto fail;                                                               \
-      }                                                                           \
+/* Local calls only record failures. Each builder reaches the next collective
+ * agreement point before any rank can leave its current construction phase. */
+static uint32_t
+LinearSystemBuildRecordError(const char *label, HYPRE_Int code)
+{
+   if (code)
+   {
+      char message[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(code, message);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, message);
+      return ERROR_HYPRE_INTERNAL;
+   }
+   return ERROR_NONE;
+}
+
+/* Internal calls report their own status, independently of diagnostics left
+ * by an earlier caller. Merge only this operation's failure across ranks. */
+static uint32_t
+LinearSystemBuildStatusSync(MPI_Comm comm, uint32_t status)
+{
+   uint32_t collective_status = ERROR_NONE;
+   MPI_Allreduce(&status, &collective_status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (collective_status != status)
+   {
+      hypredrv_ErrorCodeSet((hypredrv_error_t)collective_status);
+      hypredrv_ErrorMsgAdd("Array construction failed on another rank");
+   }
+   return collective_status;
+}
+
+#define LINSYS_HYPRE_CALL(label, call)                         \
+   do                                                          \
+   {                                                           \
+      if (status == ERROR_NONE)                                \
+      {                                                        \
+         status = LinearSystemBuildRecordError(label, (call)); \
+      }                                                        \
    } while (0)
 
 /* Counts one CSR row's entries in the local diagonal and off-diagonal blocks. */
@@ -1556,83 +1594,39 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         const HYPRE_BigInt *col_indices,
                                         const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr)
 {
-   uint32_t      status        = ERROR_NONE;
-   HYPRE_Int    *ncols_per_row = NULL;
-   HYPRE_BigInt *row_ids       = NULL;
-   HYPRE_Int    *diag_sizes    = NULL;
-   HYPRE_Int    *offd_sizes    = NULL;
+   uint32_t       status        = ERROR_NONE;
+   HYPRE_IJMatrix matrix        = NULL;
+   HYPRE_Int     *ncols_per_row = NULL, *diag_sizes = NULL, *offd_sizes = NULL;
+   HYPRE_BigInt  *row_ids = NULL;
+   HYPRE_Int      nrows = 0, nnz = 0;
+   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
 
-   HYPRE_Int nrows = 0;
-   HYPRE_Int nnz   = 0;
-
-   if (!LinearSystemCSRValidateArgs(row_start, row_end, indptr, col_indices, data,
-                                    mat_ptr, &nrows, &nnz))
+   status = LinearSystemCSRValidateArgs(row_start, row_end, indptr, col_indices, data,
+                                        mat_ptr, &nrows, &nnz);
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
    {
-      return ERROR_INVALID_VAL;
-   }
-
-   /* Destroy any pre-existing matrix at *mat_ptr (caller pattern, like ReadMatrix) */
-   if (*mat_ptr)
-   {
-      HYPRE_IJMatrixDestroy(*mat_ptr);
-      *mat_ptr = NULL;
-   }
-
-   /* IJMatrixCreate requires a square global column range matching the row range
-    * across all ranks. We pass the rank-local row range for both row and column
-    * lower/upper bounds; HYPRE composes the global column partition from the
-    * concatenation. This matches how matrices read from file are built (see
-    * src/matrix.c) and gives standard ParCSR layout. */
-   LINSYS_HYPRE_CALL(
-      "BuildMatrixFromCSR",
-      HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, mat_ptr));
-   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                     HYPRE_IJMatrixSetObjectType(*mat_ptr, HYPRE_PARCSR));
-
-   if (nrows == 0 || nnz == 0)
-   {
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                        HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
       return status;
    }
 
-   /* HYPRE_IJMatrixSetValues requires per-row counts and row ids on every call.
-    * These transient O(nrows) scratch arrays stay on the host even when matrix
-    * values are initialized for a device memory location. For host matrices the
-    * same pass also counts each row's diagonal/off-diagonal block entries so
-    * the matrix can be pre-sized (as the file readers do) instead of growing
-    * hypre's auxiliary rows during assembly. */
-   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
-   ncols_per_row  = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
-   row_ids        = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
+   ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
+   row_ids       = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_HOST);
    if (host)
    {
       diag_sizes = hypre_CTAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
       offd_sizes = hypre_CTAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
    }
+   if (!ncols_per_row || !row_ids || (host && (!diag_sizes || !offd_sizes)))
+   {
+      status = ERROR_ALLOCATION;
+      hypredrv_AllocationFailure("Failed to allocate CSR construction scratch arrays");
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+   {
+      goto cleanup;
+   }
    for (HYPRE_Int i = 0; i < nrows; i++)
    {
-      HYPRE_BigInt row_nnz = indptr[i + 1] - indptr[i];
-      if (row_nnz < 0)
-      {
-         status = ERROR_INVALID_VAL;
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: indptr is not monotonically "
-                              "non-decreasing at row %lld",
-                              (long long)i);
-         goto fail;
-      }
-      if ((HYPRE_BigInt)((HYPRE_Int)row_nnz) != row_nnz)
-      {
-         status = ERROR_INVALID_VAL;
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "BuildMatrixFromCSR: row %lld nonzero count (%lld) exceeds HYPRE_Int range",
-            (long long)i, (long long)row_nnz);
-         goto fail;
-      }
-      ncols_per_row[i] = (HYPRE_Int)row_nnz;
+      ncols_per_row[i] = (HYPRE_Int)(indptr[i + 1] - indptr[i]);
       row_ids[i]       = row_start + (HYPRE_BigInt)i;
       if (host)
       {
@@ -1640,99 +1634,97 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                          col_indices, &diag_sizes[i], &offd_sizes[i]);
       }
    }
+
+   /* Creation and assembly are collective; local preparation between them
+    * must finish on every rank before either collective phase is entered. */
+   LINSYS_HYPRE_CALL(
+      "BuildMatrixFromCSR",
+      HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, &matrix));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+   {
+      goto cleanup;
+   }
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                     HYPRE_IJMatrixSetObjectType(matrix, HYPRE_PARCSR));
    if (host)
    {
       LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                        HYPRE_IJMatrixSetDiagOffdSizes(*mat_ptr, diag_sizes, offd_sizes));
+                        HYPRE_IJMatrixSetDiagOffdSizes(matrix, diag_sizes, offd_sizes));
    }
    LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                     HYPRE_IJMatrixInitialize_v2(*mat_ptr, memory_location));
+                     HYPRE_IJMatrixInitialize_v2(matrix, memory_location));
 
-#ifdef HYPREDRV_USING_DEBUG
-   for (HYPRE_Int k = 0; k < nnz; k++)
+   if (nnz > 0 && status == ERROR_NONE)
    {
-      long long    col_index = (long long)indptr[0] + (long long)k;
-      HYPRE_BigInt col       = col_indices[indptr[0] + (HYPRE_BigInt)k];
-      if (col < 0)
-      {
-         status = ERROR_INVALID_VAL;
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "BuildMatrixFromCSR: col_indices[%lld] (%lld) must be nonnegative", col_index,
-            (long long)col);
-         goto fail;
-      }
-   }
-#endif
-
 #if defined(HYPRE_USING_GPU)
-   if (hypre_GetActualMemLocation(memory_location) == hypre_MEMORY_DEVICE)
-   {
-      /* hypre's device IJ assembly path requires all SetValues inputs to live in
-       * device memory. Stage the caller's host CSR (and the transient per-row
-       * arrays) on the device once and assemble the matrix on the GPU. For large
-       * matrices this is dramatically faster than assembling on the host and then
-       * migrating the ParCSR (host assembly of millions of nonzeros dominates). */
-      HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
-      HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
-      HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
-      HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
-
-      hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_cols, col_indices + indptr[0], HYPRE_BigInt, nnz,
-                    HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_data, data + indptr[0], HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
-
-      HYPRE_Int ierr =
-         HYPRE_IJMatrixSetValues(*mat_ptr, nrows, d_ncols, d_rows, d_cols, d_data);
-      if (!ierr)
+      if (!host)
       {
-         ierr = HYPRE_IJMatrixAssemble(*mat_ptr);
+         /* Stage host buffers once for hypre's device SetValues path. */
+         HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
+         HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
+         HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
+         HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
+         if (!d_ncols || !d_rows || !d_cols || !d_data)
+         {
+            status = ERROR_ALLOCATION;
+            hypredrv_AllocationFailure("Failed to allocate device CSR staging buffers");
+         }
+         else
+         {
+            hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_cols, col_indices + indptr[0], HYPRE_BigInt, nnz,
+                          HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_data, data + indptr[0], HYPRE_Complex, nnz,
+                          HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+            LINSYS_HYPRE_CALL(
+               "BuildMatrixFromCSR",
+               HYPRE_IJMatrixSetValues(matrix, nrows, d_ncols, d_rows, d_cols, d_data));
+         }
+         hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
       }
-
-      hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", ierr);
-   }
-   else
+      else
 #endif
+      {
+         LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                           HYPRE_IJMatrixSetValues(matrix, nrows, ncols_per_row, row_ids,
+                                                   col_indices + indptr[0],
+                                                   data + indptr[0]));
+      }
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
    {
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                        HYPRE_IJMatrixSetValues(*mat_ptr, nrows, ncols_per_row, row_ids,
-                                                col_indices + indptr[0],
-                                                data + indptr[0]));
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(*mat_ptr));
+      goto cleanup;
+   }
+   LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(matrix));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) == ERROR_NONE)
+   {
+      if (*mat_ptr)
+      {
+         HYPRE_IJMatrixDestroy(*mat_ptr);
+      }
+      *mat_ptr = matrix;
+      matrix   = NULL;
    }
 
+cleanup:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
    hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
    hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
-   return status;
-
-fail:
-   hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
-   hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
-   hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
-   hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
-   if (*mat_ptr)
+   if (matrix)
    {
-      HYPRE_IJMatrixDestroy(*mat_ptr);
-      *mat_ptr = NULL;
+      HYPRE_IJMatrixDestroy(matrix);
    }
    return status;
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemBuildRHSFromArray
- *-----------------------------------------------------------------------------*/
-
+/* Build a complete RHS collectively before publishing the output handle. */
 uint32_t
 hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        HYPRE_MemoryLocation memory_location,
@@ -1740,65 +1732,52 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
    uint32_t status = ERROR_NONE;
-   if (!rhs_ptr)
+   HYPRE_IJVector rhs    = NULL;
+   HYPRE_Int      nrows  = 0;
+   if (!rhs_ptr || !values)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildRHSFromArray: rhs_ptr must be non-NULL");
-      return ERROR_INVALID_VAL;
-   }
-   if (row_end < row_start)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildRHSFromArray: row_end (%lld) < row_start (%lld)",
-                           (long long)row_end, (long long)row_start);
-      return ERROR_INVALID_VAL;
-   }
-
-   HYPRE_BigInt nrows_big = row_end - row_start + 1;
-   if ((HYPRE_BigInt)((HYPRE_Int)nrows_big) != nrows_big)
-   {
+      status = ERROR_INVALID_VAL;
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
-         "BuildRHSFromArray: local row count (%lld) exceeds HYPRE_Int range",
-         (long long)nrows_big);
-      return ERROR_INVALID_VAL;
+         "BuildRHSFromArray: output pointer and values must be non-NULL");
    }
-
-   HYPRE_Int nrows = (HYPRE_Int)nrows_big;
-   if (!values)
+   if (!LinearSystemArrayRowCount("BuildRHSFromArray", row_start, row_end, &nrows))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildRHSFromArray: values must be non-NULL");
-      return ERROR_INVALID_VAL;
+      status = ERROR_INVALID_VAL;
    }
-
-   if (*rhs_ptr)
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
    {
-      HYPRE_IJVectorDestroy(*rhs_ptr);
-      *rhs_ptr = NULL;
+      return status;
    }
-
    LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                     HYPRE_IJVectorCreate(comm, row_start, row_end, rhs_ptr));
-   LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                     HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR));
-   LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                     HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location));
-
-   if (nrows > 0)
+                     HYPRE_IJVectorCreate(comm, row_start, row_end, &rhs));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
    {
-      LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                        LinearSystemSetHostValues(*rhs_ptr, nrows, NULL, values));
+      goto cleanup;
    }
-   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(*rhs_ptr));
-
-   return status;
-
-fail:
-   if (*rhs_ptr)
+   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorSetObjectType(rhs, HYPRE_PARCSR));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     HYPRE_IJVectorInitialize_v2(rhs, memory_location));
+   LINSYS_HYPRE_CALL("BuildRHSFromArray",
+                     LinearSystemSetHostValues(rhs, nrows, NULL, values));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
    {
-      HYPRE_IJVectorDestroy(*rhs_ptr);
-      *rhs_ptr = NULL;
+      goto cleanup;
+   }
+   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(rhs));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) == ERROR_NONE)
+   {
+      if (*rhs_ptr)
+      {
+         HYPRE_IJVectorDestroy(*rhs_ptr);
+      }
+      *rhs_ptr = rhs;
+      rhs      = NULL;
+   }
+cleanup:
+   if (rhs)
+   {
+      HYPRE_IJVectorDestroy(rhs);
    }
    return status;
 }
@@ -3124,42 +3103,6 @@ hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **d
 
    /* TODO: Print how many dofs types we have (min, max, avg, sum) across ranks
     */
-}
-
-/*-----------------------------------------------------------------------------
- * LinearSystemGetSolution
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemGetSolutionValues(HYPRE_IJVector sol, HYPRE_Complex **data_ptr)
-{
-   HYPRE_ParVector par_sol = NULL;
-   hypre_Vector   *seq_sol = NULL;
-   void           *obj     = NULL;
-
-   HYPRE_IJVectorGetObject(sol, &obj);
-   par_sol = (HYPRE_ParVector)obj;
-   seq_sol = hypre_ParVectorLocalVector(par_sol);
-
-   *data_ptr = hypre_VectorData(seq_sol);
-}
-
-/*-----------------------------------------------------------------------------
- * LinearSystemGetRHS
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemGetRHSValues(HYPRE_IJVector rhs, HYPRE_Complex **data_ptr)
-{
-   HYPRE_ParVector par_rhs = NULL;
-   hypre_Vector   *seq_rhs = NULL;
-   void           *obj     = NULL;
-
-   HYPRE_IJVectorGetObject(rhs, &obj);
-   par_rhs = (HYPRE_ParVector)obj;
-   seq_rhs = hypre_ParVectorLocalVector(par_rhs);
-
-   *data_ptr = hypre_VectorData(seq_rhs);
 }
 
 /*-----------------------------------------------------------------------------

@@ -49,13 +49,14 @@ StrIntMapArray hypredrv_SolverGetValidValues(const char *);
 StrIntMapArray hypredrv_SolverGetValidTypeIntMap(void);
 
 void hypredrv_SolverSetArgsFromYAML(void *, YAMLnode *);
+/* Initialize fresh method arguments from the real YAML body; an empty body
+ * selects defaults. The optional child belongs to a separate schema. */
+void hypredrv_SolverSetMethodArgs(solver_t, solver_args *, YAMLnode *, const YAMLnode *);
 void hypredrv_SolverArgsSetDefaultsForMethod(solver_t, solver_args *);
 void hypredrv_SolverCreate(MPI_Comm, solver_t, solver_args *, HYPRE_Solver *);
 void hypredrv_SolverSetupWithReuse(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver,
                                    HYPRE_IJMatrix, HYPRE_IJVector, HYPRE_IJVector,
                                    Stats *, int);
-void hypredrv_SolverSetup(precon_t, solver_t, HYPRE_Precon, HYPRE_Solver, HYPRE_IJMatrix,
-                          HYPRE_IJVector, HYPRE_IJVector, Stats *);
 void hypredrv_SolverGetConverged(solver_t, HYPRE_Solver, HYPRE_Int *);
 void hypredrv_SolverGetFinalRelativeResidualNorm(solver_t, HYPRE_Solver, HYPRE_Real *);
 void hypredrv_SolverApply(solver_t, HYPRE_Solver, HYPRE_IJMatrix, HYPRE_IJVector,
