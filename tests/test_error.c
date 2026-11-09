@@ -31,6 +31,19 @@ capture_error_output(void (*print_fn)(void), char *buffer, size_t buf_len);
  *-----------------------------------------------------------------------------*/
 
 static void
+test_ErrorCode_all_bit_positions(void)
+{
+   for (uint32_t bit = 1; bit != 0; bit <<= 1)
+   {
+      hypredrv_ErrorStateReset();
+      hypredrv_ErrorCodeSet((hypredrv_error_t)bit);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), bit);
+      hypredrv_ErrorCodeReset(bit);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   }
+}
+
+static void
 test_ErrorCodeSet_get(void)
 {
    /* Reset first to ensure clean state */
@@ -665,6 +678,7 @@ main(int argc, char **argv)
    MPI_Init(&argc, &argv);
 
    RUN_TEST(test_ErrorCodeSet_get);
+   RUN_TEST(test_ErrorCode_all_bit_positions);
    RUN_TEST(test_ErrorCodeReset);
    RUN_TEST(test_ErrorCodeMultiple);
    RUN_TEST(test_HypreConsumeErrors_classifies_soft_and_hard_flags);

@@ -505,7 +505,7 @@ ErrorStateGet(void)
 }
 
 static int
-ErrorCodeToIndex(hypredrv_error_t code)
+ErrorCodeToIndex(uint32_t code)
 {
    int index = 0;
 
