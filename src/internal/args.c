@@ -911,7 +911,7 @@ hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
       }
    }
 
-   PreconParseContext ctx = {0};
+   PreconParseContext ctx    = {0};
    PreconParseResult  result = InputArgsParsePreconValueOnly(iargs, parent, &ctx);
    if (result == PRECON_PARSE_NOT_HANDLED)
    {

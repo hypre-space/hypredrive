@@ -1640,9 +1640,9 @@ hypredrv_MGRValidatePointMarkerRows(const MGR_args *args, HYPRE_ParCSRMatrix mat
    }
 
    hypre_ParCSRMatrix *par_matrix = (hypre_ParCSRMatrix *)matrix;
-   HYPRE_Int local_rows = hypre_ParCSRMatrixNumRows(par_matrix);
+   HYPRE_Int           local_rows = hypre_ParCSRMatrixNumRows(par_matrix);
    int local_ok = local_rows >= 0 && args->point_marker_size >= (size_t)local_rows;
-   int all_ok = 0;
+   int all_ok   = 0;
    MPI_Allreduce(&local_ok, &all_ok, 1, MPI_INT, MPI_MIN,
                  hypre_ParCSRMatrixComm(par_matrix));
    if (!all_ok)
@@ -1650,8 +1650,9 @@ hypredrv_MGRValidatePointMarkerRows(const MGR_args *args, HYPRE_ParCSRMatrix mat
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       if (!local_ok)
       {
-         hypredrv_ErrorMsgAdd("MGR point-marker length %zu is shorter than %d local matrix rows",
-                              args->point_marker_size, (int)local_rows);
+         hypredrv_ErrorMsgAdd(
+            "MGR point-marker length %zu is shorter than %d local matrix rows",
+            args->point_marker_size, (int)local_rows);
       }
       else
       {

@@ -459,7 +459,8 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
 void
 hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
                             YAMLGetValidValuesFunc get_vals,
-                            YAMLSetFieldByNameFunc set_field, const YAMLnode *ignored_child)
+                            YAMLSetFieldByNameFunc set_field,
+                            const YAMLnode        *ignored_child)
 {
    /* GCOVR_EXCL_BR_START */
    if (!parent) /* GCOVR_EXCL_BR_STOP */

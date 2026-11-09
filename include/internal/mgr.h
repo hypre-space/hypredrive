@@ -225,10 +225,10 @@ void hypredrv_MGRCountKeepFlags(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRDestroyCachedSolvers(MGR_args *, int);
 /* Release the parent, cached components and owned marker buffer together.
  * A NULL parent (or parent pointer) also supports partial-create cleanup. */
-void hypredrv_MGRDestroy(MGR_args *, HYPRE_Solver *, int);
-void hypredrv_MGRForgetCachedSolvers(MGR_args *);
-void hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
-int  hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);
+void         hypredrv_MGRDestroy(MGR_args *, HYPRE_Solver *, int);
+void         hypredrv_MGRForgetCachedSolvers(MGR_args *);
+void         hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
+int          hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);
 HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
 HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver);
 void         hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *);

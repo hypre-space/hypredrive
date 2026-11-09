@@ -100,12 +100,12 @@ typedef HYPRE_Int (*PreconDestroyFn)(HYPRE_Solver);
 
 typedef struct PreconOps_struct
 {
-   const char    *name;
+   const char            *name;
    YAMLSetFieldByNameFunc set_args;
    size_t                 args_offset;
-   PreconParFn     setup;
-   PreconParFn     solve;
-   PreconDestroyFn destroy;
+   PreconParFn            setup;
+   PreconParFn            solve;
+   PreconDestroyFn        destroy;
 } PreconOps;
 
 static const PreconOps precon_ops[] = {
@@ -239,8 +239,8 @@ hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
  * operator guard and setup ownership transition together for both outer and
  * nested Krylov solvers. */
 HYPRE_Int
-hypredrv_PreconKrylovSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A,
-                           HYPRE_ParVector b, HYPRE_ParVector x)
+hypredrv_PreconKrylovSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                           HYPRE_ParVector x)
 {
    HYPRE_Precon precon = (HYPRE_Precon)solver;
    if (!precon)
@@ -271,8 +271,8 @@ hypredrv_PreconKrylovSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A,
 }
 
 HYPRE_Int
-hypredrv_PreconKrylovSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A,
-                           HYPRE_ParVector b, HYPRE_ParVector x)
+hypredrv_PreconKrylovSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                           HYPRE_ParVector x)
 {
    HYPRE_Precon precon = (HYPRE_Precon)solver;
    if (!precon)
@@ -351,7 +351,7 @@ hypredrv_PreconSetMethodArgs(precon_t method, precon_args *args, YAMLnode *body)
    hypredrv_PreconArgsSetDefaultsForMethod(method, args);
    /* Scalar aliases (jacobi/gauss-seidel) belong to the value-only section
     * syntax; typed bodies use the method keys from the preconditioner schema. */
-   if (strcmp(body->key, "-") &&
+   if (strcmp(body->key, "-") != 0 &&
        !hypredrv_StrArrayEntryExists(hypredrv_PreconGetValidKeys(), body->key))
    {
       body->avail_keys = hypredrv_PreconGetValidKeys();

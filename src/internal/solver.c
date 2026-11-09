@@ -26,7 +26,7 @@ HYPRE_Int hypre_BiCGSTABGetConverged(void *bicgstab_vdata, HYPRE_Int *converged)
 
 static HYPRE_Int
 PreconSetupNoop(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
-                 HYPRE_ParVector x)
+                HYPRE_ParVector x)
 {
    (void)solver;
    (void)A;

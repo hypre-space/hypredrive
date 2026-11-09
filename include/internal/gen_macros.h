@@ -110,12 +110,13 @@
  * @param _prefix Struct prefix for args type (e.g. AMG).
  * @param _fnPrefix Function name prefix (e.g. hypredrv_AMG).
  */
-#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix, _fnPrefix)                               \
-   void _fnPrefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)                        \
-   {                                                                                     \
-      _prefix##_args *args = (_prefix##_args *)vargs;                                    \
-      hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,         \
-                                  _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName, NULL); \
+#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix, _fnPrefix)                              \
+   void _fnPrefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)                       \
+   {                                                                                    \
+      _prefix##_args *args = (_prefix##_args *)vargs;                                   \
+      hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,        \
+                                  _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName, \
+                                  NULL);                                                \
    }
 
 /**

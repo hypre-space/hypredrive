@@ -1444,7 +1444,7 @@ static int
 LinearSystemArrayRowCount(const char *label, HYPRE_BigInt first, HYPRE_BigInt last,
                           HYPRE_Int *count)
 {
-   const uintmax_t max_count = (UINTMAX_C(1) << (sizeof(HYPRE_Int) * CHAR_BIT - 1)) - 1;
+   const uintmax_t max_count = (UINTMAX_C(1) << ((sizeof(HYPRE_Int) * CHAR_BIT) - 1)) - 1;
    const uintmax_t span      = (uintmax_t)last - (uintmax_t)first;
    if (last < first || span >= max_count)
    {
@@ -1586,6 +1586,62 @@ LinearSystemCSRCountRowSparsity(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
    }
 }
 
+/* Insert the local values only; the caller coordinates status before assembly. */
+static uint32_t
+LinearSystemCSRSetValues(HYPRE_IJMatrix matrix, HYPRE_MemoryLocation memory_location,
+                         HYPRE_Int nrows, HYPRE_Int nnz, HYPRE_Int *ncols_per_row,
+                         HYPRE_BigInt *row_ids, const HYPRE_BigInt *col_indices,
+                         const HYPRE_Real *data)
+{
+   uint32_t status = ERROR_NONE;
+#if defined(HYPRE_USING_GPU)
+   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
+#else
+   (void)memory_location;
+   (void)nnz;
+#endif
+#if defined(HYPRE_USING_GPU)
+   if (!host)
+   {
+      /* Stage host buffers once for hypre's device SetValues path. */
+      HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
+      HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
+      HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
+      HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
+      if (!d_ncols || !d_rows || !d_cols || !d_data)
+      {
+         status = ERROR_ALLOCATION;
+         hypredrv_AllocationFailure("Failed to allocate device CSR staging buffers");
+      }
+      else
+      {
+         hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_cols, col_indices, HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+         hypre_TMemcpy(d_data, data, HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE,
+                       HYPRE_MEMORY_HOST);
+         LINSYS_HYPRE_CALL(
+            "BuildMatrixFromCSR",
+            HYPRE_IJMatrixSetValues(matrix, nrows, d_ncols, d_rows, d_cols, d_data));
+      }
+      hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
+      hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
+   }
+   else
+#endif
+   {
+      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+                        HYPRE_IJMatrixSetValues(matrix, nrows, ncols_per_row, row_ids,
+                                                col_indices, data));
+   }
+   return status;
+}
+
 uint32_t
 hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
                                         HYPRE_MemoryLocation memory_location,
@@ -1656,46 +1712,9 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
 
    if (nnz > 0 && status == ERROR_NONE)
    {
-#if defined(HYPRE_USING_GPU)
-      if (!host)
-      {
-         /* Stage host buffers once for hypre's device SetValues path. */
-         HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
-         HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
-         HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
-         HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
-         if (!d_ncols || !d_rows || !d_cols || !d_data)
-         {
-            status = ERROR_ALLOCATION;
-            hypredrv_AllocationFailure("Failed to allocate device CSR staging buffers");
-         }
-         else
-         {
-            hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
-                          HYPRE_MEMORY_HOST);
-            hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
-                          HYPRE_MEMORY_HOST);
-            hypre_TMemcpy(d_cols, col_indices + indptr[0], HYPRE_BigInt, nnz,
-                          HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
-            hypre_TMemcpy(d_data, data + indptr[0], HYPRE_Complex, nnz,
-                          HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
-            LINSYS_HYPRE_CALL(
-               "BuildMatrixFromCSR",
-               HYPRE_IJMatrixSetValues(matrix, nrows, d_ncols, d_rows, d_cols, d_data));
-         }
-         hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
-         hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
-         hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
-         hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
-      }
-      else
-#endif
-      {
-         LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                           HYPRE_IJMatrixSetValues(matrix, nrows, ncols_per_row, row_ids,
-                                                   col_indices + indptr[0],
-                                                   data + indptr[0]));
-      }
+      status =
+         LinearSystemCSRSetValues(matrix, memory_location, nrows, nnz, ncols_per_row,
+                                  row_ids, col_indices + indptr[0], data + indptr[0]);
    }
    if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
    {
@@ -1731,7 +1750,7 @@ hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
                                        const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
 {
-   uint32_t status = ERROR_NONE;
+   uint32_t       status = ERROR_NONE;
    HYPRE_IJVector rhs    = NULL;
    HYPRE_Int      nrows  = 0;
    if (!rhs_ptr || !values)

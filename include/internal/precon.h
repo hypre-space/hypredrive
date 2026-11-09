@@ -111,8 +111,8 @@ StrIntMapArray hypredrv_PreconGetValidTypeIntMap(void);
 void           hypredrv_PreconSetDefaultArgs(precon_args *);
 /* Initialize fresh method arguments from a real YAML body (including a
  * sequence item); an empty body selects defaults. */
-void           hypredrv_PreconSetMethodArgs(precon_t, precon_args *, YAMLnode *);
-void           hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
+void hypredrv_PreconSetMethodArgs(precon_t, precon_args *, YAMLnode *);
+void hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
 void hypredrv_PreconArgsSetDefaultsForName(precon_t, const char *, precon_args *);
 void hypredrv_PreconArgsDestroyOwnedConfig(precon_t, precon_args *);
 void hypredrv_PreconArgsDestroyRuntimeState(precon_t, precon_args *);
@@ -142,10 +142,10 @@ void hypredrv_PreconGetCallbacks(precon_t, HYPRE_PtrToParSolverFcn *,
                                  HYPRE_PtrToParSolverFcn *);
 /* Krylov callbacks receive the wrapper so guards, timing and ownership state
  * apply equally to ordinary and nested solvers. */
-HYPRE_Int hypredrv_PreconKrylovSetup(HYPRE_Solver, HYPRE_ParCSRMatrix,
-                                      HYPRE_ParVector, HYPRE_ParVector);
-HYPRE_Int hypredrv_PreconKrylovSolve(HYPRE_Solver, HYPRE_ParCSRMatrix,
-                                      HYPRE_ParVector, HYPRE_ParVector);
+HYPRE_Int hypredrv_PreconKrylovSetup(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                                     HYPRE_ParVector);
+HYPRE_Int hypredrv_PreconKrylovSolve(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                                     HYPRE_ParVector);
 
 void hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
 void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,

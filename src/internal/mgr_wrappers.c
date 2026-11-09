@@ -609,8 +609,7 @@ MGRFRelaxWrapperSetup(void *wrapper_v, void *A, void *b, void *x)
    {
       return 1;
    }
-   if (!hypredrv_MGRValidatePointMarkerRows(wrapper->nested_args,
-                                             (HYPRE_ParCSRMatrix)A))
+   if (!hypredrv_MGRValidatePointMarkerRows(wrapper->nested_args, (HYPRE_ParCSRMatrix)A))
    {
       return 1;
    }

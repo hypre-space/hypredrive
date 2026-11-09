@@ -15,12 +15,12 @@
 typedef struct SolverOps_struct
 {
    void (*set_defaults)(solver_args *);
-   YAMLGetValidKeysFunc get_keys;
+   YAMLGetValidKeysFunc   get_keys;
    YAMLGetValidValuesFunc get_values;
    YAMLSetFieldByNameFunc set_field;
    void (*create)(MPI_Comm, const solver_args *, HYPRE_Solver *);
    HYPRE_Int (*set_precond)(HYPRE_Solver, HYPRE_PtrToParSolverFcn,
-                             HYPRE_PtrToParSolverFcn, HYPRE_Solver);
+                            HYPRE_PtrToParSolverFcn, HYPRE_Solver);
    HYPRE_Int (*setup)(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector, HYPRE_ParVector);
    HYPRE_Int (*solve)(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector, HYPRE_ParVector);
    HYPRE_Int (*destroy)(HYPRE_Solver);

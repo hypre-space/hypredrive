@@ -432,8 +432,8 @@ hypredrv_NestedKrylovSolve(HYPRE_Solver solver, HYPRE_Matrix A, HYPRE_Vector b,
    {
       return 1;
    }
-   solve_rc = ops->solve(args->base_solver, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
-                         (HYPRE_ParVector)x);
+   solve_rc    = ops->solve(args->base_solver, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
+                            (HYPRE_ParVector)x);
    hypre_error = HYPRE_GetError();
 
    /* Nested Krylov objects are only used as inexact MGR smoothers/coarse solves.
