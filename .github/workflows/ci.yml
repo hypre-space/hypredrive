@@ -198,7 +198,7 @@ jobs:
           $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-msvc-build'
           Add-Content -Path $env:GITHUB_ENV -Value "BUILD_DIR=$buildDir"
           cmake -S . -B "$buildDir" -G "Visual Studio 17 2022" -A x64 `
-            "-DCMAKE_C_FLAGS=/std:c11 /utf-8" `
+            "-DCMAKE_C_FLAGS=/std:c11 /utf-8 /DWIN32" `
             "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-msvc-install" `
             -DBUILD_SHARED_LIBS=ON `
             "-DHYPRE_VERSION=v3.2.0" `
