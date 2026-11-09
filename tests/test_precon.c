@@ -3521,12 +3521,12 @@ test_AMGSetDofFunc_labels(void)
    hypredrv_IntArrayDestroy(&bad);
 
    /* Size mismatch with the local number of rows is an error */
-   IntArray *small = NULL;
-   hypredrv_IntArrayBuildContiguous(MPI_COMM_SELF, 2, 2, &small);
+   IntArray *short_dofmap = NULL;
+   hypredrv_IntArrayBuildContiguous(MPI_COMM_SELF, 2, 2, &short_dofmap);
    hypredrv_ErrorCodeResetAll();
-   hypredrv_AMGSetDofFunc(&args.amg, small, precon->main, mat);
+   hypredrv_AMGSetDofFunc(&args.amg, short_dofmap, precon->main, mat);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
-   hypredrv_IntArrayDestroy(&small);
+   hypredrv_IntArrayDestroy(&short_dofmap);
    hypredrv_ErrorCodeResetAll();
 
    hypredrv_PreconDestroy(PRECON_BOOMERAMG, &args, &precon, NULL, 0);

@@ -160,14 +160,14 @@ test_comp_missing_blosc_codec(void)
 static void
 test_comp_unknown_algo_compress_decompress(void)
 {
-   unsigned char small[4] = {0};
+   unsigned char input[4] = {0};
    unsigned char buf[32]  = {0};
    void         *out = NULL;
    size_t        sz  = 0;
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
-   hypredrv_compress((comp_alg_t)88, 4, small, &sz, &out, -1);
+   hypredrv_compress((comp_alg_t)88, 4, input, &sz, &out, -1);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_UNKNOWN) != 0);
    free(out);

@@ -6,7 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 #include "HYPRE.h"
 #include "internal/containers.h"
@@ -2768,7 +2770,7 @@ test_hypredrv_PrintSystem_yaml_parser_selectors_and_null_field(void)
       add_child(ids, "-", "0", 3);
       {
          char buf[32];
-         snprintf(buf, sizeof(buf), "%ld", (long)INT_MAX + 1L);
+         snprintf(buf, sizeof(buf), "%lld", (long long)INT_MAX + 1LL);
          add_child(ids, "-", buf, 3);
       }
 

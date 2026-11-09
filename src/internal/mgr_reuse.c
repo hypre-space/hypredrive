@@ -24,6 +24,21 @@
 #include "internal/stats.h"
 #include "logging.h"
 
+#if defined(HYPREDRV_HYPRE_DLL)
+/* Read the DLL import address directly: HYPRE compares this callback with its
+ * own function address, and its public declaration lacks dllimport. */
+#if defined(_WIN64)
+extern HYPRE_PtrToParSolverFcn __imp_HYPRE_BoomerAMGSetup;
+#define MGR_AMG_SETUP __imp_HYPRE_BoomerAMGSetup
+#else
+/* The 32-bit C ABI adds the leading underscore to this import symbol. */
+extern HYPRE_PtrToParSolverFcn _imp__HYPRE_BoomerAMGSetup;
+#define MGR_AMG_SETUP _imp__HYPRE_BoomerAMGSetup
+#endif
+#else
+#define MGR_AMG_SETUP HYPRE_BoomerAMGSetup
+#endif
+
 /* GCOVR_EXCL_BR_START */
 
 void
@@ -914,7 +929,7 @@ hypredrv_MGRCoarseSolverInstall(HYPRE_Solver mgr_solver, HYPRE_Int type,
 {
    if (type == 0)
    {
-      HYPRE_MGRSetCoarseSolver(mgr_solver, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGSetup,
+      HYPRE_MGRSetCoarseSolver(mgr_solver, HYPRE_BoomerAMGSolve, MGR_AMG_SETUP,
                                coarse_solver);
    }
    else if (type == 32)

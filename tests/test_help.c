@@ -10,14 +10,21 @@
 static char *
 capture_help_with_status(const char *topic, int *status)
 {
-   char  *buf  = NULL;
-   size_t size = 0;
-   FILE  *fp   = open_memstream(&buf, &size);
+   FILE *fp = tmpfile();
    ASSERT_NOT_NULL(fp);
 
    int rc = hypredrv_HelpPrint(fp, "hypredrive-cli", topic);
-   fclose(fp);
+   ASSERT_EQ(fflush(fp), 0);
+   long length = ftell(fp);
+   ASSERT_TRUE(length >= 0);
+   rewind(fp);
+   char *buf = malloc((size_t)length + 1);
    ASSERT_NOT_NULL(buf);
+   size_t size = fread(buf, 1, (size_t)length, fp);
+   ASSERT_FALSE(ferror(fp));
+   ASSERT_EQ_SIZE(size, (size_t)length);
+   buf[size] = '\0';
+   fclose(fp);
    if (status)
    {
       *status = rc;

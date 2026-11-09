@@ -73,7 +73,8 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
 
-      - name: Install Microsoft MPI
+      - &install-msmpi
+        name: Install Microsoft MPI
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -118,6 +119,7 @@ jobs:
         run: |
           set -euxo pipefail
           mpi_inc="$(cygpath -m "${MSMPI_INC}")"
+          mpi_bin="$(cygpath -m "${MSMPI_BIN}")"
           mpi_lib_dir="$(cygpath -u "${MSMPI_LIB64}")"
           if [[ -f "${mpi_lib_dir}/msmpi64.lib" ]]; then
             mpi_lib="${mpi_lib_dir}/msmpi64.lib"
@@ -132,13 +134,15 @@ jobs:
             -DCMAKE_CXX_COMPILER=g++ \
             -DBUILD_SHARED_LIBS=ON \
             -DHYPRE_VERSION=v3.2.0 \
-            -DHYPREDRV_ENABLE_TESTING=OFF \
+            -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=OFF \
             -DHYPRE_ENABLE_MPI=ON \
             -DHYPRE_ENABLE_FORTRAN=OFF \
             -DHYPRE_ENABLE_CUDA=OFF \
             -DHYPRE_ENABLE_HIP=OFF \
             -DHYPRE_ENABLE_SYCL=OFF \
+            -DMPIEXEC_EXECUTABLE="${mpi_bin}/mpiexec.exe" \
+            -DMPIEXEC_NUMPROC_FLAG=-n \
             -DMPI_C_HEADER_DIR="${mpi_inc}" \
             -DMPI_C_INCLUDE_DIRS="${mpi_inc}" \
             -DMPI_C_INCLUDE_PATH="${mpi_inc}" \
@@ -155,6 +159,73 @@ jobs:
             -DMPI_C_VERSION=3.0 \
             -DMPI_CXX_VERSION=3.0
           cmake --build build --parallel
+
+      - name: Run CTest suite
+        timeout-minutes: 15
+        shell: msys2 {0}
+        run: |
+          set -euxo pipefail
+          while IFS= read -r dir; do
+            export PATH="$dir:$PATH"
+          done < <(find "$PWD/build" -type f -name '*.dll' -printf '%h\n' | sort -u)
+          export TMPDIR="$(cygpath -m "$RUNNER_TEMP")"
+          ctest --test-dir build --output-on-failure --no-tests=error --timeout 60
+
+  windows-msvc-build:
+    if: >-
+      ${{
+        (
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) &&
+        (
+          github.event_name != 'pull_request' ||
+          (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+        )
+      }}
+    name: Windows | MSVC | MS-MPI
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - *install-msmpi
+
+      - name: Configure hypredrive
+        shell: pwsh
+        run: |
+          $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-msvc-build'
+          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_DIR=$buildDir"
+          cmake -S . -B "$buildDir" -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_C_FLAGS=/std:c11 /utf-8 /DWIN32" `
+            "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-msvc-install" `
+            -DBUILD_SHARED_LIBS=ON `
+            "-DHYPRE_VERSION=v3.2.0" `
+            -DHYPREDRV_ENABLE_TESTING=ON `
+            -DHYPREDRV_ENABLE_EXAMPLES=OFF `
+            -DHYPRE_ENABLE_MPI=ON `
+            -DHYPRE_ENABLE_FORTRAN=OFF `
+            -DHYPRE_ENABLE_CUDA=OFF `
+            -DHYPRE_ENABLE_HIP=OFF `
+            -DHYPRE_ENABLE_SYCL=OFF `
+            -DMPI_GUESS_LIBRARY_NAME=MSMPI `
+            "-DMPIEXEC_EXECUTABLE=$env:MSMPI_BIN/mpiexec.exe" `
+            -DMPIEXEC_NUMPROC_FLAG=-n
+
+      - name: Build hypredrive
+        shell: pwsh
+        run: cmake --build "$env:BUILD_DIR" --config Release --parallel
+
+      - name: Run CTest suite
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $dllDirs = Get-ChildItem -Path $env:BUILD_DIR -Filter '*.dll' -Recurse |
+            Select-Object -ExpandProperty DirectoryName -Unique
+          $env:PATH = ($dllDirs -join ';') + ";$env:PATH"
+          $env:TMPDIR = $env:RUNNER_TEMP
+          ctest --test-dir "$env:BUILD_DIR" -C Release --output-on-failure --no-tests=error --timeout 60
 
   python-interface:
     if: >-

@@ -5,7 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#if defined(_MSC_VER)
+#include <sys/utime.h>
+#define utimbuf _utimbuf
+#define utime _utime
+#else
 #include <utime.h>
+#endif
 
 #include "internal/comp.h"
 #include "internal/containers.h"
@@ -3446,6 +3452,38 @@ test_lsseq_compressed_cache_rejects_stale_rewrite(void)
 
 #if defined(HYPREDRV_USING_LZ4)
 static void
+test_lsseq_compressed_slice_oversized_header(void)
+{
+   const char    *filename = "test_lsseq_lz4_oversized_header.bin";
+   const uint64_t sizes[]  = {(UINT64_C(1) << 34) + 1, (UINT64_C(1) << 32) + 1};
+
+   add_temp_file(filename);
+   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
+   {
+      LSSeqHeader    header;
+      uint64_t       table[LSSEQ_PART_BLOB_ENTRIES];
+      HYPRE_IJVector rhs = NULL;
+      write_lsseq_compressed_parts(filename, COMP_LZ4, 0, 5.0);
+      FILE *fp = fopen(filename, "r+b");
+      ASSERT_NOT_NULL(fp);
+      ASSERT_EQ_SIZE(fread(&header, sizeof(header), 1, fp), 1);
+      ASSERT_EQ(fseek(fp, (long)header.offset_part_blob_table, SEEK_SET), 0);
+      ASSERT_EQ_SIZE(fread(table, sizeof(table), 1, fp), 1);
+      ASSERT_EQ(fseek(fp, (long)(header.offset_blob_data + table[2]), SEEK_SET), 0);
+      ASSERT_EQ_SIZE(fwrite(&sizes[i], sizeof(sizes[i]), 1, fp), 1);
+      fclose(fp);
+
+      hypredrv_ErrorCodeResetAll();
+      ASSERT_FALSE(
+         hypredrv_LSSeqReadRHS(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &rhs));
+      ASSERT_NULL(rhs);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorStateReset();
+      hypredrv_LSSeqReleaseCaches();
+   }
+}
+
+static void
 test_lsseq_compressed_slice_fallback(void)
 {
    const char *filename = "test_lsseq_lz4_slices.bin";
@@ -3469,6 +3507,7 @@ main(int argc, char **argv)
    RUN_TEST(test_lsseq_compressed_cache_rejects_stale_rewrite);
 #endif
 #if defined(HYPREDRV_USING_LZ4)
+   RUN_TEST(test_lsseq_compressed_slice_oversized_header);
    RUN_TEST(test_lsseq_compressed_slice_fallback);
 #endif
 

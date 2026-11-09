@@ -198,6 +198,10 @@ set(SOURCE_FILES
 # Compile the implementation once so shared builds can also provide a private,
 # non-installed static link path to bundled tools and white-box tests.
 add_library(HYPREDRV_objects OBJECT ${SOURCE_FILES})
+get_target_property(_hypredrv_hypre_type HYPRE::HYPRE TYPE)
+if(WIN32 AND _hypredrv_hypre_type STREQUAL "SHARED_LIBRARY")
+    target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_HYPRE_DLL)
+endif()
 add_library(HYPREDRV $<TARGET_OBJECTS:HYPREDRV_objects>)
 add_library(HYPREDRV::HYPREDRV ALIAS HYPREDRV)
 hypredrv_add_hypre_build_dependency(HYPREDRV_objects)

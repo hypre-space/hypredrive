@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 
 #include "HYPRE.h"
 #include "HYPREDRV.h"
