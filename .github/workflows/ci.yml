@@ -73,7 +73,8 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
 
-      - name: Install Microsoft MPI
+      - &install-msmpi
+        name: Install Microsoft MPI
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -155,6 +156,61 @@ jobs:
             -DMPI_C_VERSION=3.0 \
             -DMPI_CXX_VERSION=3.0
           cmake --build build --parallel
+
+  windows-msvc-build:
+    if: >-
+      ${{
+        (
+          github.event_name != 'pull_request' ||
+          github.event.pull_request.head.repo.full_name == github.repository
+        ) &&
+        (
+          github.event_name != 'pull_request' ||
+          (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+        )
+      }}
+    name: Windows | MSVC | MS-MPI
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - *install-msmpi
+
+      - name: Configure hypredrive
+        shell: pwsh
+        run: |
+          $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-msvc-build'
+          Add-Content -Path $env:GITHUB_ENV -Value "BUILD_DIR=$buildDir"
+          cmake -S . -B "$buildDir" -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-msvc-install" `
+            -DBUILD_SHARED_LIBS=ON `
+            -DHYPRE_VERSION=v3.2.0 `
+            -DHYPREDRV_ENABLE_TESTING=OFF `
+            -DHYPREDRV_ENABLE_EXAMPLES=OFF `
+            -DHYPREDRV_ENABLE_DATA=OFF `
+            -DHYPRE_ENABLE_MPI=ON `
+            -DHYPRE_ENABLE_FORTRAN=OFF `
+            -DHYPRE_ENABLE_CUDA=OFF `
+            -DHYPRE_ENABLE_HIP=OFF `
+            -DHYPRE_ENABLE_SYCL=OFF `
+            -DMPI_GUESS_LIBRARY_NAME=MSMPI
+
+      - name: Build hypredrive
+        shell: pwsh
+        run: cmake --build "$env:BUILD_DIR" --config Release --parallel
+
+      - name: Run CLI smoke test with Microsoft MPI
+        timeout-minutes: 2
+        shell: pwsh
+        run: |
+          $dllDirs = Get-ChildItem -Path $env:BUILD_DIR -Filter '*.dll' -Recurse |
+            Select-Object -ExpandProperty DirectoryName -Unique
+          $env:PATH = ($dllDirs -join ';') + ";$env:PATH"
+          $mpiexec = Join-Path $env:MSMPI_BIN 'mpiexec.exe'
+          $cli = Join-Path $env:BUILD_DIR 'Release/hypredrive-cli.exe'
+          & $mpiexec -n 1 $cli --help
 
   python-interface:
     if: >-
