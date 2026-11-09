@@ -33,11 +33,11 @@ int  hypredrv_decompress_slice(comp_alg_t algo, size_t isize, const void *input,
                                size_t offset, size_t size, void **output);
 
 /* Where a slice stream reads its compressed blob (as written by
- * hypredrv_compress) from: read(ctx, offset, buffer, size) copies `size` bytes
+ * hypredrv_compress) from: read_at(ctx, offset, buffer, size) copies `size` bytes
  * starting `offset` bytes into the blob and returns 1 on success. */
 typedef struct
 {
-   int (*read)(void *ctx, uint64_t offset, void *buffer, size_t size);
+   int (*read_at)(void *ctx, uint64_t offset, void *buffer, size_t size);
    void *ctx;
 } hypredrv_SliceSource;
 hypredrv_SliceSource hypredrv_SliceSourceFromMemory(const void *blob);

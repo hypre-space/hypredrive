@@ -843,7 +843,7 @@ SliceStreamRefill(hypredrv_SliceStream *st, const hypredrv_SliceSource *src)
    size_t n = st->payload - st->in_fed;
 
    n = (n < SLICE_STREAM_INPUT_SIZE) ? n : SLICE_STREAM_INPUT_SIZE;
-   if (n == 0 || !src->read(src->ctx, sizeof(uint64_t) + st->in_fed, st->input, n))
+   if (n == 0 || !src->read_at(src->ctx, sizeof(uint64_t) + st->in_fed, st->input, n))
    {
       return 0;
    }
@@ -960,8 +960,8 @@ hypredrv_SliceStreamCreate(comp_alg_t algo, size_t isize, const hypredrv_SliceSo
 #ifdef HYPREDRV_USING_ZLIB
    resumable |= (algo == COMP_ZLIB);
 #endif
-   if (!resumable || !src || !src->read || isize < sizeof(uint64_t) ||
-       !src->read(src->ctx, 0, &orig, sizeof(orig)))
+   if (!resumable || !src || !src->read_at || isize < sizeof(uint64_t) ||
+       !src->read_at(src->ctx, 0, &orig, sizeof(orig)))
    {
       return NULL;
    }

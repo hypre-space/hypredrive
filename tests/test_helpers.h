@@ -430,8 +430,12 @@ test_scratch_path(char *buf, size_t size, const char *name)
 static inline FILE *
 test_tmpfile(void)
 {
-   char path[PATH_MAX];
-   test_scratch_path(path, sizeof(path), "capture-XXXXXX");
+   /* _mktemp_s provides only 26 names per template; vary its prefix too. */
+   static unsigned long next_capture = 0;
+   char                 name[64];
+   char                 path[PATH_MAX];
+   snprintf(name, sizeof(name), "capture-%lu-XXXXXX", next_capture++);
+   test_scratch_path(path, sizeof(path), name);
    int fd = test_mkstemp(path);
    if (fd < 0) return NULL;
    FILE *fp = fdopen(fd, "w+b");
