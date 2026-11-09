@@ -201,7 +201,7 @@ jobs:
             "-DCMAKE_C_FLAGS=/std:c11 /utf-8" `
             "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-msvc-install" `
             -DBUILD_SHARED_LIBS=ON `
-            -DHYPRE_VERSION=v3.2.0 `
+            "-DHYPRE_VERSION=v3.2.0" `
             -DHYPREDRV_ENABLE_TESTING=ON `
             -DHYPREDRV_ENABLE_EXAMPLES=OFF `
             -DHYPRE_ENABLE_MPI=ON `
