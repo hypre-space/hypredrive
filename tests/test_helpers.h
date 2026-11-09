@@ -8,7 +8,9 @@
 #ifndef TEST_HELPERS_HEADER
 #define TEST_HELPERS_HEADER
 
+#ifndef _WIN32
 #include <dirent.h>
+#endif
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -19,10 +21,78 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 #include "HYPRE.h"
+#include "internal/compatibility.h"
 #include "internal/utils.h"
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
+
+#ifdef _WIN32
+#include <direct.h>
+#include <fcntl.h>
+#include <io.h>
+#include <process.h>
+#include <windows.h>
+#ifndef F_OK
+#define F_OK 0
+#endif
+#ifndef STDOUT_FILENO
+#define STDOUT_FILENO 1
+#define STDERR_FILENO 2
+#endif
+#define mkdir(path, mode) _mkdir(path)
+#define chdir(path) _chdir(path)
+#define getcwd(buf, size) _getcwd(buf, (int)(size))
+
+static inline int
+test_setenv(const char *name, const char *value, int overwrite)
+{
+   if (!overwrite && getenv(name)) return 0;
+   return _putenv_s(name, value);
+}
+
+static inline int
+test_unsetenv(const char *name)
+{
+   return _putenv_s(name, "");
+}
+
+static inline int
+test_mkstemp(char *path)
+{
+   size_t size = strlen(path);
+   if (size < 6 || strcmp(path + size - 6, "XXXXXX"))
+   {
+      errno = EINVAL;
+      return -1;
+   }
+   for (int i = 0; i < 128; i++)
+   {
+      memcpy(path + size - 6, "XXXXXX", 6);
+      int error = _mktemp_s(path, size + 1);
+      if (error)
+      {
+         errno = error;
+         return -1;
+      }
+      int fd =
+         _open(path, _O_CREAT | _O_EXCL | _O_RDWR | _O_BINARY, _S_IREAD | _S_IWRITE);
+      if (fd >= 0 || errno != EEXIST) return fd;
+   }
+   errno = EEXIST;
+   return -1;
+}
+
+#define setenv(name, value, overwrite) test_setenv(name, value, overwrite)
+#define unsetenv(name) test_unsetenv(name)
+#define mkstemp(path) test_mkstemp(path)
+#endif
 
 /*-----------------------------------------------------------------------------
  * Hypre init/finalize helpers (older hypre releases do not provide them)
@@ -72,17 +142,15 @@ hypredrv_TestHypreInit(void)
       } \
    } while (0)
 
-/* Comparison macros evaluate each argument once, so side-effecting arguments
- * such as fclose(fp) are not repeated when a failure is reported. */
-#define ASSERT_EQ(a, b) \
-   do { \
-      __typeof__((a) + (b)) _lhs = (a); \
-      __typeof__((a) + (b)) _rhs = (b); \
-      if (_lhs != _rhs) { \
-         fprintf(stderr, "FAIL: %s:%d: %s (%d) != %s (%d)\n", \
-                __FILE__, __LINE__, #a, (int)_lhs, #b, (int)_rhs); \
-         exit(1); \
-      } \
+/* Compare using the usual arithmetic conversions, evaluating each operand once. */
+#define ASSERT_EQ(a, b)                                                          \
+   do                                                                            \
+   {                                                                             \
+      if ((a) != (b))                                                            \
+      {                                                                          \
+         fprintf(stderr, "FAIL: %s:%d: %s != %s\n", __FILE__, __LINE__, #a, #b); \
+         exit(1);                                                                \
+      }                                                                          \
    } while (0)
 
 #define ASSERT_EQ_SIZE(a, b) \
@@ -107,15 +175,14 @@ hypredrv_TestHypreInit(void)
       } \
    } while (0)
 
-#define ASSERT_NE(a, b) \
-   do { \
-      __typeof__((a) + (b)) _lhs = (a); \
-      __typeof__((a) + (b)) _rhs = (b); \
-      if (_lhs == _rhs) { \
-         fprintf(stderr, "FAIL: %s:%d: %s (%d) == %s (%d)\n", \
-                __FILE__, __LINE__, #a, (int)_lhs, #b, (int)_rhs); \
-         exit(1); \
-      } \
+#define ASSERT_NE(a, b)                                                          \
+   do                                                                            \
+   {                                                                             \
+      if ((a) == (b))                                                            \
+      {                                                                          \
+         fprintf(stderr, "FAIL: %s:%d: %s == %s\n", __FILE__, __LINE__, #a, #b); \
+         exit(1);                                                                \
+      }                                                                          \
    } while (0)
 
 #define ASSERT_PTR_EQ(a, b) \
@@ -237,16 +304,20 @@ cleanup_temp_files(void)
    temp_file_count = 0;
 }
 
-#define CREATE_TEMP_FILE(pattern) \
-   ({ \
-      char *tmp_file = strdup(pattern); \
-      FILE *fp = fopen(tmp_file, "w"); \
-      if (fp) { \
-         fclose(fp); \
-         add_temp_file(tmp_file); \
-      } \
-      tmp_file; \
-   })
+static inline char *
+create_temp_file(const char *pattern)
+{
+   char *tmp_file = strdup(pattern);
+   FILE *fp       = tmp_file ? fopen(tmp_file, "w") : NULL;
+   if (fp)
+   {
+      fclose(fp);
+      add_temp_file(tmp_file);
+   }
+   return tmp_file;
+}
+
+#define CREATE_TEMP_FILE(pattern) create_temp_file(pattern)
 
 /*-----------------------------------------------------------------------------
  * Scratch directory helpers: every test process writes under its own private
@@ -260,6 +331,38 @@ static char test_scratch_dir[PATH_MAX];
 static inline void
 test_rmtree(const char *path)
 {
+#ifdef _WIN32
+   DWORD attributes = GetFileAttributesA(path);
+   if (attributes == INVALID_FILE_ATTRIBUTES) return;
+   if (attributes & FILE_ATTRIBUTE_DIRECTORY)
+   {
+      if (!(attributes & FILE_ATTRIBUTE_REPARSE_POINT))
+      {
+         char pattern[PATH_MAX];
+         snprintf(pattern, sizeof(pattern), "%s/*", path);
+         WIN32_FIND_DATAA entry;
+         HANDLE           search = FindFirstFileA(pattern, &entry);
+         if (search != INVALID_HANDLE_VALUE)
+         {
+            do
+            {
+               if (strcmp(entry.cFileName, ".") && strcmp(entry.cFileName, ".."))
+               {
+                  char child[PATH_MAX];
+                  snprintf(child, sizeof(child), "%s/%s", path, entry.cFileName);
+                  test_rmtree(child);
+               }
+            } while (FindNextFileA(search, &entry));
+            FindClose(search);
+         }
+      }
+      (void)RemoveDirectoryA(path);
+   }
+   else
+   {
+      (void)DeleteFileA(path);
+   }
+#else
    struct stat st;
    DIR        *dir = (lstat(path, &st) == 0 && S_ISDIR(st.st_mode)) ? opendir(path) : NULL;
    if (dir)
@@ -277,6 +380,7 @@ test_rmtree(const char *path)
       closedir(dir);
    }
    (void)remove(path);
+#endif
 }
 
 static inline void
@@ -317,5 +421,22 @@ test_scratch_path(char *buf, size_t size, const char *name)
    ASSERT_TRUE(written >= 0 && (size_t)written < size);
    return buf;
 }
+
+#ifdef _WIN32
+/* The MS CRT tmpfile() may require access to the drive root. Use the private
+ * per-process scratch directory and let its registered cleanup remove files. */
+static inline FILE *
+test_tmpfile(void)
+{
+   char path[PATH_MAX];
+   test_scratch_path(path, sizeof(path), "capture-XXXXXX");
+   int fd = test_mkstemp(path);
+   if (fd < 0) return NULL;
+   FILE *fp = fdopen(fd, "w+b");
+   if (!fp) close(fd);
+   return fp;
+}
+#define tmpfile() test_tmpfile()
+#endif
 
 #endif /* TEST_HELPERS_HEADER */

@@ -9,7 +9,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 #include "test_helpers.h"
 #include "internal/containers.h"
 #include "internal/error.h"
@@ -2161,6 +2163,19 @@ test_YAMLtextRead_fail_with_text_cleanup_after_partial_read(void)
 static void
 test_YAMLtextRead_fopen_failure(void)
 {
+#ifdef _WIN32
+   /* Windows CRT permission bits cannot remove read access. A dangling path
+    * exercises the same fopen failure without relying on POSIX permissions. */
+   int    base_indent = -1;
+   size_t len         = 0;
+   char  *text        = NULL;
+   char   missing[PATH_MAX];
+   test_scratch_path(missing, sizeof(missing), "unreadable-parent/missing.yml");
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtextRead(NULL, missing, 0, &base_indent, &len, &text);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
+   ASSERT_NULL(text);
+#else
    /* chmod 0000 does not stop root from opening the file */
    if (geteuid() == 0)
    {
@@ -2189,6 +2204,7 @@ test_YAMLtextRead_fopen_failure(void)
    ASSERT_NULL(text);
 
    ASSERT_EQ(chmod(locked, 0644), 0);
+#endif
 }
 
 /*-----------------------------------------------------------------------------
