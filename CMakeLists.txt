@@ -111,6 +111,12 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 # Find and configure dependencies
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Deps.cmake)
 
+# Use the portable C/POSIX CRT APIs in our sources and tests. Keep Microsoft's
+# deprecation opt-outs local to this build, without exporting them to consumers.
+if(MSVC)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
+endif()
+
 function(hypredrv_add_hypre_build_dependency target_name)
     if(HYPREDRV_HYPRE_BUILD_DEPENDENCY)
         add_dependencies(${target_name} ${HYPREDRV_HYPRE_BUILD_DEPENDENCY})
@@ -366,8 +372,15 @@ endif()
 # -Wcast-qual) on every supported hypre version; enable the warnings for them (not
 # for consumers) so regressions surface, and become errors under
 # CMAKE_COMPILE_WARNING_AS_ERROR.
-target_compile_options(HYPREDRV_objects PRIVATE
-    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wmissing-prototypes -Wcast-qual>)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+   CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # clang-cl maps -Wall to /Wall (-Weverything); /W4 matches -Wall -Wextra.
+    target_compile_options(HYPREDRV_objects PRIVATE
+        /W4 -Wmissing-prototypes -Wcast-qual)
+else()
+    target_compile_options(HYPREDRV_objects PRIVATE
+        $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wmissing-prototypes -Wcast-qual>)
+endif()
 if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_EXPORTS)
 else()

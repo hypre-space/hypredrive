@@ -171,7 +171,7 @@ jobs:
           export TMPDIR="$(cygpath -m "$RUNNER_TEMP")"
           ctest --test-dir build --output-on-failure --no-tests=error --timeout 60
 
-  windows-msvc-build:
+  windows-native-build:
     if: >-
       ${{
         (
@@ -184,9 +184,17 @@ jobs:
           (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
         )
       }}
-    name: Windows | MSVC | MS-MPI
+    name: Windows | ${{ matrix.compiler }} | MS-MPI
     runs-on: windows-2022
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - compiler: MSVC
+            toolset: v143
+          - compiler: clang-cl
+            toolset: ClangCL
     steps:
       - uses: actions/checkout@v6
 
@@ -195,11 +203,12 @@ jobs:
       - name: Configure hypredrive
         shell: pwsh
         run: |
-          $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-msvc-build'
+          $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-${{ matrix.compiler }}-build'
           Add-Content -Path $env:GITHUB_ENV -Value "BUILD_DIR=$buildDir"
           cmake -S . -B "$buildDir" -G "Visual Studio 17 2022" -A x64 `
+            -T "${{ matrix.toolset }}" `
             "-DCMAKE_C_FLAGS=/std:c11 /utf-8 /DWIN32" `
-            "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-msvc-install" `
+            "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-${{ matrix.compiler }}-install" `
             -DBUILD_SHARED_LIBS=ON `
             "-DHYPRE_VERSION=v3.2.0" `
             -DHYPREDRV_ENABLE_TESTING=ON `

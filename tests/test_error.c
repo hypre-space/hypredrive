@@ -544,11 +544,13 @@ test_ErrorMsgPrint_with_no_messages(void)
  *-----------------------------------------------------------------------------*/
 
 /* Helper to call hypredrv_ErrorBacktracePrint directly */
+#ifdef __linux__
 static void
 call_ErrorBacktracePrint(void)
 {
    hypredrv_ErrorBacktracePrint();
 }
+#endif
 
 static void
 test_ErrorBacktracePrint_has_filenames_and_lines(void)
