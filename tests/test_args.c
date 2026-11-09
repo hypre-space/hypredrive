@@ -35,7 +35,7 @@ parse_config(const char *yaml_text)
    char       *argv[1] = {argv0};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
    free(argv0);
    return args;
 }
@@ -55,7 +55,8 @@ parse_config_with_overrides(const char *yaml_text, int override_argc,
    }
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, override_argc + 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, override_argc + 1, argv,
+                                         &args, NULL);
 
    free(argv);
    free(argv0);
@@ -1107,7 +1108,7 @@ test_InputArgsParse_driver_mode_with_config_file(void)
 
    char *argv[] = {"hypredrive", "-i", yaml_file};
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 3, argv, &args, NULL);
 
    if (!hypredrv_ErrorCodeActive())
    {
@@ -1127,7 +1128,7 @@ test_InputArgsParse_null_argv0_error(void)
    char       *argv[] = {NULL};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
 
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(args);
@@ -1142,7 +1143,7 @@ test_InputArgsParse_file_not_found_error(void)
    char       *argv[] = {"nonexistent.yml"};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
 
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(args);
@@ -1163,7 +1164,7 @@ test_InputArgsParse_legacy_mode_with_overrides(void)
 
    char *argv[] = {yaml_file, "--solver:pcg:max_iter", "100"};
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 3, argv, &args, NULL);
 
    if (!hypredrv_ErrorCodeActive())
    {
@@ -1198,7 +1199,7 @@ test_InputArgsParse_driver_mode_with_nodash_overrides(void)
    char *argv2[] = {"hypredrive-cli", "-i", yaml_file, "--args",
                     "preconditioner:mgr:print_level", "1"};
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv2, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 6, argv2, &args, NULL);
 
    if (!hypredrv_ErrorCodeActive())
    {
@@ -1421,7 +1422,7 @@ test_InputArgsParsePrecon_variants_not_sequence_rejected(void)
 }
 
 static void
-test_InputArgsParsePrecon_reuse_after_amg_detach_path(void)
+test_InputArgsParsePrecon_reuse_after_amg(void)
 {
    const char yaml_text[] = "solver:\n"
                             "  pcg:\n"
@@ -1655,7 +1656,7 @@ test_InputArgsParse_invalid_yaml_file_on_disk(void)
    input_args *args = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
 
    ASSERT_NULL(args);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
@@ -1692,7 +1693,7 @@ test_InputArgsParse_include_from_subdirectory(void)
    input_args *args = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
 
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_PCG);
@@ -1732,7 +1733,7 @@ test_InputArgsParse_parent_relative_config_path(void)
    char *argv[] = {"../config.yml"};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
 
    /* Restore cwd before any result assertions so later tests are unaffected
     * if the parse unexpectedly fails. */
@@ -1769,7 +1770,7 @@ test_InputArgsParse_driver_mode_config_not_argv0_with_overrides(void)
    input_args *args = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 6, argv, &args, NULL);
 
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->solver_method, SOLVER_GMRES);
@@ -1797,7 +1798,7 @@ test_InputArgsParse_driver_mode_overrides_stop_at_info_flag(void)
    input_args *args = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 6, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 6, argv, &args, NULL);
 
    ASSERT_NOT_NULL(args);
    ASSERT_EQ(args->general.device_lazy_init, 1);
@@ -2005,7 +2006,7 @@ test_InputArgsParse_driver_mode_missing_config_file(void)
    char *argv[] = {"hypredrive", "-i", missing};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 3, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 3, argv, &args, NULL);
    ASSERT_NULL(args);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND) != 0);
@@ -2042,7 +2043,7 @@ test_InputArgsParse_file_include_target_missing(void)
    input_args *args = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
 
    ASSERT_NULL(args);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
@@ -2110,10 +2111,11 @@ test_PreconPreset_user_registered_two_types_rejected(void)
 {
    /* Drives PreconPresetBuildArgs() multi-child preset failure (args.c). */
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_PresetRegister(
-                "hypredrv_test_two_precon_types",
-                "amg:\n  print_level: 0\nfsai:\n  print_level: 0\n", "unit"),
-             0);
+   ASSERT_EQ(
+      hypredrv_PresetRegisterTyped("hypredrv_test_two_precon_types",
+                                   "amg:\n  print_level: 0\nfsai:\n  print_level: 0\n",
+                                   "unit", HYPREDRV_PRESET_PRECON),
+      0);
 
    const char yaml_text[] = "solver:\n"
                             "  pcg:\n"
@@ -2133,10 +2135,11 @@ static void
 test_PreconPreset_user_registered_unknown_type_rejected(void)
 {
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_PresetRegister(
-                "hypredrv_test_bad_precon_type",
-                "not_a_real_precon_keyword:\n  print_level: 0\n", "unit"),
-             0);
+   ASSERT_EQ(
+      hypredrv_PresetRegisterTyped("hypredrv_test_bad_precon_type",
+                                   "not_a_real_precon_keyword:\n  print_level: 0\n",
+                                   "unit", HYPREDRV_PRESET_PRECON),
+      0);
 
    const char yaml_text[] = "solver:\n"
                             "  pcg:\n"
@@ -2150,6 +2153,179 @@ test_PreconPreset_user_registered_unknown_type_rejected(void)
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    hypredrv_PresetFreeUserPresets();
+}
+
+static void
+test_Presets_reject_invalid_fields_without_replacing_args(void)
+{
+   const char *precon_texts[] = {
+      "amg:\n  unknown_option: 1\n",
+      "ilu: unknown_ilu_type\n",
+      "mgr: unexpected_scalar\n",
+      "mgr:\n  level:\n    0:\n      f_dofs: [0]\n      f_relaxation:\n"
+      "        gmres:\n          max_iter: 2\n  unknown_option: 1\n",
+   };
+   for (size_t i = 0; i < sizeof(precon_texts) / sizeof(precon_texts[0]); i++)
+   {
+      hypredrv_ErrorCodeResetAll();
+      ASSERT_EQ(hypredrv_PresetRegisterTyped("invalid_precon_body", precon_texts[i],
+                                             "unit", HYPREDRV_PRESET_PRECON),
+                0);
+      input_args *args = parse_config("solver: gmres\npreconditioner: ilu\n");
+      ASSERT_NOT_NULL(args);
+      ASSERT_FALSE(hypredrv_InputArgsPreconPresetIsValid("invalid_precon_body"));
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_InputArgsApplyPreconPreset(args, "invalid_precon_body", 0);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args->precon_method, PRECON_ILU);
+      hypredrv_InputArgsDestroy(&args);
+
+      args =
+         parse_config("solver: gmres\npreconditioner:\n  preset: invalid_precon_body\n");
+      ASSERT_NULL(args);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      args = parse_config(
+         "solver: gmres\npreconditioner:\n  - preset: invalid_precon_body\n");
+      ASSERT_NULL(args);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      hypredrv_PresetFreeUserPresets();
+   }
+
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_PresetRegisterTyped("invalid_solver_body",
+                                          "gmres:\n  unknown_option: 1\n", "unit",
+                                          HYPREDRV_PRESET_SOLVER),
+             0);
+   input_args *args = parse_config("solver: pcg\npreconditioner: amg\n");
+   ASSERT_NOT_NULL(args);
+   hypredrv_InputArgsApplySolverPreset(args, "invalid_solver_body");
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_KEY);
+   ASSERT_EQ(args->solver_method, SOLVER_PCG);
+   hypredrv_InputArgsDestroy(&args);
+   hypredrv_PresetFreeUserPresets();
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_Precon_real_method_bodies_preserve_scalar_values(void)
+{
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_PresetRegisterTyped("scalar_ilu_body", "ilu: bj-ilut\n", "unit",
+                                          HYPREDRV_PRESET_PRECON),
+             0);
+   const char *configs[] = {
+      "preconditioner:\n  preset: scalar_ilu_body\n",
+      "preconditioner:\n  - ilu: bj-ilut\n",
+      "preconditioner:\n  ilu: bj-ilut\n",
+   };
+   for (size_t i = 0; i < sizeof(configs) / sizeof(configs[0]); i++)
+   {
+      input_args *args = parse_config(configs[i]);
+      ASSERT_NOT_NULL(args);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(args->precon_method, PRECON_ILU);
+      ASSERT_EQ(args->precon.ilu.type, 1);
+      hypredrv_InputArgsDestroy(&args);
+   }
+   input_args *args = parse_config("preconditioner:\n  - ilu: unknown_ilu_type\n");
+   ASSERT_NULL(args);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   hypredrv_PresetFreeUserPresets();
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_TRUE(hypredrv_InputArgsPreconPresetIsValid("poisson"));
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+}
+
+static void
+test_InputArgsParse_preserves_reserved_node_order(void)
+{
+   const char *scaling   = "  scaling:\n    enabled: 1\n    type: rhs_l2\n";
+   const char *solver    = "  gmres:\n    max_iter: 17\n";
+   const char *reuse     = "  reuse:\n    frequency: 3\n";
+   const char *methods[] = {
+      "  amg:\n    print_level: 0\n",
+      "  preset: poisson\n",
+      "  variants:\n    - amg:\n        print_level: 0\n    - ilu: bj-ilut\n",
+   };
+   const char *keys[] = {"amg", "preset", "variants"};
+   for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
+   {
+      for (int reserved_first = 0; reserved_first <= 1; reserved_first++)
+      {
+         char config[1024], output[8192];
+         snprintf(
+            config, sizeof(config),
+            "general:\n  print_config_params: yes\nsolver:\n%s%spreconditioner:\n%s%s",
+            reserved_first ? scaling : solver, reserved_first ? solver : scaling,
+            reserved_first ? reuse : methods[i], reserved_first ? methods[i] : reuse);
+
+         /* The public parser prints the parsed tree before releasing it. Check
+          * that observable ordering, rather than exposing a test-only parser. */
+         FILE *capture = tmpfile();
+         ASSERT_NOT_NULL(capture);
+         fflush(stdout);
+         int saved_stdout = dup(STDOUT_FILENO);
+         ASSERT_TRUE(saved_stdout >= 0);
+         ASSERT_TRUE(dup2(fileno(capture), STDOUT_FILENO) >= 0);
+         input_args *args = parse_config(config);
+         fflush(stdout);
+         ASSERT_TRUE(dup2(saved_stdout, STDOUT_FILENO) >= 0);
+         close(saved_stdout);
+         rewind(capture);
+         size_t size  = fread(output, 1, sizeof(output) - 1, capture);
+         output[size] = '\0';
+         fclose(capture);
+
+         ASSERT_NOT_NULL(args);
+         ASSERT_FALSE(hypredrv_ErrorCodeActive());
+         ASSERT_EQ(args->solver.gmres.max_iter, 17);
+         ASSERT_EQ(args->scaling.type, SCALING_RHS_L2);
+         ASSERT_EQ(args->precon_reuse.frequency, 3);
+         ASSERT_EQ(args->num_precon_variants, i == 2 ? 2 : 1);
+         char *printed_solver  = strstr(output, "gmres");
+         char *printed_scaling = strstr(output, "scaling");
+         char *printed_method  = strstr(output, keys[i]);
+         char *printed_reuse   = strstr(output, "reuse");
+         ASSERT_NOT_NULL(printed_solver);
+         ASSERT_NOT_NULL(printed_scaling);
+         ASSERT_NOT_NULL(printed_method);
+         ASSERT_NOT_NULL(printed_reuse);
+         ASSERT_EQ(printed_scaling < printed_solver, reserved_first);
+         ASSERT_EQ(printed_reuse < printed_method, reserved_first);
+         hypredrv_InputArgsDestroy(&args);
+      }
+   }
+}
+
+static void
+test_InputArgsParse_reserved_options_do_not_hide_method_errors(void)
+{
+   const struct
+   {
+      const char      *text;
+      hypredrv_error_t error;
+   } cases[] = {
+      {"solver:\n  scaling:\n    enabled: 1\npreconditioner: amg\n",
+       ERROR_MISSING_SOLVER},
+      {"solver:\n  gmres:\n    max_iter: 2\n  scaling:\n    enabled: 1\n"
+       "  pcg:\n    max_iter: 3\npreconditioner: amg\n",
+       ERROR_EXTRA_KEY},
+      {"solver:\n  unknown_solver:\n    max_iter: 2\n  scaling:\n    enabled: 1\n"
+       "preconditioner: amg\n",
+       ERROR_INVALID_KEY},
+      {"solver: gmres\npreconditioner:\n  reuse: 2\n", ERROR_MISSING_PRECON},
+      {"solver: gmres\npreconditioner:\n  amg:\n    max_iter: 1\n"
+       "  reuse: 2\n  ilu: bj-ilut\n",
+       ERROR_EXTRA_KEY},
+   };
+   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++)
+   {
+      input_args *args = parse_config(cases[i].text);
+      ASSERT_NULL(args);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & cases[i].error);
+   }
+   hypredrv_ErrorCodeResetAll();
 }
 
 static void
@@ -2212,6 +2388,10 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsCreate_general_vendor_defaults);
    RUN_TEST(test_InputArgsParseGeneral_flags);
    RUN_TEST(test_InputArgsParse_rejects_malformed_numbers);
+   RUN_TEST(test_InputArgsParse_preserves_reserved_node_order);
+   RUN_TEST(test_InputArgsParse_reserved_options_do_not_hide_method_errors);
+   RUN_TEST(test_Presets_reject_invalid_fields_without_replacing_args);
+   RUN_TEST(test_Precon_real_method_bodies_preserve_scalar_values);
    RUN_TEST(test_InputArgsParseGeneral_use_millisec_sets_timer);
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
@@ -2273,7 +2453,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParsePrecon_typed_block_empty_rejected);
    RUN_TEST(test_InputArgsParsePrecon_typed_block_two_children_rejected);
    RUN_TEST(test_InputArgsParsePrecon_variants_not_sequence_rejected);
-   RUN_TEST(test_InputArgsParsePrecon_reuse_after_amg_detach_path);
+   RUN_TEST(test_InputArgsParsePrecon_reuse_after_amg);
    RUN_TEST(test_InputArgsParse_general_statistics_level_2);
    RUN_TEST(test_InputArgsCreate_lib_mode_print_config_params);
    RUN_TEST(test_hypredrv_InputArgsApplyPreconPreset_null_args);

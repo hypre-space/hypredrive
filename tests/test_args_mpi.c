@@ -61,7 +61,7 @@ test_InputArgsRead_mpi_broadcast(void)
 
    input_args *iargs = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_WORLD, 0, 1, argv, &iargs);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_WORLD, 0, 1, argv, &iargs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(iargs);
    hypredrv_InputArgsDestroy(&iargs);

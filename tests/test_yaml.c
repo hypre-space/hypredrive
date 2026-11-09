@@ -1980,7 +1980,7 @@ test_YAMLSetArgsGeneric_nested_children(void)
 
    int calls = 0;
    hypredrv_YAMLSetArgsGeneric(&calls, wrap, stub_schema_keys, stub_schema_vals,
-                               stub_schema_set_field);
+                               stub_schema_set_field, NULL);
    ASSERT_EQ(calls, 1);
 
    hypredrv_YAMLtreeDestroy(&tree);
@@ -1993,7 +1993,7 @@ test_YAMLSetArgsGeneric_flat_rewrites_key_to_type(void)
    int         calls = 0;
 
    hypredrv_YAMLSetArgsGeneric(&calls, node, stub_keys_flat_only_type, stub_vals_flat,
-                               stub_schema_set_field);
+                               stub_schema_set_field, NULL);
    ASSERT_EQ(calls, 1);
    ASSERT_STREQ(node->key, "mypre");
 
@@ -2029,7 +2029,7 @@ test_YAMLnodeValidateSchema_records_avail_vals_and_keys(void)
    YAMLnode *flat  = hypredrv_YAMLnodeCreate("mypre", "bogus", 0);
    int       calls = 0;
    hypredrv_YAMLSetArgsGeneric(&calls, flat, stub_keys_flat_only_type, stub_vals_flat,
-                               stub_schema_set_field);
+                               stub_schema_set_field, NULL);
    ASSERT_EQ(flat->valid, YAML_NODE_INVALID_VAL);
    ASSERT_EQ(calls, 0);
    ASSERT_EQ(flat->avail_vals.size, 2);
@@ -2487,7 +2487,7 @@ test_YAMLSetArgsGeneric_null_parent(void)
 {
    int calls = 0;
    hypredrv_YAMLSetArgsGeneric(&calls, NULL, stub_schema_keys, stub_schema_vals,
-                               stub_schema_set_field);
+                               stub_schema_set_field, NULL);
    ASSERT_EQ(calls, 0);
 }
 

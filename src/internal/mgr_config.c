@@ -1039,6 +1039,7 @@ hypredrv_MGRSetDefaultArgs(MGR_args *args)
    args->rbm_input_generation = 0;
    args->coarse_schur         = NULL;
    args->point_marker_data    = NULL;
+   args->point_marker_size    = 0;
 }
 
 /* GCOVR_EXCL_START */

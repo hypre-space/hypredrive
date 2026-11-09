@@ -89,20 +89,14 @@ PresetKindHeader(hypredrv_PresetKind kind)
  *-----------------------------------------------------------------------------*/
 
 int
-hypredrv_PresetRegister(const char *name, const char *yaml_text, const char *help)
-{
-   return hypredrv_PresetRegisterTyped(name, yaml_text, help, HYPREDRV_PRESET_PRECON);
-}
-
-int
 hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char *help,
                              hypredrv_PresetKind kind)
 {
    if (!name || !*name || !yaml_text || !*yaml_text)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "hypredrv_PresetRegister: name and yaml_text must be non-NULL and non-empty");
+      hypredrv_ErrorMsgAdd("hypredrv_PresetRegisterTyped: name and yaml_text must be "
+                           "non-NULL and non-empty");
       return -1;
    }
 
@@ -120,14 +114,15 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
-         "hypredrv_PresetRegister: preset '%s' conflicts with built-in preset", norm);
+         "hypredrv_PresetRegisterTyped: preset '%s' conflicts with built-in preset",
+         norm);
       free(norm);
       return -1;
    }
    if (PresetFindIn(g_user_presets, g_num_user_presets, norm, HYPREDRV_PRESET_ANY))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("hypredrv_PresetRegister: preset '%s' already registered",
+      hypredrv_ErrorMsgAdd("hypredrv_PresetRegisterTyped: preset '%s' already registered",
                            norm);
       free(norm);
       return -1;
@@ -192,12 +187,6 @@ hypredrv_PresetFreeUserPresets(void)
  * Generate help string listing available presets (caller must free).
  *-----------------------------------------------------------------------------*/
 
-char *
-hypredrv_PresetHelp(void)
-{
-   return hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
-}
-
 /* Write the "    - name: help" lines of the presets of the given kind into out
  * (capacity cap; out may be NULL to measure) and return their length. */
 static size_t
@@ -242,14 +231,8 @@ hypredrv_PresetHelpTyped(hypredrv_PresetKind kind)
 }
 
 /*-----------------------------------------------------------------------------
- * Find preconditioner preset by name (case-insensitive).
+ * Find preset by name and kind (case-insensitive).
  *-----------------------------------------------------------------------------*/
-
-const hypredrv_Preset *
-hypredrv_PresetFind(const char *name)
-{
-   return hypredrv_PresetFindTyped(name, HYPREDRV_PRESET_ANY);
-}
 
 const hypredrv_Preset *
 hypredrv_PresetFindTyped(const char *name, hypredrv_PresetKind kind)

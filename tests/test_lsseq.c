@@ -2534,7 +2534,7 @@ test_lsseq_summary_and_timesteps(void)
    }
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_TRUE(hypredrv_LSSeqReadTimesteps(filename, &starts));
+   ASSERT_TRUE(hypredrv_LSSeqReadTimestepsWithIds(filename, NULL, &starts));
    ASSERT_NOT_NULL(starts);
    ASSERT_EQ((int)starts->size, 2);
    ASSERT_EQ(starts->data[0], 0);
@@ -2698,7 +2698,7 @@ test_lsseq_requires_info_header(void)
    ASSERT_FALSE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0, HYPRE_MEMORY_HOST, &mat));
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_FALSE(hypredrv_LSSeqReadTimesteps(filename, &starts));
+   ASSERT_FALSE(hypredrv_LSSeqReadTimestepsWithIds(filename, NULL, &starts));
 }
 
 static void
@@ -3219,7 +3219,7 @@ test_lsseq_dofmap_no_flag_and_timestep_modes(void)
    ASSERT_NULL(starts);
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_FALSE(hypredrv_LSSeqReadTimesteps(fn_zt, &starts));
+   ASSERT_FALSE(hypredrv_LSSeqReadTimestepsWithIds(fn_zt, NULL, &starts));
    ASSERT_NULL(starts);
 
    hypredrv_ErrorCodeResetAll();

@@ -10,9 +10,12 @@
 #include "_hypre_parcsr_mv.h"
 #include "internal/gen_macros.h"
 #include "internal/krylov.h"
+#include "internal/mgr_internal.h"
 #include "logging.h"
 
 #include <stdio.h>
+
+static int PreconSetupOperatorGuard(HYPRE_Precon);
 
 #if !HYPRE_CHECK_MIN_VERSION(22500, 0)
 static HYPRE_Int
@@ -97,29 +100,44 @@ typedef HYPRE_Int (*PreconDestroyFn)(HYPRE_Solver);
 
 typedef struct PreconOps_struct
 {
-   PreconParFn     setup;
-   PreconParFn     solve;
-   PreconDestroyFn destroy;
+   const char            *name;
+   YAMLSetFieldByNameFunc set_args;
+   size_t                 args_offset;
+   PreconParFn            setup;
+   PreconParFn            solve;
+   PreconDestroyFn        destroy;
 } PreconOps;
 
 static const PreconOps precon_ops[] = {
-   [PRECON_BOOMERAMG] = {.setup   = HYPRE_BoomerAMGSetup,
-                         .solve   = HYPRE_BoomerAMGSolve,
-                         .destroy = HYPRE_BoomerAMGDestroy},
+   [PRECON_BOOMERAMG] = {.name        = "boomeramg",
+                         .set_args    = hypredrv_AMGSetArgs,
+                         .args_offset = offsetof(precon_args, amg),
+                         .setup       = HYPRE_BoomerAMGSetup,
+                         .solve       = HYPRE_BoomerAMGSolve,
+                         .destroy     = HYPRE_BoomerAMGDestroy},
    [PRECON_MGR] =
       {
-         .setup   = HYPRE_MGRSetup,
-         .solve   = HYPRE_MGRSolve,
-         .destroy = NULL, /* MGR teardown is handled by PreconDestroyMGRSolver */
+         .name        = "mgr",
+         .set_args    = hypredrv_MGRSetArgs,
+         .args_offset = offsetof(precon_args, mgr),
+         .setup       = HYPRE_MGRSetup,
+         .solve       = HYPRE_MGRSolve,
+         .destroy     = NULL, /* MGR teardown includes its owned runtime state. */
       },
    [PRECON_ILU] =
       {
-         .setup   = HYPRE_ILUSetup,
-         .solve   = HYPRE_ILUSolve,
-         .destroy = HYPRE_ILUDestroy,
+         .name        = "ilu",
+         .set_args    = hypredrv_ILUSetArgs,
+         .args_offset = offsetof(precon_args, ilu),
+         .setup       = HYPRE_ILUSetup,
+         .solve       = HYPRE_ILUSolve,
+         .destroy     = HYPRE_ILUDestroy,
       },
    [PRECON_FSAI] =
       {
+         .name        = "fsai",
+         .set_args    = hypredrv_FSAISetArgs,
+         .args_offset = offsetof(precon_args, fsai),
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
          .setup   = HYPRE_FSAISetup,
          .solve   = HYPRE_FSAISolve,
@@ -130,18 +148,27 @@ static const PreconOps precon_ops[] = {
          .destroy = NULL,
 #endif
       },
-   [PRECON_AMS] = {.setup   = HYPRE_AMSSetup,
-                   .solve   = HYPRE_AMSSolve,
-                   .destroy = HYPRE_AMSDestroy},
-   [PRECON_ADS] = {.setup   = HYPRE_ADSSetup,
-                   .solve   = HYPRE_ADSSolve,
-                   .destroy = HYPRE_ADSDestroy},
+   [PRECON_AMS] = {.name        = "ams",
+                   .set_args    = hypredrv_AMSSetArgs,
+                   .args_offset = offsetof(precon_args, ams),
+                   .setup       = HYPRE_AMSSetup,
+                   .solve       = HYPRE_AMSSolve,
+                   .destroy     = HYPRE_AMSDestroy},
+   [PRECON_ADS] = {.name        = "ads",
+                   .set_args    = hypredrv_ADSSetArgs,
+                   .args_offset = offsetof(precon_args, ads),
+                   .setup       = HYPRE_ADSSetup,
+                   .solve       = HYPRE_ADSSolve,
+                   .destroy     = HYPRE_ADSDestroy},
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-   [PRECON_SCHWARZ] = {.setup   = HYPRE_SchwarzSetup,
-                       .solve   = HYPRE_SchwarzSolve,
-                       .destroy = HYPRE_SchwarzDestroy},
+   [PRECON_SCHWARZ] = {.name        = "schwarz",
+                       .set_args    = hypredrv_SchwarzSetArgs,
+                       .args_offset = offsetof(precon_args, schwarz),
+                       .setup       = HYPRE_SchwarzSetup,
+                       .solve       = HYPRE_SchwarzSolve,
+                       .destroy     = HYPRE_SchwarzDestroy},
 #endif
-   [PRECON_NONE] = {.setup = NULL, .solve = NULL, .destroy = NULL},
+   [PRECON_NONE] = {.name = "none", .setup = NULL, .solve = NULL, .destroy = NULL},
 };
 
 static const PreconOps *
@@ -208,6 +235,55 @@ hypredrv_PreconGetCallbacks(precon_t method, HYPRE_PtrToParSolverFcn *setup,
    }
 }
 
+/* Krylov solvers pass the wrapper as their preconditioner object. Keep the
+ * operator guard and setup ownership transition together for both outer and
+ * nested Krylov solvers. */
+HYPRE_Int
+hypredrv_PreconKrylovSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                           HYPRE_ParVector x)
+{
+   HYPRE_Precon precon = (HYPRE_Precon)solver;
+   if (!precon)
+   {
+      return 0;
+   }
+   if (PreconSetupOperatorGuard(precon))
+   {
+      return 1;
+   }
+
+   if (precon->stats)
+   {
+      hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
+   }
+   HYPRE_PtrToParSolverFcn setup = NULL;
+   hypredrv_PreconGetCallbacks(precon->method, &setup, NULL);
+   HYPRE_Int ierr = setup ? setup(precon->main, A, b, x) : 0;
+   if (precon->stats)
+   {
+      hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_END, "prec");
+   }
+   if (precon->method != PRECON_NONE)
+   {
+      precon->is_setup = 1;
+   }
+   return ierr;
+}
+
+HYPRE_Int
+hypredrv_PreconKrylovSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
+                           HYPRE_ParVector x)
+{
+   HYPRE_Precon precon = (HYPRE_Precon)solver;
+   if (!precon)
+   {
+      return 0;
+   }
+   HYPRE_PtrToParSolverFcn solve = NULL;
+   hypredrv_PreconGetCallbacks(precon->method, NULL, &solve);
+   return solve ? solve(precon->main, A, b, x) : 0;
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_PreconSetDefaultArgs
  *-----------------------------------------------------------------------------*/
@@ -256,6 +332,41 @@ hypredrv_PreconArgsSetDefaultsForMethod(precon_t method, precon_args *args)
       case PRECON_NONE:
       default:
          break;
+   }
+}
+
+void
+hypredrv_PreconSetMethodArgs(precon_t method, precon_args *args, YAMLnode *body)
+{
+   const PreconOps *ops = PreconOpsLookup(method);
+   if (!ops || !ops->set_args || !args || !body)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid preconditioner method arguments");
+      return;
+   }
+
+   /* Initialize ownership fields before setters such as MGR release/reset
+    * configuration. Callers provide fresh storage, not a live configuration. */
+   hypredrv_PreconArgsSetDefaultsForMethod(method, args);
+   /* Scalar aliases (jacobi/gauss-seidel) belong to the value-only section
+    * syntax; typed bodies use the method keys from the preconditioner schema. */
+   if (strcmp(body->key, "-") != 0 &&
+       !hypredrv_StrArrayEntryExists(hypredrv_PreconGetValidKeys(), body->key))
+   {
+      body->avail_keys = hypredrv_PreconGetValidKeys();
+      YAML_NODE_SET_INVALID_KEY(body);
+      return;
+   }
+   YAML_NODE_SET_VALID(body);
+   if (method == PRECON_MGR && body->val[0])
+   {
+      YAML_NODE_SET_VALID_IF_NO_VAL(body);
+      return;
+   }
+   if (body->children || body->val[0])
+   {
+      ops->set_args((char *)args + ops->args_offset, body);
    }
 }
 
@@ -325,7 +436,7 @@ hypredrv_PreconArgsDestroyRuntimeState(precon_t method, precon_args *args)
    /* Only MGR keeps runtime state (cached component solvers) in its args. */
    if (method == PRECON_MGR)
    {
-      hypredrv_MGRDestroyCachedSolvers(&args->mgr, 0);
+      hypredrv_MGRDestroy(&args->mgr, NULL, 0);
       hypredrv_MGRForgetCachedSolvers(&args->mgr);
    }
 }
@@ -421,7 +532,7 @@ hypredrv_PreconSetArgsFromYAML(precon_args *args, YAMLnode *parent)
 
    hypredrv_YAMLSetArgsGeneric((void *)args, parent, hypredrv_PreconGetValidKeys,
                                hypredrv_PreconGetValidValues,
-                               hypredrv_PreconSetFieldByName);
+                               hypredrv_PreconSetFieldByName, NULL);
 }
 
 /*-----------------------------------------------------------------------------
@@ -464,8 +575,10 @@ hypredrv_PreconCreate(MPI_Comm comm, precon_t precon_method, precon_args *args,
    }
 
    precon->main     = NULL;
+   precon->comm     = comm;
    precon->method   = precon_method;
    precon->is_setup = 0;
+   precon->mgr_args = precon_method == PRECON_MGR ? &args->mgr : NULL;
    /* Methods that need no operator inputs are always ready for setup; AMS/ADS
     * are only ready when every required operator was supplied (checked below). */
    precon->operators_ok = hypredrv_PreconOperatorsComplete(precon_method, ops);
@@ -720,11 +833,11 @@ hypredrv_PreconOperatorsComplete(precon_t precon_method, const PreconOperators *
 }
 
 /*-----------------------------------------------------------------------------
- * hypredrv_PreconSetupOperatorGuard
+ * PreconSetupOperatorGuard
  *-----------------------------------------------------------------------------*/
 
-int
-hypredrv_PreconSetupOperatorGuard(HYPRE_Precon precon)
+static int
+PreconSetupOperatorGuard(HYPRE_Precon precon)
 {
    if (!precon || precon->operators_ok)
    {
@@ -752,6 +865,30 @@ hypredrv_PreconSetupOperatorGuard(HYPRE_Precon precon)
    return 1;
 }
 
+int
+hypredrv_PreconValidateSetup(HYPRE_Precon precon, HYPRE_ParCSRMatrix matrix)
+{
+   if (!precon)
+   {
+      return 1;
+   }
+
+   /* Hypre can ignore a setup callback's return value and continue into
+    * collective work. Agree on failures before entering any such callback. */
+   PreconSetupOperatorGuard(precon);
+   if (!matrix)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner setup requires a matrix");
+   }
+   if (hypredrv_DistributedErrorStateSync(precon->comm))
+   {
+      return 0;
+   }
+   return precon->method != PRECON_MGR ||
+          hypredrv_MGRValidatePointMarkerRows(precon->mgr_args, matrix);
+}
+
 /*-----------------------------------------------------------------------------
  * hypredrv_PreconSetup
  *-----------------------------------------------------------------------------*/
@@ -774,25 +911,18 @@ hypredrv_PreconSetup(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
       return;
    }
 
-   if (!A)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Preconditioner setup requested with null matrix");
-      return;
-   }
-
-   /* Abort cleanly (instead of letting hypre dereference NULL) when an AMS/ADS
-    * preconditioner is set up without its required operator inputs. */
-   if (hypredrv_PreconSetupOperatorGuard(precon))
-   {
-      return;
-   }
-
    HYPRE_Solver     prec = precon->main;
    const PreconOps *ops  = PreconOpsLookup(precon_method);
 
-   HYPRE_IJMatrixGetObject(A, &vA);
+   if (A)
+   {
+      HYPRE_IJMatrixGetObject(A, &vA);
+   }
    par_A = (HYPRE_ParCSRMatrix)vA;
+   if (!hypredrv_PreconValidateSetup(precon, par_A))
+   {
+      return;
+   }
 
    if (!ops || !ops->setup)
    {
@@ -876,37 +1006,6 @@ hypredrv_PreconApply(precon_t precon_method, HYPRE_Precon precon, HYPRE_IJMatrix
    ops->solve(prec, par_A, par_b, par_x);
 }
 
-static void
-PreconDestroyMGRSolver(MGR_args *mgr, HYPRE_Solver *solver_ptr, int precon_was_setup)
-{
-   if (!mgr) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-   if (!solver_ptr || !*solver_ptr) /* GCOVR_EXCL_BR_LINE */
-   {
-      /* Outer MGR solver was never created (e.g. early failure in MGRCreate).
-       * Destroy or preserve any component handles that were set up before the
-       * failure, respecting keep flags set by the caller. */
-      hypredrv_MGRDestroyCachedSolvers(mgr, 0); /* GCOVR_EXCL_BR_LINE */
-      if (mgr->point_marker_data)
-      {
-         free(mgr->point_marker_data);
-         mgr->point_marker_data = NULL;
-      }
-      return;
-   }
-
-   hypredrv_MGRDestroyWithCachedSolvers(mgr, *solver_ptr, precon_was_setup);
-   *solver_ptr = NULL;
-
-   if (mgr->point_marker_data)
-   {
-      free(mgr->point_marker_data);
-      mgr->point_marker_data = NULL;
-   }
-}
-
 /*-----------------------------------------------------------------------------
  * hypredrv_PreconDestroy
  *-----------------------------------------------------------------------------*/
@@ -937,79 +1036,30 @@ hypredrv_PreconDestroy(precon_t precon_method, precon_args *args,
    }
 
    /* Enter the dispatch when a main handle exists, and also for MGR even without a
-    * main handle: PreconDestroyMGRSolver cleans up component solvers cached before
+    * main handle: MGRDestroy cleans up component solvers cached before
     * an outer-MGR create failure, which would otherwise leak. */
    if (precon->main || precon_method == PRECON_MGR)
    {
-      switch (precon_method)
+      const PreconOps *ops = PreconOpsLookup(precon_method);
+      if (ops)
       {
-         case PRECON_BOOMERAMG:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=boomeramg");
-            /* GCOVR_EXCL_STOP */
-            HYPRE_BoomerAMGDestroy(precon->main);
-            hypredrv_AMGDestroyRBMs(&args->amg);
-            break;
-
-         case PRECON_MGR:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=mgr");
-            /* GCOVR_EXCL_STOP */
-            PreconDestroyMGRSolver(&args->mgr, &precon->main, precon->is_setup);
-            break;
-
-         case PRECON_ILU:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=ilu");
-            /* GCOVR_EXCL_STOP */
-            HYPRE_ILUDestroy(precon->main);
-            break;
-
-         case PRECON_FSAI:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=fsai");
-            /* GCOVR_EXCL_STOP */
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-            HYPRE_FSAIDestroy(precon->main);
-#endif
-            break;
-
-         case PRECON_AMS:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=ams");
-            /* GCOVR_EXCL_STOP */
-            HYPRE_AMSDestroy(precon->main);
-            break;
-
-         case PRECON_ADS:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=ads");
-            /* GCOVR_EXCL_STOP */
-            HYPRE_ADSDestroy(precon->main);
-            break;
-
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-         case PRECON_SCHWARZ:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=schwarz");
-            /* GCOVR_EXCL_STOP */
-            HYPRE_SchwarzDestroy(precon->main);
-            break;
-#endif
-
-         case PRECON_NONE:
-            /* GCOVR_EXCL_START */
-            HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
-                          "preconditioner destroy dispatch: method=none");
-            /* GCOVR_EXCL_STOP */
-            break;
+         HYPREDRV_LOGF(3, log_rank, obj_name, ls_id,
+                       "preconditioner destroy dispatch: method=%s", ops->name);
+         if (precon_method == PRECON_MGR)
+         {
+            hypredrv_MGRDestroy(&args->mgr, &precon->main, precon->is_setup);
+         }
+         else
+         {
+            if (ops->destroy)
+            {
+               ops->destroy(precon->main);
+            }
+            if (precon_method == PRECON_BOOMERAMG)
+            {
+               hypredrv_AMGDestroyRBMs(&args->amg);
+            }
+         }
       }
 
       precon->main = NULL;

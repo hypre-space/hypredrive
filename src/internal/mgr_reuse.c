@@ -1654,9 +1654,10 @@ hypredrv_MGRDestroyCachedSolvers(MGR_args *args, int hypre_destroyed)
  *-----------------------------------------------------------------------------*/
 
 void
-hypredrv_MGRDestroyWithCachedSolvers(MGR_args *args, HYPRE_Solver solver, int was_setup)
+hypredrv_MGRDestroy(MGR_args *args, HYPRE_Solver *solver_ptr, int was_setup)
 {
-   int destroy_parent_first = was_setup;
+   HYPRE_Solver solver               = solver_ptr ? *solver_ptr : NULL;
+   int          destroy_parent_first = was_setup;
 #if HYPRE_RELEASE_NUMBER_EQ_AND_DEVELOP_NUMBER_GE(30100, 5) && \
    !HYPRE_CHECK_MIN_VERSION(30100, 28)
    /* These development builds destroy installed level solvers even when MGR
@@ -1664,6 +1665,12 @@ hypredrv_MGRDestroyWithCachedSolvers(MGR_args *args, HYPRE_Solver solver, int wa
     * pointers in the parent, which then destroys them a second time. */
    destroy_parent_first = 1;
 #endif
+   /* With no parent, all cached handles are still ours, regardless of the
+    * linked hypre's parent-destruction policy. */
+   if (!solver)
+   {
+      destroy_parent_first = 0;
+   }
 
    if (!destroy_parent_first)
    {
@@ -1682,6 +1689,18 @@ hypredrv_MGRDestroyWithCachedSolvers(MGR_args *args, HYPRE_Solver solver, int wa
       /* Parent MGR is gone; clear any preserved cached-handle state without
        * destroying parent-owned internals a second time. */
       hypredrv_MGRDestroyCachedSolvers(args, 1);
+   }
+
+   if (solver_ptr)
+   {
+      *solver_ptr = NULL;
+   }
+   if (args)
+   {
+      /* Hypre borrows this buffer, so it must outlive parent teardown. */
+      free(args->point_marker_data);
+      args->point_marker_data = NULL;
+      args->point_marker_size = 0;
    }
 }
 

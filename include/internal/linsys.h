@@ -218,8 +218,9 @@ void hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm, HYPRE_IJMatrix, const IntA
 void hypredrv_LinearSystemSetPrecMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
                                         HYPRE_IJMatrix *, const Stats *);
 void hypredrv_LinearSystemReadDofmap(MPI_Comm, const LS_args *, IntArray **, Stats *);
-void hypredrv_LinearSystemGetSolutionValues(HYPRE_IJVector, HYPRE_Complex **);
-void hypredrv_LinearSystemGetRHSValues(HYPRE_IJVector, HYPRE_Complex **);
+/* Borrow the local data of an assembled vector in its current memory space.
+ * Callers arrange host accessibility before exposing a host pointer. */
+HYPRE_Complex *hypredrv_IJVectorData(HYPRE_IJVector);
 void hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector, const char *, double *);
 void hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const char *,
                                            double *);

@@ -24,6 +24,7 @@ from typing import Any, Optional, Sequence
 import numpy as np
 
 from . import _core, session
+from ._buffers import validate_csr, validate_rhs
 from .options import OptionsLike, normalize_options
 from .result import SolveResult
 
@@ -70,7 +71,7 @@ def _as_bigint_array(arr: Any, name: str) -> np.ndarray:
     if a.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array, got shape {a.shape}")
     if a.dtype == BIGINT_DTYPE or a.size == 0:
-        return np.ascontiguousarray(a, dtype=BIGINT_DTYPE)
+        return np.require(a, dtype=BIGINT_DTYPE, requirements=["C", "A"])
     # numpy's dtype conversion would silently truncate floats and wrap integers
     # that do not fit (e.g. int64 indices on a 32-bit HYPRE_BigInt build).
     if a.dtype.kind not in "iu":
@@ -82,11 +83,11 @@ def _as_bigint_array(arr: Any, name: str) -> np.ndarray:
             f"{name} has values in [{lo}, {hi}], outside the HYPRE_BigInt range "
             f"[{int(info.min)}, {int(info.max)}]"
         )
-    return np.ascontiguousarray(a, dtype=BIGINT_DTYPE)
+    return np.require(a, dtype=BIGINT_DTYPE, requirements=["C", "A"])
 
 
 def _as_real_array(arr: Any, name: str) -> np.ndarray:
-    a = np.ascontiguousarray(arr, dtype=REAL_DTYPE)
+    a = np.require(arr, dtype=REAL_DTYPE, requirements=["C", "A"])
     if a.ndim != 1:
         raise ValueError(f"{name} must be a 1-D array, got shape {a.shape}")
     return a
@@ -236,41 +237,10 @@ class HypreDrive:
         row_start_i = _validate_bigint_scalar(row_start, "row_start")
         row_end_i = _validate_bigint_scalar(row_end, "row_end")
 
-        # Keep these checks even though the C builder repeats them. The Python
-        # layer gives users immediate shape/range errors, while the C layer
-        # remains the trust boundary for direct _core/C API callers.
-        nrows = row_end_i - row_start_i + 1
-        if nrows < 0:
-            raise ValueError(
-                f"row_end ({row_end}) must be >= row_start ({row_start})"
-            )
-        if indptr_arr.shape[0] != nrows + 1:
-            raise ValueError(
-                f"indptr length {indptr_arr.shape[0]} does not match "
-                f"nrows+1 = {nrows + 1}"
-            )
-        indptr_start = int(indptr_arr[0])
-        indptr_end = int(indptr_arr[-1])
-        if indptr_start < 0:
-            raise ValueError(
-                f"indptr[0] ({indptr_start}) must be nonnegative"
-            )
-        if indptr_end < indptr_start:
-            raise ValueError(
-                f"indptr[-1] ({indptr_end}) must be >= indptr[0] "
-                f"({indptr_start})"
-            )
-        if (np.diff(indptr_arr) < 0).any():
-            raise ValueError("indptr entries must be monotonically nondecreasing")
-        required_entries = indptr_end
-        if (
-            indices_arr.shape[0] < required_entries
-            or values_arr.shape[0] < required_entries
-        ):
-            raise ValueError(
-                "col_indices/data must have at least indptr[-1]="
-                f"{required_entries} entries"
-            )
+        # Both entry points use the same shape/offset contract. The native C
+        # API cannot check Python buffer lengths, so the core checks it again
+        # for callers that bypass this high-level driver.
+        validate_csr(row_start_i, row_end_i, indptr_arr, indices_arr, values_arr)
 
         # "matrix" marks the start of a new linear system in the stats
         # context (HYPREDRV_AnnotateBegin docs); without it every solve on
@@ -309,12 +279,7 @@ class HypreDrive:
 
         row_start_i = _validate_bigint_scalar(row_start, "row_start")
         row_end_i = _validate_bigint_scalar(row_end, "row_end")
-        nrows = row_end_i - row_start_i + 1
-        if values_arr.shape[0] != nrows:
-            raise ValueError(
-                f"RHS length {values_arr.shape[0]} does not match "
-                f"row range size {nrows}"
-            )
+        validate_rhs(row_start_i, row_end_i, values_arr)
 
         with self._annotated("rhs"):
             self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
@@ -368,7 +333,7 @@ class HypreDrive:
                 raise ValueError(
                     f"labels max ({hi}) exceeds C int range [0, {int(info.max)}]"
                 )
-        labels_arr = np.ascontiguousarray(labels_in, dtype=np.intc)
+        labels_arr = np.require(labels_in, dtype=np.intc, requirements=["C", "A"])
         if labels_arr.ndim != 1:
             raise ValueError(
                 f"labels must be a 1-D array, got shape {labels_arr.shape}"

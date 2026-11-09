@@ -14,6 +14,7 @@
  * one column index that lives on the neighboring rank).
  *-----------------------------------------------------------------------------*/
 
+#include <limits.h>
 #include <math.h>
 #include <mpi.h>
 #include <stdio.h>
@@ -22,6 +23,7 @@
 #include "HYPRE.h"
 #include "HYPREDRV.h"
 #include "internal/error.h"
+#include "internal/linsys.h"
 #include "test_helpers.h"
 
 static const char *kBaseYAML =
@@ -184,11 +186,105 @@ test_distributed_laplacian_solve(void)
    free_csr(indptr, cols, data, rhs);
 }
 
+static void
+assert_collective_invalid_input(uint32_t code)
+{
+   uint32_t low = 0, high = 0;
+   MPI_Allreduce(&code, &low, 1, MPI_UINT32_T, MPI_MIN, MPI_COMM_WORLD);
+   MPI_Allreduce(&code, &high, 1, MPI_UINT32_T, MPI_MAX, MPI_COMM_WORLD);
+   ASSERT_EQ_U32(low, high);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+}
+
+/* Only one rank supplies invalid data. Every peer must return instead of
+ * entering creation or assembly alone; the CTest timeout detects deadlocks. */
+static void
+test_rank_local_array_errors_are_collective(void)
+{
+   int rank = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   HYPREDRV_t   obj    = create_lib_obj_world();
+   HYPRE_BigInt first  = 2 * (HYPRE_BigInt)rank;
+   HYPRE_BigInt good[] = {0, 1, 2}, bad[] = {0, 2, 1};
+   HYPRE_BigInt cols[]   = {first, first + 1};
+   HYPRE_Real   values[] = {2.0, 2.0};
+   for (int failure = 0; failure < 4; failure++)
+   {
+      HYPRE_IJMatrix      matrix = NULL;
+      const HYPRE_BigInt *ptr    = rank == 0 ? (failure == 0   ? NULL
+                                                : failure == 1 ? bad
+                                                               : good)
+                                             : good;
+      HYPRE_BigInt        lower = first, upper = first + 1;
+      if (rank == 0 && failure == 3)
+      {
+         upper =
+            (HYPRE_BigInt)((UINTMAX_C(1) << (sizeof(HYPRE_BigInt) * CHAR_BIT - 1)) - 1);
+         lower = -upper;
+      }
+      uint32_t code = hypredrv_LinearSystemBuildMatrixFromCSR(
+         MPI_COMM_WORLD, HYPRE_MEMORY_HOST, lower, upper, ptr, cols,
+         rank == 0 && failure == 2 ? NULL : values, &matrix);
+      assert_collective_invalid_input(code);
+      ASSERT_NULL(matrix);
+   }
+   ASSERT_EQ(
+      HYPREDRV_LinearSystemSetMatrixFromCSR(obj, first, first + 1, good, cols, values),
+      ERROR_NONE);
+   HYPRE_Matrix old_matrix = NULL, current_matrix = NULL;
+   HYPRE_Vector old_rhs = NULL, current_rhs = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetMatrix(obj, &old_matrix), ERROR_NONE);
+   assert_collective_invalid_input(HYPREDRV_LinearSystemSetMatrixFromCSR(
+      obj, first, first + 1, rank == 0 ? bad : good, cols, values));
+   ASSERT_EQ(HYPREDRV_LinearSystemGetMatrix(obj, &current_matrix), ERROR_NONE);
+   ASSERT_TRUE(current_matrix == old_matrix);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, first, first + 1, values),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemGetRHS(obj, &old_rhs), ERROR_NONE);
+   assert_collective_invalid_input(HYPREDRV_LinearSystemSetRHSFromArray(
+      obj, first + (rank == 0), first + 1 + (rank == 0), values));
+   assert_collective_invalid_input(HYPREDRV_LinearSystemSetRHSFromArray(
+      obj, first, first + 1, rank == 0 ? NULL : values));
+   ASSERT_EQ(HYPREDRV_LinearSystemGetRHS(obj, &current_rhs), ERROR_NONE);
+   ASSERT_TRUE(current_rhs == old_rhs);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, first, first + 1, values),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_mixed_empty_and_nonempty_csr_ranks(void)
+{
+   int rank = 0;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   HYPREDRV_t   obj   = create_lib_obj_world();
+   HYPRE_BigInt ptr[] = {0, rank ? 1 : 0};
+   HYPRE_BigInt col   = rank;
+   HYPRE_Real   value = 2.0;
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(
+                obj, rank, rank, ptr, rank ? &col : NULL, rank ? &value : NULL),
+             ERROR_NONE);
+   HYPRE_Matrix matrix = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSystemGetMatrix(obj, &matrix), ERROR_NONE);
+   HYPRE_Int     ncols  = 1;
+   HYPRE_Complex actual = -1.0;
+   ASSERT_EQ(
+      HYPRE_IJMatrixGetValues((HYPRE_IJMatrix)matrix, 1, &ncols, &col, &col, &actual), 0);
+   ASSERT_EQ_DOUBLE(actual, rank ? 2.0 : 0.0, 1e-12);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
+   RUN_TEST(test_rank_local_array_errors_are_collective);
+   RUN_TEST(test_mixed_empty_and_nonempty_csr_ranks);
    RUN_TEST(test_distributed_laplacian_solve);
 
    MPI_Finalize();
