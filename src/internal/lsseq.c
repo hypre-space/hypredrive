@@ -1149,6 +1149,20 @@ LSSeqDecodeBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_offset, uint64_t 
    {
       /* No file identity (no caching) or no resumable decoder for this codec:
        * read the whole blob and decode just the slice from memory. */
+      uint64_t declared_size = 0;
+      /* The fallback allocates the entire decoded blob, not just the slice.
+       * Validate its header before allowing the decoder to allocate it. */
+      if (c_size < sizeof(declared_size) ||
+          !LSSeqReadAt(fp, blob_offset, &declared_size, sizeof(declared_size),
+                       "decoded blob size") ||
+          declared_size > (uint64_t)LSSEQ_MAX_BLOB_BYTES)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid decoded size for non-streamed part blob "
+                              "(%llu bytes; limit %u)",
+                              (unsigned long long)declared_size, LSSEQ_MAX_BLOB_BYTES);
+         return 0;
+      }
       blob = hypredrv_Malloc((size_t)c_size, "blob");
       if (!blob) /* GCOVR_EXCL_BR_LINE */
       {
