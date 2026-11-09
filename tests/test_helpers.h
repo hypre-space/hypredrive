@@ -39,6 +39,8 @@
 #include <io.h>
 #include <process.h>
 #include <windows.h>
+/* Keep hypredrive's error enum visible instead of the Win32 error macro. */
+#undef ERROR_FILE_NOT_FOUND
 #ifndef F_OK
 #define F_OK 0
 #endif

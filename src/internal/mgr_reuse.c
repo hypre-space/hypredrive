@@ -24,6 +24,13 @@
 #include "internal/stats.h"
 #include "logging.h"
 
+#if defined(HYPREDRV_HYPRE_DLL)
+/* HYPRE compares this callback with its own function address. Import the
+ * function itself rather than passing a Windows DLL import thunk. */
+__declspec(dllimport) HYPRE_Int HYPRE_BoomerAMGSetup(
+   HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector, HYPRE_ParVector);
+#endif
+
 /* GCOVR_EXCL_BR_START */
 
 void

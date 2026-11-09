@@ -1234,7 +1234,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     "g_relaxation: ilu"
                     "[0, 1]     BJ-ILU0         Jacobi"
             )
-            if(NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER)
+            if(NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER AND
+               NOT HYPREDRV_HAVE_HYPRE_30200_DEV0)
                 set(_hypredrv_ex4_cli_mgr_g_amg_expect "Unknown         Jacobi")
             else()
                 set(_hypredrv_ex4_cli_mgr_g_amg_expect "User AMG         Jacobi")
