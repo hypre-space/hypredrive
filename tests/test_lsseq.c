@@ -5,7 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#if defined(_MSC_VER)
+#include <sys/utime.h>
+#define utimbuf _utimbuf
+#define utime _utime
+#else
 #include <utime.h>
+#endif
 
 #include "internal/comp.h"
 #include "internal/containers.h"

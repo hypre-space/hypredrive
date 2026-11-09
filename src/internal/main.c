@@ -368,6 +368,9 @@ main(int argc, char **argv)
    const int config_count = CountConfigFiles(argc, argv);
    const int info_mode    = InfoModeRequested(argc, argv);
    int       case_number  = 0;
+   char    **config_argv =
+      hypredrv_Calloc((size_t)argc + 1, sizeof(*config_argv), "configuration arguments");
+   HYPREDRV_SAFE_CALL_COMM(comm, hypredrv_ErrorCodeGet());
 
    for (int i = 1; i < argc; i++)
    {
@@ -376,8 +379,7 @@ main(int argc, char **argv)
          continue;
       }
 
-      char *config_argv[argc + 1];
-      int   config_argc = BuildConfigArgv(argc, argv, i, config_argv);
+      int config_argc = BuildConfigArgv(argc, argv, i, config_argv);
       case_number++;
 
       if (config_count > 1 && !myid)
@@ -390,6 +392,7 @@ main(int argc, char **argv)
                    info_mode && case_number == 1);
    }
 
+   free(config_argv);
    HYPREDRV_SAFE_CALL(HYPREDRV_PrintExitInfo(comm, argv[0]));
    HYPREDRV_SAFE_CALL(HYPREDRV_Finalize());
    MPI_Finalize();
