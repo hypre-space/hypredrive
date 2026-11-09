@@ -366,8 +366,15 @@ endif()
 # -Wcast-qual) on every supported hypre version; enable the warnings for them (not
 # for consumers) so regressions surface, and become errors under
 # CMAKE_COMPILE_WARNING_AS_ERROR.
-target_compile_options(HYPREDRV_objects PRIVATE
-    $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wmissing-prototypes -Wcast-qual>)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
+   CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # clang-cl maps -Wall to /Wall (-Weverything); /W4 matches -Wall -Wextra.
+    target_compile_options(HYPREDRV_objects PRIVATE
+        /W4 -Wmissing-prototypes -Wcast-qual)
+else()
+    target_compile_options(HYPREDRV_objects PRIVATE
+        $<$<C_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wmissing-prototypes -Wcast-qual>)
+endif()
 if(_hypredrv_library_type STREQUAL "SHARED_LIBRARY")
     target_compile_definitions(HYPREDRV_objects PRIVATE HYPREDRV_EXPORTS)
 else()
