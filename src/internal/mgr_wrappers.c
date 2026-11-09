@@ -609,6 +609,10 @@ MGRFRelaxWrapperSetup(void *wrapper_v, void *A, void *b, void *x)
    {
       return 1;
    }
+   if (!hypredrv_MGRValidatePointMarkerRows(wrapper->nested_args, (HYPRE_ParCSRMatrix)A))
+   {
+      return 1;
+   }
    if (HYPRE_MGRSetup((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
                       (HYPRE_ParVector)b, (HYPRE_ParVector)x))
    {
@@ -637,8 +641,6 @@ static HYPRE_Int
 MGRFRelaxWrapperDestroy(void *wrapper_v)
 {
    MGRFRelaxWrapper *wrapper = (MGRFRelaxWrapper *)wrapper_v;
-   HYPRE_Solver      inner;
-   int               was_setup;
 
    if (!wrapper)
    {
@@ -647,24 +649,9 @@ MGRFRelaxWrapperDestroy(void *wrapper_v)
 
    MGRFRelaxWrapperUnregister(wrapper);
 
-   /* hypre marks user-set F-solvers as OWNER_USER and does not destroy them.
-    * Own the full nested-MGR teardown here (inner handle + its cached user
-    * component solvers), mirroring PreconDestroyMGRSolver ownership rules. */
-   inner              = wrapper->inner_mgr;
-   was_setup          = wrapper->is_setup;
-   wrapper->inner_mgr = NULL;
-   if (inner)
-   {
-      hypredrv_MGRDestroyWithCachedSolvers(wrapper->nested_args, inner, was_setup);
-   }
-
-   /* Match PreconDestroyMGRSolver: the owned point-marker buffer outlives
-    * HYPRE_MGRDestroy and must be released with the nested args. */
-   if (wrapper->nested_args && wrapper->nested_args->point_marker_data)
-   {
-      free(wrapper->nested_args->point_marker_data);
-      wrapper->nested_args->point_marker_data = NULL;
-   }
+   /* User-set F-solvers are ours to release, with the same ownership policy
+    * as an outer MGR, including partial-create failures. */
+   hypredrv_MGRDestroy(wrapper->nested_args, &wrapper->inner_mgr, wrapper->is_setup);
 
    wrapper->nested_args = NULL;
    hypredrv_IntArrayDestroy(&wrapper->owned_dofmap);

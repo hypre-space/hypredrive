@@ -20,7 +20,7 @@ parse(const char *yaml)
    input_args *args   = NULL;
    char       *argv[] = {(char *)yaml};
    hypredrv_ErrorStateReset();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, true, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, true, 1, argv, &args, NULL);
    return args;
 }
 

@@ -87,6 +87,7 @@ typedef struct precon_args_struct
 typedef struct hypre_Precon_struct
 {
    HYPRE_Solver main;
+   MPI_Comm     comm; /* borrowed from creation, also used for setup preflight */
    precon_t     method;
    HYPRE_Int    is_setup;
    /* For AMS/ADS: 1 when every operator input the method requires (discrete
@@ -94,6 +95,7 @@ typedef struct hypre_Precon_struct
     * time. Always 1 for methods that need no operator inputs. Setup must abort
     * with a clean error when this is 0, otherwise hypre dereferences NULL. */
    HYPRE_Int            operators_ok;
+   MGR_args            *mgr_args; /* borrowed for the lifetime of the MGR object */
    struct Stats_struct *stats;
 } hypre_Precon;
 
@@ -107,7 +109,10 @@ StrArray       hypredrv_PreconGetValidKeys(void);
 StrIntMapArray hypredrv_PreconGetValidValues(const char *);
 StrIntMapArray hypredrv_PreconGetValidTypeIntMap(void);
 void           hypredrv_PreconSetDefaultArgs(precon_args *);
-void           hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
+/* Initialize fresh method arguments from a real YAML body (including a
+ * sequence item); an empty body selects defaults. */
+void hypredrv_PreconSetMethodArgs(precon_t, precon_args *, YAMLnode *);
+void hypredrv_PreconArgsSetDefaultsForMethod(precon_t, precon_args *);
 void hypredrv_PreconArgsSetDefaultsForName(precon_t, const char *, precon_args *);
 void hypredrv_PreconArgsDestroyOwnedConfig(precon_t, precon_args *);
 void hypredrv_PreconArgsDestroyRuntimeState(precon_t, precon_args *);
@@ -129,13 +134,18 @@ int hypredrv_PreconSupportsDevice(precon_t, const precon_args *, char *reason,
  * need no operators always return 1. */
 int hypredrv_PreconOperatorsComplete(precon_t, const PreconOperators *);
 
-/* Setup-time guard shared by the standalone and Krylov-embedded setup paths.
- * Returns nonzero (after raising an ERROR_MISSING_PRECON HYPREDRV error) when
- * the preconditioner must not be set up because its required operators are
- * missing; returns 0 when setup may proceed. */
-int  hypredrv_PreconSetupOperatorGuard(HYPRE_Precon);
+/* Collective setup preflight on the preconditioner's creation communicator.
+ * Checks operator inputs and the matrix before any rank enters hypre setup.
+ * Returns nonzero only when all ranks may proceed. */
+int  hypredrv_PreconValidateSetup(HYPRE_Precon, HYPRE_ParCSRMatrix);
 void hypredrv_PreconGetCallbacks(precon_t, HYPRE_PtrToParSolverFcn *,
                                  HYPRE_PtrToParSolverFcn *);
+/* Krylov callbacks receive the wrapper so guards, timing and ownership state
+ * apply equally to ordinary and nested solvers. */
+HYPRE_Int hypredrv_PreconKrylovSetup(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                                     HYPRE_ParVector);
+HYPRE_Int hypredrv_PreconKrylovSolve(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                                     HYPRE_ParVector);
 
 void hypredrv_PreconSetup(precon_t, HYPRE_Precon, HYPRE_IJMatrix);
 void hypredrv_PreconApply(precon_t, HYPRE_Precon, HYPRE_IJMatrix, HYPRE_IJVector,

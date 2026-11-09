@@ -50,7 +50,7 @@ INTERNAL_HEADER_FILES = include/internal/amg.h include/internal/args.h \
 			include/internal/scaling.h include/internal/schwarz.h \
 			include/internal/slots.h include/internal/solver.h include/internal/stats.h \
 			include/internal/utils.h include/internal/yaml.h
-noinst_HEADERS = src/internal/vector_tags.h src/internal/object.h src/internal/runtime.h src/internal/logging.h src/internal/execution.h src/internal/diagnostics.h $(INTERNAL_HEADER_FILES)
+noinst_HEADERS = src/internal/solver_ops.h src/internal/vector_tags.h src/internal/object.h src/internal/runtime.h src/internal/logging.h src/internal/execution.h src/internal/diagnostics.h $(INTERNAL_HEADER_FILES)
 ACLOCAL_AMFLAGS = -I m4
 
 EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples utils

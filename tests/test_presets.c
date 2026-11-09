@@ -25,11 +25,12 @@ test_PresetRegister_success(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
-   int ret = hypredrv_PresetRegister("my_custom", "amg:\n  max_iter: 1", "Custom AMG");
+   int ret = hypredrv_PresetRegisterTyped("my_custom", "amg:\n  max_iter: 1",
+                                          "Custom AMG", HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   const hypredrv_Preset *p = hypredrv_PresetFind("my_custom");
+   const hypredrv_Preset *p = hypredrv_PresetFindTyped("my_custom", HYPREDRV_PRESET_ANY);
    ASSERT_NOT_NULL(p);
    ASSERT_STREQ(p->name, "my_custom");
    ASSERT_NOT_NULL(strstr(p->text, "amg"));
@@ -49,7 +50,8 @@ test_PresetRegister_duplicate_builtin(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
-   int ret = hypredrv_PresetRegister("poisson", "amg", "duplicate of builtin");
+   int ret = hypredrv_PresetRegisterTyped("poisson", "amg", "duplicate of builtin",
+                                          HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, -1);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
@@ -68,12 +70,14 @@ test_PresetRegister_duplicate_user(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
-   int ret1 = hypredrv_PresetRegister("my_dup", "amg", "first registration");
+   int ret1 = hypredrv_PresetRegisterTyped("my_dup", "amg", "first registration",
+                                           HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret1, 0);
 
    hypredrv_ErrorCodeResetAll();
 
-   int ret2 = hypredrv_PresetRegister("my_dup", "amg:\n  max_iter: 2", "second");
+   int ret2 = hypredrv_PresetRegisterTyped("my_dup", "amg:\n  max_iter: 2", "second",
+                                           HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret2, -1);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
 
@@ -92,19 +96,21 @@ test_PresetRegister_null_args(void)
    hypredrv_ErrorMsgClear();
 
    /* NULL name */
-   int ret = hypredrv_PresetRegister(NULL, "amg", "help");
+   int ret = hypredrv_PresetRegisterTyped(NULL, "amg", "help", HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, -1);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
 
    /* NULL yaml_text */
-   ret = hypredrv_PresetRegister("my_null_text", NULL, "help");
+   ret =
+      hypredrv_PresetRegisterTyped("my_null_text", NULL, "help", HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, -1);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
 
    /* NULL help is allowed - treated as empty string */
-   ret = hypredrv_PresetRegister("my_null_help", "amg", NULL);
+   ret =
+      hypredrv_PresetRegisterTyped("my_null_help", "amg", NULL, HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
    hypredrv_ErrorCodeResetAll();
 
@@ -121,8 +127,11 @@ test_PresetRegister_hyphen_in_name_normalizes(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
-   ASSERT_EQ(hypredrv_PresetRegister("my-hyphen-preset", "amg:\n  max_iter: 1", "hyphens"), 0);
-   const hypredrv_Preset *p = hypredrv_PresetFind("my_hyphen_preset");
+   ASSERT_EQ(hypredrv_PresetRegisterTyped("my-hyphen-preset", "amg:\n  max_iter: 1",
+                                          "hyphens", HYPREDRV_PRESET_PRECON),
+             0);
+   const hypredrv_Preset *p =
+      hypredrv_PresetFindTyped("my_hyphen_preset", HYPREDRV_PRESET_ANY);
    ASSERT_NOT_NULL(p);
    ASSERT_STREQ(p->name, "my_hyphen_preset");
 
@@ -140,20 +149,21 @@ test_PresetFind_user_preset_case_insensitive(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
-   int ret = hypredrv_PresetRegister("my_case_test", "amg", "Case test preset");
+   int ret = hypredrv_PresetRegisterTyped("my_case_test", "amg", "Case test preset",
+                                          HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
 
    /* Different casing */
-   ASSERT_NOT_NULL(hypredrv_PresetFind("MY_CASE_TEST"));
-   ASSERT_NOT_NULL(hypredrv_PresetFind("My_Case_Test"));
-   ASSERT_NOT_NULL(hypredrv_PresetFind("my_case_test"));
+   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("MY_CASE_TEST", HYPREDRV_PRESET_ANY));
+   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("My_Case_Test", HYPREDRV_PRESET_ANY));
+   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("my_case_test", HYPREDRV_PRESET_ANY));
 
    /* Hyphen treated as underscore */
-   ASSERT_NOT_NULL(hypredrv_PresetFind("my-case-test"));
-   ASSERT_NOT_NULL(hypredrv_PresetFind("MY-CASE-TEST"));
+   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("my-case-test", HYPREDRV_PRESET_ANY));
+   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("MY-CASE-TEST", HYPREDRV_PRESET_ANY));
 
    /* Unknown name still returns NULL */
-   ASSERT_NULL(hypredrv_PresetFind("no_such_preset"));
+   ASSERT_NULL(hypredrv_PresetFindTyped("no_such_preset", HYPREDRV_PRESET_ANY));
 
    hypredrv_PresetFreeUserPresets();
    hypredrv_ErrorCodeResetAll();
@@ -169,10 +179,11 @@ test_PresetHelp_includes_user_preset(void)
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
 
-   int ret = hypredrv_PresetRegister("help_test_preset", "amg", "My help text");
+   int ret = hypredrv_PresetRegisterTyped("help_test_preset", "amg", "My help text",
+                                          HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
 
-   char *help = hypredrv_PresetHelp();
+   char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
    ASSERT_NOT_NULL(help);
    ASSERT_NOT_NULL(strstr(help, "help_test_preset"));
    ASSERT_NOT_NULL(strstr(help, "My help text"));
@@ -199,10 +210,11 @@ test_PresetHelp_keeps_long_help_text(void)
    memset(long_help, 'x', sizeof(long_help) - 1);
    long_help[sizeof(long_help) - 1] = '\0';
 
-   int ret = hypredrv_PresetRegister("long_help_preset", "amg", long_help);
+   int ret = hypredrv_PresetRegisterTyped("long_help_preset", "amg", long_help,
+                                          HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
 
-   char *help = hypredrv_PresetHelp();
+   char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
    ASSERT_NOT_NULL(help);
    char expected[1600];
    snprintf(expected, sizeof(expected), "    - long_help_preset: %s\n", long_help);
@@ -222,7 +234,8 @@ test_PresetFreeUserPresets_idempotent(void)
 {
    hypredrv_ErrorCodeResetAll();
 
-   int ret = hypredrv_PresetRegister("idempotent_preset", "amg", "to be freed");
+   int ret = hypredrv_PresetRegisterTyped("idempotent_preset", "amg", "to be freed",
+                                          HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
 
    /* First free */
@@ -232,7 +245,7 @@ test_PresetFreeUserPresets_idempotent(void)
    hypredrv_PresetFreeUserPresets();
 
    /* After freeing, the preset should no longer be found */
-   ASSERT_NULL(hypredrv_PresetFind("idempotent_preset"));
+   ASSERT_NULL(hypredrv_PresetFindTyped("idempotent_preset", HYPREDRV_PRESET_ANY));
 
    hypredrv_ErrorCodeResetAll();
 }
@@ -251,7 +264,8 @@ test_HYPREDRV_PreconPresetRegister_public(void)
    ASSERT_EQ((int)err, 0);
 
    /* Verify the preset is findable via the private API */
-   const hypredrv_Preset *p = hypredrv_PresetFind("public_test_preset");
+   const hypredrv_Preset *p =
+      hypredrv_PresetFindTyped("public_test_preset", HYPREDRV_PRESET_ANY);
    ASSERT_NOT_NULL(p);
    ASSERT_STREQ(p->help, "Public test preset");
 
@@ -263,7 +277,7 @@ test_HYPREDRV_PreconPresetRegister_public(void)
    HYPREDRV_Finalize();
 
    /* After finalize the preset must be gone */
-   ASSERT_NULL(hypredrv_PresetFind("public_test_preset"));
+   ASSERT_NULL(hypredrv_PresetFindTyped("public_test_preset", HYPREDRV_PRESET_ANY));
 }
 
 /*-----------------------------------------------------------------------------

@@ -30,6 +30,7 @@ cimport numpy as cnp
 import weakref
 
 from hypredrive.errors import HypreDriveError
+from hypredrive._buffers import validate_csr, validate_native_array, validate_rhs
 
 from hypredrive cimport _chypredrv as _c
 
@@ -253,27 +254,16 @@ cdef class HypreDriveCore:
     ):
         """Pass per-rank CSR slabs into the C layer.
 
-        Caller must guarantee ``indptr``, ``col_indices``, ``data`` are
-        C-contiguous and have the dtype matching ``HYPRE_BigInt`` /
-        ``HYPRE_Real`` for index and value buffers respectively. The
-        Python-level ``HypreDrive.set_matrix_from_csr`` performs that
-        normalization before calling here.
+        The high-level driver normalizes the arrays; this boundary also
+        validates direct callers before passing their addresses into C.
         """
         self._require_open()
-        # These checks intentionally duplicate the high-level driver:
-        # HypreDriveCore is the trust boundary for direct _core callers.
-        if not cnp.PyArray_IS_C_CONTIGUOUS(indptr):
-            raise ValueError("indptr must be C-contiguous")
-        if not cnp.PyArray_IS_C_CONTIGUOUS(col_indices):
-            raise ValueError("col_indices must be C-contiguous")
-        if not cnp.PyArray_IS_C_CONTIGUOUS(data):
-            raise ValueError("data must be C-contiguous")
-        if <size_t>cnp.PyArray_ITEMSIZE(indptr) != _c.HYPREDRV_PythonIndexSize():
-            raise ValueError("indptr dtype does not match HYPRE_BigInt")
-        if <size_t>cnp.PyArray_ITEMSIZE(col_indices) != _c.HYPREDRV_PythonIndexSize():
-            raise ValueError("col_indices dtype does not match HYPRE_BigInt")
-        if <size_t>cnp.PyArray_ITEMSIZE(data) != _HYPREDRIVE_PYTHON_REAL_SIZE:
-            raise ValueError("data dtype does not match HYPRE_Real")
+        index_dtype = np.dtype(f"int{8 * _c.HYPREDRV_PythonIndexSize()}")
+        real_dtype = np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_REAL_SIZE}")
+        validate_native_array(indptr, "indptr", index_dtype)
+        validate_native_array(col_indices, "col_indices", index_dtype)
+        validate_native_array(data, "data", real_dtype)
+        validate_csr(row_start, row_end, indptr, col_indices, data)
 
         _check(
             _c.HYPREDRV_PythonSetMatrixFromCSR(
@@ -294,10 +284,9 @@ cdef class HypreDriveCore:
         cnp.ndarray values,
     ):
         self._require_open()
-        if not cnp.PyArray_IS_C_CONTIGUOUS(values):
-            raise ValueError("values must be C-contiguous")
-        if <size_t>cnp.PyArray_ITEMSIZE(values) != _HYPREDRIVE_PYTHON_REAL_SIZE:
-            raise ValueError("values dtype does not match HYPRE_Real")
+        real_dtype = np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_REAL_SIZE}")
+        validate_native_array(values, "values", real_dtype)
+        validate_rhs(row_start, row_end, values)
 
         _check(
             _c.HYPREDRV_PythonSetRHSFromArray(
@@ -312,17 +301,11 @@ cdef class HypreDriveCore:
     def set_dofmap(self, cnp.ndarray labels):
         """Install per-row DOF labels for MGR.
 
-        ``labels`` must be a C-contiguous ``int32`` 1-D array whose length
-        equals the local row count of the linear system. The high-level
-        ``HypreDrive.set_dofmap`` performs that validation; here we only
-        enforce contiguity and dtype, since this layer is the trust
-        boundary for direct ``_core`` callers.
+        ``labels`` must be a C-contiguous, aligned 1-D array of C ints.
+        The high-level driver also checks it against the local row count.
         """
         self._require_open()
-        if not cnp.PyArray_IS_C_CONTIGUOUS(labels):
-            raise ValueError("labels must be C-contiguous")
-        if <size_t>cnp.PyArray_ITEMSIZE(labels) != <size_t>sizeof(int):
-            raise ValueError("labels dtype must match C int (use np.intc)")
+        validate_native_array(labels, "labels", np.intc)
         cdef Py_ssize_t n = labels.shape[0]
         if n > <Py_ssize_t>0x7fffffff:
             raise ValueError("dofmap length exceeds C int range")
@@ -449,10 +432,8 @@ cdef class HypreDriveCore:
         device pointer to NumPy would be a footgun for v1.
         """
         self._require_open()
-        if not cnp.PyArray_IS_C_CONTIGUOUS(out):
-            raise ValueError("out must be C-contiguous")
-        if <size_t>cnp.PyArray_ITEMSIZE(out) != _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE:
-            raise ValueError("out dtype does not match the HYPRE solution entry type")
+        real_dtype = np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE}")
+        validate_native_array(out, "out", real_dtype, writable=True)
         cdef const void *src = NULL
         cdef size_t src_length = 0
         _check(

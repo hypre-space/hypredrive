@@ -11,10 +11,15 @@
 #include <mpi.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #ifndef HYPREDRV_PRINTF_FORMAT
-#if defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
+#if defined(__MINGW32__)
+/* Match MinGW's active stdio formatter, including its C99 size modifiers. */
+#define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index) \
+   __attribute__((format(__MINGW_PRINTF_FORMAT, _format_index, _argument_index)))
+#elif defined(__GNUC__) || (defined(__clang__) && !defined(_MSC_VER))
 #define HYPREDRV_PRINTF_FORMAT(_format_index, _argument_index) \
    __attribute__((format(printf, _format_index, _argument_index)))
 #else

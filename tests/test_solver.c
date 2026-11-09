@@ -686,7 +686,7 @@ test_hypredrv_SolverSetup_default_case(void)
 
    /* Test default case with invalid solver enum */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_SolverSetup(PRECON_NONE, (solver_t)999, precon, solver, M, b, x, NULL);
+   hypredrv_SolverSetupWithReuse(PRECON_NONE, (solver_t)999, precon, solver, M, b, x, NULL, 0);
    /* Should return early without error */
 
    hypredrv_SolverDestroy(SOLVER_PCG, &solver);
@@ -797,12 +797,12 @@ test_hypredrv_SolverSetup_error_cases(void)
 
    /* Test with NULL solver */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x, NULL);
+   hypredrv_SolverSetupWithReuse(PRECON_NONE, SOLVER_PCG, NULL, NULL, A, b, x, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    /* Test with NULL matrix */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x, NULL);
+   hypredrv_SolverSetupWithReuse(PRECON_NONE, SOLVER_PCG, NULL, (HYPRE_Solver)1, NULL, b, x, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    /* Non-none precon method but NULL precon handle */
@@ -831,7 +831,7 @@ test_hypredrv_SolverSetup_error_cases(void)
       hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &sargs, &sol);
 
       hypredrv_ErrorCodeResetAll();
-      hypredrv_SolverSetup(PRECON_BOOMERAMG, SOLVER_PCG, NULL, sol, M, vb, vx, NULL);
+      hypredrv_SolverSetupWithReuse(PRECON_BOOMERAMG, SOLVER_PCG, NULL, sol, M, vb, vx, NULL, 0);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
       hypredrv_SolverDestroy(SOLVER_PCG, &sol);
@@ -857,8 +857,8 @@ run_solver_failure_logging_capture(void *context)
    struct SolverLogContext *log_context = (struct SolverLogContext *)context;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_SolverSetup(PRECON_NONE, (solver_t)999, NULL, log_context->solver,
-                        log_context->A, log_context->b, log_context->x, NULL);
+   hypredrv_SolverSetupWithReuse(PRECON_NONE, (solver_t)999, NULL, log_context->solver,
+                        log_context->A, log_context->b, log_context->x, NULL, 0);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    hypredrv_ErrorCodeResetAll();
@@ -949,7 +949,7 @@ test_hypredrv_SolverApply_zero_rhs_and_runtime_object_name(void)
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_SolverSetup(PRECON_NONE, SOLVER_PCG, NULL, solver, A, b, x, st);
+   hypredrv_SolverSetupWithReuse(PRECON_NONE, SOLVER_PCG, NULL, solver, A, b, x, st, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ErrorCodeResetAll();
@@ -979,6 +979,7 @@ test_hypredrv_SolverSetupWithReuse_skip_precon_setup_detaches_stats(void)
    HYPRE_Precon precon = (HYPRE_Precon)malloc(sizeof(hypre_Precon));
    ASSERT_NOT_NULL(precon);
    memset(precon, 0, sizeof(hypre_Precon));
+   precon->comm   = MPI_COMM_SELF;
    precon->main   = amg;
    precon->method = PRECON_BOOMERAMG;
 

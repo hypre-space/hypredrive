@@ -173,6 +173,7 @@ set_tests_properties(hypredrv_mpi_2proc PROPERTIES TIMEOUT 30)
 
 setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)
 add_executable_test(setmatrix_from_csr_mpi_2proc test_setmatrix_from_csr_mpi 2 RUN_SERIAL)
+set_tests_properties(setmatrix_from_csr_mpi_2proc PROPERTIES TIMEOUT 30)
 
 add_executable_test(containers_mpi_2proc test_containers 2 RUN_SERIAL)
 set_tests_properties(containers_mpi_2proc PROPERTIES LABELS "unit;mpi" TIMEOUT 30)

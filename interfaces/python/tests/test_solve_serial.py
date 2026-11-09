@@ -180,7 +180,7 @@ def test_core_bridge_reports_bigint_overflow(base_options):
     core = _core.HypreDriveCore()
     try:
         core.parse_yaml(hd.options_to_yaml(base_options).encode("utf-8"))
-        indptr = np.array([0], dtype=hd.BIGINT_DTYPE)
+        indptr = np.array([0, 0], dtype=hd.BIGINT_DTYPE)
         cols = np.array([], dtype=hd.BIGINT_DTYPE)
         data = np.array([], dtype=hd.REAL_DTYPE)
         too_large = np.iinfo(np.int64).max
@@ -368,3 +368,63 @@ def test_yaml_path_the_c_layer_rejects_still_solves(tmp_path, laplacian_1d, relp
                       row_start=0, row_end=n - 1)
     assert result.converged
     assert result.final_res_norm < 1.0e-10
+
+
+def test_core_rejects_invalid_native_buffers(base_options):
+    """Direct core calls must fail before C can read an invalid buffer."""
+    with hd.HypreDrive(options=base_options) as drv:
+        core = drv._core
+        indices = np.array([0], dtype=hd.BIGINT_DTYPE)
+        values = np.array([2.0], dtype=hd.REAL_DTYPE)
+        ptr = np.array([0, 1], dtype=hd.BIGINT_DTYPE)
+
+        with pytest.raises(ValueError, match="indptr length"):
+            core.set_matrix_from_csr(0, 0, ptr[:1], indices, values)
+        with pytest.raises(ValueError, match="at least"):
+            core.set_matrix_from_csr(0, 0, ptr, indices[:0], values)
+        with pytest.raises(ValueError, match="at least"):
+            core.set_matrix_from_csr(0, 0, ptr, indices, values[:0])
+        with pytest.raises(ValueError, match="monotonically"):
+            core.set_matrix_from_csr(
+                0, 1, np.array([0, 2, 1], dtype=hd.BIGINT_DTYPE), indices, values
+            )
+        with pytest.raises(ValueError, match="dtype"):
+            core.set_matrix_from_csr(0, 0, ptr.view(np.dtype(f"f{hd.BIGINT_DTYPE.itemsize}")), indices, values)
+        with pytest.raises(ValueError, match="1-D"):
+            core.set_matrix_from_csr(0, 0, ptr.reshape(1, 2), indices, values)
+        with pytest.raises(ValueError, match="C-contiguous"):
+            core.set_matrix_from_csr(0, 0, np.array([0, 9, 1, 9], dtype=hd.BIGINT_DTYPE)[::2], indices, values)
+        swapped = ptr.astype(hd.BIGINT_DTYPE.newbyteorder("S"))
+        with pytest.raises(ValueError, match="dtype"):
+            core.set_matrix_from_csr(0, 0, swapped, indices, values)
+        raw = bytearray(2 * hd.BIGINT_DTYPE.itemsize + 1)
+        unaligned = np.ndarray((2,), dtype=hd.BIGINT_DTYPE, buffer=raw, offset=1)
+        unaligned[:] = [0, 1]
+        with pytest.raises(ValueError, match="aligned"):
+            core.set_matrix_from_csr(0, 0, unaligned, indices, values)
+
+        core.set_matrix_from_csr(0, 0, ptr, indices, values)
+        with pytest.raises(ValueError, match="RHS length"):
+            core.set_rhs_from_array(0, 0, values[:0])
+        with pytest.raises(ValueError, match="dtype"):
+            core.set_rhs_from_array(0, 0, values.view(np.dtype(f"u{hd.REAL_DTYPE.itemsize}")))
+        with pytest.raises(ValueError, match="1-D"):
+            core.set_dofmap(np.zeros((1, 1), dtype=np.intc))
+        with pytest.raises(ValueError, match="dtype"):
+            core.set_dofmap(np.zeros(1, dtype=np.float32))
+
+
+def test_core_rejects_readonly_or_non_native_solution_buffer(laplacian_1d, base_options):
+    indptr, cols, data, rhs, n = laplacian_1d
+    with hd.HypreDrive(options=base_options) as drv:
+        drv.set_matrix_from_csr(indptr, cols, data, row_start=0, row_end=n - 1)
+        drv.set_rhs(rhs)
+        drv.solve()
+        out = np.empty(n, dtype=hd.REAL_DTYPE)
+        out.flags.writeable = False
+        with pytest.raises(ValueError, match="writable"):
+            drv._core.copy_solution(out)
+        with pytest.raises(ValueError, match="dtype"):
+            drv._core.copy_solution(np.empty(n, dtype=hd.REAL_DTYPE.newbyteorder("S")))
+        with pytest.raises(ValueError, match="1-D"):
+            drv._core.copy_solution(np.empty((n, 1), dtype=hd.REAL_DTYPE))

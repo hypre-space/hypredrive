@@ -96,7 +96,7 @@ parse_config(const char *yaml_text)
    char       *argv[1] = {argv0};
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_InputArgsParse(MPI_COMM_SELF, false, 1, argv, &args);
+   hypredrv_InputArgsParseWithObjectName(MPI_COMM_SELF, false, 1, argv, &args, NULL);
    free(argv0);
    return args;
 }

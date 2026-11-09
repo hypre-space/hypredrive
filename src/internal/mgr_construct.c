@@ -1627,6 +1627,41 @@ MGRValidateConfiguration(const MGR_args *args, const MGRCreatePlan *plan,
  * hypredrv_MGRCreate
  *-----------------------------------------------------------------------------*/
 
+/* Hypre reads one marker per local matrix row. Nested MGR may legitimately
+ * retain extra markers for an outer grid, so only a short buffer is invalid. */
+int
+hypredrv_MGRValidatePointMarkerRows(const MGR_args *args, HYPRE_ParCSRMatrix matrix)
+{
+   if (!args || !matrix)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("MGR setup requires point-marker storage and a matrix");
+      return 0;
+   }
+
+   hypre_ParCSRMatrix *par_matrix = (hypre_ParCSRMatrix *)matrix;
+   HYPRE_Int           local_rows = hypre_ParCSRMatrixNumRows(par_matrix);
+   int local_ok = local_rows >= 0 && args->point_marker_size >= (size_t)local_rows;
+   int all_ok   = 0;
+   MPI_Allreduce(&local_ok, &all_ok, 1, MPI_INT, MPI_MIN,
+                 hypre_ParCSRMatrixComm(par_matrix));
+   if (!all_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      if (!local_ok)
+      {
+         hypredrv_ErrorMsgAdd(
+            "MGR point-marker length %zu is shorter than %d local matrix rows",
+            args->point_marker_size, (int)local_rows);
+      }
+      else
+      {
+         hypredrv_ErrorMsgAdd("MGR point-marker storage is too short on another rank");
+      }
+   }
+   return all_ok;
+}
+
 void
 hypredrv_MGRCreate(MPI_Comm comm, MGR_args *args, HYPRE_Solver *precon_ptr,
                    const Stats *stats, int next_ls_id)
@@ -1690,9 +1725,10 @@ hypredrv_MGRCreate(MPI_Comm comm, MGR_args *args, HYPRE_Solver *precon_ptr,
    if (plan.dofmap_data_owned)
    {
       /* hypre uses the point-marker array during MGRSetup, so keep the owned copy
-       * alive until PreconDestroyMGRSolver() destroys the MGR object. */
+       * alive until hypredrv_MGRDestroy() destroys the MGR object. */
       free(args->point_marker_data);
       args->point_marker_data = plan.dofmap_data_owned;
+      args->point_marker_size = args->dofmap->size;
       plan.dofmap_data_owned  = NULL;
    }
 
@@ -1702,7 +1738,7 @@ cleanup:
    {
       /* Component solvers installed before the failure are cached in args;
        * destroy them together with the parent so no handle is freed twice. */
-      hypredrv_MGRDestroyWithCachedSolvers(args, precon, 0);
+      hypredrv_MGRDestroy(args, &precon, 0);
    }
    /* Soft hypre convergence leftovers should not poison later calls. */
    hypredrv_HypreConsumeErrors(comm);

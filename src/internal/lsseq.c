@@ -1804,9 +1804,3 @@ hypredrv_LSSeqReadTimestepsWithIds(const char *filename, IntArray **timestep_ids
    LSSeqDataDestroy(&seq);
    return 1;
 }
-
-int
-hypredrv_LSSeqReadTimesteps(const char *filename, IntArray **timestep_starts)
-{
-   return hypredrv_LSSeqReadTimestepsWithIds(filename, NULL, timestep_starts);
-}

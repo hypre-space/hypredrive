@@ -240,19 +240,32 @@ InputArgsFindUniqueRootSection(const YAMLtree *tree, const char *key)
    return match;
 }
 
-static void
-InputArgsReattachDetachedChild(YAMLnode *parent, YAMLnode **child_ptr)
+/* Select the single method without changing the caller's YAML sibling list.
+ * Reserved section options have their own parsers and remain in source order. */
+static YAMLnode *
+InputArgsFindMethodNode(YAMLnode *parent, const YAMLnode *reserved,
+                        hypredrv_error_t missing_error)
 {
-   YAMLnode *child = child_ptr ? *child_ptr : NULL;
-
-   if (!parent || !child)
+   YAMLnode *method = NULL;
+   YAML_NODE_ITERATE(parent, child)
    {
-      return;
+      if (child == reserved)
+      {
+         continue;
+      }
+      if (method)
+      {
+         hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+         hypredrv_ErrorMsgAddExtraKey(child->key);
+         return NULL;
+      }
+      method = child;
    }
-
-   child->next      = parent->children;
-   parent->children = child;
-   *child_ptr       = NULL;
+   if (!method)
+   {
+      hypredrv_ErrorCodeSet(missing_error);
+   }
+   return method;
 }
 
 /*-----------------------------------------------------------------------------
@@ -341,59 +354,29 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
    }
    YAML_NODE_SET_VALID(parent);
 
-   /* Extract scaling node before parsing solver to avoid schema conflicts */
-   if (parent->children)
-   {
-      YAMLnode *child = parent->children;
-      YAMLnode *prev  = NULL;
-      while (child)
-      {
-         if (!strcmp(child->key, "scaling"))
-         {
-            /* Detach scaling node from parent's children list */
-            if (prev)
-            {
-               prev->next = child->next;
-            }
-            else
-            {
-               parent->children = child->next;
-            }
-            scaling_node       = child;
-            scaling_node->next = NULL;
-            break;
-         }
-         prev  = child;
-         child = child->next;
-      }
-   }
+   scaling_node = hypredrv_YAMLnodeFindChildByKey(parent, "scaling");
 
    StrIntMapArray solver_type_map = hypredrv_SolverGetValidTypeIntMap();
 
    /* Check if the solver type was set with a single (key, val) pair */
    if (!strcmp(parent->val, ""))
    {
-      /* Check if a solver type was set */
-      if (!parent->children)
+      YAMLnode *method_node =
+         InputArgsFindMethodNode(parent, scaling_node, ERROR_MISSING_SOLVER);
+      if (!method_node)
       {
-         hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
-         InputArgsReattachDetachedChild(parent, &scaling_node);
          return;
       }
 
-      /* Check if more than one solver type was set (this is not supported!) */
-      if (parent->children->next)
+      hypredrv_YAMLnodeValidateSchema(method_node, hypredrv_SolverGetValidKeys,
+                                      hypredrv_SolverGetValidValues);
+      if (YAML_NODE_GET_VALIDITY(method_node) == YAML_NODE_VALID)
       {
-         hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
-         hypredrv_ErrorMsgAddExtraKey(parent->children->next->key);
-         InputArgsReattachDetachedChild(parent, &scaling_node);
-         return;
+         iargs->solver_method =
+            (solver_t)hypredrv_StrIntMapArrayGetImage(solver_type_map, method_node->key);
+         hypredrv_SolverSetMethodArgs(iargs->solver_method, &iargs->solver, method_node,
+                                      NULL);
       }
-
-      iargs->solver_method = (solver_t)hypredrv_StrIntMapArrayGetImage(
-         solver_type_map, parent->children->key);
-
-      hypredrv_SolverSetArgsFromYAML(&iargs->solver, parent);
    }
    else if (!hypredrv_StrIntMapArrayDomainEntryExists(solver_type_map, parent->val))
    {
@@ -436,80 +419,7 @@ hypredrv_InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
       hypredrv_ScalingSetArgsFromYAML(&iargs->scaling, scaling_node);
       /* Mark scaling node as valid to avoid validation errors */
       YAML_NODE_SET_VALID(scaling_node);
-      /* Reattach to parent for tree validation (but after parsing) */
-      InputArgsReattachDetachedChild(parent, &scaling_node);
    }
-}
-
-/*-----------------------------------------------------------------------------
- * Wrap a type's children as "<parent_key>: {<type_key>: ...}" so they can be
- * fed to the typed SetArgsFromYAML parsers. The type node owns copies of its
- * key/value: hypredrv_YAMLSetArgsGeneric may free/replace a flat-value node's
- * key, so never point into another YAML tree's storage here.
- *-----------------------------------------------------------------------------*/
-
-typedef struct
-{
-   YAMLnode type;
-   YAMLnode parent;
-} WrappedTypeNode;
-
-static YAMLnode *
-WrappedTypeNodeInit(WrappedTypeNode *w, char *parent_key, const YAMLnode *parent_node,
-                    const char *type_key, int type_level, YAMLnode *type_children)
-{
-   memset(w, 0, sizeof(*w));
-   w->type.key      = strdup(type_key ? type_key : "");
-   w->type.val      = strdup("");
-   w->type.level    = type_level;
-   w->type.valid    = YAML_NODE_VALID;
-   w->type.children = type_children;
-
-   w->parent.key      = parent_key;
-   w->parent.val      = "";
-   w->parent.level    = parent_node ? parent_node->level : 0;
-   w->parent.valid    = YAML_NODE_VALID;
-   w->parent.children = &w->type;
-
-   return &w->parent;
-}
-
-/* Release what the parsers and WrappedTypeNodeInit allocated on the fake nodes. */
-static void
-WrappedTypeNodeFree(WrappedTypeNode *w)
-{
-   free(w->type.mapped_val);
-   free(w->type.key);
-   free(w->type.val);
-   free(w->parent.mapped_val);
-   memset(w, 0, sizeof(*w));
-}
-
-static void
-PreconParseVariantWrapped(precon_args *dst, precon_t method,
-                          const YAMLnode *precon_parent, const char *type_key,
-                          int type_level, YAMLnode *type_children)
-{
-   WrappedTypeNode w;
-
-   hypredrv_PreconArgsSetDefaultsForMethod(method, dst);
-   hypredrv_PreconSetArgsFromYAML(dst, WrappedTypeNodeInit(&w, "preconditioner",
-                                                           precon_parent, type_key,
-                                                           type_level, type_children));
-   WrappedTypeNodeFree(&w);
-}
-
-static void
-SolverParseWrapped(solver_args *dst, solver_t method, const YAMLnode *solver_parent,
-                   const char *type_key, int type_level, YAMLnode *type_children)
-{
-   WrappedTypeNode w;
-
-   hypredrv_SolverArgsSetDefaultsForMethod(method, dst);
-   hypredrv_SolverSetArgsFromYAML(dst, WrappedTypeNodeInit(&w, "solver", solver_parent,
-                                                           type_key, type_level,
-                                                           type_children));
-   WrappedTypeNodeFree(&w);
 }
 
 /*-----------------------------------------------------------------------------
@@ -589,8 +499,8 @@ PreconPresetBuildArgs(const char *preset_name, precon_t *method_out,
    }
 
    *method_out = (precon_t)method;
-   PreconParseVariantWrapped(args_out, *method_out, tree->root, type_node->key,
-                             type_node->level, type_node->children);
+   hypredrv_PreconSetMethodArgs(*method_out, args_out, type_node);
+   hypredrv_YAMLtreeValidate(tree);
    hypredrv_YAMLtreeDestroy(&tree);
 }
 
@@ -616,8 +526,8 @@ SolverPresetBuildArgs(const char *preset_name, solver_t *method_out,
    }
 
    *method_out = (solver_t)method;
-   SolverParseWrapped(args_out, *method_out, tree->root, type_node->key, type_node->level,
-                      type_node->children);
+   hypredrv_SolverSetMethodArgs(*method_out, args_out, type_node, NULL);
+   hypredrv_YAMLtreeValidate(tree);
    hypredrv_YAMLtreeDestroy(&tree);
 }
 
@@ -771,7 +681,12 @@ PreconParsePresetNode(const YAMLnode *preset_node, precon_t *method_out,
    PreconPresetBuildArgs(preset_name, method_out, args_out);
    free(preset_name);
 
-   return !hypredrv_ErrorCodeGet();
+   if (hypredrv_ErrorCodeGet())
+   {
+      hypredrv_PreconArgsDestroyOwnedConfig(*method_out, args_out);
+      return 0;
+   }
+   return 1;
 }
 
 static PreconParseResult
@@ -839,6 +754,7 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
          {
             return PRECON_PARSE_ERROR;
          }
+         YAML_NODE_SET_VALID(type);
       }
       else
       {
@@ -849,8 +765,7 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
 
          ctx->methods[vi]     = method;
          ctx->parsed_variants = vi + 1;
-         PreconParseVariantWrapped(&ctx->variants[vi], method, parent, type->key,
-                                   type->level, type->children);
+         hypredrv_PreconSetMethodArgs(method, &ctx->variants[vi], type);
          if (hypredrv_ErrorCodeGet())
          {                                                   /* GCOVR_EXCL_BR_LINE */
             return PRECON_PARSE_ERROR; /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */
@@ -860,7 +775,6 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
       ctx->methods[vi]     = method;
       ctx->parsed_variants = vi + 1;
       YAML_NODE_SET_VALID(item);
-      YAML_NODE_SET_VALID(type);
    }
 
    InputArgsPreconVariant0Activate(iargs, ctx, num_variants);
@@ -869,21 +783,15 @@ InputArgsParsePreconRootSequence(input_args *iargs, YAMLnode *parent,
 
 static PreconParseResult
 InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
-                               PreconParseContext *ctx)
+                               const YAMLnode *reuse_node, PreconParseContext *ctx)
 {
-   if (!parent->children)
+   YAMLnode *type_node =
+      InputArgsFindMethodNode(parent, reuse_node, ERROR_MISSING_PRECON);
+   if (!type_node)
    {
-      hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
-      return PRECON_PARSE_ERROR;
-   }
-   if (parent->children->next)
-   {
-      hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
-      hypredrv_ErrorMsgAddExtraKey(parent->children->next->key);
       return PRECON_PARSE_ERROR;
    }
 
-   YAMLnode *type_node = parent->children;
    if (!strcmp(type_node->key, "variants"))
    {
       YAML_NODE_SET_VALID(type_node);
@@ -941,13 +849,11 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
          YAMLnode *seq_item   = ctx->seq_items[vi];
          ctx->methods[vi]     = method;
          ctx->parsed_variants = vi + 1;
-         PreconParseVariantWrapped(&ctx->variants[vi], method, parent, type_node->key,
-                                   type_node->level, seq_item->children);
+         hypredrv_PreconSetMethodArgs(method, &ctx->variants[vi], seq_item);
          if (hypredrv_ErrorCodeGet())
          {                                                   /* GCOVR_EXCL_BR_LINE */
             return PRECON_PARSE_ERROR; /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */
          }
-         YAML_NODE_SET_VALID(seq_item);
       }
 
       InputArgsPreconVariant0Activate(iargs, ctx, num_variants);
@@ -960,10 +866,9 @@ InputArgsParsePreconTypedBlock(input_args *iargs, YAMLnode *parent,
       return PRECON_PARSE_ERROR; /* GCOVR_EXCL_LINE */ /* GCOVR_EXCL_BR_LINE */
    }
 
-   ctx->methods[0] = method;
-   hypredrv_PreconArgsSetDefaultsForMethod(method, &ctx->variants[0]);
+   ctx->methods[0]      = method;
    ctx->parsed_variants = 1;
-   hypredrv_PreconSetArgsFromYAML(&ctx->variants[0], parent);
+   hypredrv_PreconSetMethodArgs(method, &ctx->variants[0], type_node);
    if (hypredrv_ErrorCodeGet())
    {
       return PRECON_PARSE_ERROR;
@@ -995,28 +900,7 @@ hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
 
    /* Parse optional preconditioner.reuse block before parsing method variants. */
    hypredrv_PreconReuseSetDefaultArgs(&iargs->precon_reuse);
-   YAMLnode *reuse_node = NULL;
-   YAMLnode *child      = parent->children;
-   YAMLnode *prev       = NULL;
-   while (child)
-   {
-      if (!strcmp(child->key, "reuse"))
-      {
-         reuse_node = child;
-         if (prev)
-         {
-            prev->next = child->next;
-         }
-         else
-         {
-            parent->children = child->next;
-         }
-         reuse_node->next = NULL;
-         break;
-      }
-      prev  = child;
-      child = child->next;
-   }
+   YAMLnode *reuse_node = hypredrv_YAMLnodeFindChildByKey(parent, "reuse");
 
    if (reuse_node)
    {
@@ -1027,32 +911,17 @@ hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
       }
    }
 
-   PreconParseContext ctx = {0};
-   PreconParseResult  result;
-
-   result = InputArgsParsePreconValueOnly(iargs, parent, &ctx);
-   if (result != PRECON_PARSE_NOT_HANDLED)
+   PreconParseContext ctx    = {0};
+   PreconParseResult  result = InputArgsParsePreconValueOnly(iargs, parent, &ctx);
+   if (result == PRECON_PARSE_NOT_HANDLED)
    {
-      PreconParseContextCleanup(&ctx);
-      goto finalize_reuse;
+      result = InputArgsParsePreconRootSequence(iargs, parent, &ctx);
    }
-
-   result = InputArgsParsePreconRootSequence(iargs, parent, &ctx);
-   if (result != PRECON_PARSE_NOT_HANDLED)
+   if (result == PRECON_PARSE_NOT_HANDLED)
    {
-      PreconParseContextCleanup(&ctx);
-      goto finalize_reuse;
+      InputArgsParsePreconTypedBlock(iargs, parent, reuse_node, &ctx);
    }
-
-   InputArgsParsePreconTypedBlock(iargs, parent, &ctx);
    PreconParseContextCleanup(&ctx);
-
-finalize_reuse:
-   if (reuse_node)
-   {
-      reuse_node->next = parent->children;
-      parent->children = reuse_node;
-   }
 
    hypredrv_MGRSetDofLabels(NULL);
 }
@@ -1620,11 +1489,4 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
                  (int)iargs->solver_method, (int)iargs->precon_method,
                  iargs->general.statistics, iargs->scaling.enabled,
                  (int)iargs->scaling.type, (int)iargs->ls.rhs_mode);
-}
-
-void
-hypredrv_InputArgsParse(MPI_Comm comm, bool lib_mode, int argc, char **argv,
-                        input_args **args_ptr)
-{
-   hypredrv_InputArgsParseWithObjectName(comm, lib_mode, argc, argv, args_ptr, NULL);
 }
