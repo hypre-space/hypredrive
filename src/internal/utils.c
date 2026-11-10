@@ -98,7 +98,7 @@ hypredrv_HypreClearConvergenceErrors(void)
    }
 }
 
-void
+uint32_t
 hypredrv_HypreConsumeErrors(MPI_Comm comm)
 {
    (void)comm; /* Diagnostics are local on older hypre releases. */
@@ -126,7 +126,7 @@ hypredrv_HypreConsumeErrors(MPI_Comm comm)
          fflush(stderr);
       }
 #endif
-      return;
+      return ERROR_NONE;
    }
 
    if (hard_error)
@@ -159,6 +159,7 @@ hypredrv_HypreConsumeErrors(MPI_Comm comm)
     * HypreDrive's error state. Convergence failures and argument-flag warnings
     * (for example ILUT's usable zero-row factorization) remain soft results. */
    HYPRE_ClearAllErrors();
+   return hard_error ? ERROR_HYPRE_INTERNAL : ERROR_NONE;
 }
 
 /*-----------------------------------------------------------------------------
@@ -367,16 +368,6 @@ int
 hypredrv_CheckBinaryDataExists(const char *prefix)
 {
    return hypredrv_BinaryPathPrefixIsSafe(prefix) && PartitionFileExists(prefix, 0, 1);
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_CheckASCIIDataExists
- *-----------------------------------------------------------------------------*/
-
-int
-hypredrv_CheckASCIIDataExists(const char *prefix)
-{
-   return hypredrv_BinaryPathPrefixIsSafe(prefix) && PartitionFileExists(prefix, 0, 0);
 }
 
 /*-----------------------------------------------------------------------------

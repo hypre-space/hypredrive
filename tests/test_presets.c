@@ -10,10 +10,35 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "internal/error.h"
-#include "internal/presets.h"
-#include "test_helpers.h"
 #include "HYPREDRV.h"
+#include "internal/error.h"
+#include "internal/precon.h"
+#include "internal/presets.h"
+#include "internal/solver.h"
+#include "test_helpers.h"
+
+/* Loaded configuration trees outlive registry mutations and are caller-owned. */
+static YAMLtree *
+load_test_preset(const char *name, hypredrv_PresetKind kind, int expected_method)
+{
+   YAMLtree *tree   = NULL;
+   int       method = -1;
+   ASSERT_NOT_NULL(hypredrv_PresetLoadTypeNode(name, kind, &tree, &method));
+   ASSERT_EQ(method, expected_method);
+   return tree;
+}
+
+static void
+assert_preset_missing(const char *name, hypredrv_PresetKind kind)
+{
+   YAMLtree *tree   = NULL;
+   int       method = -1;
+   hypredrv_ErrorStateReset();
+   ASSERT_NULL(hypredrv_PresetLoadTypeNode(name, kind, &tree, &method));
+   ASSERT_NULL(tree);
+   ASSERT_EQ(method, -1);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+}
 
 /*-----------------------------------------------------------------------------
  * test_PresetRegister_success
@@ -30,11 +55,15 @@ test_PresetRegister_success(void)
    ASSERT_EQ(ret, 0);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   const hypredrv_Preset *p = hypredrv_PresetFindTyped("my_custom", HYPREDRV_PRESET_ANY);
-   ASSERT_NOT_NULL(p);
-   ASSERT_STREQ(p->name, "my_custom");
-   ASSERT_NOT_NULL(strstr(p->text, "amg"));
-   ASSERT_STREQ(p->help, "Custom AMG");
+   YAMLtree *tree =
+      load_test_preset("my_custom", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   ASSERT_STREQ(tree->root->children->children->key, "max_iter");
+   ASSERT_STREQ(tree->root->children->children->val, "1");
+   hypredrv_YAMLtreeDestroy(&tree);
+   char *help = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_PRECON);
+   ASSERT_NOT_NULL(help);
+   ASSERT_NOT_NULL(strstr(help, "my_custom: Custom AMG"));
+   free(help);
 
    hypredrv_PresetFreeUserPresets();
    hypredrv_ErrorCodeResetAll();
@@ -52,7 +81,7 @@ test_PresetRegister_duplicate_builtin(void)
 
    int ret = hypredrv_PresetRegisterTyped("poisson", "amg", "duplicate of builtin",
                                           HYPREDRV_PRESET_PRECON);
-   ASSERT_EQ(ret, -1);
+   ASSERT_EQ_U32(ret, ERROR_INVALID_VAL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
 
@@ -78,7 +107,7 @@ test_PresetRegister_duplicate_user(void)
 
    int ret2 = hypredrv_PresetRegisterTyped("my_dup", "amg:\n  max_iter: 2", "second",
                                            HYPREDRV_PRESET_PRECON);
-   ASSERT_EQ(ret2, -1);
+   ASSERT_EQ_U32(ret2, ERROR_INVALID_VAL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
 
    hypredrv_PresetFreeUserPresets();
@@ -97,14 +126,14 @@ test_PresetRegister_null_args(void)
 
    /* NULL name */
    int ret = hypredrv_PresetRegisterTyped(NULL, "amg", "help", HYPREDRV_PRESET_PRECON);
-   ASSERT_EQ(ret, -1);
+   ASSERT_EQ_U32(ret, ERROR_INVALID_VAL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
 
    /* NULL yaml_text */
    ret =
       hypredrv_PresetRegisterTyped("my_null_text", NULL, "help", HYPREDRV_PRESET_PRECON);
-   ASSERT_EQ(ret, -1);
+   ASSERT_EQ_U32(ret, ERROR_INVALID_VAL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
 
@@ -130,10 +159,9 @@ test_PresetRegister_hyphen_in_name_normalizes(void)
    ASSERT_EQ(hypredrv_PresetRegisterTyped("my-hyphen-preset", "amg:\n  max_iter: 1",
                                           "hyphens", HYPREDRV_PRESET_PRECON),
              0);
-   const hypredrv_Preset *p =
-      hypredrv_PresetFindTyped("my_hyphen_preset", HYPREDRV_PRESET_ANY);
-   ASSERT_NOT_NULL(p);
-   ASSERT_STREQ(p->name, "my_hyphen_preset");
+   YAMLtree *tree =
+      load_test_preset("my_hyphen_preset", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
 
    hypredrv_PresetFreeUserPresets();
    hypredrv_ErrorCodeResetAll();
@@ -153,17 +181,23 @@ test_PresetFind_user_preset_case_insensitive(void)
                                           HYPREDRV_PRESET_PRECON);
    ASSERT_EQ(ret, 0);
 
+   YAMLtree *tree = NULL;
    /* Different casing */
-   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("MY_CASE_TEST", HYPREDRV_PRESET_ANY));
-   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("My_Case_Test", HYPREDRV_PRESET_ANY));
-   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("my_case_test", HYPREDRV_PRESET_ANY));
+   tree = load_test_preset("MY_CASE_TEST", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
+   tree = load_test_preset("My_Case_Test", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
+   tree = load_test_preset("my_case_test", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
 
    /* Hyphen treated as underscore */
-   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("my-case-test", HYPREDRV_PRESET_ANY));
-   ASSERT_NOT_NULL(hypredrv_PresetFindTyped("MY-CASE-TEST", HYPREDRV_PRESET_ANY));
+   tree = load_test_preset("my-case-test", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
+   tree = load_test_preset("MY-CASE-TEST", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
 
    /* Unknown name still returns NULL */
-   ASSERT_NULL(hypredrv_PresetFindTyped("no_such_preset", HYPREDRV_PRESET_ANY));
+   assert_preset_missing("no_such_preset", HYPREDRV_PRESET_PRECON);
 
    hypredrv_PresetFreeUserPresets();
    hypredrv_ErrorCodeResetAll();
@@ -245,7 +279,7 @@ test_PresetFreeUserPresets_idempotent(void)
    hypredrv_PresetFreeUserPresets();
 
    /* After freeing, the preset should no longer be found */
-   ASSERT_NULL(hypredrv_PresetFindTyped("idempotent_preset", HYPREDRV_PRESET_ANY));
+   assert_preset_missing("idempotent_preset", HYPREDRV_PRESET_PRECON);
 
    hypredrv_ErrorCodeResetAll();
 }
@@ -263,11 +297,9 @@ test_HYPREDRV_PreconPresetRegister_public(void)
       "public_test_preset", "amg:\n  max_iter: 1", "Public test preset");
    ASSERT_EQ((int)err, 0);
 
-   /* Verify the preset is findable via the private API */
-   const hypredrv_Preset *p =
-      hypredrv_PresetFindTyped("public_test_preset", HYPREDRV_PRESET_ANY);
-   ASSERT_NOT_NULL(p);
-   ASSERT_STREQ(p->help, "Public test preset");
+   YAMLtree *tree =
+      load_test_preset("public_test_preset", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
 
    /* NULL args should return an error */
    err = HYPREDRV_PreconPresetRegister(NULL, "amg", "help");
@@ -277,7 +309,7 @@ test_HYPREDRV_PreconPresetRegister_public(void)
    HYPREDRV_Finalize();
 
    /* After finalize the preset must be gone */
-   ASSERT_NULL(hypredrv_PresetFindTyped("public_test_preset", HYPREDRV_PRESET_ANY));
+   assert_preset_missing("public_test_preset", HYPREDRV_PRESET_PRECON);
 }
 
 /*-----------------------------------------------------------------------------
@@ -285,23 +317,139 @@ test_HYPREDRV_PreconPresetRegister_public(void)
  *-----------------------------------------------------------------------------*/
 
 static void
+test_solver_name_conflicts_use_normalized_identity(void)
+{
+   const char *names[] = {"GMRES", "Pcg", "Fgmres", "BICGSTAB", "0", "01", "+2", "-0"};
+   for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++)
+   {
+      ASSERT_TRUE(HYPREDRV_SolverPresetRegister(names[i], "gmres", "conflict") &
+                  ERROR_INVALID_VAL);
+      hypredrv_ErrorStateReset();
+      ASSERT_EQ_U32(hypredrv_PresetRegisterTyped(names[i], "gmres", "conflict",
+                                                 HYPREDRV_PRESET_SOLVER),
+                    ERROR_INVALID_VAL);
+   }
+}
+
+static void
+test_owned_trees_survive_registry_changes(void)
+{
+   char name[] = "Owned-Definition";
+   char text[] = "fgmres:\n  max_iter: 29\n";
+   char help[] = "owned help";
+   ASSERT_EQ(HYPREDRV_SolverPresetRegister(name, text, help), ERROR_NONE);
+   memset(name, 'x', sizeof(name) - 1);
+   memset(text, 'x', sizeof(text) - 1);
+   memset(help, 'x', sizeof(help) - 1);
+   YAMLtree *first =
+      load_test_preset("OWNED_DEFINITION", HYPREDRV_PRESET_SOLVER, SOLVER_FGMRES);
+   ASSERT_STREQ(first->root->children->children->val, "29");
+   first->root->children->children->val[0] = '1';
+   /* Force registry growth after taking an owned configuration tree. */
+   for (int i = 0; i < 40; i++)
+   {
+      char key[32];
+      snprintf(key, sizeof(key), "growth-%d", i);
+      ASSERT_EQ(HYPREDRV_PreconPresetRegister(key, "amg", NULL), ERROR_NONE);
+   }
+   YAMLtree *second =
+      load_test_preset("owned-definition", HYPREDRV_PRESET_SOLVER, SOLVER_FGMRES);
+   ASSERT_STREQ(second->root->children->children->val, "29");
+   char *listing = hypredrv_PresetHelpTyped(HYPREDRV_PRESET_SOLVER);
+   ASSERT_NOT_NULL(listing);
+   ASSERT_NOT_NULL(strstr(listing, "owned_definition: owned help"));
+   free(listing);
+   ASSERT_TRUE(HYPREDRV_PreconPresetRegister("OWNED_definition", "amg", NULL) &
+               ERROR_INVALID_VAL);
+   hypredrv_PresetFreeUserPresets();
+   ASSERT_STREQ(first->root->children->children->val, "19");
+   ASSERT_STREQ(second->root->children->children->val, "29");
+   hypredrv_YAMLtreeDestroy(&first);
+   hypredrv_YAMLtreeDestroy(&second);
+   assert_preset_missing("owned-definition", HYPREDRV_PRESET_SOLVER);
+}
+
+static void
+test_typed_load_rejects_malformed_definitions(void)
+{
+   const char    *texts[]  = {"amg\nfsai\n", "unknown_type\n", "gmres\n"};
+   const uint32_t errors[] = {ERROR_INVALID_VAL, ERROR_INVALID_KEY, ERROR_INVALID_KEY};
+   for (size_t i = 0; i < sizeof(texts) / sizeof(texts[0]); i++)
+   {
+      ASSERT_EQ(HYPREDRV_PreconPresetRegister("bad-shape", texts[i], NULL), ERROR_NONE);
+      YAMLtree *tree   = NULL;
+      int       method = -1;
+      ASSERT_NULL(hypredrv_PresetLoadTypeNode("bad_shape", HYPREDRV_PRESET_PRECON, &tree,
+                                              &method));
+      ASSERT_NULL(tree);
+      ASSERT_EQ(method, -1);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & errors[i]);
+      hypredrv_PresetFreeUserPresets();
+   }
+   ASSERT_EQ(HYPREDRV_SolverPresetRegister("typed-solver", "gmres", NULL), ERROR_NONE);
+   assert_preset_missing("typed_solver", HYPREDRV_PRESET_PRECON);
+   hypredrv_ErrorStateReset();
+   YAMLtree *tree =
+      load_test_preset("typed_solver", HYPREDRV_PRESET_SOLVER, SOLVER_GMRES);
+   hypredrv_YAMLtreeDestroy(&tree);
+   hypredrv_PresetFreeUserPresets();
+}
+
+static void
+test_registration_validates_identity_and_preserves_diagnostics(void)
+{
+   ASSERT_EQ_U32(HYPREDRV_PreconPresetRegister("", "amg", NULL), ERROR_INVALID_VAL);
+   ASSERT_EQ_U32(HYPREDRV_PreconPresetRegister("empty-text", "", NULL),
+                 ERROR_INVALID_VAL);
+   hypredrv_ErrorStateReset();
+   ASSERT_EQ_U32(
+      hypredrv_PresetRegisterTyped("invalid-kind", "amg", NULL, (hypredrv_PresetKind)99),
+      ERROR_INVALID_VAL);
+   ASSERT_NULL(hypredrv_PresetHelpTyped((hypredrv_PresetKind)99));
+   hypredrv_ErrorStateReset();
+   YAMLtree *tree   = NULL;
+   int       method = -1;
+   ASSERT_NULL(
+      hypredrv_PresetLoadTypeNode("poisson", (hypredrv_PresetKind)99, &tree, &method));
+   ASSERT_EQ(method, -1);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+   hypredrv_ErrorStateReset();
+   hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
+   ASSERT_EQ(
+      hypredrv_PresetRegisterTyped("private-scope", "amg", NULL, HYPREDRV_PRESET_PRECON),
+      ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_DOFMAP);
+   ASSERT_NULL(hypredrv_PresetLoadTypeNode("private_scope", HYPREDRV_PRESET_PRECON, &tree,
+                                           &method));
+   ASSERT_NULL(tree);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_DOFMAP);
+   ASSERT_EQ_U32(
+      hypredrv_PresetRegisterTyped("PRIVATE_scope", "amg", NULL, HYPREDRV_PRESET_PRECON),
+      ERROR_INVALID_VAL);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_DOFMAP | ERROR_INVALID_VAL);
+   hypredrv_ErrorStateReset();
+   tree = load_test_preset("private_scope", HYPREDRV_PRESET_PRECON, PRECON_BOOMERAMG);
+   hypredrv_YAMLtreeDestroy(&tree);
+   hypredrv_PresetFreeUserPresets();
+}
+
+static void
 test_HYPREDRV_SolverPresetRegister_public(void)
 {
    HYPREDRV_Initialize();
 
-   uint32_t err = HYPREDRV_SolverPresetRegister(
-      "public_solver_preset",
-      "fgmres:\n"
-      "  max_iter: 17\n"
-      "  krylov_dim: 23\n"
-      "  print_level: 0",
-      "Public solver preset");
+   uint32_t err = HYPREDRV_SolverPresetRegister("public_solver_preset",
+                                                "fgmres:\n"
+                                                "  max_iter: 17\n"
+                                                "  krylov_dim: 23\n"
+                                                "  print_level: 0",
+                                                "Public solver preset");
    ASSERT_EQ((int)err, 0);
 
-   const hypredrv_Preset *p =
-      hypredrv_PresetFindTyped("public_solver_preset", HYPREDRV_PRESET_SOLVER);
-   ASSERT_NOT_NULL(p);
-   ASSERT_STREQ(p->help, "Public solver preset");
+   YAMLtree *tree =
+      load_test_preset("public_solver_preset", HYPREDRV_PRESET_SOLVER, SOLVER_FGMRES);
+   ASSERT_STREQ(tree->root->children->children->val, "17");
+   hypredrv_YAMLtreeDestroy(&tree);
 
    err = HYPREDRV_SolverPresetRegister("gmres", "gmres:\n  max_iter: 1", "conflict");
    ASSERT_NE((int)err, 0);
@@ -311,8 +459,7 @@ test_HYPREDRV_SolverPresetRegister_public(void)
 
    HYPREDRV_Finalize();
 
-   ASSERT_NULL(
-      hypredrv_PresetFindTyped("public_solver_preset", HYPREDRV_PRESET_SOLVER));
+   assert_preset_missing("public_solver_preset", HYPREDRV_PRESET_SOLVER);
 }
 
 /*-----------------------------------------------------------------------------
@@ -335,6 +482,10 @@ main(int argc, char **argv)
    RUN_TEST(test_PresetFreeUserPresets_idempotent);
    RUN_TEST(test_HYPREDRV_PreconPresetRegister_public);
    RUN_TEST(test_HYPREDRV_SolverPresetRegister_public);
+   RUN_TEST(test_solver_name_conflicts_use_normalized_identity);
+   RUN_TEST(test_owned_trees_survive_registry_changes);
+   RUN_TEST(test_typed_load_rejects_malformed_definitions);
+   RUN_TEST(test_registration_validates_identity_and_preserves_diagnostics);
 
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();

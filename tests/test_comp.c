@@ -6,6 +6,22 @@
 #include "internal/error.h"
 #include "test_helpers.h"
 
+static const comp_alg_t available_codecs[] = {
+   COMP_NONE,
+#ifdef HYPREDRV_USING_ZLIB
+   COMP_ZLIB,
+#endif
+#ifdef HYPREDRV_USING_ZSTD
+   COMP_ZSTD,
+#endif
+#ifdef HYPREDRV_USING_LZ4
+   COMP_LZ4,   COMP_LZ4HC,
+#endif
+#ifdef HYPREDRV_USING_BLOSC
+   COMP_BLOSC,
+#endif
+};
+
 static void
 run_roundtrip(comp_alg_t algo)
 {
@@ -294,11 +310,19 @@ test_comp_invalid_args(void)
    char    buf  = 0;
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
+   sz  = 99;
+   out = &buf;
    hypredrv_compress(COMP_ZLIB, 10, NULL, &sz, &out, -1);
+   ASSERT_EQ_SIZE(sz, 0);
+   ASSERT_NULL(out);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    hypredrv_ErrorCodeResetAll();
    hypredrv_ErrorMsgClear();
+   sz  = 99;
+   out = &buf;
    hypredrv_decompress(COMP_ZSTD, 0, NULL, &sz, &out);
+   ASSERT_EQ_SIZE(sz, 0);
+   ASSERT_NULL(out);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
    /* NULL input with nonzero size: third clause of invalid-arg guard */
@@ -425,7 +449,7 @@ static int
 ShortSourceRead(void *ctx, uint64_t offset, void *buffer, size_t size)
 {
    const ShortSource *src = (const ShortSource *)ctx;
-   if (offset + size > src->limit)
+   if (offset > src->limit || size > src->limit - offset)
    {
       return 0;
    }
@@ -461,7 +485,8 @@ run_slice_stream_checks(comp_alg_t algo)
    hypredrv_compress(algo, nbytes, input, &blob_size, &blob, -1);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_SliceSource  src = hypredrv_SliceSourceFromMemory(blob);
+   ShortSource           memory = {blob, blob_size};
+   hypredrv_SliceSource  src    = {ShortSourceRead, &memory};
    hypredrv_SliceStream *st  = hypredrv_SliceStreamCreate(algo, blob_size, &src);
    ASSERT_NOT_NULL(st);
 
@@ -495,6 +520,13 @@ run_slice_stream_checks(comp_alg_t algo)
    hypredrv_SliceStreamDestroy(&st);
 
    ASSERT_NULL(hypredrv_SliceStreamCreate(COMP_NONE, nbytes, &src));
+   short_ctx.limit = sizeof(uint64_t) - 1;
+   ASSERT_NULL(hypredrv_SliceStreamCreate(algo, blob_size, &failing));
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_NULL(hypredrv_SliceStreamCreate(algo, blob_size, NULL));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
    free(blob);
    free(input);
 }
@@ -513,18 +545,200 @@ test_comp_slice_stream(void)
 static void
 test_comp_decompress_slice(void)
 {
-   run_slice_checks(COMP_NONE);
-#ifdef HYPREDRV_USING_ZLIB
-   run_slice_checks(COMP_ZLIB);
-#endif
-#ifdef HYPREDRV_USING_ZSTD
-   run_slice_checks(COMP_ZSTD);
-#endif
+   for (size_t c = 0; c < sizeof(available_codecs) / sizeof(available_codecs[0]); c++)
+   {
+      run_slice_checks(available_codecs[c]);
+   }
 }
+
+static void
+test_comp_slice_invalid_arguments(void)
+{
+   unsigned char byte   = 0;
+   uint64_t      header = 0;
+   void         *output = &byte;
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_decompress_slice(COMP_NONE, 1, NULL, 0, 1, &output), 0);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(output);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_decompress_slice(COMP_NONE, 1, &byte, 0, 1, NULL), 0);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_decompress_slice(COMP_NONE, SIZE_MAX, &byte, 1, SIZE_MAX, &output),
+             0);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(output);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(
+      hypredrv_decompress_slice((comp_alg_t)88, sizeof(header), &header, 0, 0, &output),
+      0);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_UNKNOWN);
+   ASSERT_NULL(output);
+   hypredrv_ErrorCodeResetAll();
+   /* Bounds errors take precedence over decoding a malformed payload. */
+   unsigned char malformed[16] = {0};
+   uint64_t      declared      = 37;
+   memcpy(malformed, &declared, sizeof(declared));
+   for (size_t c = 1; c < sizeof(available_codecs) / sizeof(available_codecs[0]); c++)
+   {
+      hypredrv_ErrorCodeResetAll();
+      ASSERT_EQ(hypredrv_decompress_slice(available_codecs[c], sizeof(malformed),
+                                          malformed, (size_t)declared, 1, &output),
+                0);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      ASSERT_NULL(output);
+   }
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_SliceStreamRead(NULL, NULL, 0, 0, &output), 0);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_NULL(output);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(hypredrv_decompress_slice(COMP_NONE, 1, &byte, 1, 0, &output), 1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(output);
+}
+
+static void
+test_comp_unaligned_input(void)
+{
+   const unsigned char input[] = "size-prefixed input need not be aligned";
+   for (size_t c = 0; c < sizeof(available_codecs) / sizeof(available_codecs[0]); c++)
+   {
+      void  *blob = NULL, *output = NULL;
+      size_t blob_size = 0, output_size = 0;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_compress(available_codecs[c], sizeof(input), input, &blob_size, &blob, -1);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      unsigned char *unaligned = malloc(blob_size + 1);
+      ASSERT_NOT_NULL(unaligned);
+      memcpy(unaligned + 1, blob, blob_size);
+      hypredrv_decompress(available_codecs[c], blob_size, unaligned + 1, &output_size,
+                          &output);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ_SIZE(output_size, sizeof(input));
+      ASSERT_EQ(memcmp(output, input, sizeof(input)), 0);
+      free(output);
+      free(unaligned);
+      free(blob);
+   }
+}
+
+/* A forged size must never make a decoder publish uninitialized tail bytes. */
+static void
+test_comp_declared_size_matches_decoded(void)
+{
+   unsigned char input[37];
+   for (size_t i = 0; i < sizeof(input); i++)
+   {
+      input[i] = (unsigned char)(i + 1);
+   }
+   const uint64_t invalid_sizes[] = {sizeof(input) + 1, sizeof(input) - 1, 0};
+   for (size_t c = 1; c < sizeof(available_codecs) / sizeof(available_codecs[0]); c++)
+   {
+      void  *blob      = NULL;
+      size_t blob_size = 0;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_compress(available_codecs[c], sizeof(input), input, &blob_size, &blob, -1);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(blob);
+      for (size_t i = 0; i < sizeof(invalid_sizes) / sizeof(invalid_sizes[0]); i++)
+      {
+         memcpy(blob, &invalid_sizes[i], sizeof(invalid_sizes[i]));
+         void  *output      = NULL;
+         size_t output_size = 0;
+         hypredrv_ErrorCodeResetAll();
+         hypredrv_decompress(available_codecs[c], blob_size, blob, &output_size, &output);
+         ASSERT_TRUE(hypredrv_ErrorCodeActive());
+         ASSERT_NULL(output);
+         ASSERT_EQ_SIZE(output_size, 0);
+      }
+      free(blob);
+   }
+   hypredrv_ErrorCodeResetAll();
+}
+
+static void
+test_comp_empty_roundtrips(void)
+{
+   for (size_t c = 0; c < sizeof(available_codecs) / sizeof(available_codecs[0]); c++)
+   {
+      void  *blob = NULL, *output = NULL;
+      size_t blob_size = 0, output_size = 1;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_compress(available_codecs[c], 0, NULL, &blob_size, &blob, -1);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(blob);
+      hypredrv_decompress(available_codecs[c], blob_size, blob, &output_size, &output);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(output);
+      ASSERT_EQ_SIZE(output_size, 0);
+      free(output);
+      free(blob);
+   }
+}
+
+static void
+test_comp_rejects_unrepresentable_sizes(void)
+{
+   unsigned char input     = 0;
+   uint64_t      oversized = UINT64_MAX;
+   for (size_t c = 1; c < sizeof(available_codecs) / sizeof(available_codecs[0]); c++)
+   {
+      void  *output      = NULL;
+      size_t output_size = 0;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_compress(available_codecs[c], SIZE_MAX, &input, &output_size, &output, -1);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      ASSERT_NULL(output);
+      ASSERT_EQ_SIZE(output_size, 0);
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_decompress(available_codecs[c], sizeof(oversized), &oversized,
+                          &output_size, &output);
+      ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+      ASSERT_NULL(output);
+      ASSERT_EQ_SIZE(output_size, 0);
+   }
+   hypredrv_ErrorCodeResetAll();
+}
+
+#ifdef HYPREDRV_USING_BLOSC
+static void
+test_comp_blosc_truncated_payload(void)
+{
+   const unsigned char input[]   = "a small Blosc buffer";
+   void               *blob      = NULL;
+   size_t              blob_size = 0;
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_compress(COMP_BLOSC, sizeof(input), input, &blob_size, &blob, -1);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(blob);
+   for (size_t n = sizeof(uint64_t); n < blob_size; n++)
+   {
+      void  *output      = NULL;
+      size_t output_size = 0;
+      hypredrv_ErrorCodeResetAll();
+      hypredrv_decompress(COMP_BLOSC, n, blob, &output_size, &output);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_NULL(output);
+      ASSERT_EQ_SIZE(output_size, 0);
+   }
+   free(blob);
+   hypredrv_ErrorCodeResetAll();
+}
+#endif
 
 int
 main(void)
 {
+   RUN_TEST(test_comp_declared_size_matches_decoded);
+   RUN_TEST(test_comp_slice_invalid_arguments);
+   RUN_TEST(test_comp_unaligned_input);
+   RUN_TEST(test_comp_empty_roundtrips);
+   RUN_TEST(test_comp_rejects_unrepresentable_sizes);
+#ifdef HYPREDRV_USING_BLOSC
+   RUN_TEST(test_comp_blosc_truncated_payload);
+#endif
    RUN_TEST(test_comp_roundtrip_none);
    RUN_TEST(test_comp_name_extension_switch_defaults);
    RUN_TEST(test_comp_name_extension_all_cases);

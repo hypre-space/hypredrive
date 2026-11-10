@@ -12,7 +12,7 @@
 #include "internal/args.h"
 #include "internal/error.h"
 #include "internal/mgr.h"
-#include "internal/krylov.h"
+#include "internal/solver.h"
 #include "test_helpers.h"
 
 static input_args *

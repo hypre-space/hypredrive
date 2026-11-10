@@ -1275,7 +1275,10 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             add_hypredrive_test(ex5_1proc 1 ex5.yml)
         endif()
         if (HYPREDRV_ENABLE_EIGSPEC)
-            add_hypredrive_test(ex6_1proc 1 ex6.yml)
+            # Keep output in the wrapper's private work directory. data/ is an input link.
+            add_hypredrive_cli_test(ex6_1proc 1 ex6.yml
+                OVERRIDES --linear_system:eigspec:output_prefix eig
+            )
         endif()
         if (HYPREDRV_HAVE_HYPRE_23300_DEV0)
             add_hypredrive_test(ex7_1proc 1 ex7.yml)

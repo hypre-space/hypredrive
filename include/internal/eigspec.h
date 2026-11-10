@@ -9,8 +9,8 @@
 #include <stdint.h>
 #include "HYPRE_utilities.h"
 #include "internal/containers.h"
+#include "internal/object_fwd.h"
 
-struct Stats_struct;
 struct YAMLnode_struct;
 
 /*--------------------------------------------------------------------------
@@ -33,11 +33,8 @@ typedef struct EigSpec_args_struct
 void hypredrv_EigSpecSetDefaultArgs(EigSpec_args *);
 void hypredrv_EigSpecSetArgs(void *, struct YAMLnode_struct *);
 
-/* Internal helpers */
-#ifdef HYPREDRV_ENABLE_EIGSPEC
-typedef uint32_t (*hypredrv_PreconApplyFn)(void *ctx, void *b, void *x);
-uint32_t hypredrv_EigSpecCompute(const EigSpec_args *, void *, void *,
-                                 hypredrv_PreconApplyFn, struct Stats_struct *);
-#endif
+/* The public entry point supplies a live object and, in enabled builds,
+ * parsed arguments. This operation owns its work buffers and diagnostics. */
+uint32_t hypredrv_EigSpecCompute(hypredrv_t *);
 
 #endif /* EIGSPEC_HEADER */

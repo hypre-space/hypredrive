@@ -17,13 +17,16 @@
 #undef PACKAGE_URL
 #undef PACKAGE_VERSION
 
-#include "HYPREDRV.h"
+#include <limits.h>
+#include <math.h>
 #include "internal/eigspec.h"
 #include "internal/error.h"
 #include "internal/gen_macros.h"
 #include "internal/linsys.h"
 #include "internal/stats.h"
 #include "internal/utils.h"
+#include "logging.h"
+#include "object.h"
 
 /*
  * Eigenspectrum (debug/analysis) functionality
@@ -34,16 +37,16 @@
  * As such, it is NOT designed for production-scale runs or large problem sizes.
  *
  * Characteristics and limitations
- * - Data movement: The parallel ParCSR matrix is gathered to a single rank as a
- * sequential CSR and then expanded to a dense column-major array for LAPACK.
+ * - Data movement: A host copy of the distributed operator is gathered and expanded
+ * to a dense column-major array; the caller's matrix storage stays unchanged.
  * - Complexity: memory O(n^2) doubles, time O(n^3). This quickly becomes prohibitive as n
  * grows.
  * - Practical guidance: the dense array alone requires ~8*n^2 bytes (double precision).
  * For example, n=10,000 needs ~1 GiB for A alone, plus LAPACK work arrays and
  * (optionally) eigenvectors. The preconditioned case forms B = M^{-1}A explicitly,
  * requiring another dense n^2 buffer.
- * - Scope: single program instance (gathers on one rank). There is no distributed
- * eigensolver here.
+ * - Scope: LAPACK and output run on rank zero. All ranks participate in gathering
+ * and in applying the distributed preconditioner.
  *
  * Preconditioned spectrum (B = M^{-1}A)
  * - When enabled, we construct B = M^{-1}A by applying the existing preconditioner as a
@@ -53,10 +56,10 @@
  *
  * Numerics and outputs
  * - General (non-symmetric) problems may return complex-conjugate pairs. We write
- * eigenvalues as text: one line per eigenvalue, either "Re Im" or just "Re" when purely
- * real. If eigenvectors are requested, they are stored to a binary file in row-major
- * layout (real or interleaved complex as Re,Im pairs reconstructed from LAPACK’s
- * real-workspace output for dgeev).
+ * eigenvalues as text: one "Re Im" pair per eigenvalue for general problems, or one
+ * real value for symmetric problems. Eigenvectors are stored to a binary file,
+ * one eigenvector at a time (real or interleaved complex as Re,Im pairs
+ * reconstructed from LAPACK's real-workspace output for dgeev).
  *
  * Build-time and configuration
  * - This feature is compiled only when enabled (e.g., -DHYPREDRV_ENABLE_EIGSPEC=ON).
@@ -65,9 +68,6 @@
  * - A guard rail rejects matrices with n larger than a conservative limit to avoid large
  * memory usage allocations.
  *
- * In short: this file is intentionally simple and dense-LAPACK-centric to provide a
- * convenient debugging tool for small n. For large problems, adopt iterative or
- * distributed eigensolvers instead.
  */
 
 /*--------------------------------------------------------------------------
@@ -128,92 +128,6 @@ extern void dgeev_(char *jobvl, char *jobvr, int *n, double *a, int *lda, double
 extern void dsyev_(char *jobz, char *uplo, int *n, double *a, int *lda, double *w,
                    double *work, int *lwork, int *info);
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
-static uint32_t
-hypredrv_IJMatrixToDense(HYPRE_IJMatrix mat_A, int *n_ptr, double **A_cm_ptr)
-{
-   void              *obj_A = NULL;
-   hypre_CSRMatrix   *seq_A = NULL;
-   HYPRE_ParCSRMatrix par_A = NULL;
-   HYPRE_BigInt       nrows, ncols;
-
-   HYPRE_IJMatrixGetObject(mat_A, &obj_A);
-   par_A = (HYPRE_ParCSRMatrix)obj_A;
-
-   /* Ensure on host memory for CPU LAPACK */
-   hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)par_A, HYPRE_MEMORY_HOST);
-
-   HYPRE_ParCSRMatrixGetDims(par_A, &nrows, &ncols);
-   if (nrows != ncols)
-   {
-      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
-      hypredrv_ErrorMsgAdd("Eigenspectrum requires square matrix: got %lld x %lld",
-                           (long long)nrows, (long long)ncols);
-      return ERROR_OUT_OF_BOUNDS;
-   }
-   if (nrows <= 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
-      hypredrv_ErrorMsgAdd("Matrix has non-positive size: %lld", (long long)nrows);
-      return ERROR_OUT_OF_BOUNDS;
-   }
-
-   /* Gather on a single rank */
-   seq_A = hypre_ParCSRMatrixToCSRMatrixAll(par_A);
-   if (!seq_A)
-   {
-      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
-      hypredrv_ErrorMsgAdd("Failed to gather sequential CSR matrix for eigenspectrum");
-      return ERROR_HYPRE_INTERNAL;
-   }
-
-   const int     n  = hypre_CSRMatrixNumRows(seq_A);
-   const int    *di = hypre_CSRMatrixI(seq_A);
-   const int    *dj = hypre_CSRMatrixJ(seq_A);
-   const double *da = (const double *)hypre_CSRMatrixData(seq_A);
-   size_t        elems;
-
-   if (n <= 0 || (size_t)n > SIZE_MAX / sizeof(double) / (size_t)n)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Requested dense allocation would overflow size_t for n=%d",
-                           n);
-      hypre_CSRMatrixDestroy(seq_A);
-      return ERROR_INVALID_VAL;
-   }
-   elems = (size_t)n * (size_t)n;
-
-   /* Column-major dense matrix for LAPACK */
-   double *A_cm = (double *)calloc(elems, sizeof(double));
-   if (!A_cm)
-   {
-      hypredrv_AllocationFailure("Failed to allocate %zu bytes for dense matrix",
-                                 elems * sizeof(double));
-      hypre_CSRMatrixDestroy(seq_A);
-      return ERROR_ALLOCATION;
-   }
-
-   /* Fill nonzero coefficients (owned columns) */
-   for (int i = 0; i < n; i++)
-   {
-      for (int p = di[i]; p < di[i + 1]; p++)
-      {
-         A_cm[i + (dj[p] * n)] = da[p];
-      }
-   }
-
-   /* Release the gathered sequential matrix; the caller only needs the dense copy. */
-   hypre_CSRMatrixDestroy(seq_A);
-
-   *n_ptr    = n;
-   *A_cm_ptr = A_cm;
-   return ERROR_NONE;
-}
-
-/* Closes an eigenspectrum output file, reporting any write error (e.g. a full
- * disk) that stdio deferred until the final flush. */
 static uint32_t
 EigspecCloseOutput(FILE *fp, const char *path)
 {
@@ -227,443 +141,482 @@ EigspecCloseOutput(FILE *fp, const char *path)
    return ok ? ERROR_NONE : ERROR_UNKNOWN;
 }
 
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
-static uint32_t
-hypredrv_WriteValuesASCII(const char *prefix, int n, const double *wr, const double *wi)
-{
-   char  path[MAX_FILENAME_LENGTH];
-   FILE *fp;
-
-   snprintf(path, sizeof(path), "%s.values.txt", prefix);
-   fp = fopen(path, "w");
-   if (!fp)
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open '%s' for writing", path);
-      return ERROR_FILE_NOT_FOUND;
-   }
-
-   for (int i = 0; i < n; i++)
-   {
-      if (wi)
-      {
-         fprintf(fp, "%.17g %.17g\n", wr[i], wi[i]);
-      }
-      else
-      {
-         fprintf(fp, "%.17g\n", wr[i]);
-      }
-   }
-   return EigspecCloseOutput(fp, path);
-}
-
-/*-----------------------------------------------------------------------------
- * Write vectors in row major format
- *-----------------------------------------------------------------------------*/
-
-static uint32_t
-hypredrv_WriteRealVectorsBin(const char *prefix, int n, const double *vecs_cm)
-{
-   char  path[MAX_FILENAME_LENGTH];
-   FILE *fp;
-   snprintf(path, sizeof(path), "%s.vectors.bin", prefix);
-   fp = fopen(path, "wb");
-   if (!fp)
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open '%s' for writing", path);
-      return ERROR_FILE_NOT_FOUND;
-   }
-
-   /* One eigenvector per row: column ev of the column-major array is already
-    * contiguous, so the file is the array in memory order. */
-   fwrite(vecs_cm, sizeof(double), (size_t)n * (size_t)n, fp);
-
-   return EigspecCloseOutput(fp, path);
-}
-
-/*-----------------------------------------------------------------------------
- * Write vectors in row major format
- *-----------------------------------------------------------------------------*/
-
-static uint32_t
-hypredrv_WriteComplexVectorsBin(const char *prefix, int n, const double *VR_cm,
-                                const double *wi)
-{
-   char  path[MAX_FILENAME_LENGTH];
-   FILE *fp;
-   snprintf(path, sizeof(path), "%s.vectors.bin", prefix);
-   fp = fopen(path, "wb");
-   if (!fp)
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAdd("Could not open '%s' for writing", path);
-      return ERROR_FILE_NOT_FOUND;
-   }
-
-   for (int ev = 0; ev < n;)
-   {
-      if (wi[ev] == 0.0)
-      {
-         for (int i = 0; i < n; i++)
-         {
-            double re = VR_cm[i + (ev * n)];
-            double im = 0.0;
-            fwrite(&re, sizeof(double), 1, fp);
-            fwrite(&im, sizeof(double), 1, fp);
-         }
-         ev++;
-      }
-      else if (wi[ev] > 0.0 && ev + 1 < n)
-      {
-         /* First vector of the conjugate pair: v = vR + i vI */
-         for (int i = 0; i < n; i++)
-         {
-            double re = VR_cm[i + (ev * n)];
-            double im = VR_cm[i + ((ev + 1) * n)];
-            fwrite(&re, sizeof(double), 1, fp);
-            fwrite(&im, sizeof(double), 1, fp);
-         }
-         /* Second vector: conjugate v* = vR - i vI */
-         for (int i = 0; i < n; i++)
-         {
-            double re = VR_cm[i + (ev * n)];
-            double im = -VR_cm[i + ((ev + 1) * n)];
-            fwrite(&re, sizeof(double), 1, fp);
-            fwrite(&im, sizeof(double), 1, fp);
-         }
-         ev += 2;
-      }
-      else
-      {
-         /* Unexpected ordering; write zeros for safety and advance */
-         for (int i = 0; i < n; i++)
-         {
-            double re = VR_cm[i + (ev * n)];
-            double im = 0.0;
-            fwrite(&re, sizeof(double), 1, fp);
-            fwrite(&im, sizeof(double), 1, fp);
-         }
-         ev++;
-      }
-   }
-
-   return EigspecCloseOutput(fp, path);
-}
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
-static uint32_t
-hypredrv_EigSpecComputeGeneral(int n, double *A_cm, int want_vectors, double **wr_out,
-                               double **wi_out, double **vecs_cm_out)
-{
-   int     lda   = n;
-   int     ldv   = n;
-   char    jobvl = 'N';
-   char    jobvr = want_vectors ? 'V' : 'N';
-   int     info  = 0;
-   double *wr    = (double *)malloc((size_t)n * sizeof(double));
-   double *wi    = (double *)malloc((size_t)n * sizeof(double));
-   double *VR =
-      want_vectors ? (double *)malloc((size_t)n * (size_t)n * sizeof(double)) : NULL;
-   double *VL = NULL;
-   double  wkopt;
-   int     lwork = -1;
-
-   if (!wr || !wi || (want_vectors && !VR))
-   {
-      free(wr);
-      free(wi);
-      free(VR);
-      return hypredrv_AllocationFailure("Allocation failure for dgeev outputs (n=%d)", n);
-   }
-
-   /* Workspace query */
-   dgeev_(&jobvl, &jobvr, &n, A_cm, &lda, wr, wi, VL, &ldv, VR, &ldv, &wkopt, &lwork,
-          &info);
-   lwork        = (int)wkopt;
-   double *work = (double *)malloc((size_t)lwork * sizeof(double));
-   if (!work)
-   {
-      free(wr);
-      free(wi);
-      free(VR);
-      return hypredrv_AllocationFailure(
-         "Allocation failure for dgeev workspace (lwork=%d)", lwork);
-   }
-
-   /* Compute eigenvalues (+vectors) in-place on A_cm */
-   dgeev_(&jobvl, &jobvr, &n, A_cm, &lda, wr, wi, VL, &ldv, VR, &ldv, work, &lwork,
-          &info);
-   free(work);
-   if (info != 0)
-   {
-      free(wr);
-      free(wi);
-      free(VR);
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dgeev failed with info=%d", info);
-      return ERROR_UNKNOWN;
-   }
-
-   *wr_out      = wr;
-   *wi_out      = wi;
-   *vecs_cm_out = VR;
-   return ERROR_NONE;
-}
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
-static uint32_t
-hypredrv_EigSpecComputeSymmetric(int n, double *A_cm, int want_vectors, double **w_out,
-                                 double **vecs_cm_out)
-{
-   int     lda  = n;
-   char    jobz = want_vectors ? 'V' : 'N';
-   char    uplo = 'U';
-   int     info = 0;
-   double *w    = (double *)malloc((size_t)n * sizeof(double));
-   double  wkopt;
-   int     lwork = -1;
-
-   if (!w)
-   {
-      return hypredrv_AllocationFailure("Allocation failure for dsyev eigenvalues (n=%d)",
-                                        n);
-   }
-
-   /* Workspace query */
-   dsyev_(&jobz, &uplo, &n, A_cm, &lda, w, &wkopt, &lwork, &info);
-   lwork        = (int)wkopt;
-   double *work = (double *)malloc((size_t)lwork * sizeof(double));
-   if (!work)
-   {
-      free(w);
-      return hypredrv_AllocationFailure(
-         "Allocation failure for dsyev workspace (lwork=%d)", lwork);
-   }
-
-   /* Compute; A_cm overwritten with eigenvectors if jobz='V' */
-   dsyev_(&jobz, &uplo, &n, A_cm, &lda, w, work, &lwork, &info);
-   free(work);
-   if (info != 0)
-   {
-      free(w);
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd("dsyev failed with info=%d", info);
-      return ERROR_UNKNOWN;
-   }
-
-   *w_out       = w;
-   *vecs_cm_out = want_vectors ? A_cm : NULL;
-   return ERROR_NONE;
-}
-
-/*-----------------------------------------------------------------------------
- *-----------------------------------------------------------------------------*/
-
-/* Applies the preconditioner to the dense operator so the reported spectrum is
- * that of the preconditioned system rather than of A alone. */
-static uint32_t
-EigSpecApplyPreconditioner(HYPRE_IJMatrix mat_A, MPI_Comm comm, void *precon_ctx,
-                           hypredrv_PreconApplyFn precon_apply, Stats *stats, int n,
-                           double **A_cm)
-{
-   HYPRE_BigInt   jlower, jupper;
-   HYPRE_IJVector t = NULL, col = NULL;
-
-   HYPRE_IJMatrixGetLocalRange(mat_A, &jlower, &jupper, &jlower, &jupper);
-   HYPRE_IJVectorCreate(comm, jlower, jupper, &t);
-   HYPRE_IJVectorSetObjectType(t, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(t, HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorAssemble(t);
-   HYPRE_IJVectorCreate(comm, jlower, jupper, &col);
-   HYPRE_IJVectorSetObjectType(col, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(col, HYPRE_MEMORY_HOST);
-   HYPRE_IJVectorAssemble(col);
-
-   double *B_cm = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
-   if (!B_cm)
-   {
-      HYPRE_IJVectorDestroy(t);
-      HYPRE_IJVectorDestroy(col);
-      free(*A_cm);
-      *A_cm = NULL;
-      hypredrv_AllocationFailure("Failed to allocate %zu bytes for preconditioned dense "
-                                 "matrix",
-                                 (size_t)n * (size_t)n * sizeof(double));
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
-      return ERROR_ALLOCATION;
-   }
-   int loc_n = (int)(jupper - jlower + 1);
-   for (int i = 0; i < n; i++)
-   {
-      /* Set t to A(:,i) using A_cm and apply preconditioner solve: col = M^{-1} t */
-      void           *obj_t, *obj_c;
-      HYPRE_ParVector par_t, par_c;
-      HYPRE_IJVectorGetObject(t, &obj_t);
-      par_t                 = (HYPRE_ParVector)obj_t;
-      hypre_Vector *v_loc_t = hypre_ParVectorLocalVector(par_t);
-      double       *tdata   = hypre_VectorData(v_loc_t);
-      for (int r = 0; r < loc_n; r++) tdata[r] = (*A_cm)[(int)(jlower) + r + (i * n)];
-
-      HYPRE_IJVectorGetObject(col, &obj_c);
-      par_c                 = (HYPRE_ParVector)obj_c;
-      hypre_Vector *v_loc_c = hypre_ParVectorLocalVector(par_c);
-      double       *cdata   = hypre_VectorData(v_loc_c);
-      for (int r = 0; r < loc_n; r++) cdata[r] = 0.0;
-
-      if (precon_apply)
-      {
-         uint32_t status            = precon_apply(precon_ctx, (void *)t, (void *)col);
-         uint32_t collective_status = ERROR_NONE;
-         MPI_Allreduce(&status, &collective_status, 1, MPI_UINT32_T, MPI_BOR, comm);
-         if (collective_status)
-         {
-            free(B_cm);
-            free(*A_cm);
-            *A_cm = NULL;
-            HYPRE_IJVectorDestroy(t);
-            HYPRE_IJVectorDestroy(col);
-            hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
-            return collective_status;
-         }
-      }
-
-      for (int r = 0; r < loc_n; r++)
-      {
-         int global_r             = (int)jlower + r;
-         B_cm[global_r + (i * n)] = cdata[r];
-      }
-   }
-
-   /* Each rank filled only the rows it owns (disjoint ranges), so a SUM reduction
-    * assembles the full preconditioned operator on every rank. Without this, each
-    * rank would run LAPACK on a matrix whose non-local rows are zero, producing
-    * silently wrong eigenvalues in parallel. */
-   MPI_Allreduce(MPI_IN_PLACE, B_cm, n * n, MPI_DOUBLE, MPI_SUM, comm);
-
-   free(*A_cm);
-   *A_cm = B_cm;
-
-   HYPRE_IJVectorDestroy(t);
-   HYPRE_IJVectorDestroy(col);
-
-   return 0;
-}
-
-static uint32_t
-EigSpecComputeAndWriteSymmetric(const EigSpec_args *eargs, int myid, int n, double *A_cm)
-{
-   double  *w = NULL, *Z_cm = NULL;
-   uint32_t status = hypredrv_EigSpecComputeSymmetric(n, A_cm, eargs->vectors, &w, &Z_cm);
-   if (!status && myid == 0)
-   {
-      const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
-      status             = hypredrv_WriteValuesASCII(prefix, n, w, NULL);
-      if (!status && eargs->vectors && Z_cm)
-      {
-         status = hypredrv_WriteRealVectorsBin(prefix, n, Z_cm);
-      }
-   }
-   free(w);
-   free(A_cm);
-   return status;
-}
+#endif /* HYPREDRV_ENABLE_EIGSPEC */
 
 uint32_t
-hypredrv_EigSpecCompute(const EigSpec_args *eargs, void *imat_A, void *precon_ctx,
-                        hypredrv_PreconApplyFn precon_apply, Stats *stats)
+hypredrv_EigSpecCompute(hypredrv_t *hypredrv)
 {
-   if (!eargs || !eargs->enable)
+   uint32_t status = ERROR_NONE;
+#ifdef HYPREDRV_ENABLE_EIGSPEC
+   const EigSpec_args *eargs = &hypredrv->iargs->ls.eigspec;
+   MPI_Comm            comm  = hypredrv->comm;
+   int                 myid  = hypredrv->mypid;
+   HYPRE_IJMatrix      mat_A = hypredrv->mat_A.handle;
+   hypre_ParCSRMatrix *par_A = NULL, *host_A = NULL;
+   hypre_CSRMatrix    *seq_A = NULL;
+   HYPRE_IJVector      rhs = NULL, solution = NULL;
+   HYPRE_Complex      *rhs_values = NULL, *solution_values = NULL;
+   double             *A_cm = NULL, *B_cm = NULL;
+   double             *wr = NULL, *wi = NULL, *VR_cm = NULL, *work = NULL;
+   HYPRE_BigInt        nrows = 0, ncols = 0;
+   HYPRE_BigInt        ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+   int                 n = 0, local_rows = 0, local_cols = 0;
+   bool                timed = false;
+
+   if (!eargs->enable)
    {
-      return ERROR_NONE;
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv,
+         "eigenspectrum computation skipped: linear_system.eigspec.enable=0");
+      goto done;
+   }
+   if (!myid)
+   {
+      printf("[EigenSpectrum] | mode=%s | vectors=%s | prefix='%s'\n",
+             eargs->hermitian ? "Hermitian" : "General", eargs->vectors ? "on" : "off",
+             eargs->output_prefix[0] ? eargs->output_prefix : "eig");
+      fflush(stdout);
    }
 
-   HYPRE_IJMatrix mat_A = (HYPRE_IJMatrix)imat_A;
+   /* Validate the external operator before gathering or allocating dense storage.
+    * The size bound also makes n*n safe as an MPI count and a LAPACK dimension. */
    if (!mat_A)
    {
+      status = ERROR_FILE_NOT_FOUND;
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAdd("Matrix not built yet for eigenspectrum computation");
-      return ERROR_FILE_NOT_FOUND;
-   }
-   MPI_Comm comm = hypre_IJMatrixComm((hypre_IJMatrix *)mat_A);
-   int      myid = 0;
-   MPI_Comm_rank(comm, &myid);
-
-   /* Use "solve" timer bucket */
-   uint32_t status = hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
-   if (status)
-   {
-      return status;
-   }
-
-   /* Convert sparse matrix to dense (column-major) */
-   int     n    = 0;
-   double *A_cm = NULL;
-   status       = hypredrv_IJMatrixToDense(mat_A, &n, &A_cm);
-   if (status)
-   {
-      free(A_cm);
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
-      return status;
-   }
-
-   /* Guard rails for very large n */
-   const int n_guard = 20000;
-   if (n > n_guard)
-   {
-      free(A_cm);
-      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
-      hypredrv_ErrorMsgAdd("Eigenspectrum guard: n=%d exceeds limit=%d", n, n_guard);
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
-      return ERROR_OUT_OF_BOUNDS;
-   }
-
-   /* Build preconditioned dense matrix B = M^{-1} A if requested */
-   if (eargs->preconditioned)
-   {
-      uint32_t precon_rc = EigSpecApplyPreconditioner(mat_A, comm, precon_ctx,
-                                                      precon_apply, stats, n, &A_cm);
-
-      if (precon_rc)
-      {
-         return precon_rc;
-      }
-   }
-
-   if (eargs->hermitian)
-   {
-      status = EigSpecComputeAndWriteSymmetric(eargs, myid, n, A_cm);
    }
    else
    {
-      double *wr    = NULL; /* real parts */
-      double *wi    = NULL; /* imaginary parts */
-      double *VR_cm = NULL; /* right eigenvectors in column-major */
-      status = hypredrv_EigSpecComputeGeneral(n, A_cm, eargs->vectors, &wr, &wi, &VR_cm);
-      if (!status && myid == 0)
+      void     *matrix_object = NULL;
+      HYPRE_Int ierr          = HYPRE_IJMatrixGetObject(mat_A, &matrix_object);
+      par_A                   = (hypre_ParCSRMatrix *)matrix_object;
+      if (ierr || !par_A ||
+          HYPRE_ParCSRMatrixGetDims((HYPRE_ParCSRMatrix)par_A, &nrows, &ncols) ||
+          HYPRE_IJMatrixGetLocalRange(mat_A, &ilower, &iupper, &jlower, &jupper))
       {
-         const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
-         status             = hypredrv_WriteValuesASCII(prefix, n, wr, wi);
-         if (!status && eargs->vectors && VR_cm)
-         {
-            status = hypredrv_WriteComplexVectorsBin(prefix, n, VR_cm, wi);
-         }
+         status = ERROR_HYPRE_INTERNAL;
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+         hypredrv_ErrorMsgAdd("Could not inspect the eigenspectrum matrix");
       }
-      free(wr);
-      free(wi);
-      free(VR_cm);
-      free(A_cm);
+      else if (nrows != ncols || nrows <= 0 || nrows > 20000)
+      {
+         status = ERROR_OUT_OF_BOUNDS;
+         hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+         hypredrv_ErrorMsgAdd("Eigenspectrum requires a square matrix with 1 to 20000 "
+                              "rows: got %lld x %lld",
+                              (long long)nrows, (long long)ncols);
+      }
+      else if ((size_t)nrows > SIZE_MAX / sizeof(double) / (size_t)nrows)
+      {
+         status = ERROR_INVALID_VAL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Eigenspectrum dense allocation would overflow size_t");
+      }
+   }
+#ifdef HYPRE_COMPLEX
+   status |= ERROR_INVALID_VAL;
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd(
+      "The dense LAPACK eigenspectrum requires real matrix coefficients");
+#endif
+   MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (status)
+   {
+      goto cleanup;
+   }
+   n          = (int)nrows;
+   local_rows = (int)(iupper - ilower + 1);
+   local_cols = (int)(jupper - jlower + 1);
+
+   /* Prepare the actual preconditioner once. A failed create/setup must not be
+    * lost to another public entry point or produce a spectrum of a zero matrix. */
+   if (eargs->preconditioned)
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "eigenspectrum computation path: preconditioned operator");
+      status = hypredrv_ObjectPreconCreate(hypredrv);
+      MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+      if (status)
+      {
+         goto cleanup;
+      }
+      status = hypredrv_ObjectPreconSetup(hypredrv);
+      if (status)
+      {
+         goto cleanup;
+      }
+   }
+   else
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "eigenspectrum computation path: unpreconditioned operator");
    }
 
-   status |= hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "solve");
+   status = hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, "solve");
+   timed  = (status == ERROR_NONE);
+   MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (status)
+   {
+      goto cleanup;
+   }
 
+   /* Older hypre gather implementations require host storage. Clone device
+    * matrices instead of migrating the caller's operator and invalidating any
+    * cached preconditioner data or changing its execution space. */
+   hypre_ParCSRMatrix *gather_A = par_A;
+#ifdef HYPRE_USING_GPU
+   if (hypre_ParCSRMatrixMemoryLocation(par_A) != HYPRE_MEMORY_HOST)
+   {
+      host_A   = hypre_ParCSRMatrixClone_v2(par_A, 1, HYPRE_MEMORY_HOST);
+      gather_A = host_A;
+      if (!host_A)
+      {
+         status =
+            hypredrv_AllocationFailure("Could not clone eigenspectrum matrix to host");
+      }
+   }
+#endif
+   MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (status)
+   {
+      goto cleanup;
+   }
+   seq_A = hypre_ParCSRMatrixToCSRMatrixAll(gather_A);
+   if (host_A)
+   {
+      hypre_ParCSRMatrixDestroy(host_A);
+      host_A = NULL;
+   }
+   if ((!seq_A && local_rows > 0) || (seq_A && hypre_CSRMatrixNumRows(seq_A) != n))
+   {
+      status = ERROR_HYPRE_INTERNAL;
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("Failed to gather the eigenspectrum matrix");
+   }
+   A_cm = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
+   if (!A_cm)
+   {
+      status |=
+         hypredrv_AllocationFailure("Could not allocate eigenspectrum dense matrix");
+   }
+   MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (status)
+   {
+      goto cleanup;
+   }
+   int gather_rank = seq_A ? myid : INT_MAX;
+   MPI_Allreduce(MPI_IN_PLACE, &gather_rank, 1, MPI_INT, MPI_MIN, comm);
+   if (gather_rank == INT_MAX)
+   {
+      status = ERROR_HYPRE_INTERNAL;
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("No rank received the eigenspectrum matrix");
+      goto cleanup;
+   }
+   if (myid == gather_rank)
+   {
+      const HYPRE_Int     *di     = hypre_CSRMatrixI(seq_A);
+      const HYPRE_Int     *dj     = hypre_CSRMatrixJ(seq_A);
+      const HYPRE_Complex *values = hypre_CSRMatrixData(seq_A);
+      for (int i = 0; i < n; i++)
+      {
+         for (HYPRE_Int entry = di[i]; entry < di[i + 1]; entry++)
+         {
+            A_cm[(size_t)i + (size_t)dj[entry] * (size_t)n] =
+               (double)hypre_creal(values[entry]);
+         }
+      }
+   }
+   if (seq_A)
+   {
+      hypre_CSRMatrixDestroy(seq_A);
+      seq_A = NULL;
+   }
+   /* A rank with no rows can legitimately receive no gathered CSR. It still
+    * participates in preconditioning and may be the LAPACK/output rank. */
+   MPI_Bcast(A_cm, n * n, MPI_DOUBLE, gather_rank, comm);
+
+   if (eargs->preconditioned)
+   {
+      B_cm       = (double *)calloc((size_t)n * (size_t)n, sizeof(double));
+      rhs_values = (HYPRE_Complex *)hypredrv_Calloc(
+         (size_t)local_rows, sizeof(HYPRE_Complex), "eigenspectrum RHS");
+      solution_values = (HYPRE_Complex *)hypredrv_Calloc(
+         (size_t)local_cols, sizeof(HYPRE_Complex), "eigenspectrum solution");
+      if (!B_cm || !rhs_values || !solution_values)
+      {
+         status = hypredrv_AllocationFailure(
+            "Could not allocate preconditioned eigenspectrum buffers");
+      }
+      MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+      if (status)
+      {
+         goto cleanup;
+      }
+      HYPRE_MemoryLocation location = hypre_ParCSRMatrixMemoryLocation(par_A);
+      HYPRE_Int            ierr     = HYPRE_IJVectorCreate(comm, ilower, iupper, &rhs);
+      if (!ierr) ierr = HYPRE_IJVectorSetObjectType(rhs, HYPRE_PARCSR);
+      if (!ierr) ierr = HYPRE_IJVectorInitialize_v2(rhs, location);
+      if (!ierr) ierr = HYPRE_IJVectorCreate(comm, jlower, jupper, &solution);
+      if (!ierr) ierr = HYPRE_IJVectorSetObjectType(solution, HYPRE_PARCSR);
+      if (!ierr) ierr = HYPRE_IJVectorInitialize_v2(solution, location);
+      if (ierr)
+      {
+         status = ERROR_HYPRE_INTERNAL;
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+         hypredrv_ErrorMsgAdd("Could not initialize eigenspectrum work vectors");
+      }
+      MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+      if (status)
+      {
+         goto cleanup;
+      }
+      ierr = HYPRE_IJVectorAssemble(rhs);
+      ierr |= HYPRE_IJVectorAssemble(solution);
+      void *rhs_object = NULL, *solution_object = NULL;
+      ierr |= HYPRE_IJVectorGetObject(rhs, &rhs_object);
+      ierr |= HYPRE_IJVectorGetObject(solution, &solution_object);
+      if (ierr || !rhs_object || !solution_object)
+      {
+         status = ERROR_HYPRE_INTERNAL;
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+         hypredrv_ErrorMsgAdd("Could not assemble eigenspectrum work vectors");
+      }
+      MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+      if (status)
+      {
+         goto cleanup;
+      }
+      hypre_Vector *local_rhs = hypre_ParVectorLocalVector((hypre_ParVector *)rhs_object);
+      hypre_Vector *local_solution =
+         hypre_ParVectorLocalVector((hypre_ParVector *)solution_object);
+      for (int column = 0; column < n; column++)
+      {
+         for (int row = 0; row < local_rows; row++)
+         {
+            rhs_values[row] = (HYPRE_Complex)
+               A_cm[(size_t)ilower + (size_t)row + (size_t)column * (size_t)n];
+         }
+         if (local_rows)
+         {
+            hypre_TMemcpy(hypre_VectorData(local_rhs), rhs_values, HYPRE_Complex,
+                          local_rows, hypre_VectorMemoryLocation(local_rhs),
+                          HYPRE_MEMORY_HOST);
+         }
+         HYPRE_ParVectorSetConstantValues((HYPRE_ParVector)solution_object, 0.0);
+         status = hypredrv_ObjectPreconApply(hypredrv, rhs, solution);
+         MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+         if (status)
+         {
+            goto cleanup;
+         }
+         if (local_cols)
+         {
+            hypre_TMemcpy(solution_values, hypre_VectorData(local_solution),
+                          HYPRE_Complex, local_cols, HYPRE_MEMORY_HOST,
+                          hypre_VectorMemoryLocation(local_solution));
+         }
+         for (int row = 0; row < local_cols; row++)
+         {
+            B_cm[(size_t)jlower + (size_t)row + (size_t)column * (size_t)n] =
+               (double)hypre_creal(solution_values[row]);
+         }
+      }
+      MPI_Allreduce(MPI_IN_PLACE, B_cm, n * n, MPI_DOUBLE, MPI_SUM, comm);
+      free(A_cm);
+      A_cm = B_cm;
+      B_cm = NULL;
+   }
+
+   /* LAPACK and file output need only one copy of the already assembled operator.
+    * Other ranks join the final status reduction, including root-only I/O errors. */
+   if (!myid)
+   {
+      wr = (double *)malloc((size_t)n * sizeof(double));
+      if (!eargs->hermitian)
+      {
+         wi = (double *)malloc((size_t)n * sizeof(double));
+         if (eargs->vectors)
+         {
+            VR_cm = (double *)malloc((size_t)n * (size_t)n * sizeof(double));
+         }
+      }
+      if (!wr || (!eargs->hermitian && (!wi || (eargs->vectors && !VR_cm))))
+      {
+         status = hypredrv_AllocationFailure(
+            "Could not allocate LAPACK eigenvalue/vector buffers");
+         goto cleanup;
+      }
+      char   jobz = eargs->vectors ? 'V' : 'N', jobvl = 'N', uplo = 'U';
+      int    lda = n, ldv = n, info = 0, lwork = -1;
+      double optimal_work = 0.0;
+      if (eargs->hermitian)
+      {
+         dsyev_(&jobz, &uplo, &n, A_cm, &lda, wr, &optimal_work, &lwork, &info);
+      }
+      else
+      {
+         dgeev_(&jobvl, &jobz, &n, A_cm, &lda, wr, wi, NULL, &ldv, VR_cm, &ldv,
+                &optimal_work, &lwork, &info);
+      }
+      if (info || !isfinite(optimal_work) || optimal_work < 1.0 ||
+          optimal_work > INT_MAX || optimal_work > (double)(SIZE_MAX / sizeof(double)))
+      {
+         status = ERROR_UNKNOWN;
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Invalid %s workspace query: info=%d, size=%.17g",
+                              eargs->hermitian ? "dsyev" : "dgeev", info, optimal_work);
+         goto cleanup;
+      }
+      lwork = (int)optimal_work;
+      work  = (double *)malloc((size_t)lwork * sizeof(double));
+      if (!work)
+      {
+         status = hypredrv_AllocationFailure("Could not allocate LAPACK workspace");
+         goto cleanup;
+      }
+      if (eargs->hermitian)
+      {
+         dsyev_(&jobz, &uplo, &n, A_cm, &lda, wr, work, &lwork, &info);
+      }
+      else
+      {
+         dgeev_(&jobvl, &jobz, &n, A_cm, &lda, wr, wi, NULL, &ldv, VR_cm, &ldv, work,
+                &lwork, &info);
+      }
+      if (info)
+      {
+         status = ERROR_UNKNOWN;
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("%s failed with info=%d",
+                              eargs->hermitian ? "dsyev" : "dgeev", info);
+         goto cleanup;
+      }
+      const char *prefix = eargs->output_prefix[0] ? eargs->output_prefix : "eig";
+      char        path[MAX_FILENAME_LENGTH + 32];
+      snprintf(path, sizeof(path), "%s.values.txt", prefix);
+      FILE *fp = fopen(path, "w");
+      if (!fp)
+      {
+         status = ERROR_FILE_NOT_FOUND;
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAdd("Could not open '%s' for writing", path);
+         goto cleanup;
+      }
+      for (int i = 0; i < n; i++)
+      {
+         if (wi) fprintf(fp, "%.17g %.17g\n", wr[i], wi[i]);
+         else fprintf(fp, "%.17g\n", wr[i]);
+      }
+      status = EigspecCloseOutput(fp, path);
+      if (status)
+      {
+         goto cleanup;
+      }
+      if (eargs->vectors)
+      {
+         snprintf(path, sizeof(path), "%s.vectors.bin", prefix);
+         fp = fopen(path, "wb");
+         if (!fp)
+         {
+            status = ERROR_FILE_NOT_FOUND;
+            hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+            hypredrv_ErrorMsgAdd("Could not open '%s' for writing", path);
+            goto cleanup;
+         }
+         if (eargs->hermitian)
+         {
+            fwrite(A_cm, sizeof(double), (size_t)n * (size_t)n, fp);
+         }
+         else
+         {
+            /* LAPACK stores a complex conjugate pair in adjacent real columns. */
+            for (int ev = 0; ev < n;)
+            {
+               if (wi[ev] == 0.0)
+               {
+                  for (int i = 0; i < n; i++)
+                  {
+                     double pair[2] = {VR_cm[i + ev * n], 0.0};
+                     fwrite(pair, sizeof(double), 2, fp);
+                  }
+                  ev++;
+               }
+               else if (wi[ev] > 0.0 && ev + 1 < n)
+               {
+                  for (int conjugate = 0; conjugate < 2; conjugate++)
+                  {
+                     for (int i = 0; i < n; i++)
+                     {
+                        double pair[2] = {VR_cm[i + ev * n], (conjugate ? -1.0 : 1.0) *
+                                                                VR_cm[i + (ev + 1) * n]};
+                        fwrite(pair, sizeof(double), 2, fp);
+                     }
+                  }
+                  ev += 2;
+               }
+               else
+               {
+                  for (int i = 0; i < n; i++)
+                  {
+                     double pair[2] = {VR_cm[i + ev * n], 0.0};
+                     fwrite(pair, sizeof(double), 2, fp);
+                  }
+                  ev++;
+               }
+            }
+         }
+         status = EigspecCloseOutput(fp, path);
+      }
+   }
+
+cleanup:
+   if (seq_A) hypre_CSRMatrixDestroy(seq_A);
+   if (host_A) hypre_ParCSRMatrixDestroy(host_A);
+   if (rhs) HYPRE_IJVectorDestroy(rhs);
+   if (solution) HYPRE_IJVectorDestroy(solution);
+   free(rhs_values);
+   free(solution_values);
+   free(A_cm);
+   free(B_cm);
+   free(wr);
+   free(wi);
+   free(VR_cm);
+   free(work);
+   if (timed)
+   {
+      status |= hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "solve");
+   }
+   MPI_Allreduce(MPI_IN_PLACE, &status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   /* Populate remote failures without resetting any diagnostics already held by
+    * this caller. The return value reports only this operation's own status. */
+   uint32_t missing = status & ~hypredrv_ErrorCodeGet();
+   for (uint32_t bit = 1; bit; bit <<= 1)
+   {
+      if (missing & bit) hypredrv_ErrorCodeSet((hypredrv_error_t)bit);
+   }
+done:
+#else
+   static bool warned_eigspec_disabled = false;
+   if (!warned_eigspec_disabled && !hypredrv->mypid)
+   {
+      fprintf(stderr,
+              "[HYPREDRV] Warning: HYPREDRV_LinearSystemComputeEigenspectrum called "
+              "but eigenspectrum support is disabled. "
+              "Reconfigure with -DHYPREDRV_ENABLE_EIGSPEC=ON to enable it.\n");
+      fflush(stderr);
+      warned_eigspec_disabled = true; /* GCOVR_EXCL_BR_LINE */
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "eigenspectrum support disabled in build; emitted warning");
+   }
+   else
+   {
+      HYPREDRV_LOG_OBJECTF(
+         2, hypredrv, "eigenspectrum support disabled in build; warning already emitted");
+   }
+#endif
+   HYPREDRV_LOG_OBJECTF(
+      1, hypredrv, "HYPREDRV_LinearSystemComputeEigenspectrum end (code=0x%x)", status);
    return status;
 }
-
-#endif /* HYPREDRV_ENABLE_EIGSPEC */

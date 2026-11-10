@@ -97,13 +97,17 @@ typedef struct YAMLtree
 
 typedef StrArray (*YAMLGetValidKeysFunc)(void);
 typedef StrIntMapArray (*YAMLGetValidValuesFunc)(const char *);
-typedef void (*YAMLSetFieldByNameFunc)(void *, YAMLnode *);
-
-void hypredrv_YAMLnodeValidateSchema(YAMLnode *, YAMLGetValidKeysFunc,
-                                     YAMLGetValidValuesFunc);
-/* ignored_child belongs to the caller's schema and is left untouched. */
-void hypredrv_YAMLSetArgsGeneric(void *, YAMLnode *, YAMLGetValidKeysFunc,
-                                 YAMLGetValidValuesFunc, YAMLSetFieldByNameFunc,
+/* Return the index of an accepted key, or SIZE_MAX if no field can be assigned.
+ * Sequence items and a synthetic type may be valid without belonging to keys. */
+size_t hypredrv_YAMLnodeValidateSchema(YAMLnode *, StrArray, YAMLGetValidValuesFunc);
+struct FieldOffsetMap_struct;
+/* Field order matches keys, generated from the same immutable map.
+ * Validate each node once, then assign its matched field. ignored_child belongs
+ * to the caller's schema. The parser preserves node/key ownership. Returns
+ * whether all nonignored nodes passed schema checks; setter failures remain
+ * in the diagnostic scope. */
+bool hypredrv_YAMLSetArgsGeneric(void *, YAMLnode *, StrArray, YAMLGetValidValuesFunc,
+                                 const struct FieldOffsetMap_struct *,
                                  const YAMLnode *ignored_child);
 
 /*-----------------------------------------------------------------------------
@@ -128,24 +132,17 @@ void      hypredrv_YAMLnodePrint(YAMLnode *, YAMLprintMode);
 YAMLnode *hypredrv_YAMLnodeFindByKey(YAMLnode *, const char *);
 YAMLnode *hypredrv_YAMLnodeFindChildByKey(YAMLnode *, const char *);
 char     *hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *, const char *);
-int       hypredrv_YAMLnodeCollectSequenceItems(YAMLnode *, YAMLnode ***);
 void      hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir);
 
 /*-----------------------------------------------------------------------------
  * Public macros
  *-----------------------------------------------------------------------------*/
 
-#define YAML_NODE_VALIDATE(_node, _callA, _callB)                   \
-   do                                                               \
-   {                                                                \
-      hypredrv_YAMLnodeValidateSchema((_node), (_callA), (_callB)); \
+#define YAML_NODE_VALIDATE(_node, _callA, _callB)                     \
+   do                                                                 \
+   {                                                                  \
+      hypredrv_YAMLnodeValidateSchema((_node), (_callA)(), (_callB)); \
    } while (0)
-
-#define YAML_NODE_SET_FIELD(_node, _args, _call) \
-   if (_node->valid == YAML_NODE_VALID)          \
-   {                                             \
-      _call(_args, _node);                       \
-   }
 
 #define YAML_NODE_GET_VALIDITY(_node) _node->valid
 #define YAML_NODE_SET_VALID(_node) _node->valid = YAML_NODE_VALID

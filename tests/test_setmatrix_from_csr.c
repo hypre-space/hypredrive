@@ -20,10 +20,12 @@
 #include "HYPRE.h"
 #include "HYPREDRV.h"
 #include "HYPRE_IJ_mv.h"
+#include "_hypre_parcsr_mv.h"
 #include "internal/error.h"
 #include "internal/linsys.h"
 #include "object.h"
 #include "test_helpers.h"
+#include "test_ij_helpers.h"
 
 /* PCG + AMG with very low iteration counts; enough to demonstrate the API
  * round-trips through a real solve without depending on external data files. */
@@ -279,9 +281,7 @@ test_setmatrix_from_csr_invalid_args(void)
                                                 cols_negative, data_negative);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
 
-   /* Negative column indices are checked only in debug builds because HYPRE
-    * already validates columns during assembly and this scan is O(nnz). */
-#ifdef HYPREDRV_USING_DEBUG
+   /* Reject invalid global column indices before native assembly. */
    HYPRE_BigInt indptr_col_negative[2] = {0, 1};
    HYPRE_BigInt cols_col_negative[1]   = {-1};
    HYPRE_Real   data_col_negative[1]   = {1.0};
@@ -289,7 +289,13 @@ test_setmatrix_from_csr_invalid_args(void)
    code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_col_negative,
                                                 cols_col_negative, data_col_negative);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
-#endif
+
+   /* A column beyond the global row count must be rejected before hypre sees it. */
+   HYPRE_BigInt indptr_col_large[] = {0, 1}, cols_col_large[] = {1};
+   HYPRE_Real   data_col_large[] = {1.0};
+   code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, indptr_col_large,
+                                                cols_col_large, data_col_large);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
 
    /* non-monotonic indptr */
    HYPRE_BigInt indptr_bad[4] = {0, 2, 1, 3};
@@ -298,6 +304,13 @@ test_setmatrix_from_csr_invalid_args(void)
    hypredrv_ErrorCodeResetAll();
    code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 2, indptr_bad, cols_bad,
                                                 data_bad);
+   ASSERT_TRUE(code & ERROR_INVALID_VAL);
+
+   /* Reject an interior offset beyond the final offset before reading that row. */
+   HYPRE_BigInt indptr_spike[] = {0, 4, 1}, cols_spike[] = {0};
+   HYPRE_Real   data_spike[] = {1.0};
+   code = HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, indptr_spike, cols_spike,
+                                                data_spike);
    ASSERT_TRUE(code & ERROR_INVALID_VAL);
 
    /* RHS: NULL values with nrows > 0 */
@@ -586,16 +599,10 @@ static void
 test_failed_array_updates_preserve_borrowed_handles(void)
 {
    HYPREDRV_t     obj   = create_lib_obj();
-   HYPRE_BigInt   ptr[] = {0, 1}, col = 0;
+   HYPRE_BigInt   col    = 0;
    HYPRE_Real     value  = 2.0;
-   HYPRE_IJMatrix matrix = NULL;
-   HYPRE_IJVector rhs    = NULL;
-   ASSERT_EQ(hypredrv_LinearSystemBuildMatrixFromCSR(MPI_COMM_SELF, HYPRE_MEMORY_HOST, 0,
-                                                     0, ptr, &col, &value, &matrix),
-             ERROR_NONE);
-   ASSERT_EQ(hypredrv_LinearSystemBuildRHSFromArray(MPI_COMM_SELF, HYPRE_MEMORY_HOST, 0,
-                                                    0, &value, &rhs),
-             ERROR_NONE);
+   HYPRE_IJMatrix matrix = create_test_ijmatrix_1x1(value);
+   HYPRE_IJVector rhs    = create_test_ijvector_1x1(value);
    ASSERT_EQ(HYPREDRV_LinearSystemSetMatrix(obj, (HYPRE_Matrix)matrix), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetRHS(obj, (HYPRE_Vector)rhs), ERROR_NONE);
    ASSERT_TRUE(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 0, NULL, NULL, NULL) &
@@ -612,12 +619,70 @@ test_failed_array_updates_preserve_borrowed_handles(void)
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
+static void
+test_device_array_ingress_preserves_storage(void)
+{
+#ifdef HYPRE_USING_GPU
+   HYPREDRV_t obj    = create_lib_obj();
+   char       yaml[] = "general:\n  statistics: off\n  exec_policy: device\n"
+                       "solver: pcg\npreconditioner: amg\n";
+   char      *argv[] = {yaml};
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, argv, obj), ERROR_NONE);
+   /* The leading entry is deliberately invalid padding outside this CSR slab. */
+   HYPRE_BigInt rows[] = {1, 2, 3}, columns[] = {-99, 0, 1};
+   HYPRE_Real   values[] = {-100.0, 2.0, 3.0}, rhs_values[] = {4.0, 9.0};
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, rows, columns, values),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 1, rhs_values), ERROR_NONE);
+   HYPRE_IJMatrix matrix        = obj->mat_A.handle;
+   HYPRE_IJVector rhs           = obj->vec_b.handle;
+   void          *native_matrix = NULL, *native_rhs = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixGetObject(matrix, &native_matrix), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetObject(rhs, &native_rhs), 0);
+   ASSERT_EQ(hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)native_matrix),
+             HYPRE_MEMORY_DEVICE);
+   ASSERT_EQ(hypre_ParVectorMemoryLocation((hypre_ParVector *)native_rhs),
+             HYPRE_MEMORY_DEVICE);
+   HYPRE_BigInt bad_columns[] = {-99, 0, 2};
+   ASSERT_TRUE(
+      HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, rows, bad_columns, values) &
+      ERROR_INVALID_VAL);
+   ASSERT_TRUE(HYPREDRV_LinearSystemSetRHSFromArray(obj, 0, 1, NULL) & ERROR_INVALID_VAL);
+   ASSERT_PTR_EQ(obj->mat_A.handle, matrix);
+   ASSERT_PTR_EQ(obj->mat_M.handle, matrix);
+   ASSERT_PTR_EQ(obj->vec_b.handle, rhs);
+   ASSERT_EQ(hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)native_matrix),
+             HYPRE_MEMORY_DEVICE);
+   ASSERT_EQ(hypre_ParVectorMemoryLocation((hypre_ParVector *)native_rhs),
+             HYPRE_MEMORY_DEVICE);
+   ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   void *native_solution = NULL;
+   ASSERT_EQ(HYPRE_IJVectorGetObject(obj->vec_x.handle, &native_solution), 0);
+   hypre_Vector *local = hypre_ParVectorLocalVector((hypre_ParVector *)native_solution);
+   HYPRE_Complex result[2];
+   hypre_TMemcpy(result, hypre_VectorData(local), HYPRE_Complex, 2, HYPRE_MEMORY_HOST,
+                 hypre_VectorMemoryLocation(local));
+   ASSERT_EQ_DOUBLE((double)hypre_creal(result[0]), 2.0, 1e-12);
+   ASSERT_EQ_DOUBLE((double)hypre_creal(result[1]), 3.0, 1e-12);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   HYPRE_BigInt empty_rows[] = {0, 0, 0};
+   ASSERT_EQ(HYPREDRV_LinearSystemSetMatrixFromCSR(obj, 0, 1, empty_rows, NULL, NULL),
+             ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+#endif
+}
+
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
 
    RUN_TEST(test_array_updates_preserve_installed_system_on_failure);
+   RUN_TEST(test_device_array_ingress_preserves_storage);
    RUN_TEST(test_failed_array_updates_preserve_borrowed_handles);
 
    RUN_TEST(test_setmatrix_from_csr_basic_solve);

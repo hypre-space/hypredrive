@@ -61,6 +61,7 @@
 
 /* Generate the various function declarations/definitions and the field_offset_map object
  */
+// clang-format off
 GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(ADS) // LCOV_EXCL_LINE
 
 hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_ADS) // LCOV_EXCL_LINE
@@ -92,40 +93,46 @@ hypredrv_DEFINE_VOID_GET_VALID_VALUES_FUNC(hypredrv_ADS) // LCOV_EXCL_LINE
 
    *precon_ptr = precon;
 }
+// clang-format on
 
-/*-----------------------------------------------------------------------------
- * hypredrv_ADSSetOperators
- *-----------------------------------------------------------------------------*/
-
-void
+/* Attach borrowed native objects and report their completeness at the
+ * module boundary. IJ handles can exist before they contain native objects. */
+int
 hypredrv_ADSSetOperators(HYPRE_Solver solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C,
                          HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z)
 {
-   void *obj = NULL;
-
+   void          *gradient = NULL, *curl = NULL;
+   void          *coord[3]   = {NULL, NULL, NULL};
+   HYPRE_IJVector vectors[3] = {x, y, z};
    if (G)
    {
-      HYPRE_IJMatrixGetObject(G, &obj);
-      HYPRE_ADSSetDiscreteGradient(solver, (HYPRE_ParCSRMatrix)obj);
+      HYPRE_IJMatrixGetObject(G, &gradient);
    }
-
    if (C)
    {
-      HYPRE_IJMatrixGetObject(C, &obj);
-      HYPRE_ADSSetDiscreteCurl(solver, (HYPRE_ParCSRMatrix)obj);
+      HYPRE_IJMatrixGetObject(C, &curl);
    }
-
-   if (x && y && z)
+   for (int i = 0; i < 3; i++)
    {
-      HYPRE_ParVector px = NULL, py = NULL, pz = NULL;
-
-      HYPRE_IJVectorGetObject(x, &obj);
-      px = (HYPRE_ParVector)obj;
-      HYPRE_IJVectorGetObject(y, &obj);
-      py = (HYPRE_ParVector)obj;
-      HYPRE_IJVectorGetObject(z, &obj);
-      pz = (HYPRE_ParVector)obj;
-
-      HYPRE_ADSSetCoordinateVectors(solver, px, py, pz);
+      if (vectors[i])
+      {
+         HYPRE_IJVectorGetObject(vectors[i], &coord[i]);
+      }
    }
+
+   int have_coords = coord[0] && coord[1] && coord[2];
+   if (gradient)
+   {
+      HYPRE_ADSSetDiscreteGradient(solver, (HYPRE_ParCSRMatrix)gradient);
+   }
+   if (curl)
+   {
+      HYPRE_ADSSetDiscreteCurl(solver, (HYPRE_ParCSRMatrix)curl);
+   }
+   if (have_coords)
+   {
+      HYPRE_ADSSetCoordinateVectors(solver, (HYPRE_ParVector)coord[0],
+                                    (HYPRE_ParVector)coord[1], (HYPRE_ParVector)coord[2]);
+   }
+   return gradient && have_coords && curl;
 }

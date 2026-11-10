@@ -241,7 +241,7 @@ hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id, const ch
 }
 
 void
-hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
+hypredrv_LogObjectf(int level, hypredrv_t *hypredrv, const char *fmt, ...)
 {
    /* GCOVR_EXCL_BR_START */
    if (!hypredrv_LogEnabled(level)) /* GCOVR_EXCL_BR_STOP */
@@ -324,7 +324,7 @@ hypredrv_FormatLogObjectId(int object_id, char *buffer, size_t buffer_size)
 }
 
 const char *
-hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+hypredrv_ResolveLogObjectName(hypredrv_t *hypredrv, char *default_object_name,
                               size_t default_object_name_size)
 {
    if (!hypredrv)

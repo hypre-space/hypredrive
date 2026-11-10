@@ -3,25 +3,21 @@
 #include <string.h>
 
 #include "internal/amg.h"
-#include "internal/bicgstab.h"
 #include "internal/cheby.h"
 #include "internal/containers.h"
 #include "internal/error.h"
-#include "internal/fgmres.h"
 #include "internal/fsai.h"
 #include "internal/gen_macros.h"
-#include "internal/gmres.h"
 #include "internal/ilu.h"
-#include "internal/krylov.h"
 #include "internal/mgr.h"
-#include "internal/pcg.h"
+#include "internal/solver.h"
 #include "internal/yaml.h"
 #include "test_helpers.h"
 
 /* Generated MGR sub-component defaults not in public headers */
-void           hypredrv_MGRclsSetDefaultArgs(MGRcls_args *);
-void           hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
-void           hypredrv_MGRgrlxSetDefaultArgs(MGRgrlx_args *);
+void hypredrv_MGRclsSetDefaultArgs(MGRcls_args *);
+void hypredrv_MGRfrlxSetDefaultArgs(MGRfrlx_args *);
+void hypredrv_MGRgrlxSetDefaultArgs(MGRgrlx_args *);
 
 static YAMLnode *
 add_child(YAMLnode *parent, const char *key, const char *val, int level)
@@ -236,18 +232,6 @@ build_scalar_children(StrArray keys, StrIntMapArray (*get_vals)(const char *), i
 }
 
 static void
-exercise_solver_component(void (*set_args)(void *, YAMLnode *),
-                          StrArray (*get_keys)(void),
-                          StrIntMapArray (*get_vals)(const char *), void *args)
-{
-   YAMLnode *parent = build_scalar_children(get_keys(), get_vals, 1);
-   hypredrv_ErrorCodeResetAll();
-   set_args(args, parent);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   hypredrv_YAMLnodeDestroy(parent);
-}
-
-static void
 exercise_component_flat(void (*set_args)(void *, YAMLnode *), void *args, const char *key,
                         const char *val)
 {
@@ -262,36 +246,51 @@ exercise_component_flat(void (*set_args)(void *, YAMLnode *), void *args, const 
 static void
 test_exhaustive_solver_parsers(void)
 {
-   PCG_args      pcg;
-   GMRES_args    gmres;
-   FGMRES_args   fgmres;
-   BiCGSTAB_args bicg;
-   Cheby_args    cheby;
+   const struct
+   {
+      solver_t method;
+      StrArray (*get_keys)(void);
+      StrIntMapArray (*get_values)(const char *);
+   } methods[] = {
+      {SOLVER_PCG, hypredrv_PCGGetValidKeys, hypredrv_PCGGetValidValues},
+      {SOLVER_GMRES, hypredrv_GMRESGetValidKeys, hypredrv_GMRESGetValidValues},
+      {SOLVER_FGMRES, hypredrv_FGMRESGetValidKeys, hypredrv_FGMRESGetValidValues},
+      {SOLVER_BICGSTAB, hypredrv_BiCGSTABGetValidKeys, hypredrv_BiCGSTABGetValidValues},
+   };
+   const char *names[] = {"pcg", "gmres", "fgmres", "bicgstab"};
+   for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
+   {
+      solver_args args;
+      YAMLnode   *body =
+         build_scalar_children(methods[i].get_keys(), methods[i].get_values, 1);
+      free(body->key);
+      body->key       = strdup(names[i]);
+      solver_t method = methods[i].method;
+      hypredrv_ErrorCodeResetAll();
+      ASSERT_TRUE(hypredrv_SolverSetArgsFromYAML(&method, &args, body, NULL));
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      for (YAMLnode *child = body->children; child; child = child->next)
+      {
+         ASSERT_EQ(child->valid, YAML_NODE_VALID);
+      }
+      hypredrv_YAMLnodeDestroy(body);
 
-   hypredrv_PCGSetDefaultArgs(&pcg);
-   hypredrv_GMRESSetDefaultArgs(&gmres);
-   hypredrv_FGMRESSetDefaultArgs(&fgmres);
-   hypredrv_BiCGSTABSetDefaultArgs(&bicg);
+      body = hypredrv_YAMLnodeCreate(names[i], "", 0);
+      ASSERT_TRUE(hypredrv_SolverSetArgsFromYAML(&method, &args, body, NULL));
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ(body->valid, YAML_NODE_VALID);
+      hypredrv_YAMLnodeDestroy(body);
+   }
+
+   Cheby_args cheby;
    hypredrv_ChebySetDefaultArgs(&cheby);
+   YAMLnode *body = build_scalar_children(hypredrv_ChebyGetValidKeys(),
+                                          hypredrv_ChebyGetValidValues, 1);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_ChebySetArgsFromYAML(&cheby, body);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_YAMLnodeDestroy(body);
 
-   exercise_solver_component(hypredrv_PCGSetArgsFromYAML, hypredrv_PCGGetValidKeys,
-                             hypredrv_PCGGetValidValues, &pcg);
-   exercise_solver_component(hypredrv_GMRESSetArgsFromYAML, hypredrv_GMRESGetValidKeys,
-                             hypredrv_GMRESGetValidValues, &gmres);
-   exercise_solver_component(hypredrv_FGMRESSetArgsFromYAML, hypredrv_FGMRESGetValidKeys,
-                             hypredrv_FGMRESGetValidValues, &fgmres);
-   exercise_solver_component(hypredrv_BiCGSTABSetArgsFromYAML,
-                             hypredrv_BiCGSTABGetValidKeys,
-                             hypredrv_BiCGSTABGetValidValues, &bicg);
-   exercise_solver_component(hypredrv_ChebySetArgsFromYAML, hypredrv_ChebyGetValidKeys,
-                             hypredrv_ChebyGetValidValues, &cheby);
-
-   /* Also exercise the flat-value SetArgsFromYAML branch (no children) */
-   exercise_component_flat(hypredrv_PCGSetArgsFromYAML, &pcg, "pcg", "pcg");
-   exercise_component_flat(hypredrv_GMRESSetArgsFromYAML, &gmres, "gmres", "gmres");
-   exercise_component_flat(hypredrv_FGMRESSetArgsFromYAML, &fgmres, "fgmres", "fgmres");
-   exercise_component_flat(hypredrv_BiCGSTABSetArgsFromYAML, &bicg, "bicgstab",
-                           "bicgstab");
    exercise_component_flat(hypredrv_ChebySetArgsFromYAML, &cheby, "cheby", "cheby");
 }
 
@@ -773,16 +772,15 @@ test_mgr_frelax_symmetric_diagonal_scaling_parse(void)
    MGR_args mgr;
    hypredrv_MGRSetDefaultArgs(&mgr);
    ASSERT_EQ((int)mgr.level[0].matched_f_backsolve, 0);
-   StrIntMapArray backsolve_map =
-      hypredrv_MGRlvlGetValidValues("matched_f_backsolve");
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(backsolve_map, "off"), 0);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(backsolve_map, "on"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(backsolve_map, "gmres1"), 2);
+   StrIntMapArray backsolve_map = hypredrv_MGRlvlGetValidValues("matched_f_backsolve");
+   ASSERT_MAP_VALUE(backsolve_map, "off", 0);
+   ASSERT_MAP_VALUE(backsolve_map, "on", 1);
+   ASSERT_MAP_VALUE(backsolve_map, "gmres1", 2);
    StrIntMapArray matched_q_map = hypredrv_MGRlvlGetValidValues("matched_q");
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "off"), 0);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "on"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "polynomial"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(matched_q_map, "afsai"), 2);
+   ASSERT_MAP_VALUE(matched_q_map, "off", 0);
+   ASSERT_MAP_VALUE(matched_q_map, "on", 1);
+   ASSERT_MAP_VALUE(matched_q_map, "polynomial", 1);
+   ASSERT_MAP_VALUE(matched_q_map, "afsai", 2);
 
    MGRfrlx_args frlx;
    hypredrv_MGRfrlxSetDefaultArgs(&frlx);
@@ -1106,17 +1104,17 @@ test_relaxation_values_use_canonical_l1_jacobi_spelling(void)
    StrIntMapArray mgr_frelax_map = hypredrv_MGRlvlGetValidValues("f_relaxation");
    StrIntMapArray amg_map        = hypredrv_AMGrlxGetValidValues("down_type");
 
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_map, "l1-jacobi"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_frelax_map, "l1-jacobi"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(amg_map, "l1-jacobi"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(mgr_map, "l1-jacobi", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(mgr_frelax_map, "l1-jacobi", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(amg_map, "l1-jacobi", NULL));
 
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_map, "l1jacobi"));
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(mgr_frelax_map, "l1jacobi"));
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(amg_map, "l1jacobi"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(mgr_map, "l1jacobi", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(mgr_frelax_map, "l1jacobi", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(amg_map, "l1jacobi", NULL));
 
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(mgr_map, "l1-jacobi"), 18);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(mgr_frelax_map, "l1-jacobi"), 18);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(amg_map, "l1-jacobi"), 18);
+   ASSERT_MAP_VALUE(mgr_map, "l1-jacobi", 18);
+   ASSERT_MAP_VALUE(mgr_frelax_map, "l1-jacobi", 18);
+   ASSERT_MAP_VALUE(amg_map, "l1-jacobi", 18);
 }
 
 static void
@@ -1124,16 +1122,16 @@ test_mgr_air_restriction_values_require_hypre_232(void)
 {
    StrIntMapArray map = hypredrv_MGRlvlGetValidValues("restriction_type");
 #if HYPRE_CHECK_MIN_VERSION(23200, 0)
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1"), 4);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "air_1.5"), 5);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "air_1", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "air_1.5", NULL));
+   ASSERT_MAP_VALUE(map, "air_1", 4);
+   ASSERT_MAP_VALUE(map, "air_1.5", 5);
 #else
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1"));
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "air_1.5"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "air_1", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "air_1.5", NULL));
 #endif
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-1"));
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "pair-2"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "pair-1", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "pair-2", NULL));
 }
 
 static void
@@ -1142,17 +1140,17 @@ test_mgr_extended_interpolation_values(void)
    StrIntMapArray map = hypredrv_MGRlvlGetValidValues("prolongation_type");
 
 #if HYPRE_CHECK_MIN_VERSION(22400, 0)
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+i"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+e"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "mm-ext", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "mm-ext+i", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "mm-ext+e", NULL));
 
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm-ext"), 5);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm-ext+i"), 6);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mm-ext+e"), 7);
+   ASSERT_MAP_VALUE(map, "mm-ext", 5);
+   ASSERT_MAP_VALUE(map, "mm-ext+i", 6);
+   ASSERT_MAP_VALUE(map, "mm-ext+e", 7);
 #else
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext"));
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+i"));
-   ASSERT_FALSE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mm-ext+e"));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "mm-ext", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "mm-ext+i", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "mm-ext+e", NULL));
 #endif
 }
 
@@ -1163,19 +1161,107 @@ test_amg_relaxation_values_accept_forward_and_backward_hl1gs(void)
    StrIntMapArray up_map     = hypredrv_AMGrlxGetValidValues("up_type");
    StrIntMapArray coarse_map = hypredrv_AMGrlxGetValidValues("coarse_type");
 
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(down_map, "forward-hl1gs"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(down_map, "backward-hl1gs"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(up_map, "forward-hl1gs"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(up_map, "backward-hl1gs"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(coarse_map, "forward-hl1gs"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(coarse_map, "backward-hl1gs"));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(down_map, "forward-hl1gs", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(down_map, "backward-hl1gs", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(up_map, "forward-hl1gs", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(up_map, "backward-hl1gs", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(coarse_map, "forward-hl1gs", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(coarse_map, "backward-hl1gs", NULL));
 
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(down_map, "forward-hl1gs"), 13);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(down_map, "backward-hl1gs"), 14);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(up_map, "forward-hl1gs"), 13);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(up_map, "backward-hl1gs"), 14);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(coarse_map, "forward-hl1gs"), 13);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(coarse_map, "backward-hl1gs"), 14);
+   ASSERT_MAP_VALUE(down_map, "forward-hl1gs", 13);
+   ASSERT_MAP_VALUE(down_map, "backward-hl1gs", 14);
+   ASSERT_MAP_VALUE(up_map, "forward-hl1gs", 13);
+   ASSERT_MAP_VALUE(up_map, "backward-hl1gs", 14);
+   ASSERT_MAP_VALUE(coarse_map, "forward-hl1gs", 13);
+   ASSERT_MAP_VALUE(coarse_map, "backward-hl1gs", 14);
+}
+
+static void
+test_nested_krylov_parser_preserves_rejected_solver_replacement(void)
+{
+   NestedKrylov_args args;
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   YAMLnode *first = hypredrv_YAMLnodeCreate("gmres", "", 0);
+   add_child(first, "max_iter", "17", 1);
+   add_child(first, "preconditioner", "amg", 1);
+   hypredrv_ErrorStateReset();
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, first);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   YAMLnode *replacement = hypredrv_YAMLnodeCreate("fgmres", "", 0);
+   YAMLnode *iterations  = add_child(replacement, "max_iter", "-1", 1);
+   add_child(replacement, "preconditioner", "ilu", 1);
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, replacement);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(args.solver_method, SOLVER_GMRES);
+   ASSERT_EQ(args.solver.gmres.max_iter, 17);
+   ASSERT_EQ(args.precon_method, PRECON_BOOMERAMG);
+   ASSERT_TRUE(args.has_precon);
+
+   free(iterations->val);
+   iterations->val = strdup("3");
+   free(iterations->mapped_val);
+   iterations->mapped_val = NULL;
+   hypredrv_ErrorStateReset();
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, replacement);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.solver_method, SOLVER_FGMRES);
+   ASSERT_EQ(args.solver.fgmres.max_iter, 3);
+   ASSERT_EQ(args.precon_method, PRECON_ILU);
+   hypredrv_NestedKrylovDestroy(&args);
+   hypredrv_YAMLnodeDestroy(first);
+   hypredrv_YAMLnodeDestroy(replacement);
+   hypredrv_ErrorStateReset();
+}
+
+static void
+test_nested_krylov_rejected_precon_preserves_owned_mgr_config(void)
+{
+   const char *text =
+      "fgmres:\n  max_iter: 17\n  preconditioner:\n    mgr:\n      level:\n"
+      "        0:\n          f_dofs: [0]\n          f_relaxation:\n"
+      "            gmres:\n              max_iter: 2\n";
+   YAMLtree         *tree = NULL;
+   NestedKrylov_args args;
+   hypredrv_NestedKrylovSetDefaultArgs(&args);
+   hypredrv_ErrorStateReset();
+   hypredrv_YAMLtreeBuild(2, text, &tree);
+   ASSERT_NOT_NULL(tree);
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, tree->root->children);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.precon_method, PRECON_MGR);
+   NestedKrylov_args *owned = args.precon.mgr.level[0].f_relaxation.krylov;
+   ASSERT_NOT_NULL(owned);
+   ASSERT_EQ(owned->solver.gmres.max_iter, 2);
+   hypredrv_YAMLtreeDestroy(&tree);
+
+   YAMLnode *replacement = hypredrv_YAMLnodeCreate("gmres", "", 0);
+   add_child(replacement, "max_iter", "4", 1);
+   YAMLnode *precon = add_child(replacement, "preconditioner", "", 1);
+   YAMLnode *ilu    = add_child(precon, "ilu", "", 2);
+   YAMLnode *type   = add_child(ilu, "type", "invalid_ilu", 3);
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, replacement);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_EQ(args.solver_method, SOLVER_FGMRES);
+   ASSERT_EQ(args.solver.fgmres.max_iter, 17);
+   ASSERT_EQ(args.precon_method, PRECON_MGR);
+   ASSERT_PTR_EQ(args.precon.mgr.level[0].f_relaxation.krylov, owned);
+   ASSERT_EQ(owned->solver.gmres.max_iter, 2);
+
+   free(type->val);
+   type->val = strdup("bj-ilut");
+   free(type->mapped_val);
+   type->mapped_val = NULL;
+   hypredrv_ErrorStateReset();
+   hypredrv_NestedKrylovSetArgsFromYAML(&args, replacement);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(args.solver_method, SOLVER_GMRES);
+   ASSERT_EQ(args.solver.gmres.max_iter, 4);
+   ASSERT_EQ(args.precon_method, PRECON_ILU);
+   ASSERT_EQ(args.precon.ilu.type, 1);
+   hypredrv_NestedKrylovDestroy(&args);
+   hypredrv_PreconArgsDestroyOwnedConfig(args.precon_method, &args.precon);
+   hypredrv_YAMLnodeDestroy(replacement);
 }
 
 int
@@ -1207,6 +1293,8 @@ main(int argc, char **argv)
    RUN_TEST(test_mgr_MGRDestroyNestedSolverArgs_null);
    RUN_TEST(test_nested_krylov_parse_precon_errors);
    RUN_TEST(test_nested_krylov_parser_extra_coverage);
+   RUN_TEST(test_nested_krylov_parser_preserves_rejected_solver_replacement);
+   RUN_TEST(test_nested_krylov_rejected_precon_preserves_owned_mgr_config);
    RUN_TEST(test_nested_krylov_solver_switch_pc_fgmres_bicgstab);
    RUN_TEST(test_mgr_nested_krylov_accepts_mgr_precon);
    RUN_TEST(test_relaxation_values_use_canonical_l1_jacobi_spelling);

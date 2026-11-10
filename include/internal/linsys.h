@@ -17,6 +17,7 @@
 #include "internal/containers.h"
 #include "internal/eigspec.h"
 #include "internal/field.h"
+#include "internal/object_fwd.h"
 #include "internal/stats.h"
 #include "internal/yaml.h"
 
@@ -185,42 +186,77 @@ void hypredrv_PrintSystemDestroyArgs(PrintSystem_args *);
 void hypredrv_PrintSystemSetArgs(void *, YAMLnode *);
 int  hypredrv_PrintSystemNeedsTimestepSchedule(const PrintSystem_args *);
 
-void hypredrv_LinearSystemSetNearNullSpace(MPI_Comm, const LS_args *, HYPRE_IJMatrix, int,
-                                           int, const HYPRE_Complex *, HYPRE_IJVector *);
-void hypredrv_LinearSystemSetNullSpace(MPI_Comm, HYPRE_IJMatrix, int, int,
-                                       const HYPRE_Complex *, HYPRE_IJVector *);
+/* Requires a live object and parsed arguments. Validates and installs exact
+ * (orthonormalized) or near modes collectively; failure preserves installed
+ * modes. Returns this operation's status without resetting prior diagnostics. */
+uint32_t hypredrv_LinearSystemSetNullSpaceModes(hypredrv_t *, bool, int, int,
+                                                const HYPRE_Complex *);
+
 void hypredrv_LinearSystemProjectOutNullSpace(HYPRE_IJVector, int, HYPRE_IJVector);
 void hypredrv_LinearSystemSetNumSystems(LS_args *);
 int  hypredrv_LinearSystemGetSuffix(const LS_args *, int ls_id);
 void hypredrv_LinearSystemSetArgsFromYAML(LS_args *, YAMLnode *);
-void hypredrv_LinearSystemReadMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix *,
-                                     Stats *);
-void hypredrv_LinearSystemSetRHS(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
-                                 HYPRE_IJVector *, HYPRE_IJVector *, Stats *);
-uint32_t hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm, HYPRE_MemoryLocation,
-                                                 HYPRE_BigInt, HYPRE_BigInt,
-                                                 const HYPRE_BigInt *,
-                                                 const HYPRE_BigInt *, const HYPRE_Real *,
-                                                 HYPRE_IJMatrix *);
-uint32_t hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm, HYPRE_MemoryLocation,
-                                                HYPRE_BigInt, HYPRE_BigInt,
-                                                const HYPRE_Real *, HYPRE_IJVector *);
-void hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm, const LS_args *, HYPRE_IJVector,
-                                                HYPRE_IJVector *);
-void hypredrv_LinearSystemSetInitialGuess(MPI_Comm, LS_args *, HYPRE_IJMatrix,
-                                          HYPRE_IJVector, HYPRE_IJVector *,
-                                          HYPRE_IJVector *, const Stats *);
-void hypredrv_LinearSystemSetReferenceSolution(MPI_Comm, const LS_args *,
-                                               HYPRE_IJVector *, const Stats *);
-void hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector, HYPRE_IJVector, Stats *);
+/* Matrix reads own source selection, collective ingress, fixed sequence caching,
+ * and installation on a live object. Configured reads require parsed arguments
+ * on every rank; rejected input preserves installed matrices and ownership. */
+uint32_t hypredrv_LinearSystemReadMatrix(hypredrv_t *);
+/* External system matrices are validated and installed locally, including
+ * before arguments are parsed. NULL clears the system/preconditioner pair. */
+uint32_t hypredrv_LinearSystemSetMatrix(hypredrv_t *, HYPRE_IJMatrix);
+/* Array ingress receives a live object, validates the caller's buffers and
+ * partition collectively, and installs only a complete replacement. Return
+ * status describes this operation; existing diagnostics are preserved. */
+uint32_t hypredrv_LinearSystemSetMatrixFromCSR(hypredrv_t *, HYPRE_BigInt, HYPRE_BigInt,
+                                               const HYPRE_BigInt *, const HYPRE_BigInt *,
+                                               const HYPRE_Real *);
+uint32_t hypredrv_LinearSystemSetRHSFromArray(hypredrv_t *, HYPRE_BigInt, HYPRE_BigInt,
+                                              const HYPRE_Real *);
+/* Own vector construction and installation. Configured RHS/reference reads and
+ * default guesses validate parsed arguments collectively before using them.
+ * A configured reference no-op must be selected on every rank. File readers
+ * agree on format and partition count once, before native assembly.
+ * External attachments and default solution allocation also work before parsing.
+ * Validate external storage on ingress; installed RHS vectors have one component,
+ * and each shared handle has one owner. Rejected replacements preserve installed
+ * vectors and ownership. */
+uint32_t hypredrv_LinearSystemSetRHS(hypredrv_t *, HYPRE_IJVector);
+uint32_t hypredrv_LinearSystemSetReferenceSolution(hypredrv_t *, HYPRE_IJVector);
+uint32_t hypredrv_LinearSystemSetSolution(hypredrv_t *, HYPRE_IJVector);
+typedef enum
+{
+   GUESS_REPLACE,
+   GUESS_ENSURE_SOLUTION,
+} hypredrv_GuessUpdate;
+/* Ensure mode receives a NULL source and constructs only when some rank needs
+ * a solution. All ranks participate; existing vector pairs are preserved. */
+uint32_t hypredrv_LinearSystemSetInitialGuess(hypredrv_t *, hypredrv_GuessUpdate,
+                                              HYPRE_IJVector);
+uint32_t hypredrv_LinearSystemResetInitialGuess(hypredrv_t *);
+
 void hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm, HYPRE_IJMatrix, const IntArray *,
                                             const DofLabelMap *, const char *, int);
-void hypredrv_LinearSystemSetPrecMatrix(MPI_Comm, const LS_args *, HYPRE_IJMatrix,
-                                        HYPRE_IJMatrix *, const Stats *);
-void hypredrv_LinearSystemReadDofmap(MPI_Comm, const LS_args *, IntArray **, Stats *);
-/* Borrow the local data of an assembled vector in its current memory space.
- * Callers arrange host accessibility before exposing a host pointer. */
-HYPRE_Complex *hypredrv_IJVectorData(HYPRE_IJVector);
+/* A non-NULL matrix is validated and registered locally. NULL selects the
+ * collective configured/default workflow. Both require parsed arguments. */
+uint32_t hypredrv_LinearSystemSetPrecMatrix(hypredrv_t *, HYPRE_IJMatrix);
+typedef enum
+{
+   DOFMAP_FROM_ARRAY,
+   DOFMAP_INTERLEAVED,
+   DOFMAP_CONTIGUOUS,
+   DOFMAP_FROM_INPUT
+} hypredrv_DofmapSource;
+/* Collective construction and installation on a live object. Array sources use
+ * size and labels; patterns use block count and type count; configured input
+ * ignores those arguments and requires parsed options. Failure preserves the
+ * map, tags and native consumers. Prior diagnostics abort without being reset. */
+uint32_t hypredrv_LinearSystemSetDofmap(hypredrv_t *, hypredrv_DofmapSource, int, int,
+                                        const int *);
+/* Validate a non-NULL application matrix once, before migration/attachment.
+ * Returns this check's status without resetting the caller's diagnostics. */
+uint32_t hypredrv_IJMatrixValidate(HYPRE_IJMatrix, const char *);
+/* Borrow initialized local data in the requested memory space. UNDEFINED keeps
+ * the vector in its current space. Empty ranks may return NULL without an error. */
+HYPRE_Complex *hypredrv_IJVectorData(HYPRE_IJVector, HYPRE_MemoryLocation);
 void hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector, const char *, double *);
 void hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const char *,
                                            double *);
@@ -252,8 +288,6 @@ long long int hypredrv_LinearSystemMatrixGetNumNonzeros(HYPRE_IJMatrix);
 
 uint32_t hypredrv_LinearSystemLoadTimestepSchedule(const char *, IntArray **,
                                                    IntArray **);
-uint32_t hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm, HYPRE_BigInt,
-                                                        HYPRE_BigInt);
 
 void hypredrv_IJVectorReadMultipartBinary(const char *, MPI_Comm, uint64_t,
                                           HYPRE_MemoryLocation, HYPRE_IJVector *);

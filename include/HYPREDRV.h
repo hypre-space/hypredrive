@@ -393,6 +393,13 @@ extern "C"
     *       key/value overrides. In the library-style form, argv[0] may be either a
     *       YAML filename or an in-memory YAML string, followed by optional override
     *       pairs. An argc value of 1 is therefore valid for an in-memory YAML string.
+    *       Inline mappings take precedence over a filename suffix in their values.
+    *       Parsing is collective: every rank must provide a valid argument vector
+    *       and select the same source kind (file or inline text). The primary file
+    *       is read on rank zero and broadcast with its canonical directory.
+    *       Configuration, schedule and device-compatibility errors are rejected
+    *       collectively before replacing the current configuration, solver state
+    *       or statistics settings.
     *
     * Example Usage:
     * @code
@@ -420,6 +427,8 @@ extern "C"
     * When library mode is inactive (the default), ownership of non-NULL objects
     * passed to those setters is transferred to HYPREDRV, which will destroy them
     * at the appropriate time.
+    * A handle shared by multiple attachments retains its original ownership and
+    * remains alive until its last attachment is removed.
     *
     * @note This flag is a one-way latch: once set it cannot be unset for the
     * lifetime of the HYPREDRV_t object. Create a new object if you need to
@@ -542,8 +551,10 @@ extern "C"
     * @brief Set the active preconditioner variant index.
     *
     * This function sets which preconditioner variant should be used for subsequent
-    * solve operations. It updates the active variant and destroys any existing
-    * solver/preconditioner objects to avoid stale configuration.
+    * solve operations. Changing the active variant destroys existing solver and
+    * preconditioner objects; selecting the current variant preserves their setup.
+    * This operation is collective. The requested index, current active index and
+    * selected method must agree across ranks. Rejected changes preserve live state.
     *
     * @param hypredrv The HYPREDRV_t object for which to set the variant.
     * @param variant_idx The zero-based index of the variant to activate (must be in
@@ -570,6 +581,13 @@ extern "C"
     * "elasticity-2D") without calling HYPREDRV_InputArgsParse. It ensures that the
     * input argument structure exists and that solver/preconditioner defaults are
     * initialized, then applies the preset to the active variant only.
+    * A successful change releases the live solver and preconditioner; recreate
+    * and set up the solver before applying it again. A rejected preset preserves
+    * existing solver and preconditioner state.
+    * This operation is collective: input validation, allocation and device checks
+    * finish on every rank before installing the preset. The preset kind, selected
+    * method and active variant index must agree across ranks. Default arguments
+    * are published only on success.
     *
     * @param hypredrv The HYPREDRV_t object for which to set the preset.
     * @param preset The preset name string.
@@ -595,6 +613,11 @@ extern "C"
     * (e.g., "pcg", "gmres", "fgmres", "bicgstab") or a custom registered solver
     * preset without calling HYPREDRV_InputArgsParse. It ensures that the input
     * argument structure exists, then updates the solver method and arguments.
+    * A successful change releases the live solver; recreate and set it up before
+    * applying it again. A rejected preset preserves existing solver state.
+    * This operation is collective: every rank must accept the preset and select
+    * the same preset kind and solver method before it replaces live state.
+    * Default arguments are published only on success.
     *
     * @param hypredrv The HYPREDRV_t object for which to set the solver.
     * @param preset The solver name string (e.g., "pcg", "gmres") or a custom
@@ -620,12 +643,16 @@ extern "C"
     * Registers a named preset from a YAML text string, making it available to
     * HYPREDRV_InputArgsSetSolverPreset(). The preset text must be a valid YAML
     * snippet that expands under `solver:`.
+    * Registration copies the strings and validates the name in the shared
+    * solver/preconditioner preset namespace. Built-in solver-name conflicts use
+    * the same case normalization as preset lookup. YAML structure and method
+    * options are checked when selecting the preset.
     *
     * @param name      Unique preset name (case-insensitive; '-' and '_' are equivalent).
     * @param yaml_text YAML snippet string (e.g. "fgmres:\n  max_iter: 20").
     * @param help      Short description shown in preset listings (may be NULL).
     *
-    * @return 0 on success, non-zero on failure (duplicate name, NULL args, alloc
+    * @return 0 on success, non-zero on failure (duplicate name, NULL/empty args, alloc
     * failure, or conflict with built-in solver names).
     */
 
@@ -639,12 +666,15 @@ extern "C"
     * Registers a named preset from a YAML text string, making it available to
     * HYPREDRV_InputArgsSetPreconPreset() and the YAML `preset:` key. The preset
     * text must be a valid YAML snippet that expands under `preconditioner:`.
+    * Registration copies the strings and validates the name in the shared
+    * solver/preconditioner preset namespace. YAML structure and method options
+    * are checked when selecting the preset.
     *
     * @param name      Unique preset name (case-insensitive; '-' and '_' are equivalent).
     * @param yaml_text YAML snippet string (e.g. "amg:\n  max_iter: 1").
     * @param help      Short description shown in preset listings (may be NULL).
     *
-    * @return 0 on success, non-zero on failure (duplicate name, NULL args, alloc
+    * @return 0 on success, non-zero on failure (duplicate name, NULL/empty args, alloc
     * failure).
     *
     * Example Usage:
@@ -701,6 +731,10 @@ extern "C"
     * A matrix previously attached with HYPREDRV_LinearSystemSetMatrix in library mode
     * is released, not destroyed. The preconditioner matrix becomes the new matrix,
     * except for a fixed one read from \e precmat_sequence_filename, which is kept.
+    * On read failure, the installed matrices and their ownership are preserved.
+    * Reading is collective on the object's communicator. Missing arguments,
+    * differing sources or formats, and inconsistent partition counts are rejected
+    * before native assembly.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -725,6 +759,10 @@ extern "C"
     *
     * This function is responsible for setting the matrix data of a linear system
     * associated with a HYPREDRV object.
+    * A non-NULL input must be an assembled ParCSR IJMatrix. Registration is local,
+    * works before parsing, and also sets the default preconditioning matrix to this
+    * handle. A rejected input preserves both installed matrices and their ownership.
+    * NULL clears both attachments. Shared matrix handles retain their ownership.
     *
     * @param hypredrv The HYPREDRV_t object for which the linear system matrix is to be
     * associated.
@@ -757,6 +795,12 @@ extern "C"
     * to the edge space) in addition to the system matrix. This operator must be set
     * before the preconditioner setup.
     *
+    * Registration is collective on the object's communicator and works before
+    * parsing. Non-NULL inputs must be assembled ParCSR IJMatrices; NULL clears the
+    * gradient. Failure preserves installed operators and consumers. Changing the
+    * handle invalidates an existing AMS or ADS preconditioner and its Krylov solver
+    * on every rank. Reattaching the same handle preserves them and its ownership.
+    *
     * @param hypredrv The HYPREDRV_t object.
     * @param G The HYPRE_Matrix object for the discrete gradient.
     *
@@ -778,6 +822,12 @@ extern "C"
     * in addition to the discrete gradient. This operator must be set before the
     * preconditioner setup.
     *
+    * Registration is collective on the object's communicator and works before
+    * parsing. Non-NULL inputs must be assembled ParCSR IJMatrices; NULL clears the
+    * curl. Failure preserves installed operators and consumers. Changing the handle
+    * invalidates an existing ADS preconditioner and its Krylov solver on every rank.
+    * Reattaching the same handle preserves them and its ownership.
+    *
     * @param hypredrv The HYPREDRV_t object.
     * @param C The HYPRE_Matrix object for the discrete curl.
     *
@@ -798,6 +848,15 @@ extern "C"
     * AMS and ADS use the vertex (nodal) coordinate vectors to build their auxiliary
     * space hierarchy. The three vectors hold the x, y, and z coordinates of the mesh
     * vertices. They must be set before the preconditioner setup.
+    *
+    * Registration is collective on the object's communicator and works before
+    * parsing. Supplied vectors must be initialized, single-component ParCSR
+    * IJVectors with matching row distributions. NULL clears an individual coordinate;
+    * completeness is checked when the preconditioner is used. A rejected tuple
+    * preserves installed coordinates and consumers. Changing any handle invalidates
+    * an existing AMS or ADS preconditioner and its Krylov solver on every rank.
+    * Duplicate handles are allowed. Aliases with other vector attachments retain
+    * their original ownership and remain alive while any attachment uses them.
     *
     * @param hypredrv The HYPREDRV_t object.
     * @param x The HYPRE_Vector with the x coordinates of the vertices.
@@ -822,7 +881,17 @@ extern "C"
     * is to be set.
     *
     * @param vec The HYPRE_Vector vector object representing the RHS of the linear system
-    * (NULL if set from input file).
+    * (NULL to construct from input/default behavior). A supplied vector must be an
+    * initialized, single-component IJVector with ParCSR object type.
+    *
+    * With NULL, parsed input arguments and an installed system matrix are required.
+    * Construction is collective on the object's communicator; missing arguments on
+    * any rank are rejected before construction. A failed read preserves the installed
+    * RHS and reference solution. File vectors must match the matrix's
+    * local row range. Attaching a supplied vector is local and works before parsing.
+    * Reattaching a registered vector preserves its ownership. Replacing an owned RHS
+    * clears a reference that aliases it; retained guess/solution aliases keep their
+    * storage alive.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -858,7 +927,8 @@ extern "C"
     * The row range is hypre-style inclusive: rank-local rows are
     * [@p row_start, @p row_end]. Column indices in @p col_indices are global.
     * The union of [@p row_start, @p row_end] across all ranks must form a
-    * contiguous global row partition starting at 0.
+    * contiguous global row partition starting at 0. Partition continuity and
+    * column bounds are checked collectively before native assembly.
     *
     * @param hypredrv     The HYPREDRV_t object to associate the matrix with.
     * @param row_start    First locally-owned global row index (inclusive).
@@ -868,7 +938,8 @@ extern "C"
     *                     zero (standard CSR) or a nonnegative offset into
     *                     @p col_indices / @p data.
     * @param col_indices  Global column indices. The consumed entries are
-    *                     col_indices[indptr[0] ... indptr[nrows]-1].
+    *                     col_indices[indptr[0] ... indptr[nrows]-1], each in
+    *                     [0, global row count).
     * @param data         Nonzero values. The consumed entries are
     *                     data[indptr[0] ... indptr[nrows]-1].
     *
@@ -955,7 +1026,14 @@ extern "C"
     *
     * @param vec Optional initial-guess vector. If NULL, the initial guess is built from
     * input/default behavior (`x0_filename`/`init_guess_mode`). If non-NULL, this vector
-    * is used as `x0`.
+    * is used as `x0`. Supplied vectors must be initialized IJVectors with ParCSR
+    * object type and the same row distribution and component count as the RHS.
+    *
+    * The RHS must be installed first. This call is collective, including when
+    * supplying a vector; every rank must use the same source (supplied, file, or
+    * generated mode). Default/file guesses require parsed arguments, with missing
+    * arguments on any rank rejected collectively. A failed replacement preserves
+    * the installed guess, working solution, and their ownership.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -989,12 +1067,19 @@ extern "C"
     * @param hypredrv The HYPREDRV_t object.
     * @param vec      The HYPRE_Vector to use as the solution buffer. If NULL, HYPREDRV
     *                 allocates an internal buffer (vec_b must already be set). If
-    *                 non-NULL, the vector is borrowed - HYPREDRV will never destroy it.
+    *                 non-NULL, supply an initialized IJVector with ParCSR object type;
+    *                 an application-owned vector is borrowed.
     *
     * @return 0 on success; nonzero error code otherwise. Returns an error when @p vec
     *         is NULL and the RHS vector has not been set yet.
     *
-    * @note Typical use: provide your own HYPRE_ParVector allocation before calling
+    * @note Allocation with a NULL vector is collective. Attaching an existing vector
+    * is local. Failed replacements preserve installed handles and ownership.
+    * Reattaching storage already owned by HYPREDRV preserves that ownership, including
+    * storage shared with the guess or reference solution. Replacing the working
+    * solution preserves any retained guess/reference aliases to its owned storage.
+    *
+    * @note Typical use: provide your own HYPRE_IJVector allocation before calling
     *       HYPREDRV_LinearSolverApply() so the result is written directly into your
     *       buffer. You can then retrieve the same pointer via
     *       HYPREDRV_LinearSystemGetSolution().
@@ -1026,6 +1111,14 @@ extern "C"
     * @param vec Optional reference-solution vector. If NULL, the reference solution is
     * updated using the existing file/default rules (`xref_filename`/`xref_basename`).
     * If non-NULL, this vector is used directly as the reference solution.
+    * Supplied vectors must be initialized, single-component IJVectors with ParCSR
+    * object type. Attaching a supplied vector is local and works before parsing.
+    * Calls with NULL are collective, including when no reference file is configured;
+    * every rank must have parsed arguments and agree whether a file read is needed.
+    * File readers check format and partition count agreement before assembly.
+    * Failed replacements preserve installed vectors and ownership.
+    * Reattaching a registered vector preserves its ownership, including
+    * a borrowed handle supplied in another vector slot.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1060,6 +1153,8 @@ extern "C"
     * The reset may happen before or after HYPREDRV_LinearSolverSetup. When setup has
     * scaled the system, the guess is mapped into the scaled space, so the next solve
     * still starts from the configured initial guess.
+    * The guess and working solution must have matching row distributions and
+    * component counts; incompatible layouts are rejected before copying values.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1094,7 +1189,14 @@ extern "C"
     * @param mat Optional preconditioner matrix. If NULL, the preconditioner matrix is
     * resolved by current file/default behavior (`precmat_sequence_filename`,
     * `precmat_filename`, or `precmat_basename`, with fallback to the system matrix).
-    * If non-NULL, this matrix is used directly.
+    * If non-NULL, this must be an assembled ParCSR IJMatrix and is registered locally.
+    *
+    * Reattaching the current matrix preserves its ownership. With NULL, reading and
+    * fixed-sequence cache reuse are collective on the object's communicator; a failed
+    * read or rejected input preserves the installed preconditioner matrix.
+    * Missing arguments, differing sources or formats, and inconsistent partition
+    * counts are rejected collectively. Falling back to the system matrix requires
+    * that matrix to be installed on every rank.
     *
     * @return Returns an error code with 0 indicating success. Any non-zero value
     * indicates a failure, and the error code can be further described using
@@ -1124,6 +1226,14 @@ extern "C"
    /**
     * @brief Set the degree of freedom (DOF) map for the linear system of a HYPREDRV
     * object.
+    *
+    * Construction and installation are collective on the object's communicator and
+    * work before parsing. The array is copied; size zero permits NULL on an empty
+    * rank. A failed replacement preserves installed labels, vector tags, and native
+    * consumers. Changed labels invalidate an existing MGR or systems-AMG
+    * (`num_functions > 1`) preconditioner and its Krylov solver on every rank.
+    * Identical labels preserve those native objects. Successful registration clears
+    * existing vector tags so they can be rebuilt from the installed map.
     *
     * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is
     * to be set.
@@ -1164,6 +1274,10 @@ extern "C"
     * @brief Set an interleaved degree of freedom (DOF) map for the linear system of a
     * HYPREDRV object.
     *
+    * Collective construction uses the replacement and invalidation rules of
+    * HYPREDRV_LinearSystemSetDofmap(). Negative counts and an overflowing product
+    * are rejected before allocation; empty ranks are supported.
+    *
     * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is
     * to be set.
     *
@@ -1198,6 +1312,10 @@ extern "C"
     * @brief Set a contiguous degree of freedom (DOF) map for the linear system of a
     * HYPREDRV object.
     *
+    * Collective construction uses the replacement and invalidation rules of
+    * HYPREDRV_LinearSystemSetDofmap(). Negative counts and an overflowing product
+    * are rejected before allocation; empty ranks are supported.
+    *
     * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is
     * to be set.
     *
@@ -1231,6 +1349,12 @@ extern "C"
    /**
     * @brief Read the degree of freedom (DOF) map for the linear system of a HYPREDRV
     * object.
+    *
+    * Requires parsed arguments and constructs the replacement collectively, from
+    * the configured sequence or partitioned DOF-map file. With no configured source,
+    * installs an empty map. Replacement and invalidation follow
+    * HYPREDRV_LinearSystemSetDofmap(); failed reads preserve the installed map and
+    * its consumers. The source kind must agree across ranks.
     *
     * @param hypredrv The HYPREDRV_t object for which the DOF map of the linear system is
     * to be read.
@@ -1300,7 +1424,13 @@ extern "C"
     * each of length num_entries, stored back-to-back (not interleaved). The data is
     * copied into internal storage owned and freed by HYPREDRV; the caller retains
     * ownership of its input buffer and is responsible for freeing it after the call
-    * returns.
+    * returns. The matrix must be set first. The call is collective: num_components
+    * must be positive and equal on every rank, and num_entries must match the local
+    * matrix column range (zero is allowed on empty ranks). Values must be finite;
+    * a NULL values pointer generates zero modes. Near-null-space interpolation
+    * requires hypre >= 2.26.0; older versions accept the input but do not use it
+    * when constructing the preconditioner. A failed replacement preserves the
+    * previously installed modes.
     *
     * Typical use for linear elasticity: provide 6 rigid-body modes with num_entries = 3 *
     * num_local_nodes.
@@ -1328,7 +1458,14 @@ extern "C"
     *        In standalone/driver mode ownership transfers to HYPREDRV. In library
     *        mode the matrix is borrowed and the application retains ownership,
     *        matching the other external matrix setters. Replacing a registered
-    *        matrix invalidates an existing MGR preconditioner.
+    *        matrix invalidates an existing MGR preconditioner and its Krylov solver
+    *        on every rank. Reattaching the same handle preserves them and ownership.
+    *
+    *        Registration is collective on the object's communicator and works before
+    *        parsing. All ranks must register the same level. A non-NULL input must be
+    *        an assembled ParCSR IJMatrix; NULL clears the level. The same matrix may
+    *        not be registered at multiple MGR levels. Failure preserves installed
+    *        operators and consumers.
     *
     * @param hypredrv The HYPREDRV object.
     * @param level    The MGR reduction level the operator applies to (0-based).
@@ -1352,7 +1489,10 @@ extern "C"
     * used by HYPREDRV_LinearSystemSetNearNullSpace(). The data is copied into internal
     * storage owned and freed by HYPREDRV; the caller retains ownership of its input
     * buffer. The modes must be linearly independent and the matrix must be set before
-    * calling this function.
+    * calling this function. Values must be finite. The call is collective:
+    * num_components must agree on every rank, and num_entries must match the local
+    * matrix column range. A failed replacement preserves the previously installed
+    * modes and projection.
     *
     * @note These modes are distinct from the near null space modes set with
     * HYPREDRV_LinearSystemSetNearNullSpace(): near null space modes inform the
@@ -1395,7 +1535,8 @@ extern "C"
     * It does not make a separate caller-owned copy of the solution values; instead, it
     * assigns the internal pointer to the user-provided pointer @p sol_data. In GPU
     * builds, the solution vector is migrated/synchronized to host memory before the
-    * pointer is returned.
+    * pointer is returned. The pointer is invalidated by operations that migrate,
+    * replace or destroy the solution. Obtain it again after solver setup or apply.
     *
     * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer
     * is to be retrieved.
@@ -1575,7 +1716,7 @@ extern "C"
     * This function initializes the state vector management system, which is useful for
     * time-stepping applications where multiple solution states need to be maintained
     * (e.g., previous time step, current time step). The state vectors are managed
-    * internally using a circular indexing scheme.
+    * in a circular order without copying vector data.
     *
     * @param hypredrv The HYPREDRV_t object for which state vectors are to be set.
     * @param nstates The number of state vectors to manage.
@@ -1590,6 +1731,8 @@ extern "C"
     * calling this function. Typically, these are HYPRE_IJVector objects created with
     * the same row range as the linear system. The caller keeps ownership in every
     * mode: HYPREDRV never destroys them, so destroy them after HYPREDRV_Destroy.
+    * The handle array is copied. Invalid or uninitialized entries are rejected
+    * before replacing the registered states.
     *
     * @note This function must be called before using other state vector functions
     * such as HYPREDRV_StateVectorGetValues, HYPREDRV_StateVectorCopy, etc.
@@ -1662,7 +1805,8 @@ extern "C"
     * HYPREDRV_ErrorCodeDescribe(error_code).
     *
     * @note Both state vectors must have been set via HYPREDRV_StateVectorSet and
-    * must have compatible sizes (same row ranges).
+    * must have compatible global sizes, row ranges, and component counts.
+    * Incompatible layouts are rejected before copying any values.
     *
     * Example Usage:
     * @code
@@ -1732,6 +1876,9 @@ extern "C"
     * completed successfully.
     *
     * @note The operation performed is: state[state_idx] += vec_x (in-place update).
+    * The state and correction must have matching global sizes, row ranges, and
+    * component counts. The state is moved to the correction's current memory
+    * location when needed; the correction's storage is preserved.
     *
     * Example Usage:
     * @code
@@ -1748,6 +1895,10 @@ extern "C"
    /**
     * @brief Create a preconditioner for the HYPREDRV object based on the specified
     * method.
+    *
+    * Rebuild decisions are collective. A missing handle or failed native setup
+    * on any rank forces all ranks to create a preconditioner. An existing handle
+    * awaiting its first setup is kept when no rank needs a rebuild.
     *
     * @param hypredrv The HYPREDRV_t object for which the preconditioner is to be created.
     *
@@ -1797,6 +1948,9 @@ extern "C"
    /**
     * @brief Set up the preconditioner for the HYPREDRV object.
     *
+    * Missing arguments or required handles are rejected collectively before
+    * entering native setup.
+    *
     * Sets up only the preconditioner, without setting up the enclosing linear solver.
     * Use this when applying the preconditioner standalone via HYPREDRV_PreconApply().
     *
@@ -1829,6 +1983,9 @@ extern "C"
     * matrix, RHS vector, and solution vector. This function sets up the preconditioner
     * internally - a prior call to HYPREDRV_PreconSetup() is **not required** for the
     * normal solver workflow.
+    * Missing arguments or required handles are rejected collectively. If a
+    * working solution is missing on any rank, default construction is collective
+    * and preserves the vector pairs already configured on other ranks.
     *
     * @note To use the preconditioner standalone (e.g., via HYPREDRV_PreconApply()),
     * call HYPREDRV_PreconSetup() explicitly instead.
@@ -2089,6 +2246,9 @@ extern "C"
     * @note Each level can only have one active annotation at a time. The annotation
     *       must be ended with HYPREDRV_AnnotateLevelEnd using the same level, name,
     *       and id.
+    *       Complete names are retained for matching, including names longer than
+    *       the displayed statistics path. A rejected begin/end leaves the active
+    *       annotation unchanged.
     *
     * Example Usage:
     * @code

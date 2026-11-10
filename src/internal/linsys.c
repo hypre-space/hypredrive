@@ -28,6 +28,7 @@
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "logging.h"
+#include "object.h"
 
 /* Modes whose norm shrinks below this fraction of their input norm during
    orthogonalization are considered linearly dependent */
@@ -322,24 +323,6 @@ static const FieldOffsetMap ls_field_offset_map[] = {
 #define LS_NUM_FIELDS (sizeof(ls_field_offset_map) / sizeof(ls_field_offset_map[0]))
 
 /*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemSetFieldByName
- *-----------------------------------------------------------------------------*/
-
-static void
-hypredrv_LinearSystemSetFieldByName(LS_args *args, YAMLnode *node)
-{
-   /* GCOVR_EXCL_BR_START */
-   for (size_t i = 0; i < LS_NUM_FIELDS; i++) /* GCOVR_EXCL_BR_STOP */
-   {
-      if (!strcmp(ls_field_offset_map[i].name, node->key))
-      {
-         hypredrv_FieldOffsetMapSet(&ls_field_offset_map[i], (void *)args, node);
-         return;
-      }
-   }
-}
-
-/*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemGetValidKeys
  *-----------------------------------------------------------------------------*/
 
@@ -434,199 +417,240 @@ hypredrv_LinearSystemSetDefaultArgs(LS_args *args)
    args->dof_labels = NULL;
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemSetNearNullSpace
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemSetNearNullSpace(MPI_Comm comm, const LS_args *args,
-                                      HYPRE_IJMatrix mat, int num_entries,
-                                      int num_components, const HYPRE_Complex *values,
-                                      HYPRE_IJVector *vec_nn_ptr)
+/* Local calls only record failures. Each builder reaches the next collective
+ * agreement point before any rank can leave its current construction phase. */
+static uint32_t
+LinearSystemBuildRecordError(const char *label, HYPRE_Int code)
 {
-   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
-
-   /* Destroy previous NN vector if present */
-   if (*vec_nn_ptr)
+   if (code)
    {
-      HYPRE_IJVectorDestroy(*vec_nn_ptr);
-      *vec_nn_ptr = NULL;
+      char message[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(code, message);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, message);
+      return ERROR_HYPRE_INTERNAL;
    }
-
-   /* Get local vector range from the matrix columns */
-   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-   HYPRE_BigInt loc_expected = jupper - jlower + 1;
-
-   /* Sanity: check if the number of entries matches the expected local size */
-   if (loc_expected != num_entries)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd(
-         "Number of entries (%d) does not match the expected local size (%lld)",
-         num_entries, (long long)loc_expected);
-      return;
-   }
-
-   /* Create a ParCSR IJVector with host memory (we'll migrate later if needed) */
-   HYPRE_IJVectorCreate(comm, jlower, jupper, vec_nn_ptr);
-   HYPRE_IJVectorSetObjectType(*vec_nn_ptr, HYPRE_PARCSR);
-#if HYPRE_CHECK_MIN_VERSION(22600, 0)
-   HYPRE_IJVectorSetNumComponents(*vec_nn_ptr, num_components);
-#endif
-   HYPRE_IJVectorInitialize_v2(*vec_nn_ptr, HYPRE_MEMORY_HOST);
-
-   HYPRE_BigInt  *indices = NULL;
-   HYPRE_Complex *zeros   = NULL;
-   /* GCOVR_EXCL_BR_START */
-   if (num_entries > 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      indices = (HYPRE_BigInt *)malloc((size_t)num_entries * sizeof(HYPRE_BigInt));
-      if (values == NULL)
-      {
-         zeros = (HYPRE_Complex *)calloc((size_t)num_entries, sizeof(HYPRE_Complex));
-      }
-      if (!indices || (values == NULL && !zeros))
-      {
-         hypredrv_AllocationFailure(
-            "Failed to allocate near-null-space index/value buffers");
-         free(indices);
-         free(zeros);
-         return;
-      }
-      for (int i = 0; i < num_entries; i++)
-      {
-         indices[i] = jlower + (HYPRE_BigInt)i;
-      }
-   }
-
-   /* Set values for each component block contiguously */
-   for (HYPRE_Int c = 0; c < num_components; c++)
-   {
-      const HYPRE_Complex *vals_c =
-         values ? (values + ((size_t)c * (size_t)num_entries)) : NULL;
-#if HYPRE_CHECK_MIN_VERSION(22600, 0)
-      HYPRE_IJVectorSetComponent(*vec_nn_ptr, c);
-#endif
-      HYPRE_IJVectorSetValues(*vec_nn_ptr, num_entries, indices, vals_c ? vals_c : zeros);
-   }
-
-   HYPRE_IJVectorAssemble(*vec_nn_ptr);
-
-   free(indices);
-   free(zeros);
-
-   /* Migrate to device memory if requested */
-   /* GCOVR_EXCL_START */
-   if (args && args->exec_policy)
-   {
-#if HYPRE_CHECK_MIN_VERSION(23300, 0)
-      hypredrv_IJVectorMigrate(*vec_nn_ptr, HYPRE_MEMORY_DEVICE);
-#endif
-   }
-   /* GCOVR_EXCL_STOP */
+   return ERROR_NONE;
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemSetNullSpace
- *
- * Orthonormalize the input modes (modified Gram-Schmidt) and store them with
- * the same multi-component vector builder used for the near null space modes
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemSetNullSpace(MPI_Comm comm, HYPRE_IJMatrix mat, int num_entries,
-                                  int num_components, const HYPRE_Complex *values,
-                                  HYPRE_IJVector *vec_ns_ptr)
+/* Internal calls report their own status, independently of diagnostics left
+ * by an earlier caller. Merge only this operation's failure across ranks. */
+static uint32_t
+LinearSystemBuildStatusSync(MPI_Comm comm, uint32_t status)
 {
-   size_t         total = (size_t)num_entries * (size_t)num_components;
-   HYPRE_Complex *modes = NULL;
+   uint32_t collective_status = ERROR_NONE;
+   MPI_Allreduce(&status, &collective_status, 1, MPI_UINT32_T, MPI_BOR, comm);
+   if (collective_status != status)
+   {
+      hypredrv_ErrorCodeSet((hypredrv_error_t)collective_status);
+      hypredrv_ErrorMsgAdd("Linear-system construction failed on another rank");
+   }
+   return collective_status;
+}
 
-   /* values may be NULL on ranks that own no entries; num_entries and
-      num_components must be consistent across all ranks of comm */
-   if (num_components < 1 || num_entries < 0 || (!values && num_entries > 0))
+#define LINSYS_HYPRE_CALL(label, call)                         \
+   do                                                          \
+   {                                                           \
+      if (status == ERROR_NONE)                                \
+      {                                                        \
+         status = LinearSystemBuildRecordError(label, (call)); \
+      }                                                        \
+   } while (0)
+
+/* Exact and near modes share layout validation, storage construction, and
+ * publication. Only exact modes are orthonormalized and kept on the host for
+ * projection. A rejected replacement leaves the installed modes intact. */
+uint32_t
+hypredrv_LinearSystemSetNullSpaceModes(hypredrv_t *hypredrv, bool exact, int num_entries,
+                                       int num_components, const HYPRE_Complex *values)
+{
+   MPI_Comm       comm        = hypredrv->comm;
+   uint32_t       status      = ERROR_NONE;
+   HYPRE_IJVector replacement = NULL;
+   HYPRE_BigInt   ilower = 0, iupper = 0, jlower = 0, jupper = 0;
+   HYPRE_BigInt  *indices = NULL;
+   HYPRE_Complex *modes = NULL, *zeros = NULL;
+   size_t         total     = 0;
+   int            request[] = {exact, num_components}, minimum[2], maximum[2];
+   const char    *label     = exact ? "SetNullSpace" : "SetNearNullSpace";
+
+   /* Component counts control collective loops, including the clear operation.
+    * Local entry counts may differ, including ranks with no matrix columns. */
+   MPI_Allreduce(request, minimum, 2, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 2, MPI_INT, MPI_MAX, comm);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1] || num_components < 0 ||
+       (!exact && num_components == 0))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid null space input: need num_components >= 1, "
-                           "num_entries >= 0, and non-NULL values when num_entries > 0");
-      return;
+      hypredrv_ErrorMsgAdd("%s: mode type and component count must agree across ranks; "
+                           "only exact modes may be cleared with zero components",
+                           label);
+      status = ERROR_INVALID_VAL;
    }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   if (num_components == 0) goto cleanup;
 
-   modes = (HYPRE_Complex *)malloc(total * sizeof(HYPRE_Complex));
-   /* GCOVR_EXCL_START */
-   if (num_entries > 0 && !modes)
+   if (!hypredrv->mat_A.handle || num_entries < 0 ||
+       (exact && num_entries > 0 && !values))
    {
-      hypredrv_AllocationFailure("Failed to allocate null space modes buffer");
-      return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: set the matrix first and provide a nonnegative local "
+                           "entry count and values for nonempty exact modes",
+                           label);
+      status = ERROR_INVALID_VAL;
    }
-   /* GCOVR_EXCL_STOP */
-   /* Guard on num_entries (not total) so it is provable that values is
-    * non-NULL here: NULL values is only accepted alongside num_entries == 0. */
-   if (num_entries > 0)
+#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
+   if (exact && num_components > 1)
    {
-      memcpy(modes, values, total * sizeof(HYPRE_Complex));
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Multiple null space modes require hypre >= 2.26.0");
+      status = ERROR_INVALID_VAL;
    }
+#endif
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
 
-   /* Modified Gram-Schmidt on the component blocks (component-major layout) */
-   for (int k = 0; k < num_components; k++)
+   LINSYS_HYPRE_CALL(label, HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A.handle, &ilower,
+                                                        &iupper, &jlower, &jupper));
+   if (!status &&
+       ((num_entries == 0 && jupper >= jlower) ||
+        (num_entries > 0 && (jupper < jlower || (uintmax_t)jupper - (uintmax_t)jlower !=
+                                                   (uintmax_t)num_entries - 1))))
    {
-      HYPRE_Complex *zk = modes + ((size_t)k * (size_t)num_entries);
-      double         dot_local, dot, norm_orig;
-
-      /* Input norm of the mode, for the relative dependence check below */
-      dot_local = 0.0;
-      for (int i = 0; i < num_entries; i++)
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: local entry count %d does not match matrix columns "
+                           "[%lld, %lld]",
+                           label, num_entries, (long long)jlower, (long long)jupper);
+      status = ERROR_INVALID_VAL;
+   }
+   if (num_entries > 0 &&
+       (size_t)num_components > SIZE_MAX / sizeof(HYPRE_Complex) / (size_t)num_entries)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: mode buffer size overflows size_t", label);
+      status = ERROR_INVALID_VAL;
+   }
+   if (!status)
+   {
+      total = (size_t)num_entries * (size_t)num_components;
+      for (size_t i = 0; values && i < total; i++)
       {
-         dot_local += (double)(zk[i] * zk[i]);
-      }
-      MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
-      norm_orig = sqrt(dot);
-
-      for (int j = 0; j < k; j++)
-      {
-         const HYPRE_Complex *zj = modes + ((size_t)j * (size_t)num_entries);
-
-         dot_local = 0.0;
-         for (int i = 0; i < num_entries; i++)
+         if (!isfinite((double)hypre_creal(values[i])) ||
+             !isfinite((double)hypre_cimag(values[i])))
          {
-            dot_local += (double)(zk[i] * zj[i]);
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("%s: mode values must be finite", label);
+            status = ERROR_INVALID_VAL;
+            break;
          }
+      }
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+
+   indices = hypredrv_Calloc((size_t)num_entries, sizeof(*indices), "mode indices");
+   if (!indices) status = ERROR_ALLOCATION;
+   if (exact)
+   {
+      modes = hypredrv_Calloc(total, sizeof(*modes), "exact null space modes");
+      if (!modes) status = ERROR_ALLOCATION;
+   }
+   else if (!values)
+   {
+      zeros = hypredrv_Calloc((size_t)num_entries, sizeof(*zeros), "zero modes");
+      if (!zeros) status = ERROR_ALLOCATION;
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   for (int i = 0; i < num_entries; i++) indices[i] = jlower + (HYPRE_BigInt)i;
+
+   if (exact)
+   {
+      if (total) memcpy(modes, values, total * sizeof(*modes));
+      /* Modified Gram-Schmidt on the component-major input blocks. All ranks
+       * enter with validated counts and allocated storage, including empty ranks. */
+      for (int k = 0; k < num_components; k++)
+      {
+         HYPRE_Complex *zk        = modes + (size_t)k * (size_t)num_entries;
+         double         dot_local = 0.0, dot = 0.0;
+         for (int i = 0; i < num_entries; i++) dot_local += (double)(zk[i] * zk[i]);
          MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
-         for (int i = 0; i < num_entries; i++)
+         double norm_orig = sqrt(dot);
+         for (int j = 0; j < k; j++)
          {
-            zk[i] -= (HYPRE_Complex)dot * zj[i];
+            const HYPRE_Complex *zj = modes + (size_t)j * (size_t)num_entries;
+            dot_local               = 0.0;
+            for (int i = 0; i < num_entries; i++) dot_local += (double)(zk[i] * zj[i]);
+            MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+            for (int i = 0; i < num_entries; i++) zk[i] -= (HYPRE_Complex)dot * zj[i];
          }
+         dot_local = 0.0;
+         for (int i = 0; i < num_entries; i++) dot_local += (double)(zk[i] * zk[i]);
+         MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
+         dot = sqrt(dot);
+         if (!isfinite(norm_orig) || !isfinite(dot) ||
+             dot <= HYPREDRV_NULLSPACE_DEP_TOL * norm_orig)
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("Null space modes must be linearly independent "
+                                 "(mode %d has relative norm %e after orthogonalization)",
+                                 k, norm_orig > 0.0 ? dot / norm_orig : 0.0);
+            status = ERROR_INVALID_VAL;
+            goto cleanup;
+         }
+         for (int i = 0; i < num_entries; i++) zk[i] /= (HYPRE_Complex)dot;
       }
-
-      dot_local = 0.0;
-      for (int i = 0; i < num_entries; i++)
-      {
-         dot_local += (double)(zk[i] * zk[i]);
-      }
-      MPI_Allreduce(&dot_local, &dot, 1, MPI_DOUBLE, MPI_SUM, comm);
-      dot = sqrt(dot);
-      if (dot <= HYPREDRV_NULLSPACE_DEP_TOL * norm_orig)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Null space modes must be linearly independent "
-                              "(mode %d has relative norm %e after orthogonalization)",
-                              k, (norm_orig > 0.0) ? dot / norm_orig : 0.0);
-         free(modes);
-         return;
-      }
-      for (int i = 0; i < num_entries; i++)
-      {
-         zk[i] /= (HYPRE_Complex)dot;
-      }
+      values = modes;
    }
 
-   /* Store via the same builder used for the near null space modes. The modes
-      are kept host-resident (NULL args skips the device migration): their only
-      consumer is the host-side projection in
-      hypredrv_LinearSystemProjectOutNullSpace(). */
-   hypredrv_LinearSystemSetNearNullSpace(comm, NULL, mat, num_entries, num_components,
-                                         modes, vec_ns_ptr);
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorCreate(comm, jlower, jupper, &replacement));
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorSetObjectType(replacement, HYPRE_PARCSR));
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorSetNumComponents(replacement, num_components));
+#endif
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorInitialize_v2(replacement, HYPRE_MEMORY_HOST));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   for (int c = 0; c < num_components; c++)
+   {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      LINSYS_HYPRE_CALL(label, HYPRE_IJVectorSetComponent(replacement, c));
+#else
+      /* Preserve legacy near-mode input on old hypre: its AMG/MGR paths do
+       * not consume these modes, and IJ stores only the last component. */
+#endif
+      if (num_entries)
+      {
+         const HYPRE_Complex *block =
+            values ? values + (size_t)c * (size_t)num_entries : zeros;
+         LINSYS_HYPRE_CALL(
+            label, HYPRE_IJVectorSetValues(replacement, num_entries, indices, block));
+      }
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorAssemble(replacement));
+   if (!exact && hypredrv->iargs->ls.exec_policy)
+   {
+      LINSYS_HYPRE_CALL(label,
+                        hypredrv_IJVectorMigrate(replacement, HYPRE_MEMORY_DEVICE));
+   }
 
+cleanup:
+   free(indices);
    free(modes);
+   free(zeros);
+   status |= hypredrv_HypreConsumeErrors(comm);
+   status = LinearSystemBuildStatusSync(comm, status);
+   if (!status)
+   {
+      HYPRE_IJVector *installed = exact ? &hypredrv->vec_ns : &hypredrv->vec_nn;
+      HYPRE_IJVector  previous  = *installed;
+      *installed                = replacement;
+      replacement               = NULL;
+      if (exact) hypredrv->num_ns = num_components;
+      else if (hypredrv->iargs->precon_method == PRECON_MGR)
+         hypredrv_MGRSetNearNullSpace(&hypredrv->iargs->precon.mgr, *installed);
+      if (previous) HYPRE_IJVectorDestroy(previous);
+   }
+   if (replacement) HYPRE_IJVectorDestroy(replacement);
+   return status;
 }
 
 /*-----------------------------------------------------------------------------
@@ -662,11 +686,20 @@ LinearSystemSetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *i
    {
       HYPRE_BigInt  *d_idx  = NULL;
       HYPRE_Complex *d_vals = hypre_TAlloc(HYPRE_Complex, n, HYPRE_MEMORY_DEVICE);
+      if (indices)
+      {
+         d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
+      }
+      if (!d_vals || (indices && !d_idx))
+      {
+         hypre_TFree(d_idx, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
+         return HYPRE_ERROR_MEMORY;
+      }
       hypre_TMemcpy(d_vals, values, HYPRE_Complex, n, HYPRE_MEMORY_DEVICE,
                     HYPRE_MEMORY_HOST);
       if (indices)
       {
-         d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
          hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
                        HYPRE_MEMORY_HOST);
       }
@@ -1005,12 +1038,6 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
                                 const char *basename, char *resolved,
                                 size_t resolved_size)
 {
-   /* GCOVR_EXCL_BR_START */
-   if (!args || !resolved || resolved_size == 0) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0; /* GCOVR_EXCL_LINE */
-   }
-
    int len     = -1;
    resolved[0] = '\0';
    if (args->dirname[0] != '\0' && filename[0] != '\0')
@@ -1046,48 +1073,39 @@ LinearSystemDataFilenameResolve(const LS_args *args, int ls_id, const char *file
    return 1;
 }
 
-/* hypre's ASCII readers open one part per rank, so the part count must equal the
- * rank count (multi-part binary input has no such restriction). */
-static int
-LinearSystemASCIIPartsMatchRanks(MPI_Comm comm, const char *prefixname)
-{
-   int nprocs = 0;
-   int nparts = hypredrv_CountNumberOfPartitions(prefixname);
-
-   MPI_Comm_size(comm, &nprocs);
-   if (nparts == 0 || nparts == nprocs)
-   {
-      return 1; /* a missing file is reported by the reader itself */
-   }
-
-   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-   hypredrv_ErrorMsgAdd("ASCII input '%s' has %d part(s) but runs on %d MPI rank(s); "
-                        "use matching ranks or binary input",
-                        prefixname, nparts, nprocs);
-   return 0;
-}
-
-static int
-LinearSystemMultipartCanRead(MPI_Comm comm, const char *prefixname)
-{
-   int nprocs = 0;
-   int nparts = 0;
-
-   MPI_Comm_size(comm, &nprocs);
-   nparts = hypredrv_CountNumberOfPartitions(prefixname);
-   return (nparts >= nprocs) != 0;
-}
-
-static int
+static uint32_t
 LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
                                  HYPRE_MemoryLocation memory_location,
                                  HYPRE_IJVector      *vector_ptr)
 {
-   if (hypredrv_CheckBinaryDataExists(filename))
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
+   /* File visibility can differ between ranks. Agree before choosing readers
+    * with different collectives, and reuse the partition count for assembly. */
+   int binary    = hypredrv_CheckBinaryDataExists(filename);
+   int nparts    = hypredrv_CountNumberOfPartitions(filename);
+   int request[] = {binary, nparts}, minimum[2], maximum[2], nprocs;
+   MPI_Comm_size(comm, &nprocs);
+   MPI_Allreduce(request, minimum, 2, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 2, MPI_INT, MPI_MAX, comm);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1])
    {
-      if (LinearSystemMultipartCanRead(comm, filename))
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Vector input format and partition count must agree across ranks");
+      return ERROR_INVALID_VAL;
+   }
+   if (!binary && nparts != 0 && nparts != nprocs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("ASCII input '%s' has %d part(s) but runs on %d MPI rank(s); "
+                           "use matching ranks or binary input",
+                           filename, nparts, nprocs);
+      return ERROR_INVALID_VAL;
+   }
+   if (binary)
+   {
+      if (nparts >= nprocs)
       {
-         int nparts = hypredrv_CountNumberOfPartitions(filename);
          hypredrv_IJVectorReadMultipartBinary(filename, comm, (uint64_t)nparts,
                                               memory_location, vector_ptr);
       }
@@ -1100,122 +1118,100 @@ LinearSystemIJVectorReadFromFile(MPI_Comm comm, const char *filename,
 #endif
       }
    }
-   else if (LinearSystemASCIIPartsMatchRanks(comm, filename))
+   else
    {
       HYPRE_IJVectorRead(filename, comm, HYPRE_PARCSR, vector_ptr);
    }
-   else
+   uint32_t status = hypredrv_ErrorCodeGet();
+   if (!*vector_ptr || HYPRE_GetError())
    {
-      return 0;
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(filename);
+      status |= ERROR_FILE_NOT_FOUND;
    }
-   return 1;
-}
-
-static void
-LinearSystemIJMatrixMigrate(const LS_args *args, HYPRE_IJMatrix matrix)
-{
-   /* GCOVR_EXCL_START */
-   if (!args || !args->exec_policy || !matrix)
-   {
-      return;
-   }
-
-   void *obj = NULL;
-   HYPRE_IJMatrixGetObject(matrix, &obj);
-   HYPRE_ParCSRMatrix par_A = (HYPRE_ParCSRMatrix)obj;
-
-#if HYPREDRV_HAVE_MEMORY_APIS
-   hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)par_A, HYPRE_MEMORY_DEVICE);
-#endif
-   /* GCOVR_EXCL_STOP */
-}
-
-static void
-LinearSystemIJVectorMigrate(const LS_args *args, HYPRE_IJVector vec)
-{
-   /* GCOVR_EXCL_START */
-   if (!args || !args->exec_policy || !vec)
-   {
-      return;
-   }
-
-   void           *obj = NULL;
-   HYPRE_ParVector par = NULL;
-   HYPRE_IJVectorGetObject(vec, &obj);
-   par = (HYPRE_ParVector)obj;
-
-#if HYPREDRV_HAVE_MEMORY_APIS
-   hypre_ParVectorMigrate(par, HYPRE_MEMORY_DEVICE);
-#endif
-   /* GCOVR_EXCL_STOP */
+   return LinearSystemBuildStatusSync(comm, status);
 }
 
 static int
 LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
                                  const char *matrix_filename, HYPRE_IJMatrix *matrix_ptr)
 {
-   int                  file_not_found  = 0;
-   HYPRE_MemoryLocation memory_location = LinearSystemMemoryLocationGet(args);
-
-   if (args->type == 1)
+   /* Decide the reader and inspect its input once, before any native collective.
+    * A rank-local missing file must not strand peers inside HYPRE assembly. */
+   enum
    {
-      if (hypredrv_CheckBinaryDataExists(matrix_filename))
-      {
-         /* GCOVR_EXCL_START */
-         /* GCOVR_EXCL_BR_START */
-         if (LinearSystemMultipartCanRead(comm, matrix_filename)) /* GCOVR_EXCL_BR_STOP */
-         {
-            int nparts = hypredrv_CountNumberOfPartitions(matrix_filename);
-            hypredrv_IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
-                                                 memory_location, matrix_ptr);
-         }
-         else
-         {
-            hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-            hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
-            return 0;
-         }
-         /* GCOVR_EXCL_STOP */
-      }
-      else if (hypredrv_CheckASCIIDataExists(matrix_filename))
-      {
-         if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
-         {
-            return 0;
-         }
-         HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
-      }
-      else
-      {
-         file_not_found = 1;
-      }
-   }
-   else if (args->type == 3)
-   {
+      ASCII,
+      BINARY,
+      MARKET
+   };
+   int format =
+      args->type == 1 && hypredrv_CheckBinaryDataExists(matrix_filename) ? BINARY : ASCII;
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
-      HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
-#else
-      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+   if (args->type == 3) format = MARKET;
 #endif
+   int nparts = format == MARKET ? 0 : hypredrv_CountNumberOfPartitions(matrix_filename);
+   int request[] = {format, nparts, args->type}, minimum[3], maximum[3], nprocs;
+   MPI_Comm_size(comm, &nprocs);
+   MPI_Allreduce(request, minimum, 3, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 3, MPI_INT, MPI_MAX, comm);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1] || minimum[2] != maximum[2])
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Matrix input format and partition count must agree across ranks");
+      return 0;
    }
+   int readable = 0;
+   if (format == MARKET)
+   {
+      FILE *file = fopen(matrix_filename, "r");
+      readable   = file != NULL;
+      if (file) fclose(file);
+   }
+   else if (format == BINARY) readable = nparts >= nprocs;
    else
    {
-      /* online and parcsr have no file reader of their own; use ASCII IJ. */
-      if (!LinearSystemASCIIPartsMatchRanks(comm, matrix_filename))
+      int rank;
+      MPI_Comm_rank(comm, &rank);
+      char part_filename[MAX_FILENAME_LENGTH + 32];
+      snprintf(part_filename, sizeof(part_filename), "%s.%05d", matrix_filename, rank);
+      FILE *file = fopen(part_filename, "r");
+      readable   = file != NULL;
+      if (file) fclose(file);
+      if (nparts && nparts != nprocs)
       {
-         return 0;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "ASCII input '%s' has %d part(s) but runs on %d MPI rank(s); "
+            "use matching ranks or binary input",
+            matrix_filename, nparts, nprocs);
       }
-      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
    }
+   if (!readable)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
+   }
+   if (hypredrv_DistributedErrorStateSync(comm)) return 0;
 
-   if (HYPRE_GetError() || file_not_found)
+   if (format == BINARY)
+      hypredrv_IJMatrixReadMultipartBinary(matrix_filename, comm, (uint64_t)nparts,
+                                           LinearSystemMemoryLocationGet(args),
+                                           matrix_ptr);
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+   else if (format == MARKET)
+      HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+#endif
+   else HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+   if (HYPRE_GetError() || !*matrix_ptr)
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAddInvalidFilename(matrix_filename);
       return 0;
    }
-
-   LinearSystemIJMatrixMigrate(args, *matrix_ptr);
+#if HYPREDRV_HAVE_MEMORY_APIS
+   if (args->exec_policy) hypredrv_IJMatrixMigrate(*matrix_ptr, HYPRE_MEMORY_DEVICE);
+#endif
    return 1;
 }
 
@@ -1264,10 +1260,11 @@ LinearSystemValidateSuffixAndSequence(LS_args *args)
 void
 hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
 {
+   StrArray keys = hypredrv_LinearSystemGetValidKeys();
    YAML_NODE_ITERATE(parent, child)
    {
-      YAML_NODE_VALIDATE(child, hypredrv_LinearSystemGetValidKeys,
-                         hypredrv_LinearSystemGetValidValues);
+      size_t field = hypredrv_YAMLnodeValidateSchema(child, keys,
+                                                     hypredrv_LinearSystemGetValidValues);
 
       /* Special handling for dof_labels: parse as label->int map.
        *
@@ -1360,7 +1357,8 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
          continue;
       }
 
-      YAML_NODE_SET_FIELD(child, args, hypredrv_LinearSystemSetFieldByName);
+      if (field != SIZE_MAX)
+         hypredrv_FieldOffsetMapSet(&ls_field_offset_map[field], args, child);
    }
 
    LinearSystemValidateSuffixAndSequence(args);
@@ -1370,72 +1368,106 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
  * hypredrv_LinearSystemReadMatrix
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_LinearSystemReadMatrix(MPI_Comm comm, const LS_args *args,
-                                HYPRE_IJMatrix *matrix_ptr, Stats *stats)
+uint32_t
+hypredrv_LinearSystemSetMatrix(hypredrv_t *hypredrv, HYPRE_IJMatrix matrix)
 {
+   uint32_t status = matrix ? hypredrv_IJMatrixValidate(matrix, "SetMatrix") : ERROR_NONE;
+   if (!status)
+   {
+      hypredrv_ObjectPrepareExecution(hypredrv, matrix, 1);
+      status |= hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
+   }
+   else hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
+   if (status) return status;
+   hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_A, matrix,
+                                hypredrv_AttachmentIsOwned(hypredrv->lib_mode));
+   hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_M, matrix, false);
+   hypredrv->precmat_sequence_cache_args = NULL;
+   return hypredrv_ErrorCodeGet();
+}
+
+static bool
+LinearSystemHasCachedPrecMatrix(const hypredrv_t *hypredrv)
+{
+   return hypredrv->mat_M.handle && hypredrv->mat_M.owned &&
+          hypredrv->precmat_sequence_cache_args == hypredrv->iargs;
+}
+
+uint32_t
+hypredrv_LinearSystemReadMatrix(hypredrv_t *hypredrv)
+{
+   MPI_Comm comm = hypredrv->comm;
+   if (!hypredrv->iargs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Matrix input requires parsed arguments");
+   }
+   hypredrv_HypreConsumeErrors(comm);
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
+
    char        log_name_buf[32];
    const char *log_object_name =
-      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
-
+      hypredrv_StatsGetLogObjectName(hypredrv->stats, log_name_buf, sizeof(log_name_buf));
+   const LS_args *args  = &hypredrv->iargs->ls;
+   int            ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   int request[] = {args->sequence_filename[0] != '\0', ls_id}, minimum[2], maximum[2];
+   MPI_Allreduce(request, minimum, 2, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 2, MPI_INT, MPI_MAX, comm);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1])
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Matrix source and system index must agree across ranks");
+   }
    char matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int  ls_id                                = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix read begin");
-
-   /* Destroy matrix if it already exists */
-   if (*matrix_ptr)
-   {
-      HYPRE_IJMatrixDestroy(*matrix_ptr);
-      *matrix_ptr = NULL;
-   }
-
-   if (args->sequence_filename[0] != '\0')
-   {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "matrix source: sequence file '%s'", args->sequence_filename);
-      if (!hypredrv_LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
-                                    LinearSystemMemoryLocationGet(args), matrix_ptr))
-      {
-         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
-         HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                            "matrix read failed from sequence source");
-         return;
-      }
-
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix read end");
-      return;
-   }
-
-   if (!LinearSystemDataFilenameResolve(args, ls_id, args->matrix_filename,
-                                        args->matrix_basename, matrix_filename,
-                                        sizeof(matrix_filename)))
+   if (!request[0] && !LinearSystemDataFilenameResolve(
+                         args, ls_id, args->matrix_filename, args->matrix_basename,
+                         matrix_filename, sizeof(matrix_filename)))
    {
       hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
       hypredrv_ErrorMsgAddInvalidFilename("");
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "matrix filename resolution failed");
-      return;
    }
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix source: '%s'",
-                      matrix_filename);
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
 
-   if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, matrix_ptr))
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+   hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, "matrix");
+   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix read begin");
+   HYPRE_IJMatrix replacement = NULL;
+   if (request[0])
    {
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id, "matrix read failed from '%s'",
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "matrix source: sequence file '%s'", args->sequence_filename);
+      hypredrv_LSSeqReadMatrix(comm, args->sequence_filename, ls_id,
+                               LinearSystemMemoryLocationGet(args), &replacement);
+   }
+   else
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix source: '%s'",
                          matrix_filename);
-      return;
+      LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, &replacement);
+   }
+   hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "matrix");
+   hypredrv_HypreConsumeErrors(comm);
+   if (hypredrv_DistributedErrorStateSync(comm))
+   {
+      if (replacement) HYPRE_IJMatrixDestroy(replacement);
+      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id, "matrix read failed from '%s'",
+                         request[0] ? args->sequence_filename : matrix_filename);
+      return hypredrv_ErrorCodeGet();
    }
 
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "matrix");
+   /* A fixed sequence preconditioner survives subsequent main-matrix reads.
+    * Ownership and aliases change only after every rank has a replacement. */
+   bool keep_mat_M = LinearSystemHasCachedPrecMatrix(hypredrv);
+   if (!keep_mat_M) hypredrv->precmat_sequence_cache_args = NULL;
+   hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_A, replacement, true);
+   if (!keep_mat_M)
+      hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_M, replacement, false);
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "matrix read end");
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemBuildMatrixFromCSR
+ * Array ingress: validate, construct, and install a complete replacement
  *-----------------------------------------------------------------------------*/
 
 /* Derive a positive local row count without overflowing signed HYPRE_BigInt.
@@ -1458,210 +1490,104 @@ LinearSystemArrayRowCount(const char *label, HYPRE_BigInt first, HYPRE_BigInt la
    return 1;
 }
 
-/* Validate all row offsets before construction or coefficient access. A later
- * local rejection must not strand peer ranks in HYPRE_IJMatrixAssemble. */
-static uint32_t
-LinearSystemCSRValidateArgs(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
-                            const HYPRE_BigInt *indptr, const HYPRE_BigInt *col_indices,
-                            const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr,
-                            HYPRE_Int *nrows_out, HYPRE_Int *nnz_out)
-{
-   if (!mat_ptr || !indptr)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: mat_ptr and indptr must be non-NULL");
-      return ERROR_INVALID_VAL;
-   }
-   if (!LinearSystemArrayRowCount("BuildMatrixFromCSR", row_start, row_end, nrows_out))
-   {
-      return ERROR_INVALID_VAL;
-   }
-
-   HYPRE_Int nrows = *nrows_out;
-   if (indptr[0] < 0 || indptr[nrows] < indptr[0])
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: invalid first/last row offsets");
-      return ERROR_INVALID_VAL;
-   }
-   HYPRE_BigInt nnz_big = indptr[nrows] - indptr[0];
-   if ((HYPRE_BigInt)((HYPRE_Int)nnz_big) != nnz_big)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "BuildMatrixFromCSR: local nonzero count exceeds HYPRE_Int range");
-      return ERROR_INVALID_VAL;
-   }
-   *nnz_out = (HYPRE_Int)nnz_big;
-   if (*nnz_out > 0 && (!col_indices || !data))
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "BuildMatrixFromCSR: col_indices/data must be non-NULL when nnz > 0");
-      return ERROR_INVALID_VAL;
-   }
-   for (HYPRE_Int i = 0; i < nrows; i++)
-   {
-      if (indptr[i + 1] < indptr[i])
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "BuildMatrixFromCSR: indptr is not monotonically non-decreasing at row %lld",
-            (long long)i);
-         return ERROR_INVALID_VAL;
-      }
-   }
-#ifdef HYPREDRV_USING_DEBUG
-   for (HYPRE_Int k = 0; k < *nnz_out; k++)
-   {
-      if (col_indices[indptr[0] + (HYPRE_BigInt)k] < 0)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("BuildMatrixFromCSR: column indices must be nonnegative");
-         return ERROR_INVALID_VAL;
-      }
-   }
-#endif
-   return ERROR_NONE;
-}
-
-/* Local calls only record failures. Each builder reaches the next collective
- * agreement point before any rank can leave its current construction phase. */
-static uint32_t
-LinearSystemBuildRecordError(const char *label, HYPRE_Int code)
-{
-   if (code)
-   {
-      char message[HYPRE_MAX_MSG_LEN];
-      HYPRE_DescribeError(code, message);
-      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
-      hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", label, message);
-      return ERROR_HYPRE_INTERNAL;
-   }
-   return ERROR_NONE;
-}
-
-/* Internal calls report their own status, independently of diagnostics left
- * by an earlier caller. Merge only this operation's failure across ranks. */
-static uint32_t
-LinearSystemBuildStatusSync(MPI_Comm comm, uint32_t status)
-{
-   uint32_t collective_status = ERROR_NONE;
-   MPI_Allreduce(&status, &collective_status, 1, MPI_UINT32_T, MPI_BOR, comm);
-   if (collective_status != status)
-   {
-      hypredrv_ErrorCodeSet((hypredrv_error_t)collective_status);
-      hypredrv_ErrorMsgAdd("Array construction failed on another rank");
-   }
-   return collective_status;
-}
-
-#define LINSYS_HYPRE_CALL(label, call)                         \
-   do                                                          \
-   {                                                           \
-      if (status == ERROR_NONE)                                \
-      {                                                        \
-         status = LinearSystemBuildRecordError(label, (call)); \
-      }                                                        \
-   } while (0)
-
-/* Counts one CSR row's entries in the local diagonal and off-diagonal blocks. */
-static void
-LinearSystemCSRCountRowSparsity(HYPRE_BigInt row_start, HYPRE_BigInt row_end,
-                                HYPRE_BigInt entry_begin, HYPRE_BigInt entry_end,
-                                const HYPRE_BigInt *col_indices, HYPRE_Int *diag_size,
-                                HYPRE_Int *offd_size)
-{
-   for (HYPRE_BigInt k = entry_begin; k < entry_end; k++)
-   {
-      HYPRE_BigInt col = col_indices[k];
-      if (col >= row_start && col <= row_end)
-      {
-         (*diag_size)++;
-      }
-      else
-      {
-         (*offd_size)++;
-      }
-   }
-}
-
-/* Insert the local values only; the caller coordinates status before assembly. */
-static uint32_t
-LinearSystemCSRSetValues(HYPRE_IJMatrix matrix, HYPRE_MemoryLocation memory_location,
-                         HYPRE_Int nrows, HYPRE_Int nnz, HYPRE_Int *ncols_per_row,
-                         HYPRE_BigInt *row_ids, const HYPRE_BigInt *col_indices,
-                         const HYPRE_Real *data)
-{
-   uint32_t status = ERROR_NONE;
-#if defined(HYPRE_USING_GPU)
-   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
-#else
-   (void)memory_location;
-   (void)nnz;
-#endif
-#if defined(HYPRE_USING_GPU)
-   if (!host)
-   {
-      /* Stage host buffers once for hypre's device SetValues path. */
-      HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
-      HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
-      HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
-      HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
-      if (!d_ncols || !d_rows || !d_cols || !d_data)
-      {
-         status = ERROR_ALLOCATION;
-         hypredrv_AllocationFailure("Failed to allocate device CSR staging buffers");
-      }
-      else
-      {
-         hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-         hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-         hypre_TMemcpy(d_cols, col_indices, HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-         hypre_TMemcpy(d_data, data, HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
-         LINSYS_HYPRE_CALL(
-            "BuildMatrixFromCSR",
-            HYPRE_IJMatrixSetValues(matrix, nrows, d_ncols, d_rows, d_cols, d_data));
-      }
-      hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
-      hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
-   }
-   else
-#endif
-   {
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
-                        HYPRE_IJMatrixSetValues(matrix, nrows, ncols_per_row, row_ids,
-                                                col_indices, data));
-   }
-   return status;
-}
-
 uint32_t
-hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
-                                        HYPRE_MemoryLocation memory_location,
-                                        HYPRE_BigInt row_start, HYPRE_BigInt row_end,
-                                        const HYPRE_BigInt *indptr,
-                                        const HYPRE_BigInt *col_indices,
-                                        const HYPRE_Real *data, HYPRE_IJMatrix *mat_ptr)
+hypredrv_LinearSystemSetMatrixFromCSR(hypredrv_t *hypredrv, HYPRE_BigInt row_start,
+                                      HYPRE_BigInt row_end, const HYPRE_BigInt *indptr,
+                                      const HYPRE_BigInt *col_indices,
+                                      const HYPRE_Real   *data)
 {
+   MPI_Comm       comm          = hypredrv->comm;
    uint32_t       status        = ERROR_NONE;
    HYPRE_IJMatrix matrix        = NULL;
    HYPRE_Int     *ncols_per_row = NULL, *diag_sizes = NULL, *offd_sizes = NULL;
    HYPRE_BigInt  *row_ids = NULL;
    HYPRE_Int      nrows = 0, nnz = 0;
-   const int host = (hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE);
+   HYPRE_BigInt   offset = 0;
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+   HYPRE_MemoryLocation memory_location = HYPRE_MEMORY_HOST;
+#ifdef HYPRE_USING_GPU
+   memory_location =
+      LinearSystemMemoryLocationGet(hypredrv->iargs ? &hypredrv->iargs->ls : NULL);
+#endif
+   const int host = hypre_GetActualMemLocation(memory_location) != hypre_MEMORY_DEVICE;
 
-   status = LinearSystemCSRValidateArgs(row_start, row_end, indptr, col_indices, data,
-                                        mat_ptr, &nrows, &nnz);
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+   if (!LinearSystemArrayRowCount("SetMatrixFromCSR", row_start, row_end, &nrows))
    {
-      return status;
+      status = ERROR_INVALID_VAL;
+   }
+   /* Validate scalar partition metadata before deriving any CSR buffer access.
+    * A prefix maximum gives the preceding end for a valid ordered partition;
+    * any earlier invalid partition is rejected by the common status reduction. */
+   const long long local_end     = (long long)row_end;
+   long long       preceding_end = -1, global_end = -1;
+   int             mpi_status =
+      MPI_Exscan(&local_end, &preceding_end, 1, MPI_LONG_LONG, MPI_MAX, comm);
+   mpi_status |= MPI_Allreduce(&local_end, &global_end, 1, MPI_LONG_LONG, MPI_MAX, comm);
+   if (mpi_status != MPI_SUCCESS)
+   {
+      status = ERROR_UNKNOWN;
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd(
+         "SetMatrixFromCSR: could not inspect the global row partition");
+   }
+   if (!status)
+   {
+      const uintmax_t max_rows =
+         (UINTMAX_C(1) << (sizeof(HYPRE_BigInt) * CHAR_BIT - 1)) - 1;
+      if (global_end < 0 || (uintmax_t)global_end >= max_rows ||
+          (hypredrv->mypid && preceding_end == LLONG_MAX))
+      {
+         status = ERROR_INVALID_VAL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("SetMatrixFromCSR: global row count is out of range");
+      }
+      else
+      {
+         long long expected_start = hypredrv->mypid ? preceding_end + 1 : 0;
+         if ((long long)row_start != expected_start)
+         {
+            status = ERROR_INVALID_VAL;
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("SetMatrixFromCSR: rank %d row range [%lld, %lld] "
+                                 "does not continue the global partition at %lld",
+                                 hypredrv->mypid, (long long)row_start, local_end,
+                                 expected_start);
+         }
+      }
+   }
+   if (status) goto inputs_done;
+   if (!indptr)
+   {
+      status = ERROR_INVALID_VAL;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("SetMatrixFromCSR: indptr must be non-NULL");
+      goto inputs_done;
+   }
+   offset = indptr[0];
+   if (offset < 0 || indptr[nrows] < offset)
+   {
+      status = ERROR_INVALID_VAL;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("SetMatrixFromCSR: invalid first/last row offsets");
+      goto inputs_done;
+   }
+   HYPRE_BigInt nnz_big = indptr[nrows] - offset;
+   if ((HYPRE_BigInt)((HYPRE_Int)nnz_big) != nnz_big)
+   {
+      status = ERROR_INVALID_VAL;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "SetMatrixFromCSR: local nonzero count exceeds HYPRE_Int range");
+      goto inputs_done;
+   }
+   nnz = (HYPRE_Int)nnz_big;
+   if (nnz && (!col_indices || !data))
+   {
+      status = ERROR_INVALID_VAL;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "SetMatrixFromCSR: col_indices/data must be non-NULL when nnz > 0");
+      goto inputs_done;
    }
 
    ncols_per_row = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_HOST);
@@ -1673,135 +1599,202 @@ hypredrv_LinearSystemBuildMatrixFromCSR(MPI_Comm             comm,
    }
    if (!ncols_per_row || !row_ids || (host && (!diag_sizes || !offd_sizes)))
    {
-      status = ERROR_ALLOCATION;
-      hypredrv_AllocationFailure("Failed to allocate CSR construction scratch arrays");
+      status =
+         hypredrv_AllocationFailure("Failed to allocate CSR construction scratch arrays");
+      goto inputs_done;
    }
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+   /* Validate and describe each row once. Native assembly below only consumes
+    * the checked counts and entries; offset slabs do not inspect leading padding. */
+   for (HYPRE_Int row = 0; row < nrows; row++)
    {
-      goto cleanup;
-   }
-   for (HYPRE_Int i = 0; i < nrows; i++)
-   {
-      ncols_per_row[i] = (HYPRE_Int)(indptr[i + 1] - indptr[i]);
-      row_ids[i]       = row_start + (HYPRE_BigInt)i;
-      if (host)
+      if (indptr[row + 1] < indptr[row] || indptr[row + 1] > indptr[nrows])
       {
-         LinearSystemCSRCountRowSparsity(row_start, row_end, indptr[i], indptr[i + 1],
-                                         col_indices, &diag_sizes[i], &offd_sizes[i]);
+         status = ERROR_INVALID_VAL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("SetMatrixFromCSR: invalid row offset at row %lld",
+                              (long long)row);
+         goto inputs_done;
+      }
+      ncols_per_row[row] = (HYPRE_Int)(indptr[row + 1] - indptr[row]);
+      row_ids[row]       = row_start + (HYPRE_BigInt)row;
+      for (HYPRE_BigInt entry = indptr[row]; entry < indptr[row + 1]; entry++)
+      {
+         HYPRE_BigInt column = col_indices[entry];
+         if (column < 0 || (long long)column > global_end)
+         {
+            status = ERROR_INVALID_VAL;
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd("SetMatrixFromCSR: column %lld is outside [0, %lld]",
+                                 (long long)column, global_end);
+            goto inputs_done;
+         }
+         if (host)
+         {
+            if (column >= row_start && column <= row_end) diag_sizes[row]++;
+            else offd_sizes[row]++;
+         }
       }
    }
+inputs_done:
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
 
-   /* Creation and assembly are collective; local preparation between them
-    * must finish on every rank before either collective phase is entered. */
+   /* Creation and assembly are collective. Agree on local failures before
+    * entering either phase so no rank can strand its peers. */
    LINSYS_HYPRE_CALL(
-      "BuildMatrixFromCSR",
+      "SetMatrixFromCSR",
       HYPRE_IJMatrixCreate(comm, row_start, row_end, row_start, row_end, &matrix));
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
-   {
-      goto cleanup;
-   }
-   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   LINSYS_HYPRE_CALL("SetMatrixFromCSR",
                      HYPRE_IJMatrixSetObjectType(matrix, HYPRE_PARCSR));
    if (host)
    {
-      LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+      LINSYS_HYPRE_CALL("SetMatrixFromCSR",
                         HYPRE_IJMatrixSetDiagOffdSizes(matrix, diag_sizes, offd_sizes));
    }
-   LINSYS_HYPRE_CALL("BuildMatrixFromCSR",
+   LINSYS_HYPRE_CALL("SetMatrixFromCSR",
                      HYPRE_IJMatrixInitialize_v2(matrix, memory_location));
-
-   if (nnz > 0 && status == ERROR_NONE)
+   if (nnz && !status)
    {
-      status =
-         LinearSystemCSRSetValues(matrix, memory_location, nrows, nnz, ncols_per_row,
-                                  row_ids, col_indices + indptr[0], data + indptr[0]);
-   }
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
-   {
-      goto cleanup;
-   }
-   LINSYS_HYPRE_CALL("BuildMatrixFromCSR", HYPRE_IJMatrixAssemble(matrix));
-   if ((status = LinearSystemBuildStatusSync(comm, status)) == ERROR_NONE)
-   {
-      if (*mat_ptr)
+#ifdef HYPRE_USING_GPU
+      if (!host)
       {
-         HYPRE_IJMatrixDestroy(*mat_ptr);
+         /* Stage the caller's checked host slab once for device assembly. */
+         HYPRE_Int     *d_ncols = hypre_TAlloc(HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE);
+         HYPRE_BigInt  *d_rows  = hypre_TAlloc(HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE);
+         HYPRE_BigInt  *d_cols  = hypre_TAlloc(HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE);
+         HYPRE_Complex *d_data  = hypre_TAlloc(HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE);
+         if (!d_ncols || !d_rows || !d_cols || !d_data)
+         {
+            status = hypredrv_AllocationFailure(
+               "Failed to allocate device CSR staging buffers");
+         }
+         else
+         {
+            hypre_TMemcpy(d_ncols, ncols_per_row, HYPRE_Int, nrows, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_cols, col_indices + offset, HYPRE_BigInt, nnz,
+                          HYPRE_MEMORY_DEVICE, HYPRE_MEMORY_HOST);
+            hypre_TMemcpy(d_data, data + offset, HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE,
+                          HYPRE_MEMORY_HOST);
+            LINSYS_HYPRE_CALL(
+               "SetMatrixFromCSR",
+               HYPRE_IJMatrixSetValues(matrix, nrows, d_ncols, d_rows, d_cols, d_data));
+         }
+         hypre_TFree(d_ncols, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_rows, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_cols, HYPRE_MEMORY_DEVICE);
+         hypre_TFree(d_data, HYPRE_MEMORY_DEVICE);
       }
-      *mat_ptr = matrix;
-      matrix   = NULL;
+      else
+#endif
+      {
+         LINSYS_HYPRE_CALL("SetMatrixFromCSR",
+                           HYPRE_IJMatrixSetValues(matrix, nrows, ncols_per_row, row_ids,
+                                                   col_indices + offset, data + offset));
+      }
    }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   LINSYS_HYPRE_CALL("SetMatrixFromCSR", HYPRE_IJMatrixAssemble(matrix));
 
 cleanup:
    hypre_TFree(ncols_per_row, HYPRE_MEMORY_HOST);
    hypre_TFree(row_ids, HYPRE_MEMORY_HOST);
    hypre_TFree(diag_sizes, HYPRE_MEMORY_HOST);
    hypre_TFree(offd_sizes, HYPRE_MEMORY_HOST);
-   if (matrix)
+   status |= hypredrv_HypreConsumeErrors(comm);
+   status = LinearSystemBuildStatusSync(comm, status);
+   if (!status)
    {
-      HYPRE_IJMatrixDestroy(matrix);
+      hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_A, matrix, true);
+      hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_M, matrix, false);
+      hypredrv->precmat_sequence_cache_args = NULL;
+      matrix                                = NULL;
    }
+   if (matrix) HYPRE_IJMatrixDestroy(matrix);
    return status;
 }
 
 /* Build a complete RHS collectively before publishing the output handle. */
 uint32_t
-hypredrv_LinearSystemBuildRHSFromArray(MPI_Comm             comm,
-                                       HYPRE_MemoryLocation memory_location,
-                                       HYPRE_BigInt row_start, HYPRE_BigInt row_end,
-                                       const HYPRE_Real *values, HYPRE_IJVector *rhs_ptr)
+hypredrv_LinearSystemSetRHSFromArray(hypredrv_t *hypredrv, HYPRE_BigInt row_start,
+                                     HYPRE_BigInt row_end, const HYPRE_Real *values)
 {
+   MPI_Comm       comm   = hypredrv->comm;
    uint32_t       status = ERROR_NONE;
    HYPRE_IJVector rhs    = NULL;
    HYPRE_Int      nrows  = 0;
-   if (!rhs_ptr || !values)
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+   HYPRE_MemoryLocation memory_location = HYPRE_MEMORY_HOST;
+#ifdef HYPRE_USING_GPU
+   memory_location =
+      LinearSystemMemoryLocationGet(hypredrv->iargs ? &hypredrv->iargs->ls : NULL);
+#endif
+   if (!values)
+   {
+      status = ERROR_INVALID_VAL;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("SetRHSFromArray: values must be non-NULL");
+   }
+   if (!LinearSystemArrayRowCount("SetRHSFromArray", row_start, row_end, &nrows))
+   {
+      status = ERROR_INVALID_VAL;
+   }
+   if (!hypredrv->mat_A.handle)
    {
       status = ERROR_INVALID_VAL;
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
-         "BuildRHSFromArray: output pointer and values must be non-NULL");
+         "HYPREDRV_LinearSystemSetRHSFromArray: matrix must be set before RHS");
    }
-   if (!LinearSystemArrayRowCount("BuildRHSFromArray", row_start, row_end, &nrows))
+   else
    {
-      status = ERROR_INVALID_VAL;
-   }
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
-   {
-      return status;
-   }
-   LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                     HYPRE_IJVectorCreate(comm, row_start, row_end, &rhs));
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
-   {
-      goto cleanup;
-   }
-   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorSetObjectType(rhs, HYPRE_PARCSR));
-   LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                     HYPRE_IJVectorInitialize_v2(rhs, memory_location));
-   LINSYS_HYPRE_CALL("BuildRHSFromArray",
-                     LinearSystemSetHostValues(rhs, nrows, NULL, values));
-   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
-   {
-      goto cleanup;
-   }
-   LINSYS_HYPRE_CALL("BuildRHSFromArray", HYPRE_IJVectorAssemble(rhs));
-   if ((status = LinearSystemBuildStatusSync(comm, status)) == ERROR_NONE)
-   {
-      if (*rhs_ptr)
+      HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+      HYPRE_Int    code = HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A.handle, &ilower,
+                                                      &iupper, &jlower, &jupper);
+      status |=
+         LinearSystemBuildRecordError("SetRHSFromArray: query matrix local range", code);
+      if (!code && (row_start != ilower || row_end != iupper))
       {
-         HYPRE_IJVectorDestroy(*rhs_ptr);
+         status |= ERROR_INVALID_VAL;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "HYPREDRV_LinearSystemSetRHSFromArray: RHS row range [%lld, %lld] "
+            "does not match matrix row range [%lld, %lld]",
+            (long long)row_start, (long long)row_end, (long long)ilower,
+            (long long)iupper);
       }
-      *rhs_ptr = rhs;
-      rhs      = NULL;
    }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   LINSYS_HYPRE_CALL("SetRHSFromArray",
+                     HYPRE_IJVectorCreate(comm, row_start, row_end, &rhs));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   LINSYS_HYPRE_CALL("SetRHSFromArray", HYPRE_IJVectorSetObjectType(rhs, HYPRE_PARCSR));
+   LINSYS_HYPRE_CALL("SetRHSFromArray",
+                     HYPRE_IJVectorInitialize_v2(rhs, memory_location));
+   LINSYS_HYPRE_CALL("SetRHSFromArray",
+                     LinearSystemSetHostValues(rhs, nrows, NULL, values));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   LINSYS_HYPRE_CALL("SetRHSFromArray", HYPRE_IJVectorAssemble(rhs));
+
 cleanup:
-   if (rhs)
+   status |= hypredrv_HypreConsumeErrors(comm);
+   status = LinearSystemBuildStatusSync(comm, status);
+   if (!status)
    {
-      HYPRE_IJVectorDestroy(rhs);
+      hypredrv_VectorSlot reference = hypredrv->vec_xref;
+      if (hypredrv->vec_b.owned && reference.handle == hypredrv->vec_b.handle)
+         reference = (hypredrv_VectorSlot){NULL, false};
+      const hypredrv_VectorUpdate updates[] = {
+         {&hypredrv->vec_b, rhs, true},
+         {&hypredrv->vec_xref, reference.handle, reference.owned}};
+      hypredrv_ObjectInstallVectors(hypredrv, 2, updates);
+      rhs = NULL;
    }
+   if (rhs) HYPRE_IJVectorDestroy(rhs);
    return status;
 }
-
-#undef LINSYS_HYPRE_CALL
 
 /*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemMatrixGetNumRows
@@ -2084,466 +2077,624 @@ LinearSystemRHSMatrixMarketRead(MPI_Comm comm, const LS_args *args, HYPRE_IJMatr
    return 1;
 }
 
-static void
-LinearSystemRHSGeneratedSet(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                            HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr)
+/* A temporary view of an initialized input vector. IJ ranges retain the
+ * caller's global origin; native ParVector ranges are relative to that origin. */
+typedef struct
 {
-   HYPRE_BigInt         ilower = 0, iupper = 0;
-   HYPRE_BigInt         jlower = 0, jupper = 0;
-   HYPRE_MemoryLocation memory_location = LinearSystemMemoryLocationGet(args);
+   hypre_ParVector *par;
+   HYPRE_BigInt     first, last;
+} LinearSystemVectorView;
 
-   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-   HYPRE_IJVectorCreate(comm, ilower, iupper, rhs_ptr);
-   HYPRE_IJVectorSetObjectType(*rhs_ptr, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(*rhs_ptr, memory_location);
+/* Registered vectors are already initialized. Read their current layout
+ * without revalidating input type or storage on every reset/previous-mode copy. */
+static uint32_t
+LinearSystemVectorViewGet(HYPRE_IJVector vector, const char *label,
+                          LinearSystemVectorView *view)
+{
+   uint32_t status = ERROR_NONE;
+   void    *object = NULL;
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorGetObject(vector, &object));
+   LINSYS_HYPRE_CALL(label,
+                     HYPRE_IJVectorGetLocalRange(vector, &view->first, &view->last));
+   view->par = (hypre_ParVector *)object;
+   return status;
+}
 
-   void           *obj   = NULL;
-   HYPRE_ParVector par_b = NULL;
-   HYPRE_IJVectorGetObject(*rhs_ptr, &obj);
-   par_b = (HYPRE_ParVector)obj;
-
-   switch (args->rhs_mode)
+static uint32_t
+LinearSystemReadVector(HYPRE_IJVector vector, const char *label,
+                       LinearSystemVectorView *view)
+{
+   uint32_t  status = ERROR_NONE;
+   HYPRE_Int type   = -1;
+   if (!vector)
    {
-      case 0:
-         HYPRE_ParVectorSetConstantValues(par_b, 0);
-         break;
-      case 1:
-      default:
-         HYPRE_ParVectorSetConstantValues(par_b, 1);
-         break;
-      case 3:
-         HYPRE_ParVectorSetRandomValues(par_b, 2023);
-         break;
-      case 4:
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: vector must be set first", label);
+      return ERROR_INVALID_VAL;
+   }
+   LINSYS_HYPRE_CALL(label, HYPRE_IJVectorGetObjectType(vector, &type));
+   if (status) return status;
+   if (type != HYPRE_PARCSR)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: vector must have ParCSR object type", label);
+      return ERROR_INVALID_VAL;
+   }
+   status = LinearSystemVectorViewGet(vector, label, view);
+   if (status) return status;
+   hypre_Vector *local = view->par ? hypre_ParVectorLocalVector(view->par) : NULL;
+   if (!local || hypre_VectorSize(local) < 0 || hypre_VectorNumVectors(local) < 1 ||
+       (hypre_VectorSize(local) > 0 && !hypre_VectorData(local)))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: vector must be initialized", label);
+      return ERROR_INVALID_VAL;
+   }
+   return ERROR_NONE;
+}
+
+static bool
+LinearSystemVectorLayoutsMatch(const LinearSystemVectorView *a,
+                               const LinearSystemVectorView *b)
+{
+   return a->first == b->first && a->last == b->last &&
+          hypre_ParVectorGlobalSize(a->par) == hypre_ParVectorGlobalSize(b->par) &&
+          hypre_ParVectorFirstIndex(a->par) == hypre_ParVectorFirstIndex(b->par) &&
+          hypre_ParVectorLastIndex(a->par) == hypre_ParVectorLastIndex(b->par) &&
+          hypre_VectorSize(hypre_ParVectorLocalVector(a->par)) ==
+             hypre_VectorSize(hypre_ParVectorLocalVector(b->par)) &&
+          hypre_ParVectorNumVectors(a->par) == hypre_ParVectorNumVectors(b->par);
+}
+
+/* Build fresh vectors after collective input validation. Agreement before
+ * assembly keeps a local failure from stranding peers. */
+static uint32_t
+LinearSystemCreateVector(hypredrv_t *hypredrv, HYPRE_BigInt first, HYPRE_BigInt last,
+                         HYPRE_IJVector *vector)
+{
+   uint32_t             status   = ERROR_NONE;
+   HYPRE_MemoryLocation location = hypredrv->iargs && hypredrv->iargs->ls.exec_policy
+                                      ? HYPRE_MEMORY_DEVICE
+                                      : HYPRE_MEMORY_HOST;
+   LINSYS_HYPRE_CALL("Solution allocation",
+                     HYPRE_IJVectorCreate(hypredrv->comm, first, last, vector));
+   LINSYS_HYPRE_CALL("Solution allocation",
+                     HYPRE_IJVectorSetObjectType(*vector, HYPRE_PARCSR));
+   LINSYS_HYPRE_CALL("Solution allocation",
+                     HYPRE_IJVectorInitialize_v2(*vector, location));
+   status = LinearSystemBuildStatusSync(hypredrv->comm, status);
+   LINSYS_HYPRE_CALL("Solution allocation", HYPRE_IJVectorAssemble(*vector));
+   return LinearSystemBuildStatusSync(hypredrv->comm, status);
+}
+
+uint32_t
+hypredrv_LinearSystemSetRHS(hypredrv_t *hypredrv, HYPRE_IJVector vector)
+{
+   MPI_Comm               comm   = hypredrv->comm;
+   uint32_t               status = ERROR_NONE;
+   HYPRE_IJVector         rhs = NULL, reference = NULL;
+   LinearSystemVectorView input = {0};
+   if (vector)
+   {
+      status = LinearSystemReadVector(vector, "SetRHS", &input);
+      if (!status && hypre_ParVectorNumVectors(input.par) != 1)
       {
-         HYPRE_IJVector xref = NULL;
-         HYPRE_IJVectorCreate(comm, ilower, iupper, &xref);
-         HYPRE_IJVectorSetObjectType(xref, HYPRE_PARCSR);
-         HYPRE_IJVectorInitialize_v2(xref, memory_location);
-
-         HYPRE_ParVector par_x = NULL;
-         HYPRE_IJVectorGetObject(xref, &obj);
-         par_x = (HYPRE_ParVector)obj;
-         HYPRE_ParVectorSetRandomValues(par_x, 2023);
-
-         void              *obj_A = NULL;
-         HYPRE_ParCSRMatrix par_A = NULL;
-#if HYPREDRV_HAVE_MEMORY_APIS
-         HYPRE_MemoryLocation mat_memory_location = HYPRE_MEMORY_UNDEFINED;
-#endif
-         HYPRE_IJMatrixGetObject(mat, &obj_A);
-         par_A = (HYPRE_ParCSRMatrix)obj_A;
-#if HYPREDRV_HAVE_MEMORY_APIS
-         mat_memory_location =
-            hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)par_A);
-         if (mat_memory_location != memory_location)
-         {
-            hypredrv_ParCSRMatrixMigrate((HYPRE_ParCSRMatrix)par_A, memory_location);
-         }
-#endif
-         HYPRE_ParCSRMatrixMatvec(1.0, par_A, par_x, 0.0, par_b);
-         *xref_ptr = xref;
-         break;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("SetRHS: vector must have one component");
+         status = ERROR_INVALID_VAL;
       }
-   }
-}
-
-static int
-LinearSystemRHSReadFromFile(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                            const char *rhs_filename, HYPRE_IJVector *rhs_ptr)
-{
-   int ok = 1;
-   if (args->type == 3)
-   {
-      ok = LinearSystemRHSMatrixMarketRead(comm, args, mat, rhs_filename, rhs_ptr);
-   }
-   else
-   {
-      ok = LinearSystemIJVectorReadFromFile(comm, rhs_filename,
-                                            LinearSystemMemoryLocationGet(args), rhs_ptr);
-   }
-
-   if (HYPRE_GetError())
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAddInvalidFilename(rhs_filename);
-      return 0;
-   }
-
-   if (ok)
-   {
-      LinearSystemIJVectorMigrate(args, *rhs_ptr);
-   }
-   return ok;
-}
-
-void
-hypredrv_LinearSystemSetRHS(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                            HYPRE_IJVector *xref_ptr, HYPRE_IJVector *rhs_ptr,
-                            Stats *stats)
-{
-   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   char        log_name_buf[32];
-   const char *log_object_name =
-      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
-
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "rhs setup begin (rhs_mode=%d)",
-                      (int)args->rhs_mode);
-
-   if (*xref_ptr)
-   {
-      HYPRE_IJVectorDestroy(*xref_ptr);
-      *xref_ptr = NULL;
-   }
-   if (*rhs_ptr)
-   {
-      HYPRE_IJVectorDestroy(*rhs_ptr);
-      *rhs_ptr = NULL;
-   }
-
-   if (args->rhs_mode != 2)
-   {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "rhs source: generated mode=%d",
-                         (int)args->rhs_mode);
-      LinearSystemRHSGeneratedSet(comm, args, mat, xref_ptr, rhs_ptr);
-   }
-   else
-   {
-      if (args->sequence_filename[0] != '\0')
+      if (!status)
       {
-         HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                            "rhs source: sequence file '%s'", args->sequence_filename);
-         if (!hypredrv_LSSeqReadRHS(comm, args->sequence_filename, ls_id,
-                                    LinearSystemMemoryLocationGet(args), rhs_ptr))
-         {
-            hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
-            HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                               "rhs read failed from sequence source");
-            return;
-         }
+         hypredrv_ObjectPrepareExecution(hypredrv, vector, 0);
+         status = LinearSystemBuildRecordError("SetRHS", HYPRE_GetError());
+      }
+      status |= hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
+      if (!status)
+      {
+         hypredrv_VectorSlot ref = hypredrv->vec_xref;
+         if (hypredrv->vec_b.handle != vector && hypredrv->vec_b.owned &&
+             ref.handle == hypredrv->vec_b.handle)
+            ref = (hypredrv_VectorSlot){NULL, false};
+         const hypredrv_VectorUpdate updates[] = {
+            {&hypredrv->vec_b, vector, hypredrv_AttachmentIsOwned(hypredrv->lib_mode)},
+            {&hypredrv->vec_xref, ref.handle, ref.owned}};
+         hypredrv_ObjectInstallVectors(hypredrv, 2, updates);
+      }
+      return status;
+   }
+
+   if (!hypredrv->iargs)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("SetRHS(NULL): input arguments not parsed");
+   }
+   if (!hypredrv->mat_A.handle)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("SetRHS(NULL): matrix must be set first");
+   }
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
+   const LS_args       *args  = &hypredrv->iargs->ls;
+   HYPRE_BigInt         first = 0, last = -1, column_first = 0, column_last = -1;
+   HYPRE_ParCSRMatrix   matrix            = NULL;
+   HYPRE_MemoryLocation original_location = HYPRE_MEMORY_UNDEFINED;
+   bool                 restore_matrix    = false;
+   int                  mode              = args->rhs_mode;
+   int source    = mode == 2 ? (args->sequence_filename[0] ? -1 : -2) : mode;
+   int request[] = {source, source == -2 && args->type == 3}, minimum[2], maximum[2];
+   MPI_Allreduce(request, minimum, 2, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 2, MPI_INT, MPI_MAX, comm);
+   hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, "rhs");
+   HYPREDRV_LOG_OBJECTF(3, hypredrv, "rhs setup begin (rhs_mode=%d)", mode);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1])
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("RHS source, mode, and file format must agree across ranks");
+      status = ERROR_INVALID_VAL;
+   }
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+   LINSYS_HYPRE_CALL("SetRHS",
+                     HYPRE_IJMatrixGetLocalRange(hypredrv->mat_A.handle, &first, &last,
+                                                 &column_first, &column_last));
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   if (mode == 2)
+   {
+      int ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+      int ok    = 0;
+      if (args->sequence_filename[0])
+      {
+         HYPREDRV_LOG_OBJECTF(3, hypredrv, "rhs source: sequence file '%s'",
+                              args->sequence_filename);
+         ok = hypredrv_LSSeqReadRHS(comm, args->sequence_filename, ls_id,
+                                    LinearSystemMemoryLocationGet(args), &rhs);
       }
       else
       {
-         char rhs_filename[MAX_FILENAME_LENGTH] = {0};
-         LinearSystemDataFilenameResolve(args, ls_id, args->rhs_filename,
-                                         args->rhs_basename, rhs_filename,
-                                         sizeof(rhs_filename));
-         HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "rhs source: '%s'",
-                            rhs_filename);
-         if (!LinearSystemRHSReadFromFile(comm, args, mat, rhs_filename, rhs_ptr))
+         char filename[MAX_FILENAME_LENGTH] = {0};
+         if (!LinearSystemDataFilenameResolve(args, ls_id, args->rhs_filename,
+                                              args->rhs_basename, filename,
+                                              sizeof(filename)))
          {
-            hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
-            HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                               "rhs read failed from '%s'", rhs_filename);
-            return;
+            hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+            hypredrv_ErrorMsgAddInvalidFilename(filename);
+            status = ERROR_FILE_NOT_FOUND;
          }
+         if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+            goto cleanup;
+         HYPREDRV_LOG_OBJECTF(3, hypredrv, "rhs source: '%s'", filename);
+         if (args->type == 3)
+            ok = LinearSystemRHSMatrixMarketRead(comm, args, hypredrv->mat_A.handle,
+                                                 filename, &rhs);
+         else
+            ok = (status = LinearSystemIJVectorReadFromFile(
+                     comm, filename, LinearSystemMemoryLocationGet(args), &rhs)) ==
+                 ERROR_NONE;
       }
-   }
 
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "rhs");
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "rhs setup end");
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemSetInitialGuess
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemCreateWorkingSolution(MPI_Comm comm, const LS_args *args,
-                                           HYPRE_IJVector rhs, HYPRE_IJVector *x_ptr)
-{
-   HYPRE_BigInt         jlower = 0, jupper = 0;
-   HYPRE_MemoryLocation memloc =
-      /* GCOVR_EXCL_BR_START */
-      (args && args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
-   /* GCOVR_EXCL_BR_STOP */
-
-   /* GCOVR_EXCL_BR_START */
-   if (!rhs || !x_ptr) /* GCOVR_EXCL_BR_STOP */
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid arguments for LinearSystemCreateWorkingSolution");
-      return;
-   }
-
-   if (*x_ptr)
-   {
-      HYPRE_IJVectorDestroy(*x_ptr);
-      *x_ptr = NULL;
-   }
-
-   HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-   HYPRE_IJVectorCreate(comm, jlower, jupper, x_ptr);
-   HYPRE_IJVectorSetObjectType(*x_ptr, HYPRE_PARCSR);
-   HYPRE_IJVectorInitialize_v2(*x_ptr, memloc);
-}
-
-void
-hypredrv_LinearSystemSetInitialGuess(MPI_Comm comm, LS_args *args, HYPRE_IJMatrix mat,
-                                     HYPRE_IJVector rhs, HYPRE_IJVector *x0_ptr,
-                                     HYPRE_IJVector *x_ptr, const Stats *stats)
-{
-   (void)mat;
-   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   char        log_name_buf[32];
-   const char *log_object_name =
-      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
-   HYPRE_BigInt         jlower = 0, jupper = 0;
-   HYPRE_MemoryLocation memloc =
-      /* GCOVR_EXCL_BR_START */
-      (args->exec_policy) ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
-   /* GCOVR_EXCL_BR_STOP */
-
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                      "initial guess setup begin (mode=%d)", (int)args->init_guess_mode);
-
-   /* Destroy initial solution vector */
-   if (*x0_ptr)
-   {
-      HYPRE_IJVectorDestroy(*x0_ptr);
-      *x0_ptr = NULL;
-   }
-
-   /* The working solution (*x_ptr) is recreated only at the end of this
-    * function: init_guess_mode "previous" reads the previous solve's values
-    * from it while building x0. */
-
-   if (args->x0_filename[0] == '\0')
-   {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "initial guess source: generated mode=%d",
-                         (int)args->init_guess_mode);
-      HYPRE_IJVectorGetLocalRange(rhs, &jlower, &jupper);
-      HYPRE_IJVectorCreate(comm, jlower, jupper, x0_ptr);
-      HYPRE_IJVectorSetObjectType(*x0_ptr, HYPRE_PARCSR);
-      HYPRE_IJVectorInitialize_v2(*x0_ptr, memloc);
-
-      /* TODO (hypre): add IJVector interfaces to avoid ParVector here */
-      void           *obj    = NULL;
-      HYPRE_ParVector par_x0 = NULL, par_x = NULL;
-
-      HYPRE_IJVectorGetObject(*x0_ptr, &obj);
-      par_x0 = (HYPRE_ParVector)obj;
-
-      switch (args->init_guess_mode)
+      status |= hypredrv_ErrorCodeGet();
+      if (!ok || !rhs || HYPRE_GetError())
       {
-         case 0:
-            /* Vector of zeros */
-            HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                               "initial guess mode: zeros");
-            break;
-
-         case 1:
-            /* Vector of ones */
-            HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                               "initial guess mode: ones");
-            HYPRE_ParVectorSetConstantValues(par_x0, 1);
-            break;
-
-         case 3:
-            /* Vector of random values */
-            HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                               "initial guess mode: random");
-            HYPRE_ParVectorSetRandomValues(par_x0, 2023);
-            break;
-
-         case 4:
-         {
-            /* Use solution from previous linear solve */
-            HYPRE_BigInt xlower = 0, xupper = 0;
-
-            HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                               "initial guess mode: previous");
-            if (*x_ptr)
-            {
-               HYPRE_IJVectorGetLocalRange(*x_ptr, &xlower, &xupper);
-            }
-            if (*x_ptr && xlower == jlower && xupper == jupper)
-            {
-               HYPRE_IJVectorGetObject(*x_ptr, &obj);
-               par_x = (HYPRE_ParVector)obj;
-
-               HYPRE_ParVectorCopy(par_x, par_x0);
-            }
-            else
-            {
-               HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                                  "no compatible previous solution; using zeros");
-            }
-            break;
-         }
-
-         default:
-            HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                               "initial guess mode=%d not recognized; using zeros",
-                               (int)args->init_guess_mode);
-            break;
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAdd("Could not read the configured RHS vector");
+         status |= ERROR_FILE_NOT_FOUND;
       }
+      if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+         goto cleanup;
+      status = LinearSystemReadVector(rhs, "RHS file", &input);
+      if (!status && (input.first != first || input.last != last ||
+                      hypre_ParVectorNumVectors(input.par) != 1))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "RHS file must have one component and match the matrix row range");
+         status = ERROR_INVALID_VAL;
+      }
+      LINSYS_HYPRE_CALL(
+         "SetRHS", hypredrv_IJVectorMigrate(rhs, LinearSystemMemoryLocationGet(args)));
    }
    else
    {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "initial guess source: '%s'",
-                         args->x0_filename);
-      if (!LinearSystemIJVectorReadFromFile(comm, args->x0_filename, memloc, x0_ptr))
+      HYPREDRV_LOG_OBJECTF(3, hypredrv, "rhs source: generated mode=%d", mode);
+      status       = LinearSystemCreateVector(hypredrv, first, last, &rhs);
+      void *object = NULL;
+      LINSYS_HYPRE_CALL("SetRHS", HYPRE_IJVectorGetObject(rhs, &object));
+      HYPRE_ParVector par_rhs = (HYPRE_ParVector)object;
+      if (mode == 4)
       {
-         return;
+         if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+            goto cleanup;
+         status =
+            LinearSystemCreateVector(hypredrv, column_first, column_last, &reference);
+         LINSYS_HYPRE_CALL("SetRHS", HYPRE_IJVectorGetObject(reference, &object));
+         HYPRE_ParVector par_reference = (HYPRE_ParVector)object;
+         HYPRE_Int       type          = -1;
+         LINSYS_HYPRE_CALL("SetRHS",
+                           HYPRE_IJMatrixGetObjectType(hypredrv->mat_A.handle, &type));
+         LINSYS_HYPRE_CALL("SetRHS",
+                           HYPRE_IJMatrixGetObject(hypredrv->mat_A.handle, &object));
+         if (!status &&
+             (type != HYPRE_PARCSR || !object ||
+              !hypre_IJMatrixAssembleFlag((hypre_IJMatrix *)hypredrv->mat_A.handle)))
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+            hypredrv_ErrorMsgAdd(
+               "Random-solution RHS requires an assembled ParCSR matrix");
+            status = ERROR_INVALID_VAL;
+         }
+         if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+            goto cleanup;
+         matrix = (HYPRE_ParCSRMatrix)object;
+         original_location =
+            hypre_ParCSRMatrixMemoryLocation((hypre_ParCSRMatrix *)matrix);
+         HYPRE_MemoryLocation target = LinearSystemMemoryLocationGet(args);
+         restore_matrix              = original_location != target;
+         if (restore_matrix)
+            LINSYS_HYPRE_CALL("SetRHS", hypredrv_ParCSRMatrixMigrate(matrix, target));
+         LINSYS_HYPRE_CALL("SetRHS", HYPRE_ParVectorSetRandomValues(par_reference, 2023));
+         if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+            goto cleanup;
+         LINSYS_HYPRE_CALL(
+            "SetRHS", HYPRE_ParCSRMatrixMatvec(1.0, matrix, par_reference, 0.0, par_rhs));
       }
-      if (HYPRE_GetError())
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-         hypredrv_ErrorMsgAddInvalidFilename(args->x0_filename);
-         HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                            "initial guess read failed from '%s'", args->x0_filename);
-         return;
-      }
-      LinearSystemIJVectorMigrate(args, *x0_ptr);
+      else if (mode == 3)
+         LINSYS_HYPRE_CALL("SetRHS", HYPRE_ParVectorSetRandomValues(par_rhs, 2023));
+      else
+         LINSYS_HYPRE_CALL(
+            "SetRHS", HYPRE_ParVectorSetConstantValues(par_rhs, mode == 0 ? 0.0 : 1.0));
    }
 
-   /* Recreate the working solution now that x0 has captured any previous
-    * solve's values. */
-   hypredrv_LinearSystemCreateWorkingSolution(comm, args, rhs, x_ptr);
-   /* GCOVR_EXCL_START */
-   if (hypredrv_ErrorCodeActive())
+cleanup:
+   if (restore_matrix)
+      status |= LinearSystemBuildRecordError(
+         "SetRHS: restore matrix storage",
+         hypredrv_ParCSRMatrixMigrate(matrix, original_location));
+   status |= hypredrv_HypreConsumeErrors(comm);
+   status = LinearSystemBuildStatusSync(comm, status);
+   if (!status)
    {
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "initial guess setup failed: could not create working solution");
-      return;
+      const hypredrv_VectorUpdate updates[] = {{&hypredrv->vec_b, rhs, true},
+                                               {&hypredrv->vec_xref, reference, true}};
+      hypredrv_ObjectInstallVectors(hypredrv, 2, updates);
+      rhs = reference = NULL;
    }
-   /* GCOVR_EXCL_STOP */
+   if (rhs) HYPRE_IJVectorDestroy(rhs);
+   if (reference) HYPRE_IJVectorDestroy(reference);
+   hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "rhs");
+   HYPREDRV_LOG_OBJECTF(3, hypredrv, "rhs setup end (status=0x%x)", status);
+   return status;
+}
 
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "initial guess setup end");
+uint32_t
+hypredrv_LinearSystemSetSolution(hypredrv_t *hypredrv, HYPRE_IJVector vector)
+{
+   uint32_t               status      = ERROR_NONE;
+   LinearSystemVectorView input       = {0};
+   HYPRE_IJVector         replacement = NULL;
+   if (vector)
+   {
+      /* Attaching an existing buffer stays local, and is allowed before parsing. */
+      status = LinearSystemReadVector(vector, "SetSolution", &input);
+      if (!status)
+      {
+         hypredrv_ObjectPrepareExecution(hypredrv, vector, 0);
+         status = LinearSystemBuildRecordError("SetSolution", HYPRE_GetError());
+      }
+      status |= hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
+      if (!status)
+      {
+         const hypredrv_VectorUpdate update = {&hypredrv->vec_x, vector, false};
+         hypredrv_ObjectInstallVectors(hypredrv, 1, &update);
+      }
+      return status;
+   }
+
+   if (!hypredrv->vec_b.handle)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("SetSolution(NULL): RHS must be set first");
+      status = ERROR_INVALID_VAL;
+   }
+   else
+      status =
+         LinearSystemVectorViewGet(hypredrv->vec_b.handle, "SetSolution: RHS", &input);
+   if ((status = LinearSystemBuildStatusSync(hypredrv->comm, status)) == ERROR_NONE)
+   {
+      hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+      status = LinearSystemCreateVector(hypredrv, input.first, input.last, &replacement);
+   }
+   status |= hypredrv_HypreConsumeErrors(hypredrv->comm);
+   status = LinearSystemBuildStatusSync(hypredrv->comm, status);
+   if (!status)
+   {
+      const hypredrv_VectorUpdate update = {&hypredrv->vec_x, replacement, true};
+      hypredrv_ObjectInstallVectors(hypredrv, 1, &update);
+      replacement = NULL;
+   }
+   if (replacement) HYPRE_IJVectorDestroy(replacement);
+   return status;
+}
+
+uint32_t
+hypredrv_LinearSystemSetInitialGuess(hypredrv_t *hypredrv, hypredrv_GuessUpdate update,
+                                     HYPRE_IJVector vector)
+{
+   MPI_Comm comm    = hypredrv->comm;
+   uint32_t status  = ERROR_NONE;
+   bool     install = update == GUESS_REPLACE || !hypredrv->vec_x.handle;
+   if (update == GUESS_ENSURE_SOLUTION)
+   {
+      int local_missing = install, any_missing = 0;
+      MPI_Allreduce(&local_missing, &any_missing, 1, MPI_INT, MPI_MAX, comm);
+      if (!any_missing)
+      {
+         status = hypredrv_ErrorCodeGet();
+         status |= hypredrv_HypreConsumeErrors(comm);
+         return LinearSystemBuildStatusSync(comm, status);
+      }
+   }
+   const LS_args         *args = hypredrv->iargs ? &hypredrv->iargs->ls : NULL;
+   LinearSystemVectorView rhs = {0}, guess_view = {0};
+   HYPRE_IJVector         guess = vector, solution = NULL;
+   int                    source = -3, minimum, maximum;
+   if (vector) source = -2;
+   else if (args) source = args->x0_filename[0] ? -1 : args->init_guess_mode;
+   else
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Initial guess(NULL): input arguments not parsed");
+      status = ERROR_INVALID_VAL;
+   }
+   HYPREDRV_LOG_OBJECTF(3, hypredrv, "initial guess setup begin (source=%d)", source);
+   MPI_Allreduce(&source, &minimum, 1, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(&source, &maximum, 1, MPI_INT, MPI_MAX, comm);
+   if (minimum != maximum)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Initial guess source/mode must agree across ranks");
+      status = ERROR_INVALID_VAL;
+   }
+   if (!hypredrv->vec_b.handle)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Initial guess: RHS must be set first");
+      status |= ERROR_INVALID_VAL;
+   }
+   else
+      status |=
+         LinearSystemVectorViewGet(hypredrv->vec_b.handle, "Initial guess: RHS", &rhs);
+   if (vector)
+   {
+      status |= LinearSystemReadVector(vector, "Initial guess", &guess_view);
+      if (!status && !LinearSystemVectorLayoutsMatch(&rhs, &guess_view))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Initial guess layout must match the RHS");
+         status = ERROR_INVALID_VAL;
+      }
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+   if (!vector && source == -1)
+   {
+      HYPRE_MemoryLocation location =
+         args->exec_policy ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+      HYPREDRV_LOG_OBJECTF(3, hypredrv, "initial guess source: '%s'", args->x0_filename);
+      status =
+         LinearSystemIJVectorReadFromFile(comm, args->x0_filename, location, &guess);
+      if (status) goto cleanup;
+      status = LinearSystemReadVector(guess, "Initial guess file", &guess_view);
+      if (!status && !LinearSystemVectorLayoutsMatch(&rhs, &guess_view))
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Initial guess file layout must match the RHS");
+         status = ERROR_INVALID_VAL;
+      }
+   }
+   else if (!vector)
+   {
+      status       = LinearSystemCreateVector(hypredrv, rhs.first, rhs.last, &guess);
+      void *object = NULL;
+      LINSYS_HYPRE_CALL("Initial guess", HYPRE_IJVectorGetObject(guess, &object));
+      HYPRE_ParVector par_guess = (HYPRE_ParVector)object;
+      switch (source)
+      {
+         case 1:
+            LINSYS_HYPRE_CALL("Initial guess",
+                              HYPRE_ParVectorSetConstantValues(par_guess, 1));
+            break;
+         case 3:
+            LINSYS_HYPRE_CALL("Initial guess",
+                              HYPRE_ParVectorSetRandomValues(par_guess, 2023));
+            break;
+         case 4:
+         {
+            LinearSystemVectorView previous   = {0};
+            int                    compatible = 0, all_compatible = 0;
+            if (!status && hypredrv->vec_x.handle)
+            {
+               status     = LinearSystemVectorViewGet(hypredrv->vec_x.handle,
+                                                      "Previous solution", &previous);
+               compatible = !status && LinearSystemVectorLayoutsMatch(&rhs, &previous);
+            }
+            if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE)
+               goto cleanup;
+            MPI_Allreduce(&compatible, &all_compatible, 1, MPI_INT, MPI_MIN, comm);
+            if (all_compatible)
+               LINSYS_HYPRE_CALL(
+                  "Initial guess",
+                  HYPRE_ParVectorCopy((HYPRE_ParVector)previous.par, par_guess));
+            else
+               HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                                    "no compatible previous solution; using zeros");
+            break;
+         }
+         default:
+            /* Initialization already supplied zeros. */
+            break;
+      }
+   }
+   if ((status = LinearSystemBuildStatusSync(comm, status)) != ERROR_NONE) goto cleanup;
+   /* Capture the previous solution before allocating its replacement. Both new
+    * buffers are complete before ownership or installed metadata can change. */
+   status = LinearSystemCreateVector(hypredrv, rhs.first, rhs.last, &solution);
+   if (hypredrv->iargs && (vector || source == -1))
+   {
+      HYPRE_MemoryLocation location =
+         args->exec_policy ? HYPRE_MEMORY_DEVICE : HYPRE_MEMORY_HOST;
+      LINSYS_HYPRE_CALL("Initial guess", hypredrv_IJVectorMigrate(guess, location));
+   }
+
+cleanup:
+   status |= hypredrv_HypreConsumeErrors(comm);
+   status = LinearSystemBuildStatusSync(comm, status);
+   if (!status && install)
+   {
+      const hypredrv_VectorUpdate updates[] = {
+         {&hypredrv->vec_x0, guess,
+          !vector || hypredrv_AttachmentIsOwned(hypredrv->lib_mode)},
+         {&hypredrv->vec_x, solution, true}};
+      hypredrv_ObjectInstallVectors(hypredrv, 2, updates);
+      guess = solution = NULL;
+   }
+   if (!vector && guess) HYPRE_IJVectorDestroy(guess);
+   if (solution) HYPRE_IJVectorDestroy(solution);
+   HYPREDRV_LOG_OBJECTF(3, hypredrv, "initial guess setup end (status=0x%x)", status);
+   return status;
 }
 
 /*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemSetReferenceSolution
  *-----------------------------------------------------------------------------*/
 
-void
-hypredrv_LinearSystemSetReferenceSolution(MPI_Comm comm, const LS_args *args,
-                                          HYPRE_IJVector *xref_ptr, const Stats *stats)
+uint32_t
+hypredrv_LinearSystemSetReferenceSolution(hypredrv_t *hypredrv, HYPRE_IJVector vector)
 {
-   char        xref_filename[MAX_FILENAME_LENGTH] = {0};
-   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   char        log_name_buf[32];
-   const char *log_object_name =
+   uint32_t               status      = ERROR_NONE;
+   LinearSystemVectorView input       = {0};
+   HYPRE_IJVector         replacement = vector;
+   const LS_args         *args        = hypredrv->iargs ? &hypredrv->iargs->ls : NULL;
+   if (!vector)
+   {
+      int source = args ? (args->xref_filename[0] || args->xref_basename[0]) : -1;
+      int minimum, maximum;
+      MPI_Allreduce(&source, &minimum, 1, MPI_INT, MPI_MIN, hypredrv->comm);
+      MPI_Allreduce(&source, &maximum, 1, MPI_INT, MPI_MAX, hypredrv->comm);
+      if (!args)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Reference solution(NULL): input arguments not parsed");
+      }
+      if (minimum != maximum)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Reference solution source must agree across ranks");
+      }
+      if (hypredrv_DistributedErrorStateSync(hypredrv->comm))
+         return hypredrv_ErrorCodeGet();
+      if (!source) return ERROR_NONE;
+      char filename[MAX_FILENAME_LENGTH] = {0};
+      int  ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+      hypredrv_ObjectApplyRuntimeSettings(hypredrv);
+      if (!LinearSystemDataFilenameResolve(args, ls_id, args->xref_filename,
+                                           args->xref_basename, filename,
+                                           sizeof(filename)))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAddInvalidFilename(filename);
+         status = ERROR_FILE_NOT_FOUND;
+      }
+      HYPREDRV_LOG_OBJECTF(3, hypredrv, "reference solution source: '%s'", filename);
+      status |= LinearSystemBuildRecordError("Reference solution", HYPRE_GetError());
+      if ((status = LinearSystemBuildStatusSync(hypredrv->comm, status)) != ERROR_NONE)
+         goto cleanup;
+      status = LinearSystemIJVectorReadFromFile(
+         hypredrv->comm, filename, LinearSystemMemoryLocationGet(args), &replacement);
+      if (status) goto cleanup;
+   }
+   status = LinearSystemReadVector(replacement, "Reference solution", &input);
+   if (!status && hypre_ParVectorNumVectors(input.par) != 1)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Reference solution must have one component");
+      status = ERROR_INVALID_VAL;
+   }
+   if (!status)
+   {
+      hypredrv_ObjectPrepareExecution(hypredrv, replacement, 0);
+      status = LinearSystemBuildRecordError("Reference solution", HYPRE_GetError());
+   }
+
+cleanup:
+   /* Existing handles are attached locally; configured reads are collective. */
+   status |= hypredrv_HypreConsumeErrors(vector ? MPI_COMM_SELF : hypredrv->comm);
+   if (!vector) status = LinearSystemBuildStatusSync(hypredrv->comm, status);
+   if (!status)
+   {
+      const hypredrv_VectorUpdate update = {
+         &hypredrv->vec_xref, replacement,
+         !vector || hypredrv_AttachmentIsOwned(hypredrv->lib_mode)};
+      hypredrv_ObjectInstallVectors(hypredrv, 1, &update);
+      replacement = NULL;
+   }
+   if (!vector && replacement) HYPRE_IJVectorDestroy(replacement);
+   return status;
+}
+
+/* Reset is local, like a vector copy. The selected pair can change after
+ * guess registration through SetSolution, so verify that pair before writing. */
+uint32_t
+hypredrv_LinearSystemResetInitialGuess(hypredrv_t *hypredrv)
+{
+   LinearSystemVectorView guess = {0}, solution = {0};
+   uint32_t               status = ERROR_NONE;
+   Stats                 *stats  = hypredrv->stats;
+   int                    ls_id  = hypredrv_StatsGetLinearSystemID(stats);
+   char                   log_name_buf[32];
+   const char            *name =
       hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "reference solution setup begin");
-
-   /* Keep the existing reference solution (e.g., rhs_mode = randsol) unless a file is
-    * explicitly requested. */
-   /* GCOVR_EXCL_BR_START */
-   if (args->xref_filename[0] == '\0' && args->xref_basename[0] == '\0')
-   /* GCOVR_EXCL_BR_STOP */
+   if (ls_id < 0) ls_id = 0;
+   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
+   HYPREDRV_LOG_COMMF(3, hypredrv->comm, name, ls_id, "initial guess reset begin");
+   if (!hypredrv->vec_x0.handle || !hypredrv->vec_x.handle)
    {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "reference solution setup skipped (no file override)");
-      return;
-   }
-
-   /* GCOVR_EXCL_START */
-   if (*xref_ptr)
-   {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "reference solution override: replacing existing xref");
-      HYPRE_IJVectorDestroy(*xref_ptr);
-      *xref_ptr = NULL;
-   }
-   /* GCOVR_EXCL_STOP */
-
-   /* GCOVR_EXCL_START */
-   if (!LinearSystemDataFilenameResolve(args, ls_id, args->xref_filename,
-                                        args->xref_basename, xref_filename,
-                                        sizeof(xref_filename)))
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAddInvalidFilename("");
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "reference solution filename resolution failed");
-      return;
-   }
-   /* GCOVR_EXCL_STOP */
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "reference solution source: '%s'",
-                      xref_filename);
-
-   if (!LinearSystemIJVectorReadFromFile(comm, xref_filename,
-                                         LinearSystemMemoryLocationGet(args), xref_ptr))
-   {
-      return;
-   }
-
-   /* Check if hypre had problems reading the input file */
-   /* GCOVR_EXCL_START */
-   if (HYPRE_GetError())
-   {
-      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-      hypredrv_ErrorMsgAddInvalidFilename(xref_filename);
-      *xref_ptr = NULL;
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "reference solution read failed from '%s'", xref_filename);
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "ResetInitialGuess: guess and working solution must be set first");
+      status = ERROR_INVALID_VAL;
    }
    else
    {
-      LinearSystemIJVectorMigrate(args, *xref_ptr);
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "reference solution loaded from '%s'", xref_filename);
+      status =
+         LinearSystemVectorViewGet(hypredrv->vec_x0.handle, "ResetInitialGuess", &guess);
+      status |= LinearSystemVectorViewGet(hypredrv->vec_x.handle, "ResetInitialGuess",
+                                          &solution);
    }
-   /* GCOVR_EXCL_STOP */
-
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "reference solution setup end");
-}
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemResetInitialGuess
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemResetInitialGuess(HYPRE_IJVector x0_ptr, HYPRE_IJVector x_ptr,
-                                       Stats *stats)
-{
-   HYPRE_ParVector par_x0 = NULL, par_x = NULL;
-   void           *obj_x0 = NULL, *obj_x = NULL;
-   MPI_Comm        log_comm = hypredrv_IJVectorComm(x_ptr ? x_ptr : x0_ptr);
-   /* Reports the current system rather than the next one; clamp so a NULL stats
-    * logs system 0 instead of -1. */
-   int         ls_id = hypredrv_StatsGetLinearSystemID(stats);
-   char        log_name_buf[32];
-   const char *log_object_name =
-      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
-
-   ls_id = (ls_id < 0) ? 0 : ls_id;
-
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
-   HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset begin");
-
-   /* GCOVR_EXCL_BR_START */
-   if (!x0_ptr || !x_ptr) /* GCOVR_EXCL_BR_STOP */
+   if (!status && !LinearSystemVectorLayoutsMatch(&guess, &solution))
    {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
-      HYPREDRV_LOG_COMMF(2, log_comm, log_object_name, ls_id,
-                         "initial guess reset failed: x0 or x is NULL");
-      return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("ResetInitialGuess: guess and solution layouts must match");
+      status = ERROR_INVALID_VAL;
    }
-
-   /* TODO: implement HYPRE_IJVectorCopy in hypre */
-   HYPRE_IJVectorGetObject(x0_ptr, &obj_x0);
-   HYPRE_IJVectorGetObject(x_ptr, &obj_x);
-   par_x0 = (HYPRE_ParVector)obj_x0;
-   par_x  = (HYPRE_ParVector)obj_x;
-
-   /* Skip the copy when x0 and x alias the same vector or the same data
-    * (e.g. library-mode callers that pass one vector as both initial guess
-    * and solution). */
-   if (par_x0 != par_x &&
-       hypre_VectorData(hypre_ParVectorLocalVector((hypre_ParVector *)par_x0)) !=
-          hypre_VectorData(hypre_ParVectorLocalVector((hypre_ParVector *)par_x)))
+   if (!status && guess.par != solution.par &&
+       hypre_VectorData(hypre_ParVectorLocalVector(guess.par)) !=
+          hypre_VectorData(hypre_ParVectorLocalVector(solution.par)))
    {
-      HYPRE_ParVectorCopy(par_x0, par_x);
+      LINSYS_HYPRE_CALL(
+         "ResetInitialGuess",
+         HYPRE_ParVectorCopy((HYPRE_ParVector)guess.par, (HYPRE_ParVector)solution.par));
    }
-
+   if (!status)
+   {
+      hypredrv_ScalingApplyToVector(hypredrv->scaling_ctx, hypredrv->vec_x.handle,
+                                    SCALING_VECTOR_INITIAL_GUESS);
+   }
+   hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
    hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "reset_x0");
-   HYPREDRV_LOG_COMMF(3, log_comm, log_object_name, ls_id, "initial guess reset end");
+   HYPREDRV_LOG_COMMF(3, hypredrv->comm, name, ls_id, "initial guess reset end");
+   return hypredrv_ErrorCodeGet();
 }
+
+#undef LINSYS_HYPRE_CALL
 
 /*-----------------------------------------------------------------------------
  * hypredrv_LinearSystemLogBlockFrobenius
@@ -2946,182 +3097,242 @@ cleanup:
  * hypredrv_LinearSystemSetPrecMatrix
  *-----------------------------------------------------------------------------*/
 
-/* Preconditioner matrix drawn from an LSSeq sequence file. When it names the
- * same file and system as the main sequence matrix, that matrix is shared
- * rather than read twice. */
-static void
-LinearSystemSetPrecMatrixFromSequence(MPI_Comm comm, const LS_args *args,
-                                      HYPRE_IJMatrix mat, HYPRE_IJMatrix *precmat_ptr,
-                                      const char *log_object_name, int ls_id)
+uint32_t
+hypredrv_LinearSystemSetPrecMatrix(hypredrv_t *hypredrv, HYPRE_IJMatrix mat)
 {
-   int precmat_ls_id = args->precmat_sequence_system_id >= 0
-                          ? (int)args->precmat_sequence_system_id
-                          : ls_id;
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                      "preconditioner matrix source: sequence file '%s', system %d",
-                      args->precmat_sequence_filename, precmat_ls_id);
-
-   if (mat && args->sequence_filename[0] != '\0' &&
-       !strcmp(args->precmat_sequence_filename, args->sequence_filename) &&
-       precmat_ls_id == ls_id)
+   MPI_Comm comm = hypredrv->comm;
+   if (!hypredrv->iargs)
    {
-      if (*precmat_ptr && *precmat_ptr != mat)
-      {
-         HYPRE_IJMatrixDestroy(*precmat_ptr);
-      }
-      *precmat_ptr = mat;
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "preconditioner matrix source: reusing main sequence matrix");
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "preconditioner matrix setup end");
-      return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner matrix input requires parsed arguments");
    }
-
-   if (*precmat_ptr && *precmat_ptr != mat)
+   if (mat)
    {
-      HYPRE_IJMatrixDestroy(*precmat_ptr);
+      /* External registration remains local. Configured reads below are collective. */
+      if (hypredrv_ErrorCodeActive()) return hypredrv_ErrorCodeGet();
+      uint32_t status = hypredrv_IJMatrixValidate(mat, "SetPrecMatrix");
+      if (!status) hypredrv_ObjectPrepareExecution(hypredrv, mat, 1);
+      status |= hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
+      if (status) return status;
+      hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_M, mat,
+                                   hypredrv_AttachmentIsOwned(hypredrv->lib_mode));
+      hypredrv->precmat_sequence_cache_args = NULL;
+      return hypredrv_ErrorCodeGet();
    }
-   *precmat_ptr = NULL;
+   hypredrv_HypreConsumeErrors(comm);
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
 
-   if (!hypredrv_LSSeqReadMatrix(comm, args->precmat_sequence_filename, precmat_ls_id,
-                                 LinearSystemMemoryLocationGet(args), precmat_ptr))
-   {
-      HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                         "preconditioner matrix read failed from sequence file '%s', "
-                         "system %d",
-                         args->precmat_sequence_filename, precmat_ls_id);
-      return;
-   }
-
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "preconditioner matrix setup end");
-   return;
-}
-
-void
-hypredrv_LinearSystemSetPrecMatrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix mat,
-                                   HYPRE_IJMatrix *precmat_ptr, const Stats *stats)
-{
-   char        matrix_filename[MAX_FILENAME_LENGTH] = {0};
-   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
    char        log_name_buf[32];
    const char *log_object_name =
-      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
+      hypredrv_StatsGetLogObjectName(hypredrv->stats, log_name_buf, sizeof(log_name_buf));
+   const LS_args *args          = &hypredrv->iargs->ls;
+   int            ls_id         = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   int            precmat_ls_id = args->precmat_sequence_system_id >= 0
+                                     ? (int)args->precmat_sequence_system_id
+                                     : ls_id;
+   enum
+   {
+      MAIN,
+      FILE_INPUT,
+      SEQUENCE
+   };
+   int  source = MAIN;
+   bool fixed_sequence =
+      args->precmat_sequence_filename[0] && args->precmat_sequence_system_id >= 0;
+   char matrix_filename[MAX_FILENAME_LENGTH] = {0};
+   if (args->precmat_sequence_filename[0])
+   {
+      if (!args->sequence_filename[0] ||
+          strcmp(args->precmat_sequence_filename, args->sequence_filename) ||
+          precmat_ls_id != ls_id)
+         source = SEQUENCE;
+   }
+   else
+   {
+      char main_filename[MAX_FILENAME_LENGTH] = {0};
+      LinearSystemDataFilenameResolve(args, ls_id, args->precmat_filename,
+                                      args->precmat_basename, matrix_filename,
+                                      sizeof(matrix_filename));
+      LinearSystemDataFilenameResolve(args, ls_id, args->matrix_filename,
+                                      args->matrix_basename, main_filename,
+                                      sizeof(main_filename));
+      if (matrix_filename[0] && strcmp(matrix_filename, main_filename))
+         source = FILE_INPUT;
+   }
+   int request[] = {source, source == SEQUENCE ? precmat_ls_id : 0, fixed_sequence};
+   int minimum[3], maximum[3];
+   MPI_Allreduce(request, minimum, 3, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 3, MPI_INT, MPI_MAX, comm);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1] || minimum[2] != maximum[2])
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Preconditioner matrix source and system index must agree across ranks");
+   }
+   if (source == MAIN && !hypredrv->mat_A.handle)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Default preconditioner matrix requires an installed system matrix");
+   }
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
+
+   int cached = fixed_sequence && LinearSystemHasCachedPrecMatrix(hypredrv);
+   MPI_Allreduce(MPI_IN_PLACE, &cached, 1, MPI_INT, MPI_MIN, comm);
+   if (cached)
+   {
+      HYPREDRV_LOG_OBJECTF(
+         3, hypredrv,
+         "reusing fixed preconditioner matrix from sequence file '%s', system %d",
+         args->precmat_sequence_filename, precmat_ls_id);
+      return hypredrv_ErrorCodeGet();
+   }
+
+   hypredrv_ObjectApplyRuntimeSettings(hypredrv);
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                       "preconditioner matrix setup begin");
-
-   if (args->precmat_sequence_filename[0] != '\0')
+   HYPRE_IJMatrix replacement = NULL;
+   if (source == MAIN)
    {
-      LinearSystemSetPrecMatrixFromSequence(comm, args, mat, precmat_ptr, log_object_name,
-                                            ls_id);
-      return;
-   }
-
-   LinearSystemDataFilenameResolve(args, ls_id, args->precmat_filename,
-                                   args->precmat_basename, matrix_filename,
-                                   sizeof(matrix_filename));
-   char main_filename[MAX_FILENAME_LENGTH] = {0};
-   LinearSystemDataFilenameResolve(args, ls_id, args->matrix_filename,
-                                   args->matrix_basename, main_filename,
-                                   sizeof(main_filename));
-
-   if (*precmat_ptr && *precmat_ptr != mat)
-   {
-      HYPRE_IJMatrixDestroy(*precmat_ptr);
-   }
-   *precmat_ptr = NULL;
-   if (matrix_filename[0] == '\0' || !strcmp(matrix_filename, main_filename))
-   {
-      *precmat_ptr = mat;
+      replacement = hypredrv->mat_A.handle;
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "preconditioner matrix source: reusing main matrix");
+                         "preconditioner matrix source: reusing main %smatrix",
+                         args->precmat_sequence_filename[0] ? "sequence " : "");
+   }
+   else if (source == SEQUENCE)
+   {
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                         "preconditioner matrix source: sequence file '%s', system %d",
+                         args->precmat_sequence_filename, precmat_ls_id);
+      hypredrv_LSSeqReadMatrix(comm, args->precmat_sequence_filename, precmat_ls_id,
+                               LinearSystemMemoryLocationGet(args), &replacement);
    }
    else
    {
       HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
                          "preconditioner matrix source: '%s'", matrix_filename);
-      if (!LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, precmat_ptr))
-      {
-         *precmat_ptr = NULL;
-         HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                            "preconditioner matrix read failed from '%s'",
-                            matrix_filename);
-         return;
-      }
+      LinearSystemIJMatrixReadFromFile(comm, args, matrix_filename, &replacement);
    }
-
+   hypredrv_HypreConsumeErrors(comm);
+   if (hypredrv_DistributedErrorStateSync(comm))
+   {
+      if (replacement && replacement != hypredrv->mat_A.handle)
+         HYPRE_IJMatrixDestroy(replacement);
+      HYPREDRV_LOG_COMMF(
+         2, comm, log_object_name, ls_id, "preconditioner matrix read failed from '%s'",
+         source == SEQUENCE ? args->precmat_sequence_filename : matrix_filename);
+      return hypredrv_ErrorCodeGet();
+   }
+   hypredrv_ObjectReplaceMatrix(hypredrv, &hypredrv->mat_M, replacement,
+                                replacement != hypredrv->mat_A.handle);
+   hypredrv->precmat_sequence_cache_args =
+      fixed_sequence && hypredrv->mat_M.owned ? hypredrv->iargs : NULL;
    HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "preconditioner matrix setup end");
+   return hypredrv_ErrorCodeGet();
 }
 
-/*-----------------------------------------------------------------------------
- * hypredrv_LinearSystemReadDofmap
- *-----------------------------------------------------------------------------*/
-
-void
-hypredrv_LinearSystemReadDofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap_ptr,
-                                Stats *stats)
+uint32_t
+hypredrv_LinearSystemSetDofmap(hypredrv_t *hypredrv, hypredrv_DofmapSource source,
+                               int size, int num_dof_types, const int *labels)
 {
-   int         ls_id = hypredrv_StatsGetLinearSystemID(stats) + 1;
-   char        log_name_buf[32];
-   const char *log_object_name =
-      hypredrv_StatsGetLogObjectName(stats, log_name_buf, sizeof(log_name_buf));
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read begin");
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
-
-   /* Destroy pre-existing dofmap */
-   if (*dofmap_ptr)
+   MPI_Comm comm = hypredrv->comm;
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
+   const LS_args *args      = hypredrv->iargs ? &hypredrv->iargs->ls : NULL;
+   int            file_kind = 0;
+   if (source == DOFMAP_FROM_INPUT && args)
    {
-      hypredrv_IntArrayDestroy(dofmap_ptr);
+      if (args->sequence_filename[0]) file_kind = 2;
+      else if (args->dofmap_filename[0] || args->dofmap_basename[0]) file_kind = 1;
    }
-
-   if (args->sequence_filename[0] != '\0')
+   int request[] = {(int)source, file_kind}, minimum[2], maximum[2];
+   MPI_Allreduce(request, minimum, 2, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(request, maximum, 2, MPI_INT, MPI_MAX, comm);
+   if (minimum[0] != maximum[0] || minimum[1] != maximum[1] ||
+       source < DOFMAP_FROM_ARRAY || source > DOFMAP_FROM_INPUT ||
+       (source == DOFMAP_FROM_INPUT && !args))
    {
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
-                         "dofmap source: sequence file '%s'", args->sequence_filename);
-      /* GCOVR_EXCL_START */
-      if (!hypredrv_LSSeqReadDofmap(comm, args->sequence_filename, ls_id, dofmap_ptr))
-      {
-         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
-         HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                            "dofmap read failed from sequence source");
-         return;
-      }
-      /* GCOVR_EXCL_STOP */
-      hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read end");
-      return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Dofmap sources must agree across ranks; configured input "
+                           "requires parsed arguments");
    }
+   if (hypredrv_DistributedErrorStateSync(comm)) return hypredrv_ErrorCodeGet();
 
-   if (args->dofmap_filename[0] == '\0' && args->dofmap_basename[0] == '\0')
+   IntArray *replacement = NULL;
+   if (source == DOFMAP_FROM_ARRAY)
    {
-      *dofmap_ptr = hypredrv_IntArrayCreate(0);
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap source: default empty");
+      hypredrv_IntArrayBuild(comm, size, labels, &replacement);
+   }
+   else if (source == DOFMAP_INTERLEAVED || source == DOFMAP_CONTIGUOUS)
+   {
+      hypredrv_IntArrayBuildPattern(comm, size, num_dof_types,
+                                    source == DOFMAP_INTERLEAVED, &replacement);
    }
    else
    {
-      char dofmap_filename[MAX_FILENAME_LENGTH] = {0};
-
-      LinearSystemDataFilenameResolve(args, ls_id, args->dofmap_filename,
-                                      args->dofmap_basename, dofmap_filename,
-                                      sizeof(dofmap_filename));
-
-      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap source: '%s'",
-                         dofmap_filename);
-
-      hypredrv_IntArrayParRead(comm, dofmap_filename, dofmap_ptr);
-      if (hypredrv_ErrorCodeActive())
+      int         ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+      char        log_name_buf[32];
+      const char *log_object_name = hypredrv_StatsGetLogObjectName(
+         hypredrv->stats, log_name_buf, sizeof(log_name_buf));
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read begin");
+      hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_BEGIN, "dofmap");
+      if (file_kind == 2)
       {
-         hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
-         HYPREDRV_LOG_COMMF(2, comm, log_object_name, ls_id,
-                            "dofmap read failed from '%s'", dofmap_filename);
-         return;
+         HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                            "dofmap source: sequence file '%s'", args->sequence_filename);
+         hypredrv_LSSeqReadDofmap(comm, args->sequence_filename, ls_id, &replacement);
       }
+      else if (file_kind == 1)
+      {
+         char filename[MAX_FILENAME_LENGTH] = {0};
+         if (!LinearSystemDataFilenameResolve(args, ls_id, args->dofmap_filename,
+                                              args->dofmap_basename, filename,
+                                              sizeof(filename)))
+         {
+            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         }
+         if (!hypredrv_DistributedErrorStateSync(comm))
+         {
+            HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap source: '%s'",
+                               filename);
+            hypredrv_IntArrayParRead(comm, filename, &replacement);
+         }
+      }
+      else
+      {
+         replacement = hypredrv_IntArrayCreate(0);
+         HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id,
+                            "dofmap source: default empty");
+      }
+      hypredrv_StatsAnnotate(hypredrv->stats, HYPREDRV_ANNOTATE_END, "dofmap");
+      HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read end");
+   }
+   if (!replacement && !hypredrv_ErrorCodeActive())
+      hypredrv_AllocationFailure("Failed to construct the DOF map");
+   if (hypredrv_DistributedErrorStateSync(comm))
+   {
+      hypredrv_IntArrayDestroy(&replacement);
+      return hypredrv_ErrorCodeGet();
    }
 
-   hypredrv_StatsAnnotate(stats, HYPREDRV_ANNOTATE_END, "dofmap");
-   HYPREDRV_LOG_COMMF(3, comm, log_object_name, ls_id, "dofmap read end");
-
-   /* TODO: Print how many dofs types we have (min, max, avg, sum) across ranks
-    */
+   IntArray *previous = hypredrv->dofmap;
+   int       changed =
+      !previous || previous->size != replacement->size ||
+      memcmp(previous->data, replacement->data, replacement->size * sizeof(int)) != 0;
+   int any_changed = 0;
+   MPI_Allreduce(&changed, &any_changed, 1, MPI_INT, MPI_MAX, comm);
+   if (any_changed && hypredrv->precon &&
+       (hypredrv->precon->method == PRECON_MGR ||
+        (hypredrv->precon->method == PRECON_BOOMERAMG &&
+         hypredrv->iargs->precon.amg.coarsening.num_functions > 1)))
+   {
+      hypredrv_ObjectDestroySolvers(hypredrv);
+   }
+   hypredrv_VectorTagsClear(hypredrv);
+   hypredrv->dofmap = replacement;
+   if (hypredrv->iargs && hypredrv->iargs->precon_method == PRECON_MGR)
+      hypredrv_MGRSetDofmap(&hypredrv->iargs->precon.mgr, replacement);
+   hypredrv_IntArrayDestroy(&previous);
+   return ERROR_NONE;
 }
 
 /*-----------------------------------------------------------------------------
@@ -3691,74 +3902,5 @@ hypredrv_LinearSystemLoadTimestepSchedule(const char *filename, IntArray **times
       *timestep_ids = ids;
    }
    *timestep_starts = starts;
-   return ERROR_NONE;
-}
-
-/*-----------------------------------------------------------------------------
- * Check (debug builds only) that CSR row ranges form a contiguous partition
- *-----------------------------------------------------------------------------*/
-
-uint32_t
-hypredrv_LinearSystemValidateCSRPartitionDebug(MPI_Comm comm, HYPRE_BigInt row_start,
-                                               HYPRE_BigInt row_end)
-{
-#ifdef HYPREDRV_USING_DEBUG
-   int comm_size = 1;
-   if (MPI_Comm_size(comm, &comm_size) != MPI_SUCCESS)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd(
-         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to query MPI communicator");
-      return ERROR_UNKNOWN;
-   }
-
-   const long long local_range[2] = {(long long)row_start, (long long)row_end};
-   long long      *all_ranges = hypre_TAlloc(long long, 2 * comm_size, HYPRE_MEMORY_HOST);
-   if (!all_ranges)
-   {
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd(
-         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to allocate debug "
-         "partition scratch space");
-      return ERROR_UNKNOWN;
-   }
-
-   int mpi_ierr =
-      MPI_Allgather(local_range, 2, MPI_LONG_LONG, all_ranges, 2, MPI_LONG_LONG, comm);
-   if (mpi_ierr != MPI_SUCCESS)
-   {
-      hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
-      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
-      hypredrv_ErrorMsgAdd(
-         "HYPREDRV_LinearSystemSetMatrixFromCSR: failed to gather debug row "
-         "partition");
-      return ERROR_UNKNOWN;
-   }
-
-   long long expected_start = 0;
-   for (int rank = 0; rank < comm_size; rank++)
-   {
-      size_t    range_idx = (size_t)2 * (size_t)rank;
-      long long start     = all_ranges[range_idx];
-      long long end       = all_ranges[range_idx + 1];
-      if (end < start || start != expected_start)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "HYPREDRV_LinearSystemSetMatrixFromCSR: rank %d row range [%lld, %lld] "
-            "does not continue the global partition at %lld",
-            rank, start, end, expected_start);
-         hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
-         return ERROR_INVALID_VAL;
-      }
-      expected_start = end + 1;
-   }
-
-   hypre_TFree(all_ranges, HYPRE_MEMORY_HOST);
-#else
-   (void)comm;
-   (void)row_start;
-   (void)row_end;
-#endif
    return ERROR_NONE;
 }

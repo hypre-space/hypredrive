@@ -51,21 +51,36 @@ test_StrArrayEntryExists(void)
 static void
 test_StrIntMapArray_basic(void)
 {
-   /* Test OnOffMapArray */
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "on"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "off"));
-   ASSERT_FALSE(
-      hypredrv_StrIntMapArrayDomainEntryExists(STR_INT_MAP_ARRAY_CREATE_ON_OFF(), "invalid"));
+   StrIntMapArray map = STR_INT_MAP_ARRAY_CREATE_ON_OFF();
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "on", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "off", NULL));
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "invalid", NULL));
 }
 
 static void
-test_StrIntMapArrayGetImage(void)
+test_StrIntMapArrayLookup(void)
 {
    StrIntMapArray map = STR_INT_MAP_ARRAY_CREATE_ON_OFF();
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "on"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "off"), 0);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "1"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "invalid"), INT_MIN);
+   ASSERT_MAP_VALUE(map, "on", 1);
+   ASSERT_MAP_VALUE(map, "off", 0);
+   ASSERT_MAP_VALUE(map, "1", 1);
+   ASSERT_MAP_VALUE(map, " +01 \t", 1);
+   int         value     = 17;
+   const char *invalid[] = {NULL,
+                            "",
+                            "invalid",
+                            "2",
+                            "1junk",
+                            "1.0",
+                            "999999999999999999999",
+                            "-999999999999999999999"};
+   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++)
+   {
+      ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, invalid[i], &value));
+      ASSERT_EQ(value, 17);
+   }
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(STR_INT_MAP_ARRAY_VOID(), "on", &value));
+   ASSERT_EQ(value, 17);
 }
 
 static void
@@ -74,8 +89,33 @@ test_StrIntMapArray_empty_string_key(void)
    static const StrIntMap map[] = {{"", -1}, {"none", -1}, {"jacobi", 7}};
    StrIntMapArray         arr   = STR_INT_MAP_ARRAY_CREATE(map);
 
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(arr, ""));
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(arr, ""), -1);
+   ASSERT_MAP_VALUE(arr, "", -1);
+   ASSERT_MAP_VALUE(arr, "none", -1);
+   ASSERT_MAP_VALUE(arr, " -1 ", -1);
+   ASSERT_MAP_VALUE(arr, "jacobi", 7);
+   ASSERT_MAP_VALUE(arr, "7", 7);
+}
+
+static void
+test_StrIntMapArray_minimum_value(void)
+{
+   static const StrIntMap entries[] = {{"minimum", INT_MIN}, {"maximum", INT_MAX}};
+   StrIntMapArray         map       = STR_INT_MAP_ARRAY_CREATE(entries);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "minimum", NULL));
+   ASSERT_MAP_VALUE(map, "minimum", INT_MIN);
+   ASSERT_MAP_VALUE(map, "maximum", INT_MAX);
+   char minimum[32], maximum[32];
+   snprintf(minimum, sizeof(minimum), "%d", INT_MIN);
+   snprintf(maximum, sizeof(maximum), "%d", INT_MAX);
+   ASSERT_MAP_VALUE(map, minimum, INT_MIN);
+   ASSERT_MAP_VALUE(map, maximum, INT_MAX);
+   hypredrv_ErrorCodeSet(ERROR_MISSING_KEY);
+   ASSERT_MAP_VALUE(map, "minimum", INT_MIN);
+   int value = 17;
+   ASSERT_FALSE(hypredrv_StrIntMapArrayLookup(map, "invalid", &value));
+   ASSERT_EQ(value, 17);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_KEY);
+   hypredrv_ErrorStateReset();
 }
 
 static void
@@ -336,13 +376,13 @@ test_IntArray_patterns_and_invalid_sizes(void)
    const int interleaved[] = {0, 1, 2, 0, 1, 2};
    const int contiguous[]  = {0, 0, 1, 1, 2, 2};
    hypredrv_ErrorStateReset();
-   hypredrv_IntArrayBuildInterleaved(MPI_COMM_WORLD, 2, 3, &array);
+   hypredrv_IntArrayBuildPattern(MPI_COMM_WORLD, 2, 3, true, &array);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(array);
    ASSERT_EQ_SIZE(array->size, 6);
    for (int i = 0; i < 6; i++) ASSERT_EQ(array->data[i], interleaved[i]);
    hypredrv_IntArrayDestroy(&array);
-   hypredrv_IntArrayBuildContiguous(MPI_COMM_WORLD, 2, 3, &array);
+   hypredrv_IntArrayBuildPattern(MPI_COMM_WORLD, 2, 3, false, &array);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(array);
    ASSERT_EQ_SIZE(array->size, 6);
@@ -357,11 +397,11 @@ test_IntArray_patterns_and_invalid_sizes(void)
    ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
    ASSERT_NULL(array);
    hypredrv_ErrorStateReset();
-   hypredrv_IntArrayBuildContiguous(MPI_COMM_WORLD, bad_rank ? -1 : 0, 2, &array);
+   hypredrv_IntArrayBuildPattern(MPI_COMM_WORLD, bad_rank ? -1 : 0, 2, false, &array);
    ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
    ASSERT_NULL(array);
    hypredrv_ErrorStateReset();
-   hypredrv_IntArrayBuildInterleaved(MPI_COMM_WORLD, bad_rank ? INT_MAX : 0, 2, &array);
+   hypredrv_IntArrayBuildPattern(MPI_COMM_WORLD, bad_rank ? INT_MAX : 0, 2, true, &array);
    ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_OUT_OF_BOUNDS);
    ASSERT_NULL(array);
    hypredrv_ErrorStateReset();
@@ -473,8 +513,9 @@ main(int argc, char **argv)
    RUN_TEST(test_StrArrayEntryExists);
 
    RUN_TEST(test_StrIntMapArray_basic);
-   RUN_TEST(test_StrIntMapArrayGetImage);
+   RUN_TEST(test_StrIntMapArrayLookup);
    RUN_TEST(test_StrIntMapArray_empty_string_key);
+   RUN_TEST(test_StrIntMapArray_minimum_value);
    RUN_TEST(test_StrIntMapArrayDomainToString_groups_aliases);
    RUN_TEST(test_StrIntMapArrayDomainToString_no_printable_entries);
    RUN_TEST(test_StrArrayToString_basic);

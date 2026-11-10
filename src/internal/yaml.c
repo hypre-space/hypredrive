@@ -8,6 +8,7 @@
 #include "internal/yaml.h"
 #include <limits.h>
 #include <stdint.h>
+#include "internal/field.h"
 
 /*-----------------------------------------------------------------------------
  * gcovr branch coverage: GCOVR_EXCL_BR_START / GCOVR_EXCL_BR_STOP regions mark branch
@@ -376,9 +377,9 @@ YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
 {
    node->avail_vals = map_array;
 
-   if (hypredrv_StrIntMapArrayDomainEntryExists(map_array, node->val))
+   int mapped;
+   if (hypredrv_StrIntMapArrayLookup(map_array, node->val, &mapped))
    {
-      int mapped = hypredrv_StrIntMapArrayGetImage(map_array, node->val);
       int length = snprintf(NULL, 0, "%d", mapped) + 1;
 
       if (!node->mapped_val)
@@ -401,32 +402,32 @@ YAMLnodeValidateMap(YAMLnode *node, StrIntMapArray map_array)
    }
 }
 
-void
-hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
+size_t
+hypredrv_YAMLnodeValidateSchema(YAMLnode *node, StrArray keys,
                                 YAMLGetValidValuesFunc get_vals)
 {
    /* GCOVR_EXCL_BR_START */
    if (!node) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return SIZE_MAX;
    }
 
    /* Accept sequence item nodes ("-") as valid without schema checking */
    if (!strcmp(node->key, "-"))
    {
       YAML_NODE_SET_VALID(node);
-      return;
+      return SIZE_MAX;
    }
 
    if ((node->valid == YAML_NODE_INVALID_DIVISOR) ||
        (node->valid == YAML_NODE_INVALID_INDENT))
    {
-      return;
+      return SIZE_MAX;
    }
 
-   StrArray keys = get_keys();
-   if (hypredrv_StrArrayEntryExists(keys, node->key))
+   for (size_t i = 0; i < keys.size; i++)
    {
+      if (strcmp(keys.data[i], node->key)) continue;
       StrIntMapArray map_array_key = get_vals(node->key);
       if (map_array_key.size > 0)
       {
@@ -440,34 +441,35 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, YAMLGetValidKeysFunc get_keys,
          }
          node->valid = YAML_NODE_VALID;
       }
-      return;
+      return node->valid == YAML_NODE_VALID ? i : SIZE_MAX;
    }
 
    StrIntMapArray map_array_type = get_vals("type");
    if (!strcmp(node->key, "type") && map_array_type.size > 0)
    {
       YAMLnodeValidateMap(node, map_array_type);
-      return;
+      return SIZE_MAX;
    }
 
    /* Record the valid-key list so tree validation can report it. Safe because
-    * every get_keys() returns a StrArray over static, call-stable storage. */
+    * key lists refer to static, call-stable storage. */
    node->avail_keys = keys;
    node->valid      = YAML_NODE_INVALID_KEY;
+   return SIZE_MAX;
 }
 
-void
-hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc get_keys,
-                            YAMLGetValidValuesFunc get_vals,
-                            YAMLSetFieldByNameFunc set_field,
-                            const YAMLnode        *ignored_child)
+bool
+hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, StrArray keys,
+                            YAMLGetValidValuesFunc get_vals, const FieldOffsetMap *fields,
+                            const YAMLnode *ignored_child)
 {
    /* GCOVR_EXCL_BR_START */
    if (!parent) /* GCOVR_EXCL_BR_STOP */
    {
-      return;
+      return false;
    }
 
+   bool valid = true;
    if (parent->children)
    {
       /* Case 1: Nested structure - iterate over children */
@@ -477,32 +479,22 @@ hypredrv_YAMLSetArgsGeneric(void *args, YAMLnode *parent, YAMLGetValidKeysFunc g
          {
             continue;
          }
-         hypredrv_YAMLnodeValidateSchema(child, get_keys, get_vals);
-         if (child->valid == YAML_NODE_VALID)
-         {
-            set_field(args, child);
-         }
+         size_t field = hypredrv_YAMLnodeValidateSchema(child, keys, get_vals);
+         valid &= child->valid == YAML_NODE_VALID;
+         if (field != SIZE_MAX) hypredrv_FieldOffsetMapSet(&fields[field], args, child);
       }
    }
    else
    {
       /* Case 2: Flat value - treat val as "type" */
-      char *temp_key = strdup(parent->key);
-      free(parent->key);
-      parent->key = (char *)malloc(5 * sizeof(char));
-      snprintf(parent->key, 5, "type");
-
-      hypredrv_YAMLnodeValidateSchema(parent, get_keys, get_vals);
-      if (parent->valid == YAML_NODE_VALID)
-      {
-         set_field(args, parent);
-      }
-
-      /* Restore original key */
-      free(parent->key);
-      parent->key = strdup(temp_key);
-      free(temp_key);
+      char *original_key = parent->key;
+      parent->key        = "type";
+      size_t field       = hypredrv_YAMLnodeValidateSchema(parent, keys, get_vals);
+      valid              = parent->valid == YAML_NODE_VALID;
+      if (field != SIZE_MAX) hypredrv_FieldOffsetMapSet(&fields[field], args, parent);
+      parent->key = original_key;
    }
+   return valid;
 }
 
 /*-----------------------------------------------------------------------------
@@ -2099,12 +2091,15 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
    }
 
    YAMLnode *child = node->children;
-   while (child)
+   while (child && !hypredrv_ErrorCodeActive())
    {
       YAMLnode *next = child->next;
 
       if (!strcmp(child->key, "include"))
       {
+         /* A broadcast document can be usable without its source directory on
+          * this rank. Resolve the root only when a file include needs it. */
+         if (!ctx->root_dir && !YAMLincludeContextInit(ctx, base_dir)) return;
          const int include_level = child->level;
          /* Collect include paths */
          char **paths   = NULL;
@@ -2675,13 +2670,8 @@ hypredrv_YAMLtreeExpandIncludes(YAMLtree *tree, const char *base_dir)
    /* GCOVR_EXCL_BR_START */
    const char *dir = (base_dir && strlen(base_dir) > 0) ? base_dir : ".";
    /* GCOVR_EXCL_BR_STOP */
-   int                bi = tree->base_indent > 0 ? tree->base_indent : 2;
-   YAMLincludeContext ctx;
-   /* GCOVR_EXCL_BR_START */
-   if (!YAMLincludeContextInit(&ctx, dir)) /* GCOVR_EXCL_BR_STOP */
-   {
-      return;
-   }
+   int                bi  = tree->base_indent > 0 ? tree->base_indent : 2;
+   YAMLincludeContext ctx = {0};
    YAMLnodeExpandIncludesRecursive(tree->root, dir, bi, &ctx);
    YAMLincludeContextDestroy(&ctx);
    YAMLnodeFlagMixedContent(tree->root);
@@ -3180,54 +3170,4 @@ hypredrv_YAMLnodeFindChildValueByKey(YAMLnode *parent, const char *key)
    YAMLnode *child = hypredrv_YAMLnodeFindChildByKey(parent, key);
 
    return child ? child->val : NULL;
-}
-
-/*-----------------------------------------------------------------------------
- * hypredrv_YAMLnodeCollectSequenceItems
- *
- * Collect direct children with key == "-" into a newly allocated array.
- * Caller owns the array (but NOT the nodes) and must free it.
- * Returns the count (may be zero).
- *-----------------------------------------------------------------------------*/
-
-int
-hypredrv_YAMLnodeCollectSequenceItems(YAMLnode *parent, YAMLnode ***items_out)
-{
-   /* GCOVR_EXCL_BR_START */
-   if (!parent || !items_out) /* GCOVR_EXCL_BR_STOP */
-   {
-      return 0;
-   }
-
-   int        count = 0;
-   YAMLnode **arr   = NULL;
-
-   /* First pass: count */
-   YAML_NODE_ITERATE(parent, child)
-   {
-      if (!strcmp(child->key, "-"))
-      {
-         count++;
-      }
-   }
-
-   if (count == 0)
-   {
-      *items_out = NULL;
-      return 0;
-   }
-
-   arr     = (YAMLnode **)malloc((size_t)count * sizeof(YAMLnode *));
-   int idx = 0;
-   YAML_NODE_ITERATE(parent, child)
-   {
-      /* GCOVR_EXCL_BR_START */
-      if (!strcmp(child->key, "-")) /* GCOVR_EXCL_BR_STOP */
-      {
-         arr[idx++] = child;
-      }
-   }
-
-   *items_out = arr;
-   return count;
 }

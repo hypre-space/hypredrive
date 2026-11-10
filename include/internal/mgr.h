@@ -215,6 +215,8 @@ int  hypredrv_MGRValidateOuterSolver(const MGR_args *, int, const char *);
 void hypredrv_MGRSetCoarseSchur(MGR_args *, const hypredrv_MatrixSlot *);
 void hypredrv_MGRCreate(MPI_Comm, MGR_args *, HYPRE_Solver *, const struct Stats_struct *,
                         int);
+HYPRE_Int hypredrv_MGRSetup(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                            HYPRE_ParVector);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
 void hypredrv_MGRRefreshComponentsForSetup(MGR_args *, HYPRE_Solver, const IntArray *,
                                            const struct Stats_struct *, int);
@@ -225,12 +227,8 @@ void hypredrv_MGRCountKeepFlags(const MGR_args *, int *, int *, int *);
 void hypredrv_MGRDestroyCachedSolvers(MGR_args *, int);
 /* Release the parent, cached components and owned marker buffer together.
  * A NULL parent (or parent pointer) also supports partial-create cleanup. */
-void         hypredrv_MGRDestroy(MGR_args *, HYPRE_Solver *, int);
-void         hypredrv_MGRForgetCachedSolvers(MGR_args *);
-void         hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
-int          hypredrv_MGRNestedFRelaxWrapperIsLive(HYPRE_Solver);
-HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperGetInner(HYPRE_Solver);
-HYPRE_Solver hypredrv_MGRNestedFRelaxWrapperDetachInner(HYPRE_Solver);
-void         hypredrv_MGRNestedFRelaxWrapperFree(HYPRE_Solver *);
+void hypredrv_MGRDestroy(MGR_args *, HYPRE_Solver *, int);
+void hypredrv_MGRForgetCachedSolvers(MGR_args *);
+void hypredrv_MGRDestroyNestedSolverArgs(MGR_args *);
 
 #endif /* MGR_HEADER */

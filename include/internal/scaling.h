@@ -32,6 +32,8 @@ typedef enum scaling_vector_kind_enum
 {
    SCALING_VECTOR_RHS,
    SCALING_VECTOR_UNKNOWN,
+   /* A replacement guess follows the working solution's current scale. */
+   SCALING_VECTOR_INITIAL_GUESS,
 } scaling_vector_kind_t;
 
 /*--------------------------------------------------------------------------
@@ -49,19 +51,7 @@ typedef struct Scaling_args_struct
  * Scaling context (runtime state)
  *--------------------------------------------------------------------------*/
 
-typedef struct Scaling_context_struct
-{
-   int             enabled;
-   scaling_type_t  type;
-   int             is_applied; /* 1 if any caller-owned system object is scaled */
-   int             matrices_are_scaled;
-   int             rhs_is_scaled;
-   int             x_is_scaled;
-   HYPRE_Complex   scalar_factor;  /* for rhs_l2 */
-   HYPRE_ParVector scaling_vector; /* for dofmap */
-   HYPRE_ParVector inverse_scaling_vector;
-   HYPRE_IJVector  scaling_ijvec; /* IJ wrapper for scaling_vector */
-} Scaling_context;
+typedef struct Scaling_context_struct Scaling_context;
 
 /*--------------------------------------------------------------------------
  * Public prototypes
@@ -72,18 +62,21 @@ StrIntMapArray hypredrv_ScalingGetValidValues(const char *);
 void hypredrv_ScalingSetDefaultArgs(Scaling_args *);
 void hypredrv_ScalingSetArgsFromYAML(void *, YAMLnode *);
 
-void hypredrv_ScalingContextCreate(MPI_Comm, Scaling_context **);
-void hypredrv_ScalingContextDestroy(MPI_Comm, Scaling_context **);
+void hypredrv_ScalingContextDestroy(Scaling_context **);
+bool hypredrv_ScalingIsApplied(const Scaling_context *);
 
-void hypredrv_ScalingCompute(MPI_Comm, Scaling_args *, Scaling_context *, HYPRE_IJMatrix,
-                             HYPRE_IJVector, IntArray *);
+/* Prepare a fresh, validated runtime and publish it only after collective success.
+ * Failure preserves the installed runtime. Restore applied scaling before preparing
+ * another system. Disabled/unsupported scaling installs no runtime. */
+bool hypredrv_ScalingPrepare(MPI_Comm, const Scaling_args *, Scaling_context **,
+                             HYPRE_IJMatrix, HYPRE_IJVector, const IntArray *);
 void hypredrv_ScalingApplyToVector(const Scaling_context *, HYPRE_IJVector,
                                    scaling_vector_kind_t);
 void hypredrv_ScalingUndoOnVector(const Scaling_context *, HYPRE_IJVector,
                                   scaling_vector_kind_t);
 void hypredrv_ScalingApplyToSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
                                    HYPRE_IJVector, HYPRE_IJVector);
-void hypredrv_ScalingUndoOnSystem(Scaling_context *, HYPRE_IJMatrix, HYPRE_IJMatrix,
-                                  HYPRE_IJVector, HYPRE_IJVector);
+/* Undo the exact handles bound by the preceding system apply. */
+void hypredrv_ScalingUndoOnSystem(Scaling_context *);
 
 #endif /* SCALING_HEADER */

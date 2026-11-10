@@ -96,24 +96,28 @@ test_HypreConsumeErrors_classifies_soft_and_hard_flags(void)
    HYPRE_ClearAllErrors();
 
    /* Also exercise the no-sticky-error path that drains buffered messages. */
-   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
+   ASSERT_EQ(hypredrv_HypreConsumeErrors(MPI_COMM_WORLD), ERROR_NONE);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypre_error(HYPRE_ERROR_CONV);
-   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
+   ASSERT_EQ(hypredrv_HypreConsumeErrors(MPI_COMM_WORLD), ERROR_NONE);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(HYPRE_GetError(), 0);
 
    hypre_error(HYPRE_ERROR_ARG);
-   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
+   ASSERT_EQ(hypredrv_HypreConsumeErrors(MPI_COMM_WORLD), ERROR_NONE);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_EQ(HYPRE_GetError(), 0);
 
    hypre_error(HYPRE_ERROR_GENERIC | HYPRE_ERROR_ARG);
-   hypredrv_HypreConsumeErrors(MPI_COMM_WORLD);
+   ASSERT_EQ(hypredrv_HypreConsumeErrors(MPI_COMM_WORLD), ERROR_HYPRE_INTERNAL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
    ASSERT_EQ(HYPRE_GetError(), 0);
 
+   hypredrv_ErrorStateReset();
+   hypredrv_ErrorCodeSet(ERROR_MISSING_DOFMAP);
+   ASSERT_EQ(hypredrv_HypreConsumeErrors(MPI_COMM_WORLD), ERROR_NONE);
+   ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_DOFMAP);
    hypredrv_ErrorStateReset();
    TEST_HYPRE_FINALIZE();
 }

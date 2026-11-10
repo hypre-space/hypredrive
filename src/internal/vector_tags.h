@@ -8,11 +8,12 @@
 #ifndef HYPREDRV_VECTOR_TAGS_HEADER
 #define HYPREDRV_VECTOR_TAGS_HEADER
 
-#include "HYPREDRV.h"
+#include <stdint.h>
+#include "internal/object_fwd.h"
 
 typedef struct hypredrv_VectorTags hypredrv_VectorTags;
 
-uint32_t hypredrv_VectorTagsSet(HYPREDRV_t);
-void     hypredrv_VectorTagsClear(HYPREDRV_t);
+uint32_t hypredrv_VectorTagsSet(hypredrv_t *);
+void     hypredrv_VectorTagsClear(hypredrv_t *);
 
 #endif

@@ -630,9 +630,9 @@ hypredrv_IntArrayBuild(MPI_Comm comm, int size, const int *dofmap,
    *int_array_ptr = array;
 }
 
-static void
-IntArrayBuildPattern(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                     bool interleaved, IntArray **int_array_ptr)
+void
+hypredrv_IntArrayBuildPattern(MPI_Comm comm, int num_local_blocks, int num_dof_types,
+                              bool interleaved, IntArray **int_array_ptr)
 {
    *int_array_ptr = NULL;
    uint32_t error = ERROR_NONE;
@@ -664,20 +664,6 @@ IntArrayBuildPattern(MPI_Comm comm, int num_local_blocks, int num_dof_types,
       hypredrv_IntArrayDestroy(&array);
    }
    *int_array_ptr = array;
-}
-
-void
-hypredrv_IntArrayBuildInterleaved(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                                  IntArray **int_array_ptr)
-{
-   IntArrayBuildPattern(comm, num_local_blocks, num_dof_types, true, int_array_ptr);
-}
-
-void
-hypredrv_IntArrayBuildContiguous(MPI_Comm comm, int num_local_blocks, int num_dof_types,
-                                 IntArray **int_array_ptr)
-{
-   IntArrayBuildPattern(comm, num_local_blocks, num_dof_types, false, int_array_ptr);
 }
 
 /*--------------------------------------------------------------------------
@@ -741,36 +727,27 @@ hypredrv_StrArrayEntryExists(const StrArray valid, const char *string)
 }
 
 /*--------------------------------------------------------------------------
- * hypredrv_StrIntMapArrayGetImage
+ * hypredrv_StrIntMapArrayLookup
  *--------------------------------------------------------------------------*/
 
-int
-hypredrv_StrIntMapArrayGetImage(const StrIntMapArray valid, const char *string)
+bool
+hypredrv_StrIntMapArrayLookup(const StrIntMapArray valid, const char *string, int *value)
 {
    int number = 0;
    if (!string)
    {
-      return INT_MIN;
+      return false;
    }
    bool is_integer = hypredrv_ParseInt(string, &number);
    for (size_t i = 0; i < valid.size; i++)
    {
       if (is_integer ? valid.data[i].num == number : !strcmp(valid.data[i].str, string))
       {
-         return valid.data[i].num;
+         if (value) *value = valid.data[i].num;
+         return true;
       }
    }
-   return INT_MIN;
-}
-
-/*--------------------------------------------------------------------------
- * hypredrv_StrIntMapArrayDomainEntryExists
- *--------------------------------------------------------------------------*/
-
-bool
-hypredrv_StrIntMapArrayDomainEntryExists(const StrIntMapArray valid, const char *string)
-{
-   return (hypredrv_StrIntMapArrayGetImage(valid, string) > INT_MIN) != 0;
+   return false;
 }
 
 /*--------------------------------------------------------------------------

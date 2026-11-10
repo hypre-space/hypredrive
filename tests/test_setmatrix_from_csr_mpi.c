@@ -24,6 +24,7 @@
 #include "HYPREDRV.h"
 #include "internal/error.h"
 #include "internal/linsys.h"
+#include "object.h"
 #include "test_helpers.h"
 
 static const char *kBaseYAML =
@@ -212,7 +213,6 @@ test_rank_local_array_errors_are_collective(void)
    HYPRE_Real   values[] = {2.0, 2.0};
    for (int failure = 0; failure < 4; failure++)
    {
-      HYPRE_IJMatrix      matrix = NULL;
       const HYPRE_BigInt *ptr    = rank == 0 ? (failure == 0   ? NULL
                                                 : failure == 1 ? bad
                                                                : good)
@@ -224,11 +224,10 @@ test_rank_local_array_errors_are_collective(void)
             (HYPRE_BigInt)((UINTMAX_C(1) << (sizeof(HYPRE_BigInt) * CHAR_BIT - 1)) - 1);
          lower = -upper;
       }
-      uint32_t code = hypredrv_LinearSystemBuildMatrixFromCSR(
-         MPI_COMM_WORLD, HYPRE_MEMORY_HOST, lower, upper, ptr, cols,
-         rank == 0 && failure == 2 ? NULL : values, &matrix);
+      uint32_t code = HYPREDRV_LinearSystemSetMatrixFromCSR(
+         obj, lower, upper, ptr, cols, rank == 0 && failure == 2 ? NULL : values);
       assert_collective_invalid_input(code);
-      ASSERT_NULL(matrix);
+      ASSERT_NULL(obj->mat_A.handle);
    }
    ASSERT_EQ(
       HYPREDRV_LinearSystemSetMatrixFromCSR(obj, first, first + 1, good, cols, values),
@@ -236,6 +235,25 @@ test_rank_local_array_errors_are_collective(void)
    HYPRE_Matrix old_matrix = NULL, current_matrix = NULL;
    HYPRE_Vector old_rhs = NULL, current_rhs = NULL;
    ASSERT_EQ(HYPREDRV_LinearSystemGetMatrix(obj, &old_matrix), ERROR_NONE);
+   int size = 0;
+   MPI_Comm_size(MPI_COMM_WORLD, &size);
+   for (int shift = -1; shift <= 1; shift += 2)
+   {
+      /* Break a middle boundary when possible; later ranks must reject it too. */
+      HYPRE_BigInt lower = first + (rank == size / 2 ? shift : 0);
+      HYPRE_BigInt upper = lower + 1;
+      assert_collective_invalid_input(
+         HYPREDRV_LinearSystemSetMatrixFromCSR(obj, lower, upper, good, cols, values));
+      ASSERT_PTR_EQ(obj->mat_A.handle, old_matrix);
+   }
+   HYPRE_BigInt bad_columns[] = {first, rank == size - 1 ? 2 * size : first + 1};
+   assert_collective_invalid_input(HYPREDRV_LinearSystemSetMatrixFromCSR(
+      obj, first, first + 1, good, bad_columns, values));
+   ASSERT_PTR_EQ(obj->mat_A.handle, old_matrix);
+   assert_collective_invalid_input(HYPREDRV_LinearSystemSetMatrixFromCSR(
+      obj, first + 1, first + 2, good, cols, values));
+   ASSERT_PTR_EQ(obj->mat_A.handle, old_matrix);
+
    assert_collective_invalid_input(HYPREDRV_LinearSystemSetMatrixFromCSR(
       obj, first, first + 1, rank == 0 ? bad : good, cols, values));
    ASSERT_EQ(HYPREDRV_LinearSystemGetMatrix(obj, &current_matrix), ERROR_NONE);
