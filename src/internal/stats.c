@@ -894,8 +894,8 @@ hypredrv_StatsAnnotate(Stats *stats, HYPREDRV_AnnotateAction action, const char 
 static char *
 FormatAnnotationNameWithId(const char *name, int id)
 {
-   const char *safe_name                         = name ? name : "(null)";
-   char        suffix[sizeof(id) * CHAR_BIT + 2] = "";
+   const char *safe_name                           = name ? name : "(null)";
+   char        suffix[(sizeof(id) * CHAR_BIT) + 2] = "";
    size_t suffix_size = id >= 0 ? (size_t)snprintf(suffix, sizeof(suffix), "-%d", id) : 0;
    size_t name_size   = strlen(safe_name);
    if (name_size > SIZE_MAX - suffix_size - 1)
@@ -906,7 +906,7 @@ FormatAnnotationNameWithId(const char *name, int id)
    char *formatted = hypredrv_Malloc(name_size + suffix_size + 1, "annotation name");
    if (formatted)
    {
-      memcpy(formatted, safe_name, name_size);
+      strcpy(formatted, safe_name);
       memcpy(formatted + name_size, suffix, suffix_size + 1);
    }
    return formatted;
@@ -927,6 +927,115 @@ hypredrv_StatsAnnotateWithId(Stats *stats, HYPREDRV_AnnotateAction action,
    uint32_t status = AnnotateFormatted(stats, action, formatted_name);
    free(formatted_name);
    return status;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: open the annotation at a nesting level (takes the formatted name)
+ *--------------------------------------------------------------------------*/
+
+static void
+StatsLevelBegin(Stats *stats, int level, char *formatted_name, int id)
+{
+   AnnotationContext *context = &stats->level_stack[level];
+
+   context->name          = formatted_name;
+   context->level         = level;
+   context->annotation_id = id >= 0 ? id : -1;
+   context->start_time    = MPI_Wtime();
+   if (level >= stats->level_depth) stats->level_depth = level + 1;
+   stats->level_active |= 1 << level;
+   stats->level_current_id[level]++;
+   stats->level_solve_start[level] = stats->ls_counter;
+   /* Child IDs are local to their parent annotation. */
+   for (int child = level + 1; child < STATS_MAX_LEVELS; child++)
+      stats->level_current_id[child] = 0;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: check that an end request names the active annotation at a level
+ *--------------------------------------------------------------------------*/
+
+static int
+StatsLevelEndMatches(const AnnotationContext *context, int level,
+                     const char *formatted_name, int id)
+{
+   int request_id = id >= 0 ? id : -1;
+   int matches =
+      context->annotation_id == request_id && strcmp(context->name, formatted_name) == 0;
+   if (!matches)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Level %d annotation mismatch: expected '%s' (id %d), got '%s' (id %d)", level,
+         context->name, context->annotation_id, formatted_name, request_id);
+   }
+   return matches;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: grow the entry storage of a level so that index `count` is valid
+ *--------------------------------------------------------------------------*/
+
+static uint32_t
+StatsLevelEntriesReserve(Stats *stats, int level, int count)
+{
+   if (count < stats->level_capacity[level]) return ERROR_NONE;
+   if (count == INT_MAX)
+      return hypredrv_AllocationFailure("Too many annotation entries at level %d", level);
+   int capacity     = stats->level_capacity[level];
+   int new_capacity = STATS_TIMESTEP_CAPACITY;
+   if (capacity > INT_MAX / 2) new_capacity = INT_MAX;
+   else if (capacity > 0) new_capacity = capacity * 2;
+   if (new_capacity <= count) new_capacity = count + 1;
+   if ((size_t)new_capacity > SIZE_MAX / sizeof(LevelEntry))
+      return hypredrv_AllocationFailure("Annotation entries exceed addressable storage");
+   LevelEntry *entries =
+      realloc(stats->level_entries[level], (size_t)new_capacity * sizeof(*entries));
+   if (!entries) return hypredrv_AllocationFailure("Memory allocation failed");
+   stats->level_entries[level]  = entries;
+   stats->level_capacity[level] = new_capacity;
+   return ERROR_NONE;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: record the entry of the active annotation at a level
+ *--------------------------------------------------------------------------*/
+
+static uint32_t
+StatsLevelRecordEntry(Stats *stats, int level)
+{
+   if (!(stats->level_active & (1 << level))) return ERROR_NONE;
+
+   int      count  = stats->level_count[level];
+   uint32_t status = StatsLevelEntriesReserve(stats, level, count);
+   if (status) return status;
+   stats->level_entries[level][count] =
+      (LevelEntry){.id          = stats->level_current_id[level],
+                   .solve_start = stats->level_solve_start[level],
+                   .solve_end   = stats->ls_counter};
+   stats->level_count[level]++;
+   stats->level_active &= ~(1 << level);
+   return ERROR_NONE;
+}
+
+/*--------------------------------------------------------------------------
+ * Helper: release the annotation context at a level and trim the depth
+ *--------------------------------------------------------------------------*/
+
+static void
+StatsLevelRelease(Stats *stats, int level)
+{
+   AnnotationContext *context = &stats->level_stack[level];
+
+   free(context->name);
+   context->name          = NULL;
+   context->level         = -1;
+   context->annotation_id = -1;
+   if (level == stats->level_depth - 1)
+   {
+      while (stats->level_depth > 0 && !stats->level_stack[stats->level_depth - 1].name)
+         stats->level_depth--;
+   }
 }
 
 /*--------------------------------------------------------------------------
@@ -963,74 +1072,20 @@ hypredrv_StatsAnnotateLevelWithId(Stats *stats, HYPREDRV_AnnotateAction action, 
    if (!formatted_name) return ERROR_ALLOCATION;
    if (action == HYPREDRV_ANNOTATE_BEGIN)
    {
-      context->name          = formatted_name;
-      context->level         = level;
-      context->annotation_id = id >= 0 ? id : -1;
-      context->start_time    = MPI_Wtime();
-      if (level >= stats->level_depth) stats->level_depth = level + 1;
-      stats->level_active |= 1 << level;
-      stats->level_current_id[level]++;
-      stats->level_solve_start[level] = stats->ls_counter;
-      /* Child IDs are local to their parent annotation. */
-      for (int child = level + 1; child < STATS_MAX_LEVELS; child++)
-         stats->level_current_id[child] = 0;
+      StatsLevelBegin(stats, level, formatted_name, id);
       return ERROR_NONE;
    }
 
-   int request_id = id >= 0 ? id : -1;
-   int matches =
-      context->annotation_id == request_id && strcmp(context->name, formatted_name) == 0;
-   if (!matches)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd(
-         "Level %d annotation mismatch: expected '%s' (id %d), got '%s' (id %d)", level,
-         context->name, context->annotation_id, formatted_name, request_id);
-   }
+   int matches = StatsLevelEndMatches(context, level, formatted_name, id);
    free(formatted_name);
    if (!matches) return ERROR_INVALID_VAL;
 
-   if (stats->level_active & (1 << level))
-   {
-      int count = stats->level_count[level];
-      if (count >= stats->level_capacity[level])
-      {
-         if (count == INT_MAX)
-            return hypredrv_AllocationFailure("Too many annotation entries at level %d",
-                                              level);
-         int capacity     = stats->level_capacity[level];
-         int new_capacity = capacity > INT_MAX / 2 ? INT_MAX
-                            : capacity > 0         ? capacity * 2
-                                                   : STATS_TIMESTEP_CAPACITY;
-         if (new_capacity <= count) new_capacity = count + 1;
-         if ((size_t)new_capacity > SIZE_MAX / sizeof(LevelEntry))
-            return hypredrv_AllocationFailure(
-               "Annotation entries exceed addressable storage");
-         LevelEntry *entries =
-            realloc(stats->level_entries[level], (size_t)new_capacity * sizeof(*entries));
-         if (!entries) return hypredrv_AllocationFailure("Memory allocation failed");
-         stats->level_entries[level]  = entries;
-         stats->level_capacity[level] = new_capacity;
-      }
-      stats->level_entries[level][count] =
-         (LevelEntry){.id          = stats->level_current_id[level],
-                      .solve_start = stats->level_solve_start[level],
-                      .solve_end   = stats->ls_counter};
-      stats->level_count[level]++;
-      stats->level_active &= ~(1 << level);
-   }
+   uint32_t status = StatsLevelRecordEntry(stats, level);
+   if (status) return status;
 
    /* Publish the entry before releasing the active context. A failed allocation
     * leaves the annotation open so the caller can retry its end operation. */
-   free(context->name);
-   context->name          = NULL;
-   context->level         = -1;
-   context->annotation_id = -1;
-   if (level == stats->level_depth - 1)
-   {
-      while (stats->level_depth > 0 && !stats->level_stack[stats->level_depth - 1].name)
-         stats->level_depth--;
-   }
+   StatsLevelRelease(stats, level);
    return ERROR_NONE;
 }
 

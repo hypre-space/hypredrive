@@ -110,7 +110,7 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
    StrIntMapArray solvers = hypredrv_SolverGetValidTypeIntMap();
    if (kind == HYPREDRV_PRESET_SOLVER &&
        (hypredrv_StrIntMapArrayLookup(solvers, norm, NULL) ||
-        (strcmp(name, norm) && hypredrv_StrIntMapArrayLookup(solvers, name, NULL))))
+        (strcmp(name, norm) != 0 && hypredrv_StrIntMapArrayLookup(solvers, name, NULL))))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Preset '%s' conflicts with a built-in solver", name);
@@ -152,7 +152,11 @@ hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text, const char
       g_user_presets     = tmp;
       g_cap_user_presets = new_cap;
    }
-   g_user_presets[g_num_user_presets++] = (Preset){norm, dup_text, dup_help, kind};
+   Preset *entry = &g_user_presets[g_num_user_presets++];
+   entry->name   = norm;
+   entry->text   = dup_text;
+   entry->help   = dup_help;
+   entry->kind   = kind;
    return ERROR_NONE;
 }
 

@@ -427,7 +427,7 @@ hypredrv_YAMLnodeValidateSchema(YAMLnode *node, StrArray keys,
 
    for (size_t i = 0; i < keys.size; i++)
    {
-      if (strcmp(keys.data[i], node->key)) continue;
+      if (strcmp(keys.data[i], node->key) != 0) continue;
       StrIntMapArray map_array_key = get_vals(node->key);
       if (map_array_key.size > 0)
       {
@@ -2167,7 +2167,7 @@ YAMLnodeExpandIncludesRecursive(YAMLnode *node, const char *base_dir, int base_i
                      inc_tree->root, inc_dir ? inc_dir : base_dir, inc_base_indent, ctx);
                   /* GCOVR_EXCL_BR_STOP */
                }
-               if (hypredrv_ErrorCodeActive())
+               if (hypredrv_ErrorCodeActive() || !inc_tree)
                {
                   hypredrv_YAMLtreeDestroy(&inc_tree);
                   free(inc_text);

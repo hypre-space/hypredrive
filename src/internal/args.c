@@ -281,6 +281,20 @@ DropActivePrecon(hypredrv_t *hypredrv, const char *discard_reason)
    hypredrv->precon_is_setup = false;
 }
 
+/* Collective: true when every rank passed the same `count` (at most 3) values. */
+static bool
+RanksAgreeOnInts(MPI_Comm comm, const int *values, int count)
+{
+   int minimum[3], maximum[3];
+   MPI_Allreduce(values, minimum, count, MPI_INT, MPI_MIN, comm);
+   MPI_Allreduce(values, maximum, count, MPI_INT, MPI_MAX, comm);
+   for (int i = 0; i < count; i++)
+   {
+      if (minimum[i] != maximum[i]) return false;
+   }
+   return true;
+}
+
 static YAMLnode *
 InputArgsFindUniqueRootSection(const YAMLtree *tree, const char *key)
 {
@@ -418,15 +432,198 @@ PreconParseMethodResolve(const char *name, hypredrv_error_t error_code,
    return 1;
 }
 
+/* Shape of a preconditioner section: a scalar method name (value_only), one
+ * typed block or preset (body), or a sequence of variants. With mixed_types,
+ * each sequence item names its own type; otherwise all share `method`. */
+typedef struct
+{
+   YAMLnode *body;
+   YAMLnode *sequence;
+   size_t    num_variants;
+   bool      value_only;
+   bool      mixed_types;
+   precon_t  method;
+} PreconLayout;
+
+static size_t
+PreconCountSequenceItems(const YAMLnode *node)
+{
+   size_t count = 0;
+   YAML_NODE_ITERATE(node, child)
+   {
+      if (!strcmp(child->key, "-")) count++;
+   }
+   return count;
+}
+
+/* A mapping section must hold exactly one type key besides reuse_node. */
+static YAMLnode *
+PreconFindTypedBlock(YAMLnode *parent, const YAMLnode *reuse_node)
+{
+   YAMLnode *body = NULL;
+   YAML_NODE_ITERATE(parent, child)
+   {
+      if (child == reuse_node) continue;
+      if (body)
+      {
+         hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+         hypredrv_ErrorMsgAddExtraKey(child->key);
+         return NULL;
+      }
+      body = child;
+   }
+   if (!body)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
+   }
+   return body;
+}
+
+static bool
+PreconLayoutClassify(PreconLayout *layout, YAMLnode *parent, const YAMLnode *reuse_node)
+{
+   layout->body         = parent;
+   layout->num_variants = 1;
+   layout->value_only   = parent->val[0] != '\0';
+   if (layout->value_only) return true;
+
+   layout->num_variants = PreconCountSequenceItems(parent);
+   if (layout->num_variants)
+   {
+      layout->sequence    = parent;
+      layout->mixed_types = true;
+      return true;
+   }
+
+   YAMLnode *body = PreconFindTypedBlock(parent, reuse_node);
+   layout->body   = body;
+   if (!body) return false;
+   if (strcmp(body->key, "preset") != 0)
+   {
+      layout->mixed_types  = (strcmp(body->key, "variants") == 0);
+      layout->num_variants = PreconCountSequenceItems(body);
+   }
+   if (layout->num_variants)
+   {
+      layout->sequence = body;
+   }
+   else if (layout->mixed_types)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+      hypredrv_ErrorMsgAdd("preconditioner.variants must be a sequence of variants");
+      return false;
+   }
+   else
+   {
+      layout->num_variants = 1;
+   }
+   return true;
+}
+
+/* Resolve the method shared by every variant, then mark the section nodes. */
+static bool
+PreconLayoutResolveMethod(PreconLayout *layout)
+{
+   YAMLnode *body       = layout->body;
+   bool      value_only = layout->value_only;
+   if (!layout->mixed_types && (value_only || strcmp(body->key, "preset") != 0))
+   {
+      if (!PreconParseMethodResolve(value_only ? body->val : body->key,
+                                    value_only ? ERROR_INVALID_VAL : ERROR_INVALID_KEY,
+                                    &layout->method))
+         return false;
+      YAML_NODE_SET_VALID(body);
+   }
+   if (layout->sequence) YAML_NODE_SET_VALID(layout->sequence);
+   return true;
+}
+
+static bool
+PreconVariantsAllocate(size_t num_variants, precon_t **methods, precon_args **variants)
+{
+   if (num_variants > INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+      hypredrv_ErrorMsgAdd("Too many preconditioner variants");
+      return false;
+   }
+   *methods = hypredrv_Calloc(num_variants, sizeof(**methods), "preconditioner methods");
+   *variants =
+      hypredrv_Calloc(num_variants, sizeof(**variants), "preconditioner variants");
+   return (*methods && *variants) != 0;
+}
+
+/* Parse one variant (a sequence item, or the single body) into the next slot. */
+static bool
+PreconParseVariant(PreconLayout *layout, YAMLnode *item, precon_t *methods,
+                   precon_args *variants, size_t *parsed_variants)
+{
+   YAMLnode *config = item;
+   if (layout->mixed_types)
+   {
+      if (!item->children || item->children->next)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+         hypredrv_ErrorMsgAdd(
+            "Each preconditioner variant must contain exactly one type key");
+         return false;
+      }
+      config = item->children;
+   }
+
+   bool preset = (!layout->value_only && !strcmp(config->key, "preset")) != 0;
+   if (preset)
+   {
+      if (!config->val[0])
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Preconditioner preset name is missing");
+         return false;
+      }
+   }
+   else if (layout->mixed_types &&
+            !PreconParseMethodResolve(config->key, ERROR_INVALID_KEY, &layout->method))
+   {
+      return false;
+   }
+
+   /* Include the current entry in cleanup before parsing can allocate any
+    * nested MGR configuration, even when a later field rejects the input. */
+   precon_t method = layout->method;
+   size_t   index  = (*parsed_variants)++;
+   methods[index]  = preset ? PRECON_NONE : method;
+   if (preset) PreconPresetBuildArgs(config->val, &methods[index], &variants[index]);
+   else if (layout->value_only)
+      hypredrv_PreconArgsSetDefaultsForName(method, layout->body->val, &variants[index]);
+   else hypredrv_PreconSetMethodArgs(method, &variants[index], config);
+   if (hypredrv_ErrorCodeActive()) return false;
+   if (preset) YAML_NODE_SET_VALID(config);
+   if (layout->mixed_types) YAML_NODE_SET_VALID(item);
+   return true;
+}
+
+static void
+PreconVariantsDestroy(precon_t *methods, precon_args *variants, size_t parsed_variants)
+{
+   if (variants)
+   {
+      for (size_t i = 0; i < parsed_variants; i++)
+         hypredrv_PreconArgsDestroyOwnedConfig(methods[i], &variants[i]);
+   }
+   free(methods);
+   free(variants);
+}
+
 /* Scalar, typed and sequence forms share allocation, parsing and publication.
  * YAML nodes stay borrowed; only complete argument arrays leave this operation. */
 static void
 hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
 {
-   precon_t    *methods      = NULL;
-   precon_args *variants     = NULL;
-   size_t       num_variants = 1, parsed_variants = 0;
-   YAMLnode    *parent = InputArgsFindUniqueRootSection(tree, "preconditioner");
+   precon_t    *methods         = NULL;
+   precon_args *variants        = NULL;
+   size_t       parsed_variants = 0;
+   PreconLayout layout          = {.method = PRECON_NONE};
+   YAMLnode    *parent          = InputArgsFindUniqueRootSection(tree, "preconditioner");
 
    hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
    if (!parent)
@@ -448,135 +645,20 @@ hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
       YAML_NODE_SET_VALID(reuse_node);
    }
 
-   YAMLnode *body        = parent;
-   YAMLnode *sequence    = NULL;
-   bool      value_only  = parent->val[0] != '\0';
-   bool      mixed_types = false;
-   if (!value_only)
-   {
-      num_variants = 0;
-      YAML_NODE_ITERATE(parent, child)
-      {
-         if (!strcmp(child->key, "-")) num_variants++;
-      }
-      if (num_variants)
-      {
-         sequence    = parent;
-         mixed_types = true;
-      }
-      else
-      {
-         body = NULL;
-         YAML_NODE_ITERATE(parent, child)
-         {
-            if (child == reuse_node) continue;
-            if (body)
-            {
-               hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
-               hypredrv_ErrorMsgAddExtraKey(child->key);
-               goto cleanup;
-            }
-            body = child;
-         }
-         if (!body)
-         {
-            hypredrv_ErrorCodeSet(ERROR_MISSING_PRECON);
-            goto cleanup;
-         }
-         if (strcmp(body->key, "preset"))
-         {
-            mixed_types = !strcmp(body->key, "variants");
-            YAML_NODE_ITERATE(body, child)
-            {
-               if (!strcmp(child->key, "-")) num_variants++;
-            }
-         }
-         if (num_variants)
-         {
-            sequence = body;
-         }
-         else if (mixed_types)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-            hypredrv_ErrorMsgAdd(
-               "preconditioner.variants must be a sequence of variants");
-            goto cleanup;
-         }
-         else
-         {
-            num_variants = 1;
-         }
-      }
-   }
+   if (!PreconLayoutClassify(&layout, parent, reuse_node)) goto cleanup;
+   if (!PreconLayoutResolveMethod(&layout)) goto cleanup;
+   if (!PreconVariantsAllocate(layout.num_variants, &methods, &variants)) goto cleanup;
 
-   precon_t method = PRECON_NONE;
-   if (!mixed_types && (value_only || strcmp(body->key, "preset")))
-   {
-      if (!PreconParseMethodResolve(value_only ? body->val : body->key,
-                                    value_only ? ERROR_INVALID_VAL : ERROR_INVALID_KEY,
-                                    &method))
-         goto cleanup;
-      YAML_NODE_SET_VALID(body);
-   }
-   if (sequence) YAML_NODE_SET_VALID(sequence);
-
-   if (num_variants > INT_MAX)
-   {
-      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
-      hypredrv_ErrorMsgAdd("Too many preconditioner variants");
-      goto cleanup;
-   }
-   methods  = hypredrv_Calloc(num_variants, sizeof(*methods), "preconditioner methods");
-   variants = hypredrv_Calloc(num_variants, sizeof(*variants), "preconditioner variants");
-   if (!methods || !variants) goto cleanup;
-
-   for (YAMLnode *item = sequence ? sequence->children : body; item;
+   YAMLnode *sequence = layout.sequence;
+   for (YAMLnode *item = sequence ? sequence->children : layout.body; item;
         item           = sequence ? item->next : NULL)
    {
-      if (sequence && strcmp(item->key, "-")) continue;
-      YAMLnode *config = item;
-      if (mixed_types)
-      {
-         if (!item->children || item->children->next)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-            hypredrv_ErrorMsgAdd(
-               "Each preconditioner variant must contain exactly one type key");
-            goto cleanup;
-         }
-         config = item->children;
-      }
-
-      bool preset = !value_only && !strcmp(config->key, "preset");
-      if (preset)
-      {
-         if (!config->val[0])
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Preconditioner preset name is missing");
-            goto cleanup;
-         }
-      }
-      else if (mixed_types &&
-               !PreconParseMethodResolve(config->key, ERROR_INVALID_KEY, &method))
-      {
+      if (sequence && strcmp(item->key, "-") != 0) continue;
+      if (!PreconParseVariant(&layout, item, methods, variants, &parsed_variants))
          goto cleanup;
-      }
-
-      /* Include the current entry in cleanup before parsing can allocate any
-       * nested MGR configuration, even when a later field rejects the input. */
-      size_t index   = parsed_variants++;
-      methods[index] = preset ? PRECON_NONE : method;
-      if (preset) PreconPresetBuildArgs(config->val, &methods[index], &variants[index]);
-      else if (value_only)
-         hypredrv_PreconArgsSetDefaultsForName(method, body->val, &variants[index]);
-      else hypredrv_PreconSetMethodArgs(method, &variants[index], config);
-      if (hypredrv_ErrorCodeActive()) goto cleanup;
-      if (preset) YAML_NODE_SET_VALID(config);
-      if (mixed_types) YAML_NODE_SET_VALID(item);
    }
 
-   iargs->num_precon_variants   = (int)num_variants;
+   iargs->num_precon_variants   = (int)layout.num_variants;
    iargs->active_precon_variant = 0;
    iargs->precon_methods        = methods;
    iargs->precon_variants       = variants;
@@ -586,14 +668,179 @@ hypredrv_InputArgsParsePrecon(input_args *iargs, const YAMLtree *tree)
    variants                     = NULL;
 
 cleanup:
-   if (variants)
-   {
-      for (size_t i = 0; i < parsed_variants; i++)
-         hypredrv_PreconArgsDestroyOwnedConfig(methods[i], &variants[i]);
-   }
-   free(methods);
-   free(variants);
+   PreconVariantsDestroy(methods, variants, parsed_variants);
    hypredrv_MGRSetDofLabels(NULL);
+}
+
+static void
+InputArgsValidateArgv(int argc, char **argv, input_args **args_ptr)
+{
+   if (argc < 1 || !argv || !args_ptr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Configuration parsing requires at least one argument, "
+                           "an argument vector, and an output pointer");
+      return;
+   }
+   for (int i = 0; i < argc; i++)
+   {
+      if (!argv[i])
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd("Configuration argument %d is NULL", i);
+         return;
+      }
+   }
+}
+
+/* Inline YAML takes precedence over filename suffixes, including filenames
+ * stored in YAML values or CLI overrides. Classify the source only once.
+ * Returns the index of the configuration file in argv, or -1 for inline YAML. */
+static int
+InputArgsFindConfigIndex(int argc, char **argv)
+{
+   bool inline_yaml = strchr(argv[0], '\n') != NULL;
+   for (const char *colon = strchr(argv[0], ':'); !inline_yaml && colon;
+        colon             = strchr(colon + 1, ':'))
+   {
+      inline_yaml = ((colon[1] == '\0' || colon[1] == ' ' || colon[1] == '\t') != 0);
+   }
+   if (inline_yaml) return -1;
+
+   for (int i = 0; i < argc; i++)
+   {
+      if (hypredrv_IsYAMLFilename(argv[i])) return i;
+   }
+   return -1;
+}
+
+/* Root rank only: resolve `candidate` under its own directory and read it. */
+static void
+InputArgsReadConfigFile(const char *candidate, char *config_dir, int *base_indent,
+                        size_t *text_size, char **text)
+{
+   char *dirname = NULL, *basename = NULL, *root_dir = NULL, *resolved = NULL;
+   hypredrv_SplitFilename(candidate, &dirname, &basename);
+   if (!dirname || !basename)
+   {
+      hypredrv_AllocationFailure("Failed to split configuration filename");
+   }
+   else if (!basename[0])
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid configuration file path");
+   }
+   else
+   {
+      root_dir = hypredrv_Realpath(dirname);
+      resolved = hypredrv_Realpath(candidate);
+      if (!root_dir || !resolved)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+         hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", candidate);
+      }
+      else if (!hypredrv_PathIsUnderRoot(resolved, root_dir) ||
+               !hypredrv_BinaryPathPrefixIsSafe(resolved))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("Invalid configuration file path");
+      }
+      else
+      {
+         free(dirname);
+         free(basename);
+         hypredrv_SplitFilename(resolved, &dirname, &basename);
+         if (!dirname || !basename)
+         {
+            hypredrv_AllocationFailure("Failed to split resolved configuration filename");
+         }
+         else
+         {
+            /* The validated canonical path fits MAX_FILENAME_LENGTH. Use
+             * its directory for later mapping/list include expansion too. */
+            memcpy(config_dir, dirname, strlen(dirname) + 1);
+            *base_indent = -1;
+            hypredrv_YAMLtextRead(dirname, basename, 0, base_indent, text_size, text);
+         }
+      }
+   }
+   free(resolved);
+   free(root_dir);
+   free(basename);
+   free(dirname);
+   if (*text_size > INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
+      hypredrv_ErrorMsgAdd("Configuration text exceeds the MPI broadcast count limit");
+   }
+}
+
+/* Collective. Returns false, on every rank, when any rank failed. */
+static bool
+InputArgsLoadConfigFile(MPI_Comm comm, int myid, const char *candidate, char *config_dir,
+                        int *base_indent, char **text_ptr)
+{
+   size_t text_size = 0;
+   if (!myid)
+   {
+      InputArgsReadConfigFile(candidate, config_dir, base_indent, &text_size, text_ptr);
+   }
+   if (hypredrv_DistributedErrorStateSync(comm)) return false;
+
+   /* The root owns file access. Broadcast its text and canonical directory
+    * so other ranks need not resolve the configuration in their own cwd. */
+   uint64_t text_size_u64 = (uint64_t)text_size;
+   MPI_Bcast(base_indent, 1, MPI_INT, 0, comm);
+   MPI_Bcast(&text_size_u64, 1, MPI_UINT64_T, 0, comm);
+   MPI_Bcast(config_dir, MAX_FILENAME_LENGTH, MPI_CHAR, 0, comm);
+   text_size = (size_t)text_size_u64;
+   if (!*text_ptr) *text_ptr = hypredrv_Malloc(text_size + 1, "configuration text");
+   if (hypredrv_DistributedErrorStateSync(comm)) return false;
+   (*text_ptr)[text_size] = '\0';
+   MPI_Bcast(*text_ptr, (int)text_size, MPI_CHAR, 0, comm);
+   return true;
+}
+
+/* Collective. Returns false, on every rank, when any rank failed. */
+static bool
+InputArgsCopyInlineText(MPI_Comm comm, const char *source, char **text_ptr)
+{
+   *text_ptr = strdup(source);
+   if (!*text_ptr) hypredrv_AllocationFailure("Failed to copy inline YAML configuration");
+   return (!hypredrv_DistributedErrorStateSync(comm)) != 0;
+}
+
+static void
+InputArgsApplyOverrides(int argc, char **argv, int config_idx, YAMLtree *tree)
+{
+   if (argc <= 1) return;
+   if (config_idx > 0) hypredrv_YAMLtreeUpdate(argc, argv, tree);
+   else hypredrv_YAMLtreeUpdate(argc - 1, argv + 1, tree);
+}
+
+static void
+InputArgsParseSolver(input_args *iargs, const YAMLtree *tree)
+{
+   YAMLnode *solver = InputArgsFindUniqueRootSection(tree, "solver");
+   if (!solver) return;
+
+   YAMLnode *scaling = hypredrv_YAMLnodeFindChildByKey(solver, "scaling");
+   hypredrv_SolverSetArgsFromYAML(&iargs->solver_method, &iargs->solver, solver, scaling);
+   if (scaling)
+   {
+      hypredrv_ScalingSetArgsFromYAML(&iargs->scaling, scaling);
+      YAML_NODE_SET_VALID(scaling);
+   }
+}
+
+static void
+InputArgsReportInvalidTree(int myid, YAMLtree *tree, const char *log_object_name,
+                           const char *reason)
+{
+   hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
+   hypredrv_ErrorReportSetCollective(true);
+   if (!myid) hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
+   HYPREDRV_LOGF(2, myid, log_object_name, 0, "%s", reason);
 }
 
 /*-----------------------------------------------------------------------------
@@ -608,149 +855,32 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    char       *text                            = NULL;
    YAMLtree   *tree                            = NULL;
    char        config_dir[MAX_FILENAME_LENGTH] = {0};
-   size_t      text_size                       = 0;
    int         base_indent = 2, myid = 0, config_idx = -1;
-   int         minimum, maximum;
 
    MPI_Comm_rank(comm, &myid);
    HYPREDRV_LOGF(3, myid, log_object_name, 0, "args parse begin (lib_mode=%d argc=%d)",
                  (int)lib_mode, argc);
    if (args_ptr) *args_ptr = NULL;
-   if (argc < 1 || !argv || !args_ptr)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Configuration parsing requires at least one argument, "
-                           "an argument vector, and an output pointer");
-   }
-   else
-   {
-      for (int i = 0; i < argc; i++)
-      {
-         if (!argv[i])
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-            hypredrv_ErrorMsgAdd("Configuration argument %d is NULL", i);
-            break;
-         }
-      }
-   }
+   InputArgsValidateArgv(argc, argv, args_ptr);
    if (hypredrv_DistributedErrorStateSync(comm)) goto load_failure;
 
-   /* Inline YAML takes precedence over filename suffixes, including filenames
-    * stored in YAML values or CLI overrides. Classify the source only once. */
-   bool inline_yaml = strchr(argv[0], '\n') != NULL;
-   for (const char *colon = strchr(argv[0], ':'); !inline_yaml && colon;
-        colon             = strchr(colon + 1, ':'))
-   {
-      inline_yaml = colon[1] == '\0' || colon[1] == ' ' || colon[1] == '\t';
-   }
-   if (!inline_yaml)
-   {
-      for (int i = 0; i < argc; i++)
-      {
-         if (hypredrv_IsYAMLFilename(argv[i]))
-         {
-            config_idx = i;
-            break;
-         }
-      }
-   }
+   config_idx = InputArgsFindConfigIndex(argc, argv);
 
    /* File input enters broadcasts; inline input is rank-local. No rank may
     * choose a different collective path or leave before this agreement. */
    int from_file = config_idx >= 0;
-   MPI_Allreduce(&from_file, &minimum, 1, MPI_INT, MPI_MIN, comm);
-   MPI_Allreduce(&from_file, &maximum, 1, MPI_INT, MPI_MAX, comm);
-   if (minimum != maximum)
+   if (!RanksAgreeOnInts(comm, &from_file, 1))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Configuration source kind must agree across ranks");
    }
    if (hypredrv_DistributedErrorStateSync(comm)) goto load_failure;
 
-   if (from_file)
-   {
-      if (!myid)
-      {
-         const char *candidate = argv[config_idx];
-         char       *dirname = NULL, *basename = NULL, *root_dir = NULL, *resolved = NULL;
-         hypredrv_SplitFilename(candidate, &dirname, &basename);
-         if (!dirname || !basename)
-         {
-            hypredrv_AllocationFailure("Failed to split configuration filename");
-         }
-         else if (!basename[0])
-         {
-            hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-            hypredrv_ErrorMsgAdd("Invalid configuration file path");
-         }
-         else
-         {
-            root_dir = hypredrv_Realpath(dirname);
-            resolved = hypredrv_Realpath(candidate);
-            if (!root_dir || !resolved)
-            {
-               hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
-               hypredrv_ErrorMsgAdd("Configuration file not found: '%s'", candidate);
-            }
-            else if (!hypredrv_PathIsUnderRoot(resolved, root_dir) ||
-                     !hypredrv_BinaryPathPrefixIsSafe(resolved))
-            {
-               hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-               hypredrv_ErrorMsgAdd("Invalid configuration file path");
-            }
-            else
-            {
-               free(dirname);
-               free(basename);
-               hypredrv_SplitFilename(resolved, &dirname, &basename);
-               if (!dirname || !basename)
-               {
-                  hypredrv_AllocationFailure(
-                     "Failed to split resolved configuration filename");
-               }
-               else
-               {
-                  /* The validated canonical path fits MAX_FILENAME_LENGTH. Use
-                   * its directory for later mapping/list include expansion too. */
-                  memcpy(config_dir, dirname, strlen(dirname) + 1);
-                  base_indent = -1;
-                  hypredrv_YAMLtextRead(dirname, basename, 0, &base_indent, &text_size,
-                                        &text);
-               }
-            }
-         }
-         free(resolved);
-         free(root_dir);
-         free(basename);
-         free(dirname);
-         if (text_size > INT_MAX)
-         {
-            hypredrv_ErrorCodeSet(ERROR_OUT_OF_BOUNDS);
-            hypredrv_ErrorMsgAdd(
-               "Configuration text exceeds the MPI broadcast count limit");
-         }
-      }
-      if (hypredrv_DistributedErrorStateSync(comm)) goto load_failure;
-
-      /* The root owns file access. Broadcast its text and canonical directory
-       * so other ranks need not resolve the configuration in their own cwd. */
-      uint64_t text_size_u64 = (uint64_t)text_size;
-      MPI_Bcast(&base_indent, 1, MPI_INT, 0, comm);
-      MPI_Bcast(&text_size_u64, 1, MPI_UINT64_T, 0, comm);
-      MPI_Bcast(config_dir, MAX_FILENAME_LENGTH, MPI_CHAR, 0, comm);
-      text_size = (size_t)text_size_u64;
-      if (!text) text = hypredrv_Malloc(text_size + 1, "configuration text");
-      if (hypredrv_DistributedErrorStateSync(comm)) goto load_failure;
-      text[text_size] = '\0';
-      MPI_Bcast(text, (int)text_size, MPI_CHAR, 0, comm);
-   }
-   else
-   {
-      text = strdup(argv[0]);
-      if (!text) hypredrv_AllocationFailure("Failed to copy inline YAML configuration");
-      if (hypredrv_DistributedErrorStateSync(comm)) goto load_failure;
-   }
+   bool loaded =
+      (from_file ? (int)InputArgsLoadConfigFile(comm, myid, argv[config_idx], config_dir,
+                                                &base_indent, &text)
+                 : (int)InputArgsCopyInlineText(comm, argv[0], &text)) != 0;
+   if (!loaded) goto load_failure;
    HYPREDRV_LOGF(3, myid, log_object_name, 0,
                  "config text loaded (config_idx=%d base_indent=%d)", config_idx,
                  base_indent);
@@ -760,18 +890,12 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    HYPREDRV_LOGF(3, myid, log_object_name, 0, "yaml tree build complete");
    hypredrv_YAMLtreeExpandIncludes(tree, config_dir[0] ? config_dir : ".");
    HYPREDRV_LOGF(3, myid, log_object_name, 0, "yaml include expansion complete");
-   if (argc > 1)
-   {
-      if (config_idx > 0) hypredrv_YAMLtreeUpdate(argc, argv, tree);
-      else hypredrv_YAMLtreeUpdate(argc - 1, argv + 1, tree);
-   }
+   InputArgsApplyOverrides(argc, argv, config_idx, tree);
    HYPREDRV_LOGF(3, myid, log_object_name, 0, "yaml CLI overrides applied");
    if (hypredrv_DistributedErrorStateSync(comm))
    {
-      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
-      hypredrv_ErrorReportSetCollective(true);
-      if (!myid) hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-      HYPREDRV_LOGF(2, myid, log_object_name, 0, "args parse failed: invalid YAML tree");
+      InputArgsReportInvalidTree(myid, tree, log_object_name,
+                                 "args parse failed: invalid YAML tree");
       goto cleanup;
    }
    free(text);
@@ -782,18 +906,7 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    {
       hypredrv_InputArgsParseGeneral(iargs, tree);
       hypredrv_InputArgsParseLinearSystem(iargs, tree);
-      YAMLnode *solver = InputArgsFindUniqueRootSection(tree, "solver");
-      if (solver)
-      {
-         YAMLnode *scaling = hypredrv_YAMLnodeFindChildByKey(solver, "scaling");
-         hypredrv_SolverSetArgsFromYAML(&iargs->solver_method, &iargs->solver, solver,
-                                        scaling);
-         if (scaling)
-         {
-            hypredrv_ScalingSetArgsFromYAML(&iargs->scaling, scaling);
-            YAML_NODE_SET_VALID(scaling);
-         }
-      }
+      InputArgsParseSolver(iargs, tree);
       hypredrv_InputArgsParsePrecon(iargs, tree);
    }
    HYPREDRV_LOGF(3, myid, log_object_name, 0,
@@ -801,11 +914,8 @@ hypredrv_InputArgsParseWithObjectName(MPI_Comm comm, bool lib_mode, int argc, ch
    hypredrv_YAMLtreeValidate(tree);
    if (hypredrv_DistributedErrorStateSync(comm))
    {
-      hypredrv_ErrorCodeSet(ERROR_YAML_TREE_INVALID);
-      hypredrv_ErrorReportSetCollective(true);
-      if (!myid) hypredrv_YAMLtreePrint(tree, YAML_PRINT_MODE_ANY);
-      HYPREDRV_LOGF(2, myid, log_object_name, 0,
-                    "args parse failed during post-parse validation");
+      InputArgsReportInvalidTree(myid, tree, log_object_name,
+                                 "args parse failed during post-parse validation");
       goto cleanup;
    }
    if (!myid && iargs->general.print_config_params)
@@ -847,9 +957,9 @@ hypredrv_InputArgsParseObject(hypredrv_t *hypredrv, int argc, char **argv)
    /* A complete candidate owns its schedules and parsed method storage. Finish
     * input validation on every rank before changing any live object state. */
    bool needs_timesteps =
-      replacement->general.statistics > 0 ||
-      (replacement->precon_reuse.enabled && replacement->precon_reuse.per_timestep) ||
-      hypredrv_PrintSystemNeedsTimestepSchedule(&replacement->ls.print_system);
+      (replacement->general.statistics > 0 ||
+       (replacement->precon_reuse.enabled && replacement->precon_reuse.per_timestep) ||
+       hypredrv_PrintSystemNeedsTimestepSchedule(&replacement->ls.print_system)) != 0;
    if (needs_timesteps)
    {
       if (replacement->ls.timestep_filename[0])
@@ -955,10 +1065,7 @@ hypredrv_InputArgsSetPreconVariant(hypredrv_t *hypredrv, int variant_idx)
    /* All ranks must select the same transition before any rank retires native
     * consumers. An unchanged variant follows the same validation boundary. */
    int selection[] = {variant_idx, current_variant, method};
-   int minimum[3], maximum[3];
-   MPI_Allreduce(selection, minimum, 3, MPI_INT, MPI_MIN, hypredrv->comm);
-   MPI_Allreduce(selection, maximum, 3, MPI_INT, MPI_MAX, hypredrv->comm);
-   if (minimum[0] != maximum[0] || minimum[1] != maximum[1] || minimum[2] != maximum[2])
+   if (!RanksAgreeOnInts(hypredrv->comm, selection, 3))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Preconditioner variant transition must agree across ranks");
@@ -1008,6 +1115,115 @@ hypredrv_InputArgsSetPreconVariant(hypredrv_t *hypredrv, int variant_idx)
    return hypredrv_ErrorCodeGet();
 }
 
+/* An owned preset candidate: the method and arguments for `kind`, plus variant
+ * storage when the current configuration has none yet. */
+typedef struct
+{
+   int          method;
+   precon_args  precon;
+   solver_args  solver;
+   precon_t    *new_methods;
+   precon_args *new_variants;
+} PresetReplacement;
+
+static void
+PreconVariantStorageCreate(int num_variants, precon_t **methods_ptr,
+                           precon_args **variants_ptr)
+{
+   precon_t    *new_methods  = calloc((size_t)num_variants, sizeof(*new_methods));
+   precon_args *new_variants = calloc((size_t)num_variants, sizeof(*new_variants));
+   if (!new_methods || !new_variants)
+      hypredrv_AllocationFailure("Failed to allocate preconditioner variants");
+   else
+      for (int i = 0; i < num_variants; i++) new_methods[i] = PRECON_NONE;
+   *methods_ptr  = new_methods;
+   *variants_ptr = new_variants;
+}
+
+static void
+PresetPreparePrecon(hypredrv_t *hypredrv, input_args *iargs, const char *preset,
+                    PresetReplacement *repl)
+{
+   precon_t     precon_method      = PRECON_NONE;
+   precon_args *precon_replacement = &repl->precon;
+   hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
+   PreconPresetBuildArgs(preset, &precon_method, precon_replacement);
+   hypredrv_MGRSetDofLabels(NULL);
+   repl->method = (int)precon_method;
+#ifdef HYPRE_USING_GPU
+   if (!hypredrv_ErrorCodeActive())
+      InputArgsValidateDevicePreconditioner(hypredrv, (bool)iargs->general.exec_policy,
+                                            precon_method, precon_replacement);
+#else
+   (void)hypredrv;
+#endif
+   if (!iargs->precon_methods && !hypredrv_ErrorCodeActive())
+      PreconVariantStorageCreate(iargs->num_precon_variants, &repl->new_methods,
+                                 &repl->new_variants);
+}
+
+static void
+PresetPrepareReplacement(hypredrv_t *hypredrv, input_args *iargs,
+                         hypredrv_PresetKind kind, const char *preset,
+                         PresetReplacement *repl)
+{
+   if (kind == HYPREDRV_PRESET_PRECON)
+   {
+      PresetPreparePrecon(hypredrv, iargs, preset, repl);
+   }
+   else if (kind == HYPREDRV_PRESET_SOLVER)
+   {
+      solver_t solver_method = SOLVER_PCG;
+      hypredrv_SolverArgsFromPreset(preset, &solver_method, &repl->solver);
+      repl->method = (int)solver_method;
+   }
+   else
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Unknown preset kind: %d", (int)kind);
+   }
+}
+
+/* All validation and allocation is complete. Release native borrowers
+ * before replacing their configuration, then publish the prepared value once. */
+static void
+PresetPublish(hypredrv_t *hypredrv, input_args *iargs, input_args *created,
+              hypredrv_PresetKind kind, PreconReuseState **reuse_state,
+              const PresetReplacement *repl)
+{
+   hypredrv->iargs = iargs;
+   if (created)
+   {
+      hypredrv_PreconReuseStateDestroy(&hypredrv->precon_reuse_state);
+      hypredrv->precon_reuse_state = *reuse_state;
+      *reuse_state                 = NULL;
+   }
+   hypredrv_VectorTagsClear(hypredrv);
+   hypredrv_SolverDestroy(&hypredrv->solver);
+   if (kind == HYPREDRV_PRESET_PRECON)
+   {
+      DropActivePrecon(
+         hypredrv, "discarding cached MGR handles before applying preconditioner preset");
+      hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_method, &iargs->precon);
+      if (repl->new_methods)
+      {
+         iargs->precon_methods  = repl->new_methods;
+         iargs->precon_variants = repl->new_variants;
+      }
+      int active                     = iargs->active_precon_variant;
+      iargs->precon_methods[active]  = (precon_t)repl->method;
+      iargs->precon_variants[active] = repl->precon;
+      iargs->precon_method           = (precon_t)repl->method;
+      iargs->precon                  = repl->precon;
+   }
+   else
+   {
+      iargs->solver_method = (solver_t)repl->method;
+      iargs->solver        = repl->solver;
+   }
+   if (created) InputArgsLogExecutionPolicy(hypredrv);
+}
+
 /* Prepare one owned replacement without publishing defaults or touching live
  * consumers. Both public preset operations share the same collective boundary. */
 uint32_t
@@ -1015,12 +1231,9 @@ hypredrv_InputArgsSetPreset(hypredrv_t *hypredrv, hypredrv_PresetKind kind,
                             const char *preset)
 {
    input_args       *iargs = hypredrv->iargs, *created = NULL;
-   PreconReuseState *reuse_state        = NULL;
-   precon_args       precon_replacement = {0};
-   solver_args       solver_replacement = {0};
-   precon_t         *new_methods        = NULL;
-   precon_args      *new_variants       = NULL;
-   int               method = kind == HYPREDRV_PRESET_PRECON ? PRECON_NONE : SOLVER_PCG;
+   PreconReuseState *reuse_state = NULL;
+   PresetReplacement repl        = {0};
+   repl.method = kind == HYPREDRV_PRESET_PRECON ? PRECON_NONE : SOLVER_PCG;
    if (!preset)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
@@ -1030,53 +1243,12 @@ hypredrv_InputArgsSetPreset(hypredrv_t *hypredrv, hypredrv_PresetKind kind,
    if (!iargs && !hypredrv_ErrorCodeActive())
       iargs = created = InputArgsCreate(hypredrv->lib_mode);
    if (!hypredrv_ErrorCodeActive())
-   {
-      if (kind == HYPREDRV_PRESET_PRECON)
-      {
-         precon_t precon_method = PRECON_NONE;
-         hypredrv_MGRSetDofLabels(iargs->ls.dof_labels);
-         PreconPresetBuildArgs(preset, &precon_method, &precon_replacement);
-         hypredrv_MGRSetDofLabels(NULL);
-         method = (int)precon_method;
-#ifdef HYPRE_USING_GPU
-         if (!hypredrv_ErrorCodeActive())
-            InputArgsValidateDevicePreconditioner(hypredrv,
-                                                  (bool)iargs->general.exec_policy,
-                                                  precon_method, &precon_replacement);
-#endif
-         if (!iargs->precon_methods && !hypredrv_ErrorCodeActive())
-         {
-            new_methods =
-               calloc((size_t)iargs->num_precon_variants, sizeof(*new_methods));
-            new_variants =
-               calloc((size_t)iargs->num_precon_variants, sizeof(*new_variants));
-            if (!new_methods || !new_variants)
-               hypredrv_AllocationFailure("Failed to allocate preconditioner variants");
-            else
-               for (int i = 0; i < iargs->num_precon_variants; i++)
-                  new_methods[i] = PRECON_NONE;
-         }
-      }
-      else if (kind == HYPREDRV_PRESET_SOLVER)
-      {
-         solver_t solver_method = SOLVER_PCG;
-         hypredrv_SolverArgsFromPreset(preset, &solver_method, &solver_replacement);
-         method = (int)solver_method;
-      }
-      else
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Unknown preset kind: %d", (int)kind);
-      }
-   }
+      PresetPrepareReplacement(hypredrv, iargs, kind, preset, &repl);
 
    int selection[] = {
-      (int)kind, method,
+      (int)kind, repl.method,
       kind == HYPREDRV_PRESET_PRECON && iargs ? iargs->active_precon_variant : -1};
-   int minimum[3], maximum[3];
-   MPI_Allreduce(selection, minimum, 3, MPI_INT, MPI_MIN, hypredrv->comm);
-   MPI_Allreduce(selection, maximum, 3, MPI_INT, MPI_MAX, hypredrv->comm);
-   if (minimum[0] != maximum[0] || minimum[1] != maximum[1] || minimum[2] != maximum[2])
+   if (!RanksAgreeOnInts(hypredrv->comm, selection, 3))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd(
@@ -1087,46 +1259,14 @@ hypredrv_InputArgsSetPreset(hypredrv_t *hypredrv, hypredrv_PresetKind kind,
          hypredrv_PreconReuseStateCreate(&created->precon_reuse, NULL, hypredrv->stats);
    if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) goto failure;
 
-   /* All validation and allocation is complete. Release native borrowers
-    * before replacing their configuration, then publish the prepared value once. */
-   hypredrv->iargs = iargs;
-   if (created)
-   {
-      hypredrv_PreconReuseStateDestroy(&hypredrv->precon_reuse_state);
-      hypredrv->precon_reuse_state = reuse_state;
-      reuse_state                  = NULL;
-   }
-   hypredrv_VectorTagsClear(hypredrv);
-   hypredrv_SolverDestroy(&hypredrv->solver);
-   if (kind == HYPREDRV_PRESET_PRECON)
-   {
-      DropActivePrecon(
-         hypredrv, "discarding cached MGR handles before applying preconditioner preset");
-      hypredrv_PreconArgsDestroyOwnedConfig(iargs->precon_method, &iargs->precon);
-      if (new_methods)
-      {
-         iargs->precon_methods  = new_methods;
-         iargs->precon_variants = new_variants;
-      }
-      int active                     = iargs->active_precon_variant;
-      iargs->precon_methods[active]  = (precon_t)method;
-      iargs->precon_variants[active] = precon_replacement;
-      iargs->precon_method           = (precon_t)method;
-      iargs->precon                  = precon_replacement;
-   }
-   else
-   {
-      iargs->solver_method = (solver_t)method;
-      iargs->solver        = solver_replacement;
-   }
-   if (created) InputArgsLogExecutionPolicy(hypredrv);
+   PresetPublish(hypredrv, iargs, created, kind, &reuse_state, &repl);
    return hypredrv_ErrorCodeGet();
 
 failure:
    if (kind == HYPREDRV_PRESET_PRECON)
-      hypredrv_PreconArgsDestroyOwnedConfig((precon_t)method, &precon_replacement);
-   free(new_methods);
-   free(new_variants);
+      hypredrv_PreconArgsDestroyOwnedConfig((precon_t)repl.method, &repl.precon);
+   free(repl.new_methods);
+   free(repl.new_variants);
    hypredrv_PreconReuseStateDestroy(&reuse_state);
    hypredrv_InputArgsDestroy(&created);
    return hypredrv_ErrorCodeGet();

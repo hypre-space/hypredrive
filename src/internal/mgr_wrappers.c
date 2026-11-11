@@ -145,48 +145,31 @@ MGRFRelaxEquilAllRanksOk(MPI_Comm comm, int local_ok)
    return global_ok;
 }
 
-static HYPRE_Int
-MGRFRelaxEquilWrapperSetup(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vector b_v,
-                           HYPRE_Vector x_v)
+/* This callback builds its own vectors. Admit only the operator it reads,
+ * before any rank allocates or enters the child's collective setup. */
+static int
+MGRFRelaxEquilOperatorOk(MPI_Comm comm, hypre_ParCSRMatrix *A)
 {
-   MGRFRelaxEquilWrapper *wrapper = (MGRFRelaxEquilWrapper *)wrapper_v;
-   hypre_ParCSRMatrix    *A       = (hypre_ParCSRMatrix *)A_v;
-   (void)b_v;
-   (void)x_v;
-   if (!wrapper)
-   {
-      hypre_error_w_msg(HYPRE_ERROR_GENERIC, "MGR symmetric F-block solver is NULL");
-      return HYPRE_GetError();
-   }
-   wrapper->base.fields.is_setup = 0;
-
-   /* This callback builds its own vectors. Admit only the operator it reads,
-    * before any rank allocates or enters the child's collective setup. */
    hypre_CSRMatrix *diag       = A ? hypre_ParCSRMatrixDiag(A) : NULL;
    HYPRE_Int        n          = diag ? hypre_CSRMatrixNumRows(diag) : 0;
-   HYPRE_Int       *rows       = diag ? hypre_CSRMatrixI(diag) : NULL;
-   HYPRE_Int       *cols       = diag ? hypre_CSRMatrixJ(diag) : NULL;
-   HYPRE_Complex   *data       = diag ? hypre_CSRMatrixData(diag) : NULL;
    int              comparison = MPI_UNEQUAL;
    if (A && hypre_ParCSRMatrixComm(A) != MPI_COMM_NULL)
-      MPI_Comm_compare(wrapper->comm, hypre_ParCSRMatrixComm(A), &comparison);
-   int local_ok =
-      !HYPRE_GetError() && A && diag && n >= 0 &&
-      (comparison == MPI_IDENT || comparison == MPI_CONGRUENT) &&
-      hypre_GetExecPolicy1(hypre_ParCSRMatrixMemoryLocation(A)) == HYPRE_EXEC_HOST &&
-      hypre_ParCSRMatrixGlobalNumRows(A) == hypre_ParCSRMatrixGlobalNumCols(A) &&
-      hypre_ParCSRMatrixFirstRowIndex(A) == hypre_ParCSRMatrixFirstColDiag(A) &&
-      hypre_ParCSRMatrixLastRowIndex(A) == hypre_ParCSRMatrixLastColDiag(A) &&
-      n == hypre_ParCSRMatrixLastRowIndex(A) - hypre_ParCSRMatrixFirstRowIndex(A) + 1 &&
-      (n == 0 || (rows && cols && data));
-   if (!MGRFRelaxEquilAllRanksOk(wrapper->comm, local_ok))
-   {
-      hypre_error_w_msg(HYPRE_ERROR_GENERIC,
-                        "MGR symmetric F-block scaling requires a valid CPU operator "
-                        "with aligned square partitions on its creation communicator");
-      return HYPRE_GetError();
-   }
+      MPI_Comm_compare(comm, hypre_ParCSRMatrixComm(A), &comparison);
+   return !HYPRE_GetError() && A && diag && n >= 0 &&
+          (comparison == MPI_IDENT || comparison == MPI_CONGRUENT) &&
+          hypre_GetExecPolicy1(hypre_ParCSRMatrixMemoryLocation(A)) == HYPRE_EXEC_HOST &&
+          hypre_ParCSRMatrixGlobalNumRows(A) == hypre_ParCSRMatrixGlobalNumCols(A) &&
+          hypre_ParCSRMatrixFirstRowIndex(A) == hypre_ParCSRMatrixFirstColDiag(A) &&
+          hypre_ParCSRMatrixLastRowIndex(A) == hypre_ParCSRMatrixLastColDiag(A) &&
+          n ==
+             hypre_ParCSRMatrixLastRowIndex(A) - hypre_ParCSRMatrixFirstRowIndex(A) + 1 &&
+          (n == 0 || (hypre_CSRMatrixI(diag) && hypre_CSRMatrixJ(diag) &&
+                      hypre_CSRMatrixData(diag)));
+}
 
+static MGRFRelaxEquilWork *
+MGRFRelaxEquilWorkCreate(hypre_ParCSRMatrix *A, HYPRE_Int n)
+{
    MGRFRelaxEquilWork *work = calloc(1, sizeof(*work));
    if (work)
    {
@@ -197,21 +180,30 @@ MGRFRelaxEquilWrapperSetup(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vecto
       work->scaled_solution = MGRFRelaxEquilCreateVector(A);
       work->scaled_A        = hypre_ParCSRMatrixClone(A, 1);
    }
-   local_ok = work && work->scale && work->inverse_scale && work->scaled_rhs &&
-              work->scaled_solution && work->scaled_A && !HYPRE_GetError();
-   if (!MGRFRelaxEquilAllRanksOk(wrapper->comm, local_ok))
-   {
-      hypre_error_w_msg(HYPRE_ERROR_MEMORY,
-                        "Failed to allocate symmetric F-block scaling data");
-      MGRFRelaxEquilWorkDestroy(work);
-      return HYPRE_GetError();
-   }
+   return work;
+}
 
-   HYPRE_Complex *scale = hypre_VectorData(hypre_ParVectorLocalVector(work->scale));
-   HYPRE_Complex *inverse =
+static int
+MGRFRelaxEquilWorkComplete(const MGRFRelaxEquilWork *work)
+{
+   return work && work->scale && work->inverse_scale && work->scaled_rhs &&
+          work->scaled_solution && work->scaled_A && !HYPRE_GetError();
+}
+
+/* Fill scale = D^{-1/2} and inverse_scale = D^{1/2} from the local diagonal
+ * block. Returns 0 if any local diagonal is missing, complex, non-finite or
+ * not positive. */
+static int
+MGRFRelaxEquilComputeScaling(MGRFRelaxEquilWork *work, const hypre_CSRMatrix *diag)
+{
+   const HYPRE_Int     *rows  = hypre_CSRMatrixI(diag);
+   const HYPRE_Int     *cols  = hypre_CSRMatrixJ(diag);
+   const HYPRE_Complex *data  = hypre_CSRMatrixData(diag);
+   HYPRE_Complex       *scale = hypre_VectorData(hypre_ParVectorLocalVector(work->scale));
+   HYPRE_Complex       *inverse =
       hypre_VectorData(hypre_ParVectorLocalVector(work->inverse_scale));
-   local_ok = 1;
-   for (HYPRE_Int i = 0; i < n; i++)
+   int local_ok = 1;
+   for (HYPRE_Int i = 0; i < work->n; i++)
    {
       HYPRE_Real diagonal = 0.0;
       int        found    = 0;
@@ -232,7 +224,45 @@ MGRFRelaxEquilWrapperSetup(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vecto
       inverse[i] = hypre_sqrt(diagonal);
       scale[i]   = 1.0 / inverse[i];
    }
-   if (!MGRFRelaxEquilAllRanksOk(wrapper->comm, local_ok))
+   return local_ok;
+}
+
+static HYPRE_Int
+MGRFRelaxEquilWrapperSetup(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vector b_v,
+                           HYPRE_Vector x_v)
+{
+   MGRFRelaxEquilWrapper *wrapper = (MGRFRelaxEquilWrapper *)wrapper_v;
+   hypre_ParCSRMatrix    *A       = (hypre_ParCSRMatrix *)A_v;
+   (void)b_v;
+   (void)x_v;
+   if (!wrapper)
+   {
+      hypre_error_w_msg(HYPRE_ERROR_GENERIC, "MGR symmetric F-block solver is NULL");
+      return HYPRE_GetError();
+   }
+   wrapper->base.fields.is_setup = 0;
+
+   if (!MGRFRelaxEquilAllRanksOk(wrapper->comm,
+                                 MGRFRelaxEquilOperatorOk(wrapper->comm, A)))
+   {
+      hypre_error_w_msg(HYPRE_ERROR_GENERIC,
+                        "MGR symmetric F-block scaling requires a valid CPU operator "
+                        "with aligned square partitions on its creation communicator");
+      return HYPRE_GetError();
+   }
+
+   /* Every rank admitted A, so its diagonal block exists here. */
+   hypre_CSRMatrix    *diag = hypre_ParCSRMatrixDiag(A);
+   MGRFRelaxEquilWork *work = MGRFRelaxEquilWorkCreate(A, hypre_CSRMatrixNumRows(diag));
+   if (!MGRFRelaxEquilAllRanksOk(wrapper->comm, MGRFRelaxEquilWorkComplete(work)))
+   {
+      hypre_error_w_msg(HYPRE_ERROR_MEMORY,
+                        "Failed to allocate symmetric F-block scaling data");
+      MGRFRelaxEquilWorkDestroy(work);
+      return HYPRE_GetError();
+   }
+
+   if (!MGRFRelaxEquilAllRanksOk(wrapper->comm, MGRFRelaxEquilComputeScaling(work, diag)))
    {
       hypre_error_w_msg(
          HYPRE_ERROR_GENERIC,
@@ -269,6 +299,20 @@ MGRFRelaxEquilWrapperSetup(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vecto
    return 0;
 }
 
+/* Checks one solve vector against the layout and memory space of the work
+ * vectors built by the last successful setup. */
+static int
+MGRFRelaxEquilVectorOk(hypre_ParVector *v, const MGRFRelaxEquilWork *work)
+{
+   hypre_Vector *local = v ? hypre_ParVectorLocalVector(v) : NULL;
+   return local && hypre_ParVectorNumVectors(v) == 1 &&
+          hypre_VectorSize(local) == work->n &&
+          hypre_ParVectorGlobalSize(v) == hypre_ParVectorGlobalSize(work->scale) &&
+          hypre_ParVectorFirstIndex(v) == hypre_ParVectorFirstIndex(work->scale) &&
+          hypre_GetExecPolicy1(hypre_VectorMemoryLocation(local)) == HYPRE_EXEC_HOST &&
+          (work->n == 0 || hypre_VectorData(local));
+}
+
 static HYPRE_Int
 MGRFRelaxEquilWrapperSolve(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vector b_v,
                            HYPRE_Vector x_v)
@@ -281,20 +325,9 @@ MGRFRelaxEquilWrapperSolve(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vecto
       hypre_error_w_msg(HYPRE_ERROR_GENERIC, "MGR symmetric F-block solver is NULL");
       return HYPRE_GetError();
    }
-   MGRFRelaxEquilWork *work    = wrapper->work;
-   hypre_Vector       *b_local = b ? hypre_ParVectorLocalVector(b) : NULL;
-   hypre_Vector       *x_local = x ? hypre_ParVectorLocalVector(x) : NULL;
-   int                 local_ok =
-      !HYPRE_GetError() && wrapper->base.fields.is_setup && b_local && x_local &&
-      hypre_ParVectorNumVectors(b) == 1 && hypre_ParVectorNumVectors(x) == 1 &&
-      hypre_VectorSize(b_local) == work->n && hypre_VectorSize(x_local) == work->n &&
-      hypre_ParVectorGlobalSize(b) == hypre_ParVectorGlobalSize(work->scale) &&
-      hypre_ParVectorGlobalSize(x) == hypre_ParVectorGlobalSize(work->scale) &&
-      hypre_ParVectorFirstIndex(b) == hypre_ParVectorFirstIndex(work->scale) &&
-      hypre_ParVectorFirstIndex(x) == hypre_ParVectorFirstIndex(work->scale) &&
-      hypre_GetExecPolicy1(hypre_VectorMemoryLocation(b_local)) == HYPRE_EXEC_HOST &&
-      hypre_GetExecPolicy1(hypre_VectorMemoryLocation(x_local)) == HYPRE_EXEC_HOST &&
-      (work->n == 0 || (hypre_VectorData(b_local) && hypre_VectorData(x_local)));
+   MGRFRelaxEquilWork *work     = wrapper->work;
+   int                 local_ok = !HYPRE_GetError() && wrapper->base.fields.is_setup &&
+                  MGRFRelaxEquilVectorOk(b, work) && MGRFRelaxEquilVectorOk(x, work);
    if (!MGRFRelaxEquilAllRanksOk(wrapper->comm, local_ok))
    {
       hypre_error_w_msg(HYPRE_ERROR_GENERIC,
@@ -303,8 +336,9 @@ MGRFRelaxEquilWrapperSolve(HYPRE_Solver wrapper_v, HYPRE_Matrix A_v, HYPRE_Vecto
       return HYPRE_GetError();
    }
 
-   HYPRE_Complex *b_data = hypre_VectorData(b_local), *x_data = hypre_VectorData(x_local);
-   HYPRE_Complex *scale = hypre_VectorData(hypre_ParVectorLocalVector(work->scale));
+   HYPRE_Complex *b_data = hypre_VectorData(hypre_ParVectorLocalVector(b));
+   HYPRE_Complex *x_data = hypre_VectorData(hypre_ParVectorLocalVector(x));
+   HYPRE_Complex *scale  = hypre_VectorData(hypre_ParVectorLocalVector(work->scale));
    HYPRE_Complex *inverse =
       hypre_VectorData(hypre_ParVectorLocalVector(work->inverse_scale));
    HYPRE_Complex *rhs = hypre_VectorData(hypre_ParVectorLocalVector(work->scaled_rhs));
@@ -368,7 +402,7 @@ hypredrv_MGRFRelaxEquilWrapperCreate(MPI_Comm comm, HYPRE_Solver inner)
    wrapper->comm                = comm;
    wrapper->child_setup         = hypre_SolverSetup(child);
    wrapper->child_solve         = hypre_SolverSolve(child);
-   return (HYPRE_Solver)&wrapper->base.native;
+   return (HYPRE_Solver)wrapper;
 }
 #endif
 
@@ -471,63 +505,49 @@ hypredrv_MGRSetFSolverAtLevel(HYPRE_Solver precon, HYPRE_Solver fsolver, HYPRE_I
    (void)precon;
 }
 
-HYPRE_Solver
-hypredrv_MGRNestedFRelaxCreate(const MGR_args *parent, int level, const Stats *stats,
-                               int next_ls_id)
+/* Rank-local admission of the parent level that hosts the nested MGR. Sets
+ * *nested_args as soon as the level is known to be valid. */
+static int
+MGRNestedFRelaxAdmit(const MGR_args *parent, int level, MGR_args **nested_args)
 {
-   MGRFRelaxWrapper    *wrapper        = NULL;
-   MGR_args            *nested_args    = NULL;
-   IntArray            *dofmap         = NULL;
-   const IntArray      *parent_dofmap  = NULL;
-   const StackIntArray *f_dofs         = NULL;
-   HYPRE_Int           *parent_present = NULL, *keep_label = NULL;
-   size_t               label_space = 0, nested_size = 0;
-   int                  local_ok = 0, global_ok = 0;
-
-   if (!parent || parent->comm == MPI_COMM_NULL)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Nested MGR requires a parent communicator");
-      return NULL;
-   }
    if (hypredrv_ErrorCodeActive() || HYPRE_GetError())
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Cannot create nested MGR with an outstanding error");
-      goto admit;
+      return 0;
    }
    if (level < 0 || level >= hypredrv_MGRNumFineLevels(parent))
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Invalid parent level for nested MGR F-relaxation");
-      goto admit;
+      return 0;
    }
-   nested_args = parent->level[level].f_relaxation.mgr;
-   if (!nested_args)
+   *nested_args = parent->level[level].f_relaxation.mgr;
+   if (!*nested_args)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("MGR F-relaxation type 'mgr' requires a nested 'mgr:' block");
-      goto admit;
+      return 0;
    }
-   parent_dofmap = parent->dofmap;
-   f_dofs        = &parent->level[level].f_dofs;
+   const IntArray      *parent_dofmap = parent->dofmap;
+   const StackIntArray *f_dofs        = &parent->level[level].f_dofs;
    if (!parent_dofmap || (parent_dofmap->size && !parent_dofmap->data) || !f_dofs->size ||
        f_dofs->size > MAX_STACK_ARRAY_LENGTH)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("Nested MGR requires a parent dofmap and non-empty f_dofs");
-      goto admit;
+      return 0;
    }
-   if (!hypredrv_MGRBuildDofLabelPresenceMask(parent_dofmap, &label_space, NULL,
-                                              &parent_present))
-      goto admit;
-   keep_label = calloc(label_space, sizeof(*keep_label));
-   if (!keep_label)
-   {
-      hypredrv_AllocationFailure(
-         "Failed to allocate nested MGR dof label selection mask");
-      goto admit;
-   }
+   return 1;
+}
+
+/* Mark the parent's f_dofs labels in keep_label and count the parent rows
+ * that carry one of them. */
+static int
+MGRNestedFRelaxSelectLabels(const IntArray *parent_dofmap, const StackIntArray *f_dofs,
+                            size_t label_space, const HYPRE_Int *parent_present,
+                            HYPRE_Int *keep_label, size_t *nested_size)
+{
    for (size_t i = 0; i < f_dofs->size; i++)
    {
       int label = f_dofs->data[i];
@@ -537,13 +557,13 @@ hypredrv_MGRNestedFRelaxCreate(const MGR_args *parent, int level, const Stats *s
          hypredrv_ErrorMsgAdd(
             "Invalid parent MGR f_dofs label %d for nested MGR (valid range: [0,%d])",
             label, (int)label_space - 1);
-         goto admit;
+         return 0;
       }
       if (!parent_present[label] || keep_label[label])
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Parent MGR f_dofs label %d is absent or repeated", label);
-         goto admit;
+         return 0;
       }
       keep_label[label] = 1;
    }
@@ -557,22 +577,26 @@ hypredrv_MGRNestedFRelaxCreate(const MGR_args *parent, int level, const Stats *s
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
          hypredrv_ErrorMsgAdd("Invalid parent row label %d for nested MGR", label);
-         goto admit;
+         return 0;
       }
-      if (keep_label[label]) nested_size++;
+      if (keep_label[label]) (*nested_size)++;
    }
-   wrapper = calloc(1, sizeof(*wrapper));
-   if (!wrapper)
-   {
-      hypredrv_AllocationFailure("Failed to allocate nested MGR F-relaxation wrapper");
-      goto admit;
-   }
-   wrapper->nested_args = nested_args;
-   dofmap               = hypredrv_IntArrayCreate(nested_size);
+   return 1;
+}
+
+/* Build the child's dofmap from the selected parent rows. *dofmap_ptr is set
+ * as soon as it is created, so the caller releases it on every failure. */
+static int
+MGRNestedFRelaxBuildDofmap(const IntArray *parent_dofmap, const StackIntArray *f_dofs,
+                           const HYPRE_Int *keep_label, size_t label_space,
+                           size_t nested_size, IntArray **dofmap_ptr)
+{
+   IntArray *dofmap = hypredrv_IntArrayCreate(nested_size);
+   *dofmap_ptr      = dofmap;
    if (!dofmap || (nested_size && !dofmap->data))
    {
       hypredrv_AllocationFailure("Failed to allocate nested MGR projected dofmap");
-      goto admit;
+      return 0;
    }
    for (size_t i = 0, j = 0; i < parent_dofmap->size; i++)
    {
@@ -585,7 +609,7 @@ hypredrv_MGRNestedFRelaxCreate(const MGR_args *parent, int level, const Stats *s
    if (!dofmap->unique_data || !dofmap->g_unique_data)
    {
       hypredrv_AllocationFailure("Failed to allocate nested MGR dof label arrays");
-      goto admit;
+      return 0;
    }
    for (size_t i = 0, j = 0; i < label_space; i++)
    {
@@ -595,11 +619,68 @@ hypredrv_MGRNestedFRelaxCreate(const MGR_args *parent, int level, const Stats *s
          j++;
       }
    }
-   local_ok = 1;
-admit:
-   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, parent->comm);
+   return 1;
+}
+
+/* Rank-local projection of the parent level onto the nested MGR: admits the
+ * level, allocates the wrapper and builds the projected dofmap. Whatever was
+ * allocated is returned through *wrapper and *dofmap, also on failure. */
+static int
+MGRNestedFRelaxProject(const MGR_args *parent, int level, MGR_args **nested_args,
+                       MGRFRelaxWrapper **wrapper, IntArray **dofmap)
+{
+   HYPRE_Int *parent_present = NULL, *keep_label = NULL;
+   size_t     label_space = 0, nested_size = 0;
+   int        ok = 0;
+
+   if (!MGRNestedFRelaxAdmit(parent, level, nested_args)) return 0;
+   const IntArray      *parent_dofmap = parent->dofmap;
+   const StackIntArray *f_dofs        = &parent->level[level].f_dofs;
+   if (!hypredrv_MGRBuildDofLabelPresenceMask(parent_dofmap, &label_space, NULL,
+                                              &parent_present))
+      goto done;
+   keep_label = calloc(label_space, sizeof(*keep_label));
+   if (!keep_label)
+   {
+      hypredrv_AllocationFailure(
+         "Failed to allocate nested MGR dof label selection mask");
+      goto done;
+   }
+   if (!MGRNestedFRelaxSelectLabels(parent_dofmap, f_dofs, label_space, parent_present,
+                                    keep_label, &nested_size))
+      goto done;
+   *wrapper = calloc(1, sizeof(**wrapper));
+   if (!*wrapper)
+   {
+      hypredrv_AllocationFailure("Failed to allocate nested MGR F-relaxation wrapper");
+      goto done;
+   }
+   (*wrapper)->nested_args = *nested_args;
+   ok = MGRNestedFRelaxBuildDofmap(parent_dofmap, f_dofs, keep_label, label_space,
+                                   nested_size, dofmap);
+done:
    free(parent_present);
    free(keep_label);
+   return ok;
+}
+
+HYPRE_Solver
+hypredrv_MGRNestedFRelaxCreate(const MGR_args *parent, int level, const Stats *stats,
+                               int next_ls_id)
+{
+   MGRFRelaxWrapper *wrapper     = NULL;
+   MGR_args         *nested_args = NULL;
+   IntArray         *dofmap      = NULL;
+   int               local_ok = 0, global_ok = 0;
+
+   if (!parent || parent->comm == MPI_COMM_NULL)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Nested MGR requires a parent communicator");
+      return NULL;
+   }
+   local_ok = MGRNestedFRelaxProject(parent, level, &nested_args, &wrapper, &dofmap);
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, parent->comm);
    if (!global_ok)
    {
       if (local_ok)
@@ -659,6 +740,14 @@ hypredrv_MGRNestedFRelaxDestroy(HYPRE_Solver *solver_ptr)
    if (!solver_ptr) return;
    MGRFRelaxWrapperDestroy(*solver_ptr);
    *solver_ptr = NULL;
+}
+
+/* Convergence and argument flags left by earlier solves do not block
+ * replacing a smoother; any other hypre error does. */
+static int
+MGRHypreErrorOutstanding(void)
+{
+   return (HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG)) != 0;
 }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 8)
@@ -721,6 +810,172 @@ MGRGRelaxRuntimeDestroy(HYPRE_Solver solver)
    free(runtime);
    return 0;
 }
+
+static const MGRGRelaxOps g_mgr_grelax_methods[] = {
+   {20, HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGDestroy},
+   {16, HYPRE_ILUSetup, HYPRE_ILUSolve, HYPRE_ILUDestroy},
+#ifdef HYPRE_USING_DSUPERLU
+   {29, HYPRE_MGRDirectSolverSetup, HYPRE_MGRDirectSolverSolve,
+    HYPRE_MGRDirectSolverDestroy},
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   {33, HYPRE_FSAISetup, HYPRE_FSAISolve, HYPRE_FSAIDestroy},
+#endif
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   {MGR_SOLVER_TYPE_SCHWARZ, HYPRE_SchwarzSetup, HYPRE_SchwarzSolve,
+    HYPRE_SchwarzDestroy},
+#endif
+};
+
+/* Resolve the active level's configuration, its method and the runtime
+ * cached in its slot. Returns the original level index, or -1. */
+static int
+MGRGRelaxLookup(MGR_args *args, int active_level, MGRgrlx_args **config,
+                const MGRGRelaxOps **ops, MGRGRelaxRuntime **cached)
+{
+   int orig_level = -1;
+   if (active_level >= 0 && active_level < args->num_active_levels &&
+       active_level < MAX_MGR_LEVELS - 1)
+      orig_level = args->active_level_map[active_level];
+   if (orig_level >= 0 && orig_level < hypredrv_MGRNumFineLevels(args))
+   {
+      *config = &args->level[orig_level].g_relaxation;
+      for (size_t i = 0; i < sizeof(g_mgr_grelax_methods) / sizeof(*g_mgr_grelax_methods);
+           i++)
+         if (g_mgr_grelax_methods[i].type == (*config)->type)
+            *ops = &g_mgr_grelax_methods[i];
+      for (MGRGRelaxRuntime *r = g_mgr_grelax_live; r; r = r->next)
+         if ((HYPRE_Solver)r == args->grelax[orig_level]) *cached = r;
+   }
+   return orig_level;
+}
+
+/* Rank-local admission checks; they only record errors. */
+static void
+MGRGRelaxValidate(const MGRgrlx_args *config, const MGRGRelaxOps *ops, int active_level)
+{
+   if (!ops)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      if (config && config->type == 29)
+         hypredrv_ErrorMsgAdd(
+            "MGR G-relaxation 'spdirect' requires hypre built with DSUPERLU");
+      else if (config && config->type == MGR_SOLVER_TYPE_SCHWARZ)
+         hypredrv_ErrorMsgAdd(
+            "MGR G-relaxation 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
+      else
+         hypredrv_ErrorMsgAdd(
+            "Unsupported MGR global smoother at active level %d (type %d)", active_level,
+            config ? (int)config->type : -1);
+   }
+   if (MGRHypreErrorOutstanding())
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "Cannot replace MGR global smoother with an outstanding hypre error");
+   }
+}
+
+/* Collective: agree that no rank recorded an error and that every rank admitted
+ * the same method. Sets *create when any rank needs a new runtime. */
+static int
+MGRGRelaxAgreeAdmission(MPI_Comm comm, int needs_new, int type, int *create)
+{
+   int local_state[4] = {(int)hypredrv_ErrorCodeActive() != 0, needs_new, type, -type};
+   int global_state[4];
+   MPI_Allreduce(local_state, global_state, 4, MPI_INT, MPI_MAX, comm);
+   if (global_state[0] || global_state[2] != -global_state[3])
+   {
+      if (!hypredrv_ErrorCodeActive())
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR global smoother admission failed on another rank");
+      }
+      return 0;
+   }
+   *create = global_state[1];
+   return 1;
+}
+
+/* Collective: every rank allocates its runtime before any rank creates a
+ * child. Returns NULL on every rank if any rank failed. */
+static MGRGRelaxRuntime *
+MGRGRelaxRuntimeAllocate(MPI_Comm comm)
+{
+   MGRGRelaxRuntime *candidate = calloc(1, sizeof(*candidate));
+   int               local_ok = candidate != NULL, global_ok = 0;
+   if (!candidate)
+      hypredrv_AllocationFailure("Failed to allocate MGR global smoother runtime");
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
+   {
+      free(candidate);
+      if (local_ok)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR global smoother allocation failed on another rank");
+      }
+      return NULL;
+   }
+   return candidate;
+}
+
+static void
+MGRGRelaxCreateInner(MGRgrlx_args *config, const MGRGRelaxOps *ops, HYPRE_Solver *inner)
+{
+   switch (ops->type)
+   {
+      case 20:
+         hypredrv_AMGCreate(&config->amg, inner);
+         break;
+      case 16:
+         hypredrv_ILUCreate(&config->ilu, inner);
+         break;
+#ifdef HYPRE_USING_DSUPERLU
+      case 29:
+         HYPRE_MGRDirectSolverCreate(inner);
+         break;
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+      case 33:
+         hypredrv_FSAICreate(&config->fsai, inner);
+         break;
+#endif
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+      case MGR_SOLVER_TYPE_SCHWARZ:
+         hypredrv_SchwarzCreate(&config->schwarz, inner);
+         break;
+#endif
+      default:
+         break;
+   }
+}
+
+/* Collective: create the candidate's child and agree that every rank has one.
+ * On failure the candidate is released on every rank. */
+static int
+MGRGRelaxCandidateCreate(MPI_Comm comm, MGRgrlx_args *config, MGRGRelaxRuntime *candidate)
+{
+   const MGRGRelaxOps *ops      = candidate->ops;
+   int                 local_ok = 0, global_ok = 0;
+   MGRGRelaxCreateInner(config, ops, &candidate->inner);
+   local_ok =
+      candidate->inner && !hypredrv_ErrorCodeActive() && !MGRHypreErrorOutstanding();
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
+   {
+      if (candidate->inner) ops->destroy(candidate->inner);
+      free(candidate);
+      if (!hypredrv_ErrorCodeActive())
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR global smoother creation failed%s",
+                              local_ok ? " on another rank" : "");
+      }
+      return 0;
+   }
+   return 1;
+}
 #endif
 
 void
@@ -744,71 +999,16 @@ hypredrv_MGRGRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_level,
       hypredrv_ErrorMsgAdd("MGR global smoother requires a parent hierarchy");
       return 0;
    }
-   int                       orig_level = -1;
-   MGRgrlx_args             *config     = NULL;
-   const MGRGRelaxOps       *ops        = NULL;
-   MGRGRelaxRuntime         *cached     = NULL;
-   static const MGRGRelaxOps methods[]  = {
-      {20, HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGDestroy},
-      {16, HYPRE_ILUSetup, HYPRE_ILUSolve, HYPRE_ILUDestroy},
-#ifdef HYPRE_USING_DSUPERLU
-      {29, HYPRE_MGRDirectSolverSetup, HYPRE_MGRDirectSolverSolve,
-       HYPRE_MGRDirectSolverDestroy},
-#endif
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-      {33, HYPRE_FSAISetup, HYPRE_FSAISolve, HYPRE_FSAIDestroy},
-#endif
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      {MGR_SOLVER_TYPE_SCHWARZ, HYPRE_SchwarzSetup, HYPRE_SchwarzSolve,
-       HYPRE_SchwarzDestroy},
-#endif
-   };
-   if (active_level >= 0 && active_level < args->num_active_levels &&
-       active_level < MAX_MGR_LEVELS - 1)
-      orig_level = args->active_level_map[active_level];
-   if (orig_level >= 0 && orig_level < hypredrv_MGRNumFineLevels(args))
-   {
-      config = &args->level[orig_level].g_relaxation;
-      for (size_t i = 0; i < sizeof(methods) / sizeof(*methods); i++)
-         if (methods[i].type == config->type) ops = &methods[i];
-      for (MGRGRelaxRuntime *r = g_mgr_grelax_live; r; r = r->next)
-         if ((HYPRE_Solver)r == args->grelax[orig_level]) cached = r;
-   }
-   if (!ops)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      if (config && config->type == 29)
-         hypredrv_ErrorMsgAdd(
-            "MGR G-relaxation 'spdirect' requires hypre built with DSUPERLU");
-      else if (config && config->type == MGR_SOLVER_TYPE_SCHWARZ)
-         hypredrv_ErrorMsgAdd(
-            "MGR G-relaxation 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
-      else
-         hypredrv_ErrorMsgAdd(
-            "Unsupported MGR global smoother at active level %d (type %d)", active_level,
-            config ? (int)config->type : -1);
-   }
-   if (HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG))
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd(
-         "Cannot replace MGR global smoother with an outstanding hypre error");
-   }
-   int type           = ops ? (int)ops->type : 0;
-   int local_state[4] = {hypredrv_ErrorCodeActive() != 0,
-                         refresh || !cached || cached->ops != ops, type, -type};
-   int global_state[4];
-   MPI_Allreduce(local_state, global_state, 4, MPI_INT, MPI_MAX, args->comm);
-   if (global_state[0] || global_state[2] != -global_state[3])
-   {
-      if (!hypredrv_ErrorCodeActive())
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR global smoother admission failed on another rank");
-      }
+   MGRgrlx_args       *config = NULL;
+   const MGRGRelaxOps *ops    = NULL;
+   MGRGRelaxRuntime   *cached = NULL;
+   int orig_level = MGRGRelaxLookup(args, active_level, &config, &ops, &cached);
+   MGRGRelaxValidate(config, ops, active_level);
+   int create = 0;
+   if (!MGRGRelaxAgreeAdmission(args->comm, refresh || !cached || cached->ops != ops,
+                                ops ? (int)ops->type : 0, &create))
       return 0;
-   }
-   if (!global_state[1])
+   if (!create)
    {
       HYPRE_MGRSetGlobalSmootherAtLevel(parent, (HYPRE_Solver)cached, active_level);
       HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
@@ -817,61 +1017,10 @@ hypredrv_MGRGRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_level,
       return 1;
    }
 
-   MGRGRelaxRuntime *candidate = calloc(1, sizeof(*candidate));
-   int               local_ok = candidate != NULL, global_ok = 0;
-   if (!candidate)
-      hypredrv_AllocationFailure("Failed to allocate MGR global smoother runtime");
-   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
-   if (!global_ok)
-   {
-      free(candidate);
-      if (local_ok)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR global smoother allocation failed on another rank");
-      }
-      return 0;
-   }
+   MGRGRelaxRuntime *candidate = MGRGRelaxRuntimeAllocate(args->comm);
+   if (!candidate) return 0;
    candidate->ops = ops;
-   switch (ops->type)
-   {
-      case 20:
-         hypredrv_AMGCreate(&config->amg, &candidate->inner);
-         break;
-      case 16:
-         hypredrv_ILUCreate(&config->ilu, &candidate->inner);
-         break;
-#ifdef HYPRE_USING_DSUPERLU
-      case 29:
-         HYPRE_MGRDirectSolverCreate(&candidate->inner);
-         break;
-#endif
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-      case 33:
-         hypredrv_FSAICreate(&config->fsai, &candidate->inner);
-         break;
-#endif
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      case MGR_SOLVER_TYPE_SCHWARZ:
-         hypredrv_SchwarzCreate(&config->schwarz, &candidate->inner);
-         break;
-#endif
-   }
-   local_ok = candidate->inner && !hypredrv_ErrorCodeActive() &&
-              !(HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG));
-   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
-   if (!global_ok)
-   {
-      if (candidate->inner) ops->destroy(candidate->inner);
-      free(candidate);
-      if (!hypredrv_ErrorCodeActive())
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd("MGR global smoother creation failed%s",
-                              local_ok ? " on another rank" : "");
-      }
-      return 0;
-   }
+   if (!MGRGRelaxCandidateCreate(args->comm, config, candidate)) return 0;
    candidate->base.fields = (hypredrv_SolverBase){.setup   = MGRGRelaxSetup,
                                                   .solve   = MGRGRelaxSolve,
                                                   .destroy = MGRGRelaxRuntimeDestroy};
@@ -971,6 +1120,7 @@ hypredrv_MGRSchwarzWrapperParSolve(HYPRE_Solver wrapper, HYPRE_ParCSRMatrix A,
 
 #endif
 
+/* GCOVR_EXCL_START */
 static void
 MGRFRelaxInstall(HYPRE_Solver precon, const MGRfrlx_args *f_relaxation,
                  HYPRE_Solver frelax, int active_lvl)
@@ -1011,6 +1161,8 @@ typedef struct MGRFRelaxOperator_struct
    struct MGRFRelaxOperator_struct *next;
 } MGRFRelaxOperator;
 #endif
+
+typedef HYPRE_Int (*MGRFRelaxDestroyFcn)(HYPRE_Solver);
 
 typedef struct MGRFRelaxBinding_struct
 {
@@ -1149,96 +1301,128 @@ hypredrv_MGRSetup(HYPRE_Solver parent, HYPRE_ParCSRMatrix A, HYPRE_ParVector b,
    return HYPRE_MGRSetup(parent, A, b, x);
 }
 
-int
-hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, int refresh,
-                         const Stats *stats, int next_ls_id)
+/* Resolve the active level's F-relaxation configuration and the bindings in
+ * its cache slot. Returns the original level index, or -1. */
+static int
+MGRFRelaxLookup(MGR_args *args, int active_lvl, MGRfrlx_args **f_relaxation,
+                const StackIntArray **f_dofs, MGRFRelaxBinding **previous,
+                MGRFRelaxBinding **cached)
 {
-   if (!args || !parent || args->comm == MPI_COMM_NULL)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd("MGR F-relaxation requires a parent hierarchy");
-      return 0;
-   }
-   int                  orig_lvl      = -1;
-   MGRfrlx_args        *f_relaxation  = NULL;
-   const StackIntArray *f_dofs        = NULL;
-   int                  supported     = 0;
-   HYPRE_Int (*destroy)(HYPRE_Solver) = NULL;
-   MGRFRelaxBinding *cached           = NULL;
-   MGRFRelaxBinding *previous         = NULL;
+   int orig_lvl = -1;
    if (active_lvl >= 0 && active_lvl < args->num_active_levels &&
        active_lvl < MAX_MGR_LEVELS - 1)
       orig_lvl = args->active_level_map[active_lvl];
    if (orig_lvl >= 0 && orig_lvl < hypredrv_MGRNumFineLevels(args))
    {
-      f_relaxation = &args->level[orig_lvl].f_relaxation;
-      f_dofs       = &args->level[orig_lvl].f_dofs;
+      *f_relaxation = &args->level[orig_lvl].f_relaxation;
+      *f_dofs       = &args->level[orig_lvl].f_dofs;
       for (MGRFRelaxBinding *r = g_mgr_frelax_bindings; r; r = r->next)
          if (r->slot == &args->frelax[orig_lvl])
          {
-            previous = r;
-            if (r->solver == args->frelax[orig_lvl]) cached = r;
+            *previous = r;
+            if (r->solver == args->frelax[orig_lvl]) *cached = r;
          }
-      switch (f_relaxation->type)
-      {
-         case 2:
-#if HYPRE_CHECK_MIN_VERSION(23100, 9)
-            supported = 1;
-#else
-            if (active_lvl == 0) supported = 1;
-            else
-               hypredrv_ErrorMsgAdd("Managed AMG F-solvers above level 0 require hypre "
-                                    ">= 2.31.0 (develop >= 9)");
-#endif
-            destroy = HYPRE_BoomerAMGDestroy;
-#if HYPRE_CHECK_MIN_VERSION(30100, 0)
-            if (f_relaxation->symmetric_diagonal_scaling)
-               destroy = hypredrv_MGRFRelaxEquilWrapperDestroy;
-#endif
-            break;
-         case 29:
-#if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)
-            supported = 1;
-            destroy   = HYPRE_MGRDirectSolverDestroy;
-#else
-            hypredrv_ErrorMsgAdd(
-               "MGR F-relaxation 'spdirect' requires hypre >= 2.31.0 and DSUPERLU");
-#endif
-            break;
-         case 32:
-#if HYPRE_CHECK_MIN_VERSION(23200, 14)
-            supported = 1;
-            destroy   = HYPRE_ILUDestroy;
-#else
-            hypredrv_ErrorMsgAdd(
-               "Managed MGR F-relaxation 'ilu' requires hypre >= 2.32.0 (develop >= 14)");
-#endif
-            break;
-         case 33:
-#if HYPRE_CHECK_MIN_VERSION(23100, 9)
-            supported = 1;
-            destroy   = HYPRE_FSAIDestroy;
-#else
-            hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.31.0");
-#endif
-            break;
-         case MGR_SOLVER_TYPE_SCHWARZ:
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-            if (active_lvl == 0)
-            {
-               supported = 1;
-               destroy   = MGRSchwarzWrapperDestroy;
-            }
-            else
-               hypredrv_ErrorMsgAdd(
-                  "MGR F-relaxation 'schwarz' is only supported at MGR level 0");
-#else
-            hypredrv_ErrorMsgAdd(
-               "MGR F-relaxation 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
-#endif
-            break;
-      }
    }
+   return orig_lvl;
+}
+
+/* Select the destroy function of a managed F-solver method. Returns 0 if this
+ * hypre build or level cannot host it; that only records an error message. */
+static int
+MGRFRelaxSelectMethod(const MGRfrlx_args *f_relaxation, int active_lvl,
+                      MGRFRelaxDestroyFcn *destroy)
+{
+   int supported = 0;
+   (void)active_lvl;
+   switch (f_relaxation->type)
+   {
+      case 2:
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         supported = 1;
+#else
+         if (active_lvl == 0) supported = 1;
+         else
+            hypredrv_ErrorMsgAdd("Managed AMG F-solvers above level 0 require hypre "
+                                 ">= 2.31.0 (develop >= 9)");
+#endif
+         *destroy = HYPRE_BoomerAMGDestroy;
+#if HYPRE_CHECK_MIN_VERSION(30100, 0)
+         if (f_relaxation->symmetric_diagonal_scaling)
+            *destroy = hypredrv_MGRFRelaxEquilWrapperDestroy;
+#endif
+         break;
+      case 29:
+#if defined(HYPRE_USING_DSUPERLU) && HYPRE_CHECK_MIN_VERSION(23100, 9)
+         supported = 1;
+         *destroy  = HYPRE_MGRDirectSolverDestroy;
+#else
+         hypredrv_ErrorMsgAdd(
+            "MGR F-relaxation 'spdirect' requires hypre >= 2.31.0 and DSUPERLU");
+#endif
+         break;
+      case 32:
+#if HYPRE_CHECK_MIN_VERSION(23200, 14)
+         supported = 1;
+         *destroy  = HYPRE_ILUDestroy;
+#else
+         hypredrv_ErrorMsgAdd(
+            "Managed MGR F-relaxation 'ilu' requires hypre >= 2.32.0 (develop >= 14)");
+#endif
+         break;
+      case 33:
+#if HYPRE_CHECK_MIN_VERSION(23100, 9)
+         supported = 1;
+         *destroy  = HYPRE_FSAIDestroy;
+#else
+         hypredrv_ErrorMsgAdd("MGR F-relaxation 'fsai' requires hypre >= 2.31.0");
+#endif
+         break;
+      case MGR_SOLVER_TYPE_SCHWARZ:
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+         if (active_lvl == 0)
+         {
+            supported = 1;
+            *destroy  = MGRSchwarzWrapperDestroy;
+         }
+         else
+            hypredrv_ErrorMsgAdd(
+               "MGR F-relaxation 'schwarz' is only supported at MGR level 0");
+#else
+         hypredrv_ErrorMsgAdd(
+            "MGR F-relaxation 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
+#endif
+         break;
+      default:
+         break;
+   }
+   return supported;
+}
+
+static void
+MGRFRelaxValidateScaling(const MGR_args *args, const MGRfrlx_args *f_relaxation)
+{
+#if !HYPRE_CHECK_MIN_VERSION(30100, 0)
+   (void)args;
+   (void)f_relaxation;
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   hypredrv_ErrorMsgAdd("MGR symmetric_diagonal_scaling requires hypre >= 3.1.0");
+#else
+   if (f_relaxation->symmetric_diagonal_scaling != 1 || f_relaxation->type != 2 ||
+       f_relaxation->use_krylov || f_relaxation->reuse.present || args->vec_nn)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "MGR symmetric_diagonal_scaling currently requires a managed AMG F-solver "
+         "without nested Krylov, component reuse, or projected RBMs");
+   }
+#endif
+}
+
+/* Rank-local admission checks; they only record errors. */
+static void
+MGRFRelaxValidate(const MGR_args *args, const MGRfrlx_args *f_relaxation, int supported,
+                  int active_lvl, int refresh, const MGRFRelaxBinding *previous)
+{
    if (!supported)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
@@ -1246,29 +1430,12 @@ hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, in
                            active_lvl);
    }
    if (f_relaxation && f_relaxation->symmetric_diagonal_scaling)
-   {
-#if !HYPRE_CHECK_MIN_VERSION(30100, 0)
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd("MGR symmetric_diagonal_scaling requires hypre >= 3.1.0");
-#else
-      if (f_relaxation->symmetric_diagonal_scaling != 1 || f_relaxation->type != 2 ||
-          f_relaxation->use_krylov || f_relaxation->reuse.present || args->vec_nn)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd(
-            "MGR symmetric_diagonal_scaling currently requires a managed AMG F-solver "
-            "without nested Krylov, component reuse, or projected RBMs");
-      }
-#endif
-   }
-   if (HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG))
+      MGRFRelaxValidateScaling(args, f_relaxation);
+   if (MGRHypreErrorOutstanding())
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("Cannot replace MGR F-solver with an outstanding hypre error");
    }
-   int kind =
-      supported ? 2 * (int)f_relaxation->type + !!f_relaxation->symmetric_diagonal_scaling
-                : 0;
    if (refresh && previous && f_relaxation &&
        (previous->kind / 2 != f_relaxation->type || previous->active_level != active_lvl))
    {
@@ -1276,15 +1443,17 @@ hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, in
       hypredrv_ErrorMsgAdd(
          "Changing the MGR F-solver method or level requires a new parent hierarchy");
    }
-   int level          = f_relaxation ? active_lvl : 0;
-   int local_state[6] = {hypredrv_ErrorCodeActive() != 0,
-                         refresh || !cached || cached->kind != kind,
-                         kind,
-                         -kind,
-                         level,
-                         -level};
+}
+
+/* Collective: agree that no rank recorded an error and that every rank admitted
+ * the same method and level. Sets *create when any rank needs a new F-solver. */
+static int
+MGRFRelaxAgreeAdmission(MPI_Comm comm, int needs_new, int kind, int level, int *create)
+{
+   int local_state[6] = {
+      (int)hypredrv_ErrorCodeActive() != 0, needs_new, kind, -kind, level, -level};
    int global_state[6];
-   MPI_Allreduce(local_state, global_state, 6, MPI_INT, MPI_MAX, args->comm);
+   MPI_Allreduce(local_state, global_state, 6, MPI_INT, MPI_MAX, comm);
    if (global_state[0] || global_state[2] != -global_state[3] ||
        global_state[4] != -global_state[5])
    {
@@ -1296,139 +1465,261 @@ hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, in
       }
       return 0;
    }
-   HYPRE_Solver      solver  = args->frelax[orig_lvl];
-   MGRFRelaxBinding *binding = NULL;
-   if (global_state[1])
-   {
-      solver       = NULL;
-      int local_ok = 0, global_ok = 0;
-      binding  = calloc(1, sizeof(*binding));
-      local_ok = binding != NULL;
-#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
-      if (binding)
-      {
-         binding->parent        = parent;
-         binding->native_levels = args->num_active_levels;
-         binding->marker_size =
-            refresh && previous ? previous->marker_size : args->dofmap->size;
-         binding->f_markers = calloc(binding->marker_size ? binding->marker_size : 1,
-                                     sizeof(*binding->f_markers));
-         local_ok = binding->f_markers != NULL;
-         if (local_ok && refresh && previous)
-            memcpy(binding->f_markers, previous->f_markers,
-                   binding->marker_size * sizeof(*binding->f_markers));
-         else if (local_ok)
-            for (size_t row = 0; row < binding->marker_size; row++)
-            {
-               binding->f_markers[row] = 1;
-               for (size_t j = 0; j < f_dofs->size; j++)
-                  if (args->dofmap->data[row] == f_dofs->data[j])
-                     binding->f_markers[row] = -1;
-            }
-      }
-#endif
-      if (!local_ok)
-         hypredrv_AllocationFailure("Failed to bind the MGR F-solver lifetime");
-      MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
-      if (!global_ok)
-      {
-         MGRFRelaxBindingDestroy(binding, 0);
-         if (local_ok)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR F-solver lifetime allocation failed on another rank");
-         }
-         return 0;
-      }
+   *create = global_state[1];
+   return 1;
+}
 
-      if (f_relaxation->type == 2)
+#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
+/* Legacy MGR builds the F-block from these row markers in hypredrv_MGRSetup.
+ * A refresh keeps the markers of the binding it replaces. */
+static int
+MGRFRelaxBindingInitLegacy(MGRFRelaxBinding *binding, const MGR_args *args,
+                           HYPRE_Solver parent, int refresh,
+                           const MGRFRelaxBinding *previous, const StackIntArray *f_dofs)
+{
+   binding->parent        = parent;
+   binding->native_levels = args->num_active_levels;
+   binding->marker_size =
+      refresh && previous ? previous->marker_size : args->dofmap->size;
+   binding->f_markers = calloc(binding->marker_size ? binding->marker_size : 1,
+                               sizeof(*binding->f_markers));
+   if (!binding->f_markers) return 0;
+   if (refresh && previous)
+      memcpy(binding->f_markers, previous->f_markers,
+             binding->marker_size * sizeof(*binding->f_markers));
+   else
+      for (size_t row = 0; row < binding->marker_size; row++)
       {
-         hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn, args->dofmap,
-                                      args->rbm_input_generation, f_dofs->data,
-                                      f_dofs->size);
-         if (hypredrv_ErrorCodeActive())
-         {
-            goto candidate_done;
-         }
-         hypredrv_AMGCreate(&f_relaxation->amg, &solver);
-         if (solver && f_relaxation->symmetric_diagonal_scaling)
-         {
-#if HYPRE_CHECK_MIN_VERSION(30100, 0)
-            solver = hypredrv_MGRFRelaxEquilWrapperCreate(args->comm, solver);
-#else
-            HYPRE_BoomerAMGDestroy(solver);
-            solver = NULL;
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR symmetric_diagonal_scaling requires hypre >= 3.1.0");
+         binding->f_markers[row] = 1;
+         for (size_t j = 0; j < f_dofs->size; j++)
+            if (args->dofmap->data[row] == f_dofs->data[j]) binding->f_markers[row] = -1;
+      }
+   return 1;
+}
 #endif
-         }
-      }
-#if defined(HYPRE_USING_DSUPERLU)
-      /* GCOVR_EXCL_START */
-      else if (f_relaxation->type == 29)
+
+/* Collective: every rank allocates the binding for its new F-solver before
+ * any rank creates one. Returns NULL on every rank if any rank failed. */
+static MGRFRelaxBinding *
+MGRFRelaxBindingAllocate(const MGR_args *args, HYPRE_Solver parent, int refresh,
+                         const MGRFRelaxBinding *previous, const StackIntArray *f_dofs)
+{
+   int               local_ok = 0, global_ok = 0;
+   MGRFRelaxBinding *binding = calloc(1, sizeof(*binding));
+   local_ok                  = binding != NULL;
+#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
+   if (binding)
+      local_ok =
+         MGRFRelaxBindingInitLegacy(binding, args, parent, refresh, previous, f_dofs);
+#else
+   (void)parent;
+   (void)refresh;
+   (void)previous;
+   (void)f_dofs;
+#endif
+   if (!local_ok) hypredrv_AllocationFailure("Failed to bind the MGR F-solver lifetime");
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
+   if (!global_ok)
+   {
+      MGRFRelaxBindingDestroy(binding, 0);
+      if (local_ok)
       {
-         HYPRE_MGRDirectSolverCreate(&solver);
-         if (!solver)
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd(
-               "MGR F-relaxation 'spdirect' unavailable: direct solver creation failed");
-         }
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR F-solver lifetime allocation failed on another rank");
       }
-      /* GCOVR_EXCL_STOP */
+      return NULL;
+   }
+   return binding;
+}
+
+static HYPRE_Solver
+MGRFRelaxCreateAMG(MGR_args *args, MGRfrlx_args *f_relaxation,
+                   const StackIntArray *f_dofs)
+{
+   HYPRE_Solver solver = NULL;
+   hypredrv_AMGSetProjectedRBMs(&f_relaxation->amg, args->vec_nn, args->dofmap,
+                                args->rbm_input_generation, f_dofs->data, f_dofs->size);
+   if (hypredrv_ErrorCodeActive())
+   {
+      return NULL;
+   }
+   hypredrv_AMGCreate(&f_relaxation->amg, &solver);
+   if (solver && f_relaxation->symmetric_diagonal_scaling)
+   {
+#if HYPRE_CHECK_MIN_VERSION(30100, 0)
+      solver = hypredrv_MGRFRelaxEquilWrapperCreate(args->comm, solver);
+#else
+      HYPRE_BoomerAMGDestroy(solver);
+      solver = NULL;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR symmetric_diagonal_scaling requires hypre >= 3.1.0");
+#endif
+   }
+   return solver;
+}
+
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+static HYPRE_Solver
+MGRFRelaxCreateSchwarz(MGRfrlx_args *f_relaxation)
+{
+   MGRSchwarzWrapper *wrapper = calloc(1, sizeof(*wrapper));
+   if (!wrapper)
+   {
+      hypredrv_AllocationFailure("Failed to allocate MGR Schwarz solver wrapper");
+      return NULL;
+   }
+   wrapper->base.fields.setup   = MGRSchwarzWrapperSetup;
+   wrapper->base.fields.solve   = MGRSchwarzWrapperSolve;
+   wrapper->base.fields.destroy = MGRSchwarzWrapperDestroy;
+   hypredrv_SchwarzCreate(&f_relaxation->schwarz, &wrapper->inner);
+   if (!wrapper->inner && !hypredrv_ErrorCodeActive())
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("Failed to create MGR Schwarz F-solver");
+   }
+   return (HYPRE_Solver)wrapper;
+}
+#endif
+
+/* Rank-local creation of the candidate F-solver. Returns NULL if creation
+ * failed before a handle existed. */
+static HYPRE_Solver
+MGRFRelaxCreateSolver(MGR_args *args, MGRfrlx_args *f_relaxation,
+                      const StackIntArray *f_dofs)
+{
+   HYPRE_Solver solver = NULL;
+   if (f_relaxation->type == 2)
+   {
+      solver = MGRFRelaxCreateAMG(args, f_relaxation, f_dofs);
+   }
+#if defined(HYPRE_USING_DSUPERLU)
+   /* GCOVR_EXCL_START */
+   else if (f_relaxation->type == 29)
+   {
+      HYPRE_MGRDirectSolverCreate(&solver);
+      if (!solver)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR F-relaxation 'spdirect' unavailable: direct solver creation failed");
+      }
+   }
+   /* GCOVR_EXCL_STOP */
 #endif
 #if HYPRE_CHECK_MIN_VERSION(23200, 14)
-      else if (f_relaxation->type == 32)
-      {
-         hypredrv_ILUCreate(&f_relaxation->ilu, &solver);
-      }
+   else if (f_relaxation->type == 32)
+   {
+      hypredrv_ILUCreate(&f_relaxation->ilu, &solver);
+   }
 #endif
 #if HYPRE_CHECK_MIN_VERSION(22500, 0)
-      else if (f_relaxation->type == 33)
-      {
-         hypredrv_FSAICreate(&f_relaxation->fsai, &solver);
-      }
+   else if (f_relaxation->type == 33)
+   {
+      hypredrv_FSAICreate(&f_relaxation->fsai, &solver);
+   }
 #endif
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      else if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
-      {
-         MGRSchwarzWrapper *wrapper = calloc(1, sizeof(*wrapper));
-         if (!wrapper)
-         {
-            hypredrv_AllocationFailure("Failed to allocate MGR Schwarz solver wrapper");
-            goto candidate_done;
-         }
-         solver                       = (HYPRE_Solver)wrapper;
-         wrapper->base.fields.setup   = MGRSchwarzWrapperSetup;
-         wrapper->base.fields.solve   = MGRSchwarzWrapperSolve;
-         wrapper->base.fields.destroy = MGRSchwarzWrapperDestroy;
-         hypredrv_SchwarzCreate(&f_relaxation->schwarz, &wrapper->inner);
-         if (!wrapper->inner && !hypredrv_ErrorCodeActive())
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd("Failed to create MGR Schwarz F-solver");
-         }
-      }
+   else if (f_relaxation->type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      solver = MGRFRelaxCreateSchwarz(f_relaxation);
+   }
 #endif
+   return solver;
+}
 
-   candidate_done:
-      local_ok = solver && !hypredrv_ErrorCodeActive() &&
-                 !(HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG));
-      MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
-      if (!global_ok)
+/* Collective: agree that every rank created its candidate. On failure the
+ * candidate and its binding are released on every rank. */
+static int
+MGRFRelaxAgreeCandidate(MPI_Comm comm, HYPRE_Solver solver, MGRFRelaxDestroyFcn destroy,
+                        MGRFRelaxBinding *binding)
+{
+   int local_ok  = solver && !hypredrv_ErrorCodeActive() && !MGRHypreErrorOutstanding();
+   int global_ok = 0;
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!global_ok)
+   {
+      if (solver) destroy(solver);
+      MGRFRelaxBindingDestroy(binding, 0);
+      if (!hypredrv_ErrorCodeActive())
       {
-         if (solver) destroy(solver);
-         MGRFRelaxBindingDestroy(binding, 0);
-         if (!hypredrv_ErrorCodeActive())
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd("MGR F-solver creation failed%s",
-                                 local_ok ? " on another rank" : "");
-         }
-         return 0;
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("MGR F-solver creation failed%s",
+                              local_ok ? " on another rank" : "");
       }
+      return 0;
+   }
+   return 1;
+}
+
+/* Retire the slot's previous binding and register the new one in its place. */
+static void
+MGRFRelaxBindingRegister(MGRFRelaxBinding *binding, MGRFRelaxBinding *previous,
+                         HYPRE_Solver parent, HYPRE_Solver *slot, HYPRE_Solver solver,
+                         MGRFRelaxDestroyFcn destroy, int kind)
+{
+#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
+   if (previous)
+   {
+      /* The old parent may still borrow an operator after its child has
+       * been replaced. Release it only after parent setup or teardown. */
+      binding->operators  = previous->operators;
+      previous->operators = NULL;
+      if (previous->parent == parent)
+      {
+         binding->native_levels   = previous->native_levels;
+         binding->parent_operator = previous->parent_operator;
+      }
+   }
+#else
+   (void)previous;
+   (void)parent;
+#endif
+   hypredrv_MGRFRelaxDestroy(slot, 0);
+   binding->slot         = slot;
+   binding->solver       = solver;
+   binding->destroy      = destroy;
+   binding->kind         = kind;
+   binding->next         = g_mgr_frelax_bindings;
+   g_mgr_frelax_bindings = binding;
+}
+
+int
+hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, int refresh,
+                         const Stats *stats, int next_ls_id)
+{
+   if (!args || !parent || args->comm == MPI_COMM_NULL)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd("MGR F-relaxation requires a parent hierarchy");
+      return 0;
+   }
+   MGRfrlx_args        *f_relaxation = NULL;
+   const StackIntArray *f_dofs       = NULL;
+   int                  supported    = 0;
+   MGRFRelaxDestroyFcn  destroy      = NULL;
+   MGRFRelaxBinding    *cached       = NULL;
+   MGRFRelaxBinding    *previous     = NULL;
+   int                  orig_lvl =
+      MGRFRelaxLookup(args, active_lvl, &f_relaxation, &f_dofs, &previous, &cached);
+   if (f_relaxation)
+      supported = MGRFRelaxSelectMethod(f_relaxation, active_lvl, &destroy);
+   MGRFRelaxValidate(args, f_relaxation, supported, active_lvl, refresh, previous);
+   int kind   = supported ? (2 * (int)f_relaxation->type) +
+                             !!f_relaxation->symmetric_diagonal_scaling
+                          : 0;
+   int level  = f_relaxation ? active_lvl : 0;
+   int create = 0;
+   if (!MGRFRelaxAgreeAdmission(args->comm, refresh || !cached || cached->kind != kind,
+                                kind, level, &create))
+      return 0;
+   HYPRE_Solver      solver  = args->frelax[orig_lvl];
+   MGRFRelaxBinding *binding = NULL;
+   if (create)
+   {
+      binding = MGRFRelaxBindingAllocate(args, parent, refresh, previous, f_dofs);
+      if (!binding) return 0;
+      solver = MGRFRelaxCreateSolver(args, f_relaxation, f_dofs);
+      if (!MGRFRelaxAgreeCandidate(args->comm, solver, destroy, binding)) return 0;
    }
    else
    {
@@ -1438,29 +1729,8 @@ hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, in
    }
    MGRFRelaxInstall(parent, f_relaxation, solver, active_lvl);
    if (binding)
-   {
-#if !HYPRE_CHECK_MIN_VERSION(22600, 0)
-      if (previous)
-      {
-         /* The old parent may still borrow an operator after its child has
-          * been replaced. Release it only after parent setup or teardown. */
-         binding->operators  = previous->operators;
-         previous->operators = NULL;
-         if (previous->parent == parent)
-         {
-            binding->native_levels   = previous->native_levels;
-            binding->parent_operator = previous->parent_operator;
-         }
-      }
-#endif
-      hypredrv_MGRFRelaxDestroy(&args->frelax[orig_lvl], 0);
-      binding->slot         = &args->frelax[orig_lvl];
-      binding->solver       = solver;
-      binding->destroy      = destroy;
-      binding->kind         = kind;
-      binding->next         = g_mgr_frelax_bindings;
-      g_mgr_frelax_bindings = binding;
-   }
+      MGRFRelaxBindingRegister(binding, previous, parent, &args->frelax[orig_lvl], solver,
+                               destroy, kind);
    else binding = cached;
    binding->active_level = active_lvl;
 #if !HYPRE_CHECK_MIN_VERSION(22600, 0)

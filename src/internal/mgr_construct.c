@@ -467,6 +467,72 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
  *-----------------------------------------------------------------------------*/
 
 /* GCOVR_EXCL_BR_START */
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+/* Map a level's configured F-relaxation onto the type hypre expects. */
+static HYPRE_Int
+MGRLevelFRelaxType(const MGRlvl_args *level_args)
+{
+   HYPRE_Int type = level_args->f_relaxation.type;
+
+   if (level_args->f_relaxation.use_krylov)
+   {
+      return MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
+   }
+   if (type == MGR_FRLX_TYPE_NESTED_MGR)
+   {
+      return 7;
+   }
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+   if (type == MGR_SOLVER_TYPE_SCHWARZ)
+   {
+      return MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
+   }
+#endif
+#if !HYPRE_CHECK_MIN_VERSION(22900, 0)
+   if (type == 7) return 0;
+#endif
+   return type;
+}
+
+static HYPRE_Int
+MGRLevelGRelaxType(const MGRlvl_args *level_args)
+{
+#if HYPRE_CHECK_MIN_VERSION(23100, 8)
+   /* HYPRE_MGRSetGlobalSmootherAtLevel below installs these user-owned
+    * solvers and determines their effective type. Advertising a concrete
+    * built-in type first makes upstream hypre raise HYPRE_ERROR_GENERIC
+    * while harmlessly resetting it, which must not turn a valid setup into
+    * a HypreDrive failure. */
+   if (hypredrv_MGRGRelaxUsesUserSmoother(&level_args->g_relaxation))
+   {
+      return MGR_GRLX_TYPE_USER_SMOOTHER;
+   }
+#endif
+   return level_args->g_relaxation.type;
+}
+#else
+/* Older hypre has one global smoother and enables it by default. Honor the
+ * configured root smoother, including the driver's default of no smoother. */
+static void
+MGRApplyLegacyGlobalSmoother(HYPRE_Solver precon, const MGR_args *args,
+                             const MGRCreatePlan *plan)
+{
+   const MGRgrlx_args *g_relaxation =
+      plan->num_levels > 1 ? &args->level[plan->active_level_map[0]].g_relaxation : NULL;
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   HYPRE_MGRSetMaxGlobalSmoothIters(
+      precon, g_relaxation && g_relaxation->type >= 0 ? g_relaxation->num_sweeps : 0);
+   if (g_relaxation && g_relaxation->type >= 0)
+      HYPRE_MGRSetGlobalSmoothType(precon, g_relaxation->type);
+#else
+   HYPRE_MGRSetMaxGlobalsmoothIters(
+      precon, g_relaxation && g_relaxation->type >= 0 ? g_relaxation->num_sweeps : 0);
+   if (g_relaxation && g_relaxation->type >= 0)
+      HYPRE_MGRSetGlobalsmoothType(precon, g_relaxation->type);
+#endif
+}
+#endif
+
 static void
 MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *plan,
                       const Stats *stats, int next_ls_id)
@@ -488,42 +554,10 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
    {
       HYPRE_Int    orig_lvl   = plan->active_level_map[i];
       MGRlvl_args *level_args = &args->level[orig_lvl];
-      HYPRE_Int    type       = level_args->f_relaxation.type;
 
-      if (level_args->f_relaxation.use_krylov)
-      {
-         level_frelax_type[i] = MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
-      }
-      else if (type == MGR_FRLX_TYPE_NESTED_MGR)
-      {
-         level_frelax_type[i] = 7;
-      }
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-      else if (type == MGR_SOLVER_TYPE_SCHWARZ)
-      {
-         level_frelax_type[i] = MGR_FRLX_TYPE_CUSTOM_SOLVER_CB;
-      }
-#endif
-      else
-      {
-         level_frelax_type[i] = type;
-#if !HYPRE_CHECK_MIN_VERSION(22900, 0)
-         if (type == 7) level_frelax_type[i] = 0;
-#endif
-      }
+      level_frelax_type[i]   = MGRLevelFRelaxType(level_args);
       level_frelax_sweeps[i] = level_args->f_relaxation.num_sweeps;
-      level_grelax_type[i]   = level_args->g_relaxation.type;
-#if HYPRE_CHECK_MIN_VERSION(23100, 8)
-      /* HYPRE_MGRSetGlobalSmootherAtLevel below installs these user-owned
-       * solvers and determines their effective type. Advertising a concrete
-       * built-in type first makes upstream hypre raise HYPRE_ERROR_GENERIC
-       * while harmlessly resetting it, which must not turn a valid setup into
-       * a HypreDrive failure. */
-      if (hypredrv_MGRGRelaxUsesUserSmoother(&level_args->g_relaxation))
-      {
-         level_grelax_type[i] = MGR_GRLX_TYPE_USER_SMOOTHER;
-      }
-#endif
+      level_grelax_type[i]   = MGRLevelGRelaxType(level_args);
       level_grelax_sweeps[i] = level_args->g_relaxation.num_sweeps;
       level_interp_type[i]   = hypredrv_MGRLevelInterpTypeCompat(
          level_args->prolongation_type, stats, next_ls_id, orig_lvl);
@@ -558,21 +592,7 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
    (void)any_matched_f_backsolve;
 #endif
 #else
-   /* Older hypre has one global smoother and enables it by default. Honor the
-    * configured root smoother, including the driver's default of no smoother. */
-   const MGRgrlx_args *g_relaxation =
-      plan->num_levels > 1 ? &args->level[plan->active_level_map[0]].g_relaxation : NULL;
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-   HYPRE_MGRSetMaxGlobalSmoothIters(
-      precon, g_relaxation && g_relaxation->type >= 0 ? g_relaxation->num_sweeps : 0);
-   if (g_relaxation && g_relaxation->type >= 0)
-      HYPRE_MGRSetGlobalSmoothType(precon, g_relaxation->type);
-#else
-   HYPRE_MGRSetMaxGlobalsmoothIters(
-      precon, g_relaxation && g_relaxation->type >= 0 ? g_relaxation->num_sweeps : 0);
-   if (g_relaxation && g_relaxation->type >= 0)
-      HYPRE_MGRSetGlobalsmoothType(precon, g_relaxation->type);
-#endif
+   MGRApplyLegacyGlobalSmoother(precon, args, plan);
    (void)stats;
    (void)next_ls_id;
 #endif

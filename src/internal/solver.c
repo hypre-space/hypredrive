@@ -441,6 +441,83 @@ SolverParseBody(const SolverOps *ops, solver_args *args, YAMLnode *body,
    return true;
 }
 
+/* A mapping section must hold exactly one method key besides ignored_child. */
+static YAMLnode *
+SolverFindMethodChild(YAMLnode *section, const YAMLnode *ignored_child)
+{
+   YAMLnode *body = NULL;
+   YAML_NODE_ITERATE(section, child)
+   {
+      if (child == ignored_child) continue;
+      if (body)
+      {
+         hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
+         hypredrv_ErrorMsgAddExtraKey(child->key);
+         return NULL;
+      }
+      body = child;
+   }
+   if (!body)
+   {
+      hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
+   }
+   return body;
+}
+
+static bool
+SolverResolveScalarType(StrIntMapArray types, YAMLnode *node, int *selected)
+{
+   if (hypredrv_StrIntMapArrayLookup(types, node->val, selected)) return true;
+
+   node->avail_vals = types;
+   YAML_NODE_SET_INVALID_VAL(node);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_ErrorMsgAdd("Unknown solver type: '%s'", node->val);
+   return false;
+}
+
+static bool
+SolverResolveMethodKey(StrIntMapArray types, YAMLnode *body, int *selected)
+{
+   /* Method keys use their literal schema names; numeric values are allowed
+    * only in the scalar section syntax. Bind the selected operations here. */
+   for (size_t i = 0; i < types.size; i++)
+   {
+      if (!strcmp(body->key, types.data[i].str))
+      {
+         *selected = types.data[i].num;
+         return true;
+      }
+   }
+   body->avail_keys = hypredrv_SolverGetValidKeys();
+   YAML_NODE_SET_INVALID_KEY(body);
+   hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
+   hypredrv_ErrorMsgAdd("Unknown solver type: '%s'", body->key);
+   return false;
+}
+
+/* The scalar form (`solver: gmres`) uses method defaults with printing off. */
+static void
+SolverSetScalarDefaults(const SolverOps *ops, solver_t method, solver_args *args)
+{
+   ops->set_defaults(args);
+   switch (method)
+   {
+      case SOLVER_PCG:
+         args->pcg.print_level = 0;
+         break;
+      case SOLVER_GMRES:
+         args->gmres.print_level = 0;
+         break;
+      case SOLVER_FGMRES:
+         args->fgmres.print_level = 0;
+         break;
+      case SOLVER_BICGSTAB:
+         args->bicgstab.print_level = 0;
+         break;
+   }
+}
+
 bool
 hypredrv_SolverSetArgsFromYAML(solver_t *method, solver_args *args, YAMLnode *node,
                                const YAMLnode *ignored_child)
@@ -453,90 +530,30 @@ hypredrv_SolverSetArgsFromYAML(solver_t *method, solver_args *args, YAMLnode *no
    }
    if (hypredrv_ErrorCodeActive()) return false;
 
-   bool      section = !strcmp(node->key, "solver");
-   bool      scalar  = section && node->val[0];
+   bool      section = strcmp(node->key, "solver") == 0;
+   bool      scalar  = (section && node->val[0]) != 0;
    YAMLnode *body    = node;
    if (section)
    {
       YAML_NODE_SET_VALID(node);
       if (!scalar)
       {
-         body = NULL;
-         YAML_NODE_ITERATE(node, child)
-         {
-            if (child == ignored_child) continue;
-            if (body)
-            {
-               hypredrv_ErrorCodeSet(ERROR_EXTRA_KEY);
-               hypredrv_ErrorMsgAddExtraKey(child->key);
-               return false;
-            }
-            body = child;
-         }
-         if (!body)
-         {
-            hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
-            return false;
-         }
+         body = SolverFindMethodChild(node, ignored_child);
+         if (!body) return false;
       }
    }
 
    StrIntMapArray types    = hypredrv_SolverGetValidTypeIntMap();
    int            selected = -1;
-   if (scalar)
+   if (scalar ? !SolverResolveScalarType(types, node, &selected)
+              : !SolverResolveMethodKey(types, body, &selected))
    {
-      if (!hypredrv_StrIntMapArrayLookup(types, node->val, &selected))
-      {
-         node->avail_vals = types;
-         YAML_NODE_SET_INVALID_VAL(node);
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Unknown solver type: '%s'", node->val);
-         return false;
-      }
-   }
-   else
-   {
-      /* Method keys use their literal schema names; numeric values are allowed
-       * only in the scalar section syntax. Bind the selected operations here. */
-      for (size_t i = 0; i < types.size; i++)
-      {
-         if (!strcmp(body->key, types.data[i].str))
-         {
-            selected = types.data[i].num;
-            break;
-         }
-      }
-      if (selected < 0)
-      {
-         body->avail_keys = hypredrv_SolverGetValidKeys();
-         YAML_NODE_SET_INVALID_KEY(body);
-         hypredrv_ErrorCodeSet(ERROR_INVALID_KEY);
-         hypredrv_ErrorMsgAdd("Unknown solver type: '%s'", body->key);
-         return false;
-      }
+      return false;
    }
 
    const SolverOps *ops = &solver_ops[selected];
    solver_args      parsed;
-   if (scalar)
-   {
-      ops->set_defaults(&parsed);
-      switch ((solver_t)selected)
-      {
-         case SOLVER_PCG:
-            parsed.pcg.print_level = 0;
-            break;
-         case SOLVER_GMRES:
-            parsed.gmres.print_level = 0;
-            break;
-         case SOLVER_FGMRES:
-            parsed.fgmres.print_level = 0;
-            break;
-         case SOLVER_BICGSTAB:
-            parsed.bicgstab.print_level = 0;
-            break;
-      }
-   }
+   if (scalar) SolverSetScalarDefaults(ops, (solver_t)selected, &parsed);
    else if (!SolverParseBody(ops, &parsed, body, ignored_child)) return false;
    *method = (solver_t)selected;
    *args   = parsed;
@@ -559,13 +576,16 @@ hypredrv_SolverArgsFromPreset(const char *name, solver_t *method, solver_args *a
    bool        valid = true;
    if (hypredrv_StrIntMapArrayLookup(hypredrv_SolverGetValidTypeIntMap(), name,
                                      &selected))
+   {
       solver_ops[selected].set_defaults(&parsed);
+   }
    else
    {
       YAMLtree *tree = NULL;
       YAMLnode *body =
          hypredrv_PresetLoadTypeNode(name, HYPREDRV_PRESET_SOLVER, &tree, &selected);
-      valid = body && SolverParseBody(&solver_ops[selected], &parsed, body, NULL);
+      valid =
+         ((body && SolverParseBody(&solver_ops[selected], &parsed, body, NULL)) != 0);
       if (tree) hypredrv_YAMLtreeValidate(tree);
       hypredrv_YAMLtreeDestroy(&tree);
    }

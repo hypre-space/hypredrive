@@ -758,6 +758,74 @@ LSSeqFileBlobRead(void *ctx, uint64_t offset, void *buffer, size_t size)
    return LSSeqReadAt(blob->fp, blob->base + offset, buffer, size, "blob payload");
 }
 
+/* Uncompressed blobs: read the slice straight from the file. */
+static int
+LSSeqReadRawBlobSlice(FILE *fp, uint64_t blob_offset, uint64_t c_size,
+                      uint64_t decomp_offset, uint64_t decomp_size, void **output)
+{
+   /* GCOVR_EXCL_BR_START */
+   if (decomp_offset > c_size || decomp_size > c_size - decomp_offset)
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Raw blob slice exceeds its part blob");
+      return 0;
+   }
+   if (decomp_size == 0)
+   {
+      return 1;
+   }
+   *output = malloc((size_t)decomp_size);
+   /* GCOVR_EXCL_BR_START */
+   if (!*output || !LSSeqReadAt(fp, blob_offset + decomp_offset, *output,
+                                (size_t)decomp_size, "blob payload"))
+   /* GCOVR_EXCL_BR_STOP */
+   {
+      free(*output);
+      *output = NULL;
+      return 0;
+   }
+   return 1;
+}
+
+/* No file identity (no caching) or no resumable decoder for this codec:
+ * read the whole blob and decode just the slice from memory. */
+static int
+LSSeqDecodeWholeBlobSlice(FILE *fp, comp_alg_t codec, uint64_t blob_offset,
+                          uint64_t c_size, uint64_t decomp_offset, uint64_t decomp_size,
+                          void **output)
+{
+   uint64_t declared_size = 0;
+   void    *blob          = NULL;
+   int      ok            = 0;
+
+   /* The fallback allocates the entire decoded blob, not just the slice.
+    * Validate its header before allowing the decoder to allocate it. */
+   if (c_size < sizeof(declared_size) ||
+       !LSSeqReadAt(fp, blob_offset, &declared_size, sizeof(declared_size),
+                    "decoded blob size") ||
+       declared_size > (uint64_t)LSSEQ_MAX_BLOB_BYTES)
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+      hypredrv_ErrorMsgAdd("Invalid decoded size for non-streamed part blob "
+                           "(%llu bytes; limit %u)",
+                           (unsigned long long)declared_size, LSSEQ_MAX_BLOB_BYTES);
+      return 0;
+   }
+   blob = hypredrv_Malloc((size_t)c_size, "blob");
+   if (!blob) /* GCOVR_EXCL_BR_LINE */
+   {
+      return 0;
+   }
+   /* GCOVR_EXCL_BR_START */
+   ok = LSSeqReadAt(fp, blob_offset, blob, (size_t)c_size, "blob payload") &&
+        hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
+                                  (size_t)decomp_size, output);
+   /* GCOVR_EXCL_BR_STOP */
+   free(blob);
+   return ok;
+}
+
 /* Read one system's slice from a part's batched blob. Slot is selected by
  * the reader: 0 = values, 1 = RHS, 2 = dofmap. */
 static int
@@ -765,9 +833,9 @@ LSSeqReadPartBlobSlice(const LSSeqData *seq, uint32_t part_id, int slot,
                        uint64_t decomp_offset, uint64_t decomp_size, void **output)
 {
    const uint64_t *part_blob =
-      seq->part_blob_table + (size_t)part_id * LSSEQ_PART_BLOB_ENTRIES;
-   uint64_t   c_off       = part_blob[slot * 2];
-   uint64_t   c_size      = part_blob[slot * 2 + 1];
+      seq->part_blob_table + ((size_t)part_id * LSSEQ_PART_BLOB_ENTRIES);
+   uint64_t   c_off       = part_blob[(size_t)slot * 2];
+   uint64_t   c_size      = part_blob[((size_t)slot * 2) + 1];
    uint64_t   blob_offset = 0, blob_end = 0;
    FILE      *fp    = seq->fp;
    comp_alg_t codec = (comp_alg_t)seq->header.codec;
@@ -800,33 +868,10 @@ LSSeqReadPartBlobSlice(const LSSeqData *seq, uint32_t part_id, int slot,
    }
    if (codec == COMP_NONE)
    {
-      /* GCOVR_EXCL_BR_START */
-      if (decomp_offset > c_size || decomp_size > c_size - decomp_offset)
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Raw blob slice exceeds its part blob");
-         return 0;
-      }
-      if (decomp_size == 0)
-      {
-         return 1;
-      }
-      *output = malloc((size_t)decomp_size);
-      /* GCOVR_EXCL_BR_START */
-      if (!*output || !LSSeqReadAt(fp, blob_offset + decomp_offset, *output,
-                                   (size_t)decomp_size, "blob payload"))
-      /* GCOVR_EXCL_BR_STOP */
-      {
-         free(*output);
-         *output = NULL;
-         return 0;
-      }
-      return 1;
+      return LSSeqReadRawBlobSlice(fp, blob_offset, c_size, decomp_offset, decomp_size,
+                                   output);
    }
 
-   void *blob = NULL;
-   int   ok   = 0;
    /* Streaming codecs decode through a cached decoder for this exact blob that
     * reads its compressed input from the file on demand: reading a part's
     * slices in order inflates the blob once and never holds a copy of it. */
@@ -841,40 +886,11 @@ LSSeqReadPartBlobSlice(const LSSeqData *seq, uint32_t part_id, int slot,
    }
    if (stream)
    {
-      ok = hypredrv_SliceStreamRead(stream, &src, (size_t)decomp_offset,
-                                    (size_t)decomp_size, output);
+      return hypredrv_SliceStreamRead(stream, &src, (size_t)decomp_offset,
+                                      (size_t)decomp_size, output);
    }
-   else
-   {
-      /* No file identity (no caching) or no resumable decoder for this codec:
-       * read the whole blob and decode just the slice from memory. */
-      uint64_t declared_size = 0;
-      /* The fallback allocates the entire decoded blob, not just the slice.
-       * Validate its header before allowing the decoder to allocate it. */
-      if (c_size < sizeof(declared_size) ||
-          !LSSeqReadAt(fp, blob_offset, &declared_size, sizeof(declared_size),
-                       "decoded blob size") ||
-          declared_size > (uint64_t)LSSEQ_MAX_BLOB_BYTES)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("Invalid decoded size for non-streamed part blob "
-                              "(%llu bytes; limit %u)",
-                              (unsigned long long)declared_size, LSSEQ_MAX_BLOB_BYTES);
-         return 0;
-      }
-      blob = hypredrv_Malloc((size_t)c_size, "blob");
-      if (!blob) /* GCOVR_EXCL_BR_LINE */
-      {
-         return 0;
-      }
-      /* GCOVR_EXCL_BR_START */
-      ok = LSSeqReadAt(fp, blob_offset, blob, (size_t)c_size, "blob payload") &&
-           hypredrv_decompress_slice(codec, (size_t)c_size, blob, (size_t)decomp_offset,
-                                     (size_t)decomp_size, output);
-      /* GCOVR_EXCL_BR_STOP */
-      free(blob);
-   }
-   return ok;
+   return LSSeqDecodeWholeBlobSlice(fp, codec, blob_offset, c_size, decomp_offset,
+                                    decomp_size, output);
 }
 
 static int
@@ -1179,6 +1195,64 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
 /* The dofmap payload is int32; IntArray stores it as int. */
 _Static_assert(sizeof(int) == sizeof(int32_t), "LSSeq dofmap requires 32-bit int");
 
+/* This rank's parts are the same contiguous range IntArrayParRead would
+ * assign, so concatenate their slices and build the distributed array.
+ * Rank-local only. On failure, *local_ptr keeps what was gathered so far for
+ * the caller to free. */
+static int
+LSSeqGatherLocalDofmap(const LSSeqData *seq, int **local_ptr, size_t *count_ptr)
+{
+   for (uint32_t i = 0; i < seq->num_local_parts; i++)
+   {
+      uint32_t                   part_id = seq->part_order[seq->first_part + i];
+      const LSSeqSystemPartMeta *sys =
+         &seq->sys_parts[((size_t)seq->ls_id * seq->header.num_parts) + part_id];
+      if (sys->dof_num_entries > LSSEQ_MAX_BLOB_BYTES / sizeof(int32_t))
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("LSSeq dofmap part %u exceeds the payload limit", part_id);
+         return 0;
+      }
+      size_t entries       = (size_t)sys->dof_num_entries;
+      size_t expected_size = entries * sizeof(int32_t);
+      void  *dof_data      = NULL;
+      if (!entries)
+      {
+         continue;
+      }
+      size_t max_entries = SIZE_MAX / sizeof(int);
+      if (max_entries > (size_t)INT_MAX)
+      {
+         max_entries = (size_t)INT_MAX;
+      }
+      if (entries > max_entries - *count_ptr)
+      {
+         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
+         hypredrv_ErrorMsgAdd("LSSeq local dofmap exceeds the supported entry count");
+         return 0;
+      }
+      if (!LSSeqReadPartBlobSlice(seq, part_id, 2, sys->dof_blob_offset, expected_size,
+                                  &dof_data) ||
+          !dof_data)
+      {
+         free(dof_data);
+         return 0;
+      }
+      int *grown = realloc(*local_ptr, (*count_ptr + entries) * sizeof(int));
+      if (!grown)
+      {
+         free(dof_data);
+         hypredrv_AllocationFailure("Failed to allocate LSSeq dofmap buffer");
+         return 0;
+      }
+      memcpy(grown + *count_ptr, dof_data, entries * sizeof(int));
+      *local_ptr = grown;
+      *count_ptr += entries;
+      free(dof_data);
+   }
+   return 1;
+}
+
 int
 hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
                          IntArray **dofmap_ptr)
@@ -1225,60 +1299,7 @@ hypredrv_LSSeqReadDofmap(MPI_Comm comm, const char *filename, int ls_id,
       return (*dofmap_ptr != NULL);
    }
 
-   /* This rank's parts are the same contiguous range IntArrayParRead would
-    * assign, so concatenate their slices and build the distributed array. */
-   for (uint32_t i = 0; i < seq.num_local_parts && local_ok; i++)
-   {
-      uint32_t                   part_id = seq.part_order[seq.first_part + i];
-      const LSSeqSystemPartMeta *sys =
-         &seq.sys_parts[(size_t)seq.ls_id * seq.header.num_parts + part_id];
-      if (sys->dof_num_entries > LSSEQ_MAX_BLOB_BYTES / sizeof(int32_t))
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("LSSeq dofmap part %u exceeds the payload limit", part_id);
-         local_ok = 0;
-         break;
-      }
-      size_t entries       = (size_t)sys->dof_num_entries;
-      size_t expected_size = entries * sizeof(int32_t);
-      void  *dof_data      = NULL;
-      if (!entries)
-      {
-         continue;
-      }
-      size_t max_entries = SIZE_MAX / sizeof(int);
-      if (max_entries > (size_t)INT_MAX)
-      {
-         max_entries = (size_t)INT_MAX;
-      }
-      if (entries > max_entries - count)
-      {
-         hypredrv_ErrorCodeSet(ERROR_FILE_UNEXPECTED_ENTRY);
-         hypredrv_ErrorMsgAdd("LSSeq local dofmap exceeds the supported entry count");
-         local_ok = 0;
-         break;
-      }
-      if (!LSSeqReadPartBlobSlice(&seq, part_id, 2, sys->dof_blob_offset, expected_size,
-                                  &dof_data) ||
-          !dof_data)
-      {
-         free(dof_data);
-         local_ok = 0;
-         break;
-      }
-      int *grown = realloc(local, (count + entries) * sizeof(int));
-      if (!grown)
-      {
-         free(dof_data);
-         hypredrv_AllocationFailure("Failed to allocate LSSeq dofmap buffer");
-         local_ok = 0;
-         break;
-      }
-      memcpy(grown + count, dof_data, entries * sizeof(int));
-      local = grown;
-      count += entries;
-      free(dof_data);
-   }
+   local_ok = LSSeqGatherLocalDofmap(&seq, &local, &count);
 
    if (!LSSeqSynchronizeMPIStatus(comm, local_ok, ERROR_FILE_UNEXPECTED_ENTRY,
                                   "LSSeq dofmap local decode failed"))

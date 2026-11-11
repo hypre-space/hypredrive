@@ -50,8 +50,8 @@ int hypredrv_MGRProjectNestedRemainingRBMs(NestedKrylov_args *krylov, MGR_args *
                                            int num_eliminated_levels);
 /* Build and register a managed F-solver using hypre's native handle protocol.
  * All ranks agree on the method, scaling mode and native level before creation. */
-int hypredrv_MGRFRelaxAttach(MGR_args *, HYPRE_Solver parent, int active_level,
-                             int refresh, const Stats *, int next_ls_id);
+int hypredrv_MGRFRelaxAttach(MGR_args *, HYPRE_Solver parent, int active_lvl, int refresh,
+                             const Stats *, int next_ls_id);
 /* Retire the binding after optional native parent teardown. The binding owns
  * the native lifetime policy; configuration tags are not needed for cleanup. */
 void hypredrv_MGRFRelaxDestroy(HYPRE_Solver *, int parent_destroyed);

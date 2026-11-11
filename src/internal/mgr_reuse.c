@@ -648,8 +648,8 @@ MGRRebuildNestedKrylovSolver(NestedKrylov_args *krylov, MGR_args *mgr_args,
    {
       return 0;
    }
-   return hypredrv_NestedKrylovCreate(mgr_args->comm, krylov, mgr_args->dofmap,
-                                      mgr_args->vec_nn);
+   return (int)hypredrv_NestedKrylovCreate(mgr_args->comm, krylov, mgr_args->dofmap,
+                                           mgr_args->vec_nn);
 }
 
 /*-----------------------------------------------------------------------------
@@ -728,6 +728,126 @@ MGRCoarseSolverDestroy(MGR_args *args)
    args->csolver_type = -1;
 }
 
+static void
+MGRCoarseSolverReportUnsupported(HYPRE_Int type)
+{
+   hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+   switch (type)
+   {
+      case 29:
+         hypredrv_ErrorMsgAdd(
+            "MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
+         break;
+      case 33:
+         hypredrv_ErrorMsgAdd("MGR coarsest_level 'fsai' requires hypre >= 2.25.0");
+         break;
+      case MGR_SOLVER_TYPE_SCHWARZ:
+         hypredrv_ErrorMsgAdd(
+            "MGR coarsest_level 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
+         break;
+      default:
+         hypredrv_ErrorMsgAdd("Unsupported MGR coarsest solver type %d", (int)type);
+         break;
+   }
+}
+
+/* Agree on the method and rebuild decision before entering native creators.
+ * A missing cache on one rank must not leave peers reusing old state.
+ * Returns 0 when admission fails on any rank, otherwise 1 with *rebuild set to
+ * the collective rebuild decision. */
+static int
+MGRCoarseSolverAdmit(const MGR_args *args, HYPRE_Int type, int supported, int refresh,
+                     int *rebuild)
+{
+   HYPRE_Int hard_error = HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
+   if (hard_error)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+      hypredrv_ErrorMsgAdd(
+         "Cannot replace the MGR coarse solver with an outstanding hypre error");
+   }
+   int admitted_type  = supported ? (int)type : 0;
+   int local_state[4] = {(int)hypredrv_ErrorCodeActive() != 0,
+                         refresh || !args->csolver || args->csolver_type != type,
+                         admitted_type, -admitted_type};
+   int global_state[4];
+   MPI_Allreduce(local_state, global_state, 4, MPI_INT, MPI_MAX, args->comm);
+   if (global_state[0] || global_state[2] != -global_state[3])
+   {
+      if (!hypredrv_ErrorCodeActive())
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd(
+            "MGR coarse solver admission failed or methods differ between ranks");
+      }
+      return 0;
+   }
+   *rebuild = global_state[1];
+   return 1;
+}
+
+static HYPRE_Solver
+MGRCoarseSolverCreateCandidate(MGRcls_args *config, HYPRE_Int type)
+{
+   HYPRE_Solver candidate = NULL;
+   switch (type)
+   {
+      case 0:
+         if (config->amg.max_iter < 1) config->amg.max_iter = 1;
+         hypredrv_AMGCreate(&config->amg, &candidate);
+         break;
+      case 32:
+         if (config->ilu.max_iter < 1) config->ilu.max_iter = 1;
+         hypredrv_ILUCreate(&config->ilu, &candidate);
+         break;
+#if defined(HYPRE_USING_DSUPERLU)
+      case 29:
+         HYPRE_MGRDirectSolverCreate(&candidate);
+         break;
+#endif
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+      case 33:
+         hypredrv_FSAICreate(&config->fsai, &candidate);
+         break;
+#endif
+#if HYPRE_CHECK_MIN_VERSION(30100, 55)
+      case MGR_SOLVER_TYPE_SCHWARZ:
+         if (config->schwarz.max_iter < 1) config->schwarz.max_iter = 1;
+         hypredrv_SchwarzCreate(&config->schwarz, &candidate);
+         break;
+#endif
+      default:
+         break;
+   }
+   return candidate;
+}
+
+/* Create a fresh coarse solver on every rank, or none. Returns NULL (with the
+ * error state set) when creation failed on any rank. */
+static HYPRE_Solver
+MGRCoarseSolverBuild(const MGR_args *args, MGRcls_args *config, HYPRE_Int type,
+                     const MGRCoarseSolverOps *ops)
+{
+   HYPRE_Solver candidate = MGRCoarseSolverCreateCandidate(config, type);
+   int          local_ok  = !hypredrv_ErrorCodeActive() && candidate &&
+                  !(HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG));
+   int global_ok = 0;
+   MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
+   if (!global_ok)
+   {
+      if (candidate) ops->destroy(candidate);
+      if (!hypredrv_ErrorCodeActive())
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
+         hypredrv_ErrorMsgAdd("Failed to create MGR coarsest solver '%s'%s",
+                              hypredrv_MGRCoarseSolverTypeName(config),
+                              local_ok ? " on another rank" : "");
+      }
+      return NULL;
+   }
+   return candidate;
+}
+
 int
 hypredrv_MGRCoarseSolverAttach(MGR_args *args, HYPRE_Solver parent, int refresh,
                                const Stats *stats, int next_ls_id)
@@ -743,49 +863,12 @@ hypredrv_MGRCoarseSolverAttach(MGR_args *args, HYPRE_Solver parent, int refresh,
    const MGRCoarseSolverOps *ops    = MGRCoarseSolverOperations(type);
    if (!ops)
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      switch (type)
-      {
-         case 29:
-            hypredrv_ErrorMsgAdd(
-               "MGR coarsest_level 'spdirect' requires hypre built with DSUPERLU");
-            break;
-         case 33:
-            hypredrv_ErrorMsgAdd("MGR coarsest_level 'fsai' requires hypre >= 2.25.0");
-            break;
-         case MGR_SOLVER_TYPE_SCHWARZ:
-            hypredrv_ErrorMsgAdd(
-               "MGR coarsest_level 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
-            break;
-         default:
-            hypredrv_ErrorMsgAdd("Unsupported MGR coarsest solver type %d", (int)type);
-            break;
-      }
+      MGRCoarseSolverReportUnsupported(type);
    }
 
-   HYPRE_Int hard_error = HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG);
-   if (hard_error)
+   int rebuild = 0;
+   if (!MGRCoarseSolverAdmit(args, type, ops != NULL, refresh, &rebuild))
    {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-      hypredrv_ErrorMsgAdd(
-         "Cannot replace the MGR coarse solver with an outstanding hypre error");
-   }
-   /* Agree on the method and rebuild decision before entering native creators.
-    * A missing cache on one rank must not leave peers reusing old state. */
-   int admitted_type  = ops ? (int)type : 0;
-   int local_state[4] = {hypredrv_ErrorCodeActive() != 0,
-                         refresh || !args->csolver || args->csolver_type != type,
-                         admitted_type, -admitted_type};
-   int global_state[4];
-   MPI_Allreduce(local_state, global_state, 4, MPI_INT, MPI_MAX, args->comm);
-   if (global_state[0] || global_state[2] != -global_state[3])
-   {
-      if (!hypredrv_ErrorCodeActive())
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-         hypredrv_ErrorMsgAdd(
-            "MGR coarse solver admission failed or methods differ between ranks");
-      }
       return 0;
    }
 
@@ -793,52 +876,13 @@ hypredrv_MGRCoarseSolverAttach(MGR_args *args, HYPRE_Solver parent, int refresh,
       HYPREDRV_LOG_COMMF(2, MPI_COMM_WORLD, hypredrv_MGRLogObjectName(stats), next_ls_id,
                          "MGR coarsest solver selected: %s",
                          hypredrv_MGRCoarseSolverTypeName(config));
-   int          cached    = !global_state[1];
+   int          cached    = !rebuild;
    HYPRE_Solver candidate = args->csolver;
    if (!cached)
    {
-      candidate = NULL;
-      switch (type)
+      candidate = MGRCoarseSolverBuild(args, config, type, ops);
+      if (!candidate)
       {
-         case 0:
-            if (config->amg.max_iter < 1) config->amg.max_iter = 1;
-            hypredrv_AMGCreate(&config->amg, &candidate);
-            break;
-         case 32:
-            if (config->ilu.max_iter < 1) config->ilu.max_iter = 1;
-            hypredrv_ILUCreate(&config->ilu, &candidate);
-            break;
-#if defined(HYPRE_USING_DSUPERLU)
-         case 29:
-            HYPRE_MGRDirectSolverCreate(&candidate);
-            break;
-#endif
-#if HYPRE_CHECK_MIN_VERSION(22500, 0)
-         case 33:
-            hypredrv_FSAICreate(&config->fsai, &candidate);
-            break;
-#endif
-#if HYPRE_CHECK_MIN_VERSION(30100, 55)
-         case MGR_SOLVER_TYPE_SCHWARZ:
-            if (config->schwarz.max_iter < 1) config->schwarz.max_iter = 1;
-            hypredrv_SchwarzCreate(&config->schwarz, &candidate);
-            break;
-#endif
-      }
-      int local_ok = !hypredrv_ErrorCodeActive() && candidate &&
-                     !(HYPRE_GetError() & ~(HYPRE_ERROR_CONV | HYPRE_ERROR_ARG));
-      int global_ok = 0;
-      MPI_Allreduce(&local_ok, &global_ok, 1, MPI_INT, MPI_MIN, args->comm);
-      if (!global_ok)
-      {
-         if (candidate) ops->destroy(candidate);
-         if (!hypredrv_ErrorCodeActive())
-         {
-            hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
-            hypredrv_ErrorMsgAdd("Failed to create MGR coarsest solver '%s'%s",
-                                 hypredrv_MGRCoarseSolverTypeName(config),
-                                 local_ok ? " on another rank" : "");
-         }
          return 0;
       }
    }
