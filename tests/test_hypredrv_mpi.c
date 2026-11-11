@@ -1205,11 +1205,19 @@ test_frelax_admission_preserves_the_live_hierarchy(void)
    ASSERT_EQ(hypredrv_MGRSetup(parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
                                (HYPRE_ParVector)x),
              0);
-   HYPRE_Solver original = args.frelax[0];
+#if !HYPRE_CHECK_MIN_VERSION(30000, 0)
+   /* Match the driver's hierarchy rebuild on releases whose native setup
+    * cannot safely reuse its hierarchy arrays. */
+   hypredrv_MGRDestroy(&args, &parent, 1);
+   hypredrv_MGRCreate(MPI_COMM_WORLD, &args, &parent, NULL, 0);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(parent);
+#endif
    ASSERT_EQ(hypredrv_MGRSetup(parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
                                (HYPRE_ParVector)x),
              0);
    HYPRE_Int saved_interp = config->amg.aggressive.prolongation_type;
+   HYPRE_Solver original     = args.frelax[0];
    for (int path = 0; path < 6; path++)
    {
       hypredrv_ErrorStateReset();

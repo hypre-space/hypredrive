@@ -217,6 +217,8 @@ void hypredrv_MGRCreate(MPI_Comm, MGR_args *, HYPRE_Solver *, const struct Stats
                         int);
 HYPRE_Int hypredrv_MGRSetup(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
                             HYPRE_ParVector);
+HYPRE_Int hypredrv_MGRSolve(MGR_args *, HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector,
+                            HYPRE_ParVector);
 int  hypredrv_MGRComponentReuseSetupMode(MGR_args *, const struct Stats_struct *, int);
 void hypredrv_MGRRefreshComponentsForSetup(MGR_args *, HYPRE_Solver, const IntArray *,
                                            const struct Stats_struct *, int);

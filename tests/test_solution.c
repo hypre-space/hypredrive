@@ -12,6 +12,19 @@
 #include "object.h"
 #include "test_helpers.h"
 
+/* Write the nonzero-origin rejection fixture directly. hypre 2.21 normalizes
+ * ParVector partitions but its IJ printer asserts they are still absolute. */
+static void
+write_shifted_vector_fixture(const char *prefix, double value)
+{
+   char path[PATH_MAX];
+   snprintf(path, sizeof(path), "%s.00000", prefix);
+   FILE *file = fopen(path, "w");
+   ASSERT_NOT_NULL(file);
+   ASSERT_TRUE(fprintf(file, "1 2\n1 %.17g\n2 %.17g\n", value, value) > 0);
+   ASSERT_EQ(fclose(file), 0);
+}
+
 static HYPRE_IJVector
 create_vector(MPI_Comm comm, HYPRE_BigInt first, int count, double value)
 {
@@ -256,11 +269,9 @@ test_generated_and_file_guesses(void)
       ASSERT_EQ_DOUBLE((double)data[0], 4.0, 0.0);
       ASSERT_EQ_DOUBLE((double)data[1], 4.0, 0.0);
       HYPRE_IJVector saved       = obj->vec_x0.handle;
-      HYPRE_IJVector wrong_range = create_vector(MPI_COMM_SELF, 1, 2, 8.0);
-      ASSERT_EQ(HYPRE_IJVectorPrint(wrong_range, prefix), 0);
+      write_shifted_vector_fixture(prefix, 8.0);
       ASSERT_TRUE(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL) & ERROR_INVALID_VAL);
       ASSERT_PTR_EQ(obj->vec_x0.handle, saved);
-      ASSERT_EQ(HYPRE_IJVectorDestroy(wrong_range), 0);
       test_scratch_path(prefix, sizeof(obj->iargs->ls.x0_filename),
                         locations[p] ? "bad-device" : "bad-host");
       char filename[PATH_MAX];
@@ -460,8 +471,7 @@ test_configured_rhs_and_reference_storage(void)
       obj->iargs->ls.rhs_mode = 2;
       ASSERT_EQ(HYPREDRV_LinearSystemSetRHS(obj, NULL), ERROR_NONE);
       HYPRE_IJVector saved_rhs   = obj->vec_b.handle;
-      HYPRE_IJVector wrong_range = create_vector(MPI_COMM_SELF, 1, 2, 3.0);
-      ASSERT_EQ(HYPRE_IJVectorPrint(wrong_range, prefix), 0);
+      write_shifted_vector_fixture(prefix, 3.0);
       ASSERT_TRUE(HYPREDRV_LinearSystemSetRHS(obj, NULL) & ERROR_INVALID_VAL);
       ASSERT_PTR_EQ(obj->vec_b.handle, saved_rhs);
       ASSERT_EQ(HYPRE_IJVectorPrint(fixture, prefix), 0);
@@ -472,7 +482,6 @@ test_configured_rhs_and_reference_storage(void)
          hypredrv_IJVectorData(obj->vec_xref.handle, HYPRE_MEMORY_HOST);
       ASSERT_EQ_DOUBLE((double)data[0], 8.0, 0.0);
       ASSERT_EQ(HYPRE_IJVectorDestroy(fixture), 0);
-      ASSERT_EQ(HYPRE_IJVectorDestroy(wrong_range), 0);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    }
 }

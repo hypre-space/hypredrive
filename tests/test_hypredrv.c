@@ -2506,6 +2506,13 @@ test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation(void)
    attach_library_scalar_system(obj, mat_A, vec_b);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   /* This regression exercises iteration degradation, not wall-clock timing.
+    * Real solve timings can otherwise build a bad-decision streak before the
+    * first injected observation when other tests contend for the CPU. */
+   PreconReuseAdaptive_args *adaptive = &state->iargs->precon_reuse.adaptive;
+   for (size_t i = 0; i < adaptive->num_components; i++)
+      if (adaptive->components[i].metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
+         adaptive->components[i].enabled = 0;
 
    run_library_linear_solve(obj, NULL);
    ASSERT_EQ_SIZE(test_reuse_decision(state->precon_reuse_state, 0).age, 1);

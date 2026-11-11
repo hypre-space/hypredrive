@@ -324,6 +324,18 @@ hypredrv_PreconKrylovSetup(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParV
    {
       return 0;
    }
+#if !HYPRE_CHECK_MIN_VERSION(30000, 0)
+   if (precon->method == PRECON_MGR && precon->setup_called)
+   {
+      /* Older MGR setup frees hierarchy arrays without resetting their
+       * pointers. Rebuild the native hierarchy behind the stable adapter. */
+      hypredrv_MGRDestroy(&precon->args->mgr, &precon->main, 1);
+      precon->setup_called = 0;
+      hypredrv_MGRCreate(precon->comm, &precon->args->mgr, &precon->main, precon->stats,
+                         0);
+      if (!precon->main || hypredrv_ErrorCodeActive()) return HYPRE_ERROR_GENERIC;
+   }
+#endif
    if (precon->stats)
    {
       hypredrv_StatsAnnotate(precon->stats, HYPREDRV_ANNOTATE_BEGIN, "prec");
@@ -346,6 +358,8 @@ hypredrv_PreconKrylovSolve(HYPRE_Solver solver, HYPRE_ParCSRMatrix A, HYPRE_ParV
    {
       return 0;
    }
+   if (precon->method == PRECON_MGR)
+      return hypredrv_MGRSolve(&precon->args->mgr, precon->main, A, b, x);
    return precon->ops->solve(precon->main, A, b, x);
 }
 
@@ -914,8 +928,9 @@ hypredrv_PreconSetup(HYPRE_Precon precon, HYPRE_IJMatrix A)
 
 #if HYPREDRV_HYPRE_RELEASE_NUMBER == 22800
    /* hypre 2.28.0 unconditionally reads the RHS vector's component count during
-    * ILU/FSAI setup, although setup otherwise accepts NULL vectors. */
-   if (precon->method == PRECON_ILU || precon->method == PRECON_FSAI)
+    * ILU/FSAI and MGR setup, although setup otherwise accepts NULL vectors. */
+   if (precon->method == PRECON_ILU || precon->method == PRECON_FSAI ||
+       precon->method == PRECON_MGR)
    {
       HYPRE_ParVectorCreate(hypre_ParCSRMatrixComm(par_A),
                             hypre_ParCSRMatrixGlobalNumRows(par_A), NULL, &par_b);

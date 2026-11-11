@@ -691,6 +691,28 @@ MGRCoarseSolverOperations(HYPRE_Int type)
    return NULL;
 }
 
+HYPRE_Int
+hypredrv_MGRSolve(MGR_args *args, HYPRE_Solver parent, HYPRE_ParCSRMatrix A,
+                  HYPRE_ParVector b, HYPRE_ParVector x)
+{
+   /* Native scalar MGR unconditionally queries AMG statistics on its coarse
+    * handle, even for ILU/FSAI/Schwarz or nested Krylov. Use the bound solver
+    * directly when the admitted hierarchy has no fine levels. */
+   if (args->num_active_levels == 0)
+   {
+      if (args->csolver && args->csolver_type != 0)
+      {
+         const MGRCoarseSolverOps *ops = MGRCoarseSolverOperations(args->csolver_type);
+         return ops->solve(args->csolver, A, b, x);
+      }
+      if (!args->csolver && args->coarsest_level.krylov &&
+          args->coarsest_level.krylov->runtime)
+         return hypredrv_MGRBaseParSolverSolve((HYPRE_Solver)args->coarsest_level.krylov,
+                                               A, b, x);
+   }
+   return HYPRE_MGRSolve(parent, A, b, x);
+}
+
 /* User-installed coarse solvers belong to us on every supported hypre. The
  * cached type was bound at creation; configuration can already describe a
  * candidate for the next hierarchy when the old one is released. */

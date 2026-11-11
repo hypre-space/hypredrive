@@ -406,8 +406,9 @@ MGRFRelaxWrapperSolve(HYPRE_Solver wrapper_v, HYPRE_Matrix A, HYPRE_Vector b,
    /* hypre calls the setup callback for level-specific F-solvers during the
     * parent MGR setup. Avoid calling inner MGR setup again from solve because
     * repeated nested re-setup trips a cleanup bug in current hypre. */
-   return HYPRE_MGRSolve((HYPRE_Solver)wrapper->inner_mgr, (HYPRE_ParCSRMatrix)A,
-                         (HYPRE_ParVector)b, (HYPRE_ParVector)x);
+   return hypredrv_MGRSolve(wrapper->nested_args, wrapper->inner_mgr,
+                            (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
+                            (HYPRE_ParVector)x);
 }
 
 static HYPRE_Int

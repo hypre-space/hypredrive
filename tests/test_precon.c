@@ -5183,8 +5183,8 @@ test_mgr_coarse_attachment_owns_replacement(void)
    ASSERT_EQ(HYPRE_MGRSetup(parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
                             (HYPRE_ParVector)x),
              0);
-   ASSERT_EQ(HYPRE_MGRSolve(parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
-                            (HYPRE_ParVector)x),
+   ASSERT_EQ(hypredrv_MGRSolve(&args, parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
+                               (HYPRE_ParVector)x),
              0);
    HYPRE_BigInt  row   = 0;
    HYPRE_Complex value = 0.0;
@@ -5243,8 +5243,8 @@ test_mgr_coarse_attachment_owns_replacement(void)
       ASSERT_EQ(HYPRE_MGRSetup(parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
                                (HYPRE_ParVector)x),
                 0);
-      ASSERT_EQ(HYPRE_MGRSolve(parent, (HYPRE_ParCSRMatrix)A, (HYPRE_ParVector)b,
-                               (HYPRE_ParVector)x),
+      ASSERT_EQ(hypredrv_MGRSolve(&args, parent, (HYPRE_ParCSRMatrix)A,
+                                  (HYPRE_ParVector)b, (HYPRE_ParVector)x),
                 0);
       ASSERT_EQ(HYPRE_IJVectorGetValues(solution, 1, &row, &value), 0);
       ASSERT_EQ_DOUBLE(value, 0.25, 1e-12);
@@ -6365,6 +6365,11 @@ test_PreconSetup_failed_mgr_preserves_native_ownership(void)
    hypredrv_PreconCreate(MPI_COMM_SELF, PRECON_MGR, &args, dofmap, NULL, &precon, NULL, 0,
                          NULL);
    ASSERT_NOT_NULL(precon);
+   hypredrv_PreconSetup(precon, A);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+
+   /* Repeated setup must remain safe behind the stable preconditioner adapter,
+    * including old hypre releases that require a fresh native hierarchy. */
    hypredrv_PreconSetup(precon, A);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 

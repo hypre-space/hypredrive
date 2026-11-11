@@ -410,6 +410,11 @@ MGRApplyBaseSettings(HYPRE_Solver precon, MGR_args *args, MGRCreatePlan *plan,
                      int next_ls_id)
 {
    HYPRE_Int relax_type = args->relax_type;
+#if !HYPRE_CHECK_MIN_VERSION(22900, 0)
+   /* Legacy MGR passes no norm buffer to Jacobi type 7. Type 0 uses the
+    * matrix diagonal directly and implements the same weighted Jacobi step. */
+   if (relax_type == 7) relax_type = 0;
+#endif
 
    HYPRE_MGRSetCpointsByPointMarkerArray(precon, plan->num_dofs_hypre,
                                          plan->num_levels - 1, plan->num_c_dofs,
@@ -502,6 +507,9 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
       else
       {
          level_frelax_type[i] = type;
+#if !HYPRE_CHECK_MIN_VERSION(22900, 0)
+         if (type == 7) level_frelax_type[i] = 0;
+#endif
       }
       level_frelax_sweeps[i] = level_args->f_relaxation.num_sweeps;
       level_grelax_type[i]   = level_args->g_relaxation.type;
@@ -554,10 +562,17 @@ MGRApplyLevelSettings(HYPRE_Solver precon, MGR_args *args, const MGRCreatePlan *
     * configured root smoother, including the driver's default of no smoother. */
    const MGRgrlx_args *g_relaxation =
       plan->num_levels > 1 ? &args->level[plan->active_level_map[0]].g_relaxation : NULL;
+#if HYPRE_CHECK_MIN_VERSION(22500, 0)
+   HYPRE_MGRSetMaxGlobalSmoothIters(
+      precon, g_relaxation && g_relaxation->type >= 0 ? g_relaxation->num_sweeps : 0);
+   if (g_relaxation && g_relaxation->type >= 0)
+      HYPRE_MGRSetGlobalSmoothType(precon, g_relaxation->type);
+#else
    HYPRE_MGRSetMaxGlobalsmoothIters(
       precon, g_relaxation && g_relaxation->type >= 0 ? g_relaxation->num_sweeps : 0);
    if (g_relaxation && g_relaxation->type >= 0)
       HYPRE_MGRSetGlobalsmoothType(precon, g_relaxation->type);
+#endif
    (void)stats;
    (void)next_ls_id;
 #endif

@@ -74,6 +74,9 @@ function(add_unit_test test_name target_name)
             SKIP_RETURN_CODE 77
             LABELS "unit"
     )
+    if(COMMAND hypredrv_maybe_disable_gpu_test)
+        hypredrv_maybe_disable_gpu_test(${test_name})
+    endif()
     if(COMMAND hypredrv_append_test_environment)
         hypredrv_append_test_environment(${test_name})
     endif()

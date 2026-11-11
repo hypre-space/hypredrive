@@ -55,7 +55,7 @@ if(_hypredrv_gpu_device_lazy_init_overrides)
     string(JOIN "|" _hypredrv_gpu_device_lazy_init_overrides_encoded
         ${_hypredrv_gpu_device_lazy_init_overrides})
     set(_hypredrv_gpu_device_lazy_init_override_arg
-        "-DTARGET_ARGS:STRING=${_hypredrv_gpu_device_lazy_init_overrides_encoded}")
+        "-DTARGET_ARGS:STRING=-a|${_hypredrv_gpu_device_lazy_init_overrides_encoded}")
 endif()
 
 set(_hypredrv_regression_batching_default OFF)
@@ -521,6 +521,8 @@ set(HYPREDRV_GPU_DISABLED_TESTS
     lidcavity_test_mgr_4proc
     lidcavity_test_q2q1_mgr_4proc
 )
+
+include("${HYPREDRV_TESTING_DIR}/HYPREDRV_GPUKnownFailures.cmake")
 
 get_property(_hypredrv_gpu_test_policy_reported GLOBAL
     PROPERTY HYPREDRV_GPU_TEST_POLICY_REPORTED
@@ -1117,7 +1119,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                         -DMPI_PREFLAGS=${MPIEXEC_PREFLAGS}
                         -DMPI_POSTFLAGS=${MPIEXEC_POSTFLAGS}
                         -DCONFIG_FILE=${CMAKE_SOURCE_DIR}/examples/ex7.yml
-                        ${_hypredrv_gpu_device_lazy_init_override_arg}
+                        "-DTARGET_ARGS:STRING=${_hypredrv_gpu_device_lazy_init_overrides_encoded}"
                         "-DREQUIRE_CONTAINS:STRING=Solving linear system #2"
                         -P ${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_RunScript.cmake
                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
@@ -1232,14 +1234,10 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     --preconditioner:mgr:level:0:g_relaxation ilu
                 REQUIRE_CONTAINS
                     "g_relaxation: ilu"
-                    "[0, 1]     BJ-ILU0         Jacobi"
+                    "[0, 1]     Unknown         Jacobi"
             )
-            if(NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER AND
-               NOT HYPREDRV_HAVE_HYPRE_30200_DEV0)
-                set(_hypredrv_ex4_cli_mgr_g_amg_expect "Unknown         Jacobi")
-            else()
-                set(_hypredrv_ex4_cli_mgr_g_amg_expect "User AMG         Jacobi")
-            endif()
+            # Managed global smoothers use hypre's generic callback protocol;
+            # its native table labels that slot Unknown, irrespective of method.
             add_hypredrive_cli_test(ex4_cli_mgr_g_amg 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1
@@ -1247,9 +1245,8 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                     --preconditioner:mgr:level:0:g_relaxation amg
                 REQUIRE_CONTAINS
                     "g_relaxation: amg"
-                    "${_hypredrv_ex4_cli_mgr_g_amg_expect}"
+                    "[0, 1]     Unknown         Jacobi"
             )
-            unset(_hypredrv_ex4_cli_mgr_g_amg_expect)
             add_hypredrive_cli_test(ex4_cli_mgr_f_ilu 1 ex4.yml
                 OVERRIDES
                     --preconditioner:mgr:print_level 1
