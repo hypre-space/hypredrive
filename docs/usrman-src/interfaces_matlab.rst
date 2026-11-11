@@ -85,18 +85,24 @@ or, for Octave:
 
    run("/path/to/install/lib/octave/hypredrive_setup.m")
 
-Solve a sparse system:
+Minimal example
+---------------
+
+This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
+``b = [1, 1]``, giving ``x = [1, 1]``.
+
+After adding the wrapper and MEX directories to the path as above:
 
 .. code-block:: matlab
 
-   n = 64;
-   e = ones(n, 1);
-   A = spdiags([-e, 2*e, -e], -1:1, n, n);
-   b = ones(n, 1);
-
+   A = sparse([2.0, -1.0; -1.0, 2.0]);
+   b = ones(2, 1);
    [x, info] = hypredrive_solve(A, b);
-   relres = norm(b - A*x) / norm(b)
-   info.iterations
+   disp(x)  % [1; 1]
+   disp(info.converged)
+
+Solver options
+--------------
 
 Use ``hypredrive_options`` to build custom solver options:
 

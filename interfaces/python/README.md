@@ -7,11 +7,10 @@ library used by the CLI.
 
 ## Install
 
-From a full hypredrive checkout:
+Run the following source-build commands from the repository root:
 
 ```bash
-cd interfaces/python
-python -m pip install .
+python -m pip install ./interfaces/python
 ```
 
 This builds the Python extension and bundles the in-tree HYPREDRV/HYPRE
@@ -20,15 +19,15 @@ libraries automatically.
 For editable development:
 
 ```bash
-python -m pip install -e .
+python -m pip install -e ./interfaces/python
 ```
 
 Optional extras:
 
 ```bash
-python -m pip install .[scipy]
-python -m pip install .[mpi]
-python -m pip install -e .[test]
+python -m pip install "./interfaces/python[scipy]"
+python -m pip install "./interfaces/python[mpi]"
+python -m pip install -e "./interfaces/python[test]"
 ```
 
 To build against an installed hypredrive instead of bundling the in-tree
@@ -36,7 +35,7 @@ libraries:
 
 ```bash
 cmake --install build --prefix $HOME/opt/hypredrive
-python -m pip install . \
+python -m pip install ./interfaces/python \
   --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
   --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 ```
@@ -83,8 +82,12 @@ python -m venv .venv
 source .venv/bin/activate
 
 unzip hypredrive-wheels-*.zip -d wheelhouse
-python -m pip install wheelhouse/hypredrive-*.whl
+python -m pip install --find-links=wheelhouse hypredrive
 ```
+
+On Windows, use `hypredrive-msmpi` instead of `hypredrive` in the install
+command. `--find-links` lets pip select a wheel compatible with your Python
+version while fetching dependencies from the package index.
 
 Use a source install instead when you need a custom HYPRE build, GPU support,
 BIGINT/MIXEDINT, vendor MPI, or downstream-packager control over shared
@@ -106,36 +109,49 @@ convenience:
 
 ```bash
 cmake -S . -B build -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_PYTHON=ON
-cmake --build build --target _core --parallel
+cmake --build build --target _core hypredrive_python_sources --parallel
 cmake --build build --target python-test
+```
+
+Save the minimal example below as `minimal.py` and run it against this build
+from the repository root:
+
+```bash
+PYTHONPATH="$PWD/build/interfaces/python/python" python minimal.py
 ```
 
 This path does not replace Python packaging. It is useful for CI and local
 development where the C library and Python extension should be built together.
 
-## Example
+## Minimal example
+
+This serial example solves `A x = b` for `A = [[2, -1], [-1, 2]]` and
+`b = [1, 1]`, giving `x = [1, 1]`.
+
+Install the `scipy` extra for this example. `hd.solve` manages initialization
+and driver cleanup and returns a copy of the solution in `result.x`.
 
 ```python
 import numpy as np
 import scipy.sparse as sp
 import hypredrive as hd
 
-n = 64
-A = sp.diags(
-    [-np.ones(n - 1), 2.0 * np.ones(n), -np.ones(n - 1)],
-    [-1, 0, 1],
-    format="csr",
-)
-b = np.ones(n)
-
-options = hd.configure(
-    solver="pcg",
-    preconditioner="amg",
-    pcg={"relative_tol": 1.0e-8},
-)
-
+A = sp.csr_matrix([[2.0, -1.0], [-1.0, 2.0]])
+b = np.ones(2)
+options = hd.configure(solver="pcg", preconditioner="amg")
 result = hd.solve(A, b, options=options)
-print(result.solution_norm, result.iterations, result.converged)
+print(result.x)  # [1. 1.]
+print(result.converged)
+```
+
+Check `result.converged`; failure to reach the solver tolerance does not raise
+an exception. Customize options with `hd.configure`, for example:
+
+```python
+options = hd.configure(
+    solver="pcg", preconditioner="amg", pcg={"relative_tol": 1.0e-8},
+)
+result = hd.solve(A, b, options=options)
 ```
 
 ## MPI

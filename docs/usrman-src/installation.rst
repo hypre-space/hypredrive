@@ -19,16 +19,12 @@ Prerequisites
 - `hypre <https://github.com/hypre-space/hypre>`_ 2.20.0 or newer. Alternatively, CMake
   can fetch and build HYPRE.
 
-Windows builds are supported with a MinGW-w64 toolchain and Microsoft MPI. Install the
-Microsoft MPI SDK and runtime, CMake, Ninja, and the x86_64 MinGW-w64 compiler. The
-64-bit Microsoft MPI import library must be visible to CMake. The Windows Julia
-artifact is a separate packaging path for Julia users, not a prerequisite for
-native C/C++ builds; see :ref:`Interfaces_Julia`.
-
-.. note::
-
-   Windows CI validates this MinGW-w64/MS-MPI configuration on a native Windows
-   runner. MSVC is not a tested toolchain.
+Windows builds support MSVC, clang-cl, and MinGW-w64 with Microsoft MPI. Install
+the Microsoft MPI SDK and runtime, CMake, and the chosen compiler toolchain.
+MSVC and clang-cl builds use Visual Studio 2022; MinGW-w64 builds use Ninja.
+The 64-bit Microsoft MPI import library must be visible to CMake. CI validates
+all three toolchains on native Windows runners. The Windows Julia artifact is a
+separate packaging path; see :ref:`Interfaces_Julia`.
 
 .. _CMakeInstall:
 
