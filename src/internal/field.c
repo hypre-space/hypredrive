@@ -6,8 +6,40 @@
  ******************************************************************************/
 
 #include "internal/field.h"
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
+
+/*-----------------------------------------------------------------------------
+ * FieldTypeIntParse
+ *
+ * Parse an integer and reject values below @p min_value. Hypre does not
+ * range-check iteration counts or Krylov dimensions before sizing allocations
+ * with them (e.g. max_iter + 1), so these must be validated at parse time.
+ *-----------------------------------------------------------------------------*/
+
+static bool
+FieldTypeIntParse(YAMLnode *node, int min_value, int *result)
+{
+   const char *src   = (node && node->mapped_val) ? node->mapped_val : "";
+   int         value = 0;
+   if (!result || !hypredrv_ParseInt(src, &value))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid integer value '%s' for key '%s'", src,
+                           node ? node->key : "<unknown>");
+      return false;
+   }
+   if (value < min_value)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Value %d for key '%s' must be >= %d", value,
+                           node ? node->key : "<unknown>", min_value);
+      return false;
+   }
+   *result = value;
+   return true;
+}
 
 /*-----------------------------------------------------------------------------
  * hypredrv_FieldTypeIntSet
@@ -16,43 +48,7 @@
 void
 hypredrv_FieldTypeIntSet(void *field, YAMLnode *node)
 {
-   const char *src = (node && node->mapped_val) ? node->mapped_val : "";
-   if (!hypredrv_ParseInt(src, (int *)field))
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid integer value '%s' for key '%s'", src,
-                           node ? node->key : "<unknown>");
-   }
-}
-
-/*-----------------------------------------------------------------------------
- * FieldTypeIntSetMin
- *
- * Parse an integer and reject values below @p min_value. Hypre does not
- * range-check iteration counts or Krylov dimensions before sizing allocations
- * with them (e.g. max_iter + 1), so these must be validated at parse time.
- *-----------------------------------------------------------------------------*/
-
-static void
-FieldTypeIntSetMin(void *field, YAMLnode *node, int min_value)
-{
-   const char *src   = (node && node->mapped_val) ? node->mapped_val : "";
-   int         value = 0;
-   if (!hypredrv_ParseInt(src, &value))
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Invalid integer value '%s' for key '%s'", src,
-                           node ? node->key : "<unknown>");
-      return;
-   }
-   if (value < min_value)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Value %d for key '%s' must be >= %d", value,
-                           node ? node->key : "<unknown>", min_value);
-      return;
-   }
-   *(int *)field = value;
+   FieldTypeIntParse(node, INT_MIN, (int *)field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -62,7 +58,7 @@ FieldTypeIntSetMin(void *field, YAMLnode *node, int min_value)
 void
 hypredrv_FieldTypeNonNegIntSet(void *field, YAMLnode *node)
 {
-   FieldTypeIntSetMin(field, node, 0);
+   FieldTypeIntParse(node, 0, (int *)field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -72,7 +68,7 @@ hypredrv_FieldTypeNonNegIntSet(void *field, YAMLnode *node)
 void
 hypredrv_FieldTypePositiveIntSet(void *field, YAMLnode *node)
 {
-   FieldTypeIntSetMin(field, node, 1);
+   FieldTypeIntParse(node, 1, (int *)field);
 }
 
 /*-----------------------------------------------------------------------------
@@ -95,15 +91,13 @@ hypredrv_FieldOffsetMapSet(const FieldOffsetMap *entry, void *base, YAMLnode *no
         entry->setter == hypredrv_FieldTypeNonNegIntSet ||
         entry->setter == hypredrv_FieldTypePositiveIntSet))
    {
-      long long wide = 0;
-      int       before, value;
-
-      memcpy(&wide, field, sizeof(wide));
-      before = value = (int)wide;
-      entry->setter(&value, node);
-      if (value != before) /* unchanged on rejected input: keep the member as is */
+      int min_value = INT_MIN;
+      if (entry->setter == hypredrv_FieldTypeNonNegIntSet) min_value = 0;
+      if (entry->setter == hypredrv_FieldTypePositiveIntSet) min_value = 1;
+      int value;
+      if (FieldTypeIntParse(node, min_value, &value))
       {
-         wide = value;
+         long long wide = value;
          memcpy(field, &wide, sizeof(wide));
       }
       return;

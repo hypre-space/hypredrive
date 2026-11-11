@@ -27,6 +27,8 @@
 
 #include "HYPRE.h"
 #include "internal/compatibility.h"
+#include "internal/containers.h"
+#include "internal/precon_reuse.h"
 #include "internal/utils.h"
 
 #ifndef PATH_MAX
@@ -258,6 +260,15 @@ hypredrv_TestHypreInit(void)
       } \
    } while (0)
 
+#define ASSERT_MAP_VALUE(map, key, expected)                                      \
+   do                                                                             \
+   {                                                                              \
+      int hypredrv_test_map_value_;                                               \
+      ASSERT_TRUE(                                                                \
+         hypredrv_StrIntMapArrayLookup((map), (key), &hypredrv_test_map_value_)); \
+      ASSERT_EQ(hypredrv_test_map_value_, (expected));                            \
+   } while (0)
+
 /*-----------------------------------------------------------------------------
  * Test runner helper (simple wrapper, CTest handles orchestration)
  *-----------------------------------------------------------------------------*/
@@ -274,6 +285,17 @@ hypredrv_TestHypreInit(void)
          exit(77); \
       } \
    } while (0)
+
+/* Passing zero as next_ls_id reports history age without advancing the
+ * adaptive bad-decision streak. */
+static inline PreconReuseDecision
+test_reuse_decision(PreconReuseState *state, int next_ls_id)
+{
+   PreconReuseDecision decision;
+   int rebuild = hypredrv_PreconReuseShouldRebuild(state, next_ls_id, &decision);
+   ASSERT_EQ(decision.should_rebuild, rebuild);
+   return decision;
+}
 
 /*-----------------------------------------------------------------------------
  * Temporary file helpers

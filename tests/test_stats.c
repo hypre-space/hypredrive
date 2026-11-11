@@ -1,5 +1,5 @@
+#include <limits.h>
 #include <mpi.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -56,14 +56,14 @@ test_Stats_annotations_and_levels(void)
    hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "finalize");
 
    /* Level annotations (nested) */
-   hypredrv_StatsAnnotateLevelBegin(s, 0, "L0");
-   hypredrv_StatsAnnotateLevelBegin(s, 1, "L1");
-   hypredrv_StatsAnnotateLevelEnd(s, 1, "L1");
-   hypredrv_StatsAnnotateLevelEnd(s, 0, "L0");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "L0", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 1, "L1", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 1, "L1", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "L0", -1);
 
    /* Mismatched end (exercise defensive branches) */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_StatsAnnotateLevelEnd(s, 2, "bad");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 2, "bad", -1);
    hypredrv_ErrorCodeResetAll();
 
    /* Query last stats */
@@ -125,46 +125,6 @@ test_HYPREDRV_StatsLevelGetEntry_wrapper_branches(void)
    ret = hypredrv_StatsLevelGetEntrySummary(s, 0, -1, &entry_id, &num_solves,
                                             &linear_iters, &setup_time, &solve_time);
    ASSERT_NE(ret, 0);
-
-   hypredrv_StatsDestroy(&s);
-}
-
-/*--------------------------------------------------------------------------
- * hypredrv_StatsAnnotateV with a real va_list (vsnprintf path)
- *--------------------------------------------------------------------------*/
-
-static void
-call_stats_annotate_v(Stats *stats, HYPREDRV_AnnotateAction action, const char *fmt, ...)
-{
-   va_list ap;
-   va_start(ap, fmt);
-   hypredrv_StatsAnnotateV(stats, action, fmt, ap);
-   va_end(ap);
-}
-
-static void
-call_stats_annotate_v_null_stats(const char *fmt, ...)
-{
-   va_list ap;
-   va_start(ap, fmt);
-   hypredrv_StatsAnnotateV(NULL, HYPREDRV_ANNOTATE_BEGIN, fmt, ap);
-   va_end(ap);
-}
-
-static void
-test_Stats_annotate_v_variadic_path(void)
-{
-   Stats *s = hypredrv_StatsCreate();
-   ASSERT_NOT_NULL(s);
-
-   call_stats_annotate_v(s, HYPREDRV_ANNOTATE_BEGIN, "%s", "matrix");
-   call_stats_annotate_v(s, HYPREDRV_ANNOTATE_END, "%s", "matrix");
-
-   call_stats_annotate_v(s, HYPREDRV_ANNOTATE_BEGIN, "%s", "reset_x0");
-   call_stats_annotate_v(s, HYPREDRV_ANNOTATE_END, "%s", "reset_x0");
-
-   call_stats_annotate_v(s, HYPREDRV_ANNOTATE_BEGIN, "%s", "solve");
-   call_stats_annotate_v(s, HYPREDRV_ANNOTATE_END, "%s", "solve");
 
    hypredrv_StatsDestroy(&s);
 }
@@ -279,30 +239,31 @@ test_Stats_level_begin_end_error_branches(void)
 
    /* Invalid level on begin */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_StatsAnnotateLevelBegin(s, -1, "bad");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, -1, "bad", -1);
    ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
    hypredrv_ErrorCodeResetAll();
-   hypredrv_StatsAnnotateLevelBegin(s, STATS_MAX_LEVELS, "bad");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, STATS_MAX_LEVELS, "bad",
+                                     -1);
    ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
 
    /* Duplicate begin on same level */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_StatsAnnotateLevelBegin(s, 0, "L0");
-   hypredrv_StatsAnnotateLevelBegin(s, 0, "L0dup");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "L0", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "L0dup", -1);
    ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
-   hypredrv_StatsAnnotateLevelEnd(s, 0, "L0");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "L0", -1);
 
    /* End without begin (no-op) */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_StatsAnnotateLevelEnd(s, 2, "ghost");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 2, "ghost", -1);
    ASSERT_EQ(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
 
    /* Mismatched name */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_StatsAnnotateLevelBegin(s, 1, "L1");
-   hypredrv_StatsAnnotateLevelEnd(s, 1, "wrong");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 1, "L1", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 1, "wrong", -1);
    ASSERT_NE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL, 0);
-   hypredrv_StatsAnnotateLevelEnd(s, 1, "L1");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 1, "L1", -1);
 
    hypredrv_StatsDestroy(&s);
 }
@@ -331,6 +292,95 @@ test_Stats_level_get_count_checked(void)
 }
 
 static void
+test_Stats_long_annotation_identity_is_preserved(void)
+{
+   Stats *s = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(s);
+   char name[1537];
+   memset(name, 'a', sizeof(name) - 1);
+   name[sizeof(name) - 1] = '\0';
+   memcpy(name, "literal-%n-%s-", 14);
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, name, 7),
+             ERROR_NONE);
+   char *active_name = s->level_stack[0].name;
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, name, 8),
+             ERROR_INVALID_VAL);
+   ASSERT_PTR_EQ(s->level_stack[0].name, active_name);
+   ASSERT_EQ_SIZE(strlen(active_name), strlen(name) + 2);
+   ASSERT_EQ(strcmp(active_name + strlen(name), "-7"), 0);
+   ASSERT_TRUE(s->level_active & 1);
+   ASSERT_EQ(s->level_count[0], 0);
+   hypredrv_ErrorStateReset();
+   name[sizeof(name) - 2] = 'b';
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, name, 7),
+             ERROR_INVALID_VAL);
+   ASSERT_PTR_EQ(s->level_stack[0].name, active_name);
+   name[sizeof(name) - 2] = 'a';
+   hypredrv_ErrorStateReset();
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, name, 7),
+             ERROR_NONE);
+   ASSERT_NULL(s->level_stack[0].name);
+   ASSERT_EQ(s->level_count[0], 1);
+   hypredrv_StatsDestroy(&s);
+}
+
+static void
+test_Stats_annotation_id_is_distinct_from_name(void)
+{
+   Stats *s = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(s);
+   ASSERT_EQ(
+      hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "step-7", -1),
+      ERROR_NONE);
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "step", 7),
+             ERROR_INVALID_VAL);
+   ASSERT_NOT_NULL(s->level_stack[0].name);
+   ASSERT_EQ(s->level_stack[0].annotation_id, -1);
+   hypredrv_ErrorStateReset();
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "step-7", -2),
+             ERROR_NONE);
+   ASSERT_EQ(s->level_count[0], 1);
+   hypredrv_StatsDestroy(&s);
+}
+
+static void
+test_Stats_failed_level_transition_preserves_context(void)
+{
+   Stats *s = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(s);
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "step", 7),
+             ERROR_NONE);
+   char       *active_name = s->level_stack[0].name;
+   LevelEntry *entries     = s->level_entries[0];
+   int         capacity    = s->level_capacity[0];
+   s->level_count[0]       = INT_MAX;
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "step", 7),
+             ERROR_ALLOCATION);
+   ASSERT_PTR_EQ(s->level_stack[0].name, active_name);
+   ASSERT_PTR_EQ(s->level_entries[0], entries);
+   ASSERT_EQ(s->level_capacity[0], capacity);
+   ASSERT_EQ(s->level_count[0], INT_MAX);
+   ASSERT_TRUE(s->level_active & 1);
+   ASSERT_EQ(s->level_depth, 1);
+   s->level_count[0] = 0;
+   hypredrv_ErrorStateReset();
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "step", 7),
+             ERROR_NONE);
+   ASSERT_NULL(s->level_stack[0].name);
+   ASSERT_EQ(s->level_count[0], 1);
+   s->level_current_id[0] = INT_MAX;
+   hypredrv_ErrorStateReset();
+   ASSERT_EQ(hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "step", 8),
+             ERROR_ALLOCATION);
+   ASSERT_NULL(s->level_stack[0].name);
+   ASSERT_EQ(s->level_count[0], 1);
+   ASSERT_EQ(s->level_current_id[0], INT_MAX);
+   ASSERT_EQ(s->level_active, 0);
+   ASSERT_EQ(s->level_depth, 0);
+   hypredrv_StatsDestroy(&s);
+}
+
+static void
 test_Stats_annotate_with_id_negative_id(void)
 {
    Stats *s = hypredrv_StatsCreate();
@@ -352,8 +402,8 @@ test_Stats_pending_timestep_and_level_path(void)
    ASSERT_NOT_NULL(s);
 
    hypredrv_StatsSetPendingTimestepContext(s, 42);
-   hypredrv_StatsAnnotateLevelBegin(s, 0, "L0");
-   hypredrv_StatsAnnotateLevelBegin(s, 1, "L1");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "L0", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 1, "L1", -1);
 
    hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "matrix");
    hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "matrix");
@@ -362,8 +412,8 @@ test_Stats_pending_timestep_and_level_path(void)
    hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
    hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
 
-   hypredrv_StatsAnnotateLevelEnd(s, 1, "L1");
-   hypredrv_StatsAnnotateLevelEnd(s, 0, "L0");
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 1, "L1", -1);
+   hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "L0", -1);
 
    hypredrv_StatsDestroy(&s);
 }
@@ -410,14 +460,14 @@ test_Stats_ensure_level_capacity_growth(void)
    /* After 64 stored entries at level 0, the 65th end triggers realloc path */
    for (int i = 0; i < 65; i++)
    {
-      hypredrv_StatsAnnotateLevelBegin(s, 0, "L0");
+      hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_BEGIN, 0, "L0", -1);
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "matrix");
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "matrix");
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "reset_x0");
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "reset_x0");
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
-      hypredrv_StatsAnnotateLevelEnd(s, 0, "L0");
+      hypredrv_StatsAnnotateLevelWithId(s, HYPREDRV_ANNOTATE_END, 0, "L0", -1);
    }
 
    ASSERT_TRUE(hypredrv_StatsLevelGetCount(s, 0) >= 64);
@@ -497,10 +547,9 @@ test_Stats_null_pointer_guards(void)
    hypredrv_StatsDestroy(&dead);
 
    hypredrv_StatsAnnotate(NULL, HYPREDRV_ANNOTATE_BEGIN, "matrix");
-   call_stats_annotate_v_null_stats("%s", "matrix");
 
-   hypredrv_StatsAnnotateLevelBegin(NULL, 0, "L");
-   hypredrv_StatsAnnotateLevelEnd(NULL, 0, "L");
+   hypredrv_StatsAnnotateLevelWithId(NULL, HYPREDRV_ANNOTATE_BEGIN, 0, "L", -1);
+   hypredrv_StatsAnnotateLevelWithId(NULL, HYPREDRV_ANNOTATE_END, 0, "L", -1);
 
    hypredrv_StatsTimerSetMilliseconds(NULL);
    hypredrv_StatsTimerSetSeconds(NULL);
@@ -566,7 +615,6 @@ main(int argc, char **argv)
    RUN_TEST(test_Stats_basic_lifecycle_and_timers);
    RUN_TEST(test_Stats_annotations_and_levels);
    RUN_TEST(test_HYPREDRV_StatsLevelGetEntry_wrapper_branches);
-   RUN_TEST(test_Stats_annotate_v_variadic_path);
    RUN_TEST(test_Stats_annotation_system_alias_and_run_ignore);
    RUN_TEST(test_Stats_annotation_unknown_keys);
    RUN_TEST(test_Stats_rhs_dofmap_prec_counter_negative_branches);
@@ -574,6 +622,9 @@ main(int argc, char **argv)
    RUN_TEST(test_Stats_initial_res_norm_and_setters);
    RUN_TEST(test_Stats_level_begin_end_error_branches);
    RUN_TEST(test_Stats_level_get_count_checked);
+   RUN_TEST(test_Stats_long_annotation_identity_is_preserved);
+   RUN_TEST(test_Stats_annotation_id_is_distinct_from_name);
+   RUN_TEST(test_Stats_failed_level_transition_preserves_context);
    RUN_TEST(test_Stats_annotate_with_id_negative_id);
    RUN_TEST(test_Stats_pending_timestep_and_level_path);
    RUN_TEST(test_Stats_pending_timestep_empty_path_early_return);

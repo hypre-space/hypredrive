@@ -1,4 +1,25 @@
 # Unit tests for hypredrive
+
+# Internal headers must stand alone and must not acquire the public API, even
+# through a transitive include. Generate one translation unit per header so
+# include order cannot hide a missing dependency.
+file(GLOB _hypredrv_private_headers CONFIGURE_DEPENDS
+    "${CMAKE_SOURCE_DIR}/include/internal/*.h"
+    "${CMAKE_SOURCE_DIR}/src/internal/*.h")
+set(_hypredrv_header_checks "")
+foreach(_header IN LISTS _hypredrv_private_headers)
+    file(RELATIVE_PATH _header_relative "${CMAKE_SOURCE_DIR}" "${_header}")
+    string(MAKE_C_IDENTIFIER "${_header_relative}" _header_id)
+    set(_check_source "${CMAKE_CURRENT_BINARY_DIR}/header-checks/${_header_id}.c")
+    file(GENERATE OUTPUT "${_check_source}" CONTENT
+        "#include \"${_header}\"\n#ifdef HYPREDRV_HEADER\n#error Internal headers must not include HYPREDRV.h\n#endif\n")
+    list(APPEND _hypredrv_header_checks "${_check_source}")
+endforeach()
+add_library(test_internal_headers OBJECT ${_hypredrv_header_checks})
+target_include_directories(test_internal_headers PRIVATE "${CMAKE_SOURCE_DIR}/src/internal")
+target_link_libraries(test_internal_headers PRIVATE ${HYPREDRV_INTERNAL_LINK_TARGET})
+hypredrv_add_hypre_build_dependency(test_internal_headers)
+
 # Helper function to set up test executable with proper RPATH
 # Similar to hypredrive executable - link directly to both HYPREDRV and HYPRE
 function(setup_test_executable target_name source_file)
@@ -53,6 +74,9 @@ function(add_unit_test test_name target_name)
             SKIP_RETURN_CODE 77
             LABELS "unit"
     )
+    if(COMMAND hypredrv_maybe_disable_gpu_test)
+        hypredrv_maybe_disable_gpu_test(${test_name})
+    endif()
     if(COMMAND hypredrv_append_test_environment)
         hypredrv_append_test_environment(${test_name})
     endif()
@@ -118,6 +142,11 @@ set(_hypredrv_unit_test_cases
     "test_dof_labels|test_dof_labels.c|TRUE"
     "test_setmatrix_from_csr|test_setmatrix_from_csr.c|TRUE"
     "test_init_guess|test_init_guess.c|TRUE"
+    "test_state_vectors|test_state_vectors.c|TRUE"
+    "test_nullspace|test_nullspace.c|TRUE"
+    "test_solution|test_solution.c|TRUE"
+    "test_aux_operators|test_aux_operators.c|TRUE"
+    "test_dofmap|test_dofmap.c|TRUE"
 )
 
 foreach(_case IN LISTS _hypredrv_unit_test_cases)
@@ -166,14 +195,48 @@ add_executable_test(lsseq_mpi_2proc test_lsseq_mpi 2 RUN_SERIAL)
 
 setup_test_executable(test_args_mpi test_args_mpi.c)
 add_executable_test(args_mpi_2proc test_args_mpi 2 RUN_SERIAL)
+add_executable_test(args_mpi_4proc test_args_mpi 4 RUN_SERIAL)
+set_tests_properties(args_mpi_2proc args_mpi_4proc PROPERTIES TIMEOUT 30)
+set_property(TEST args_mpi_2proc args_mpi_4proc APPEND PROPERTY FAIL_REGULAR_EXPRESSION "FAIL:")
 
 setup_test_executable(test_hypredrv_mpi test_hypredrv_mpi.c)
 add_executable_test(hypredrv_mpi_2proc test_hypredrv_mpi 2 RUN_SERIAL)
-set_tests_properties(hypredrv_mpi_2proc PROPERTIES TIMEOUT 30)
+add_executable_test(hypredrv_mpi_4proc test_hypredrv_mpi 4 RUN_SERIAL)
+set_tests_properties(hypredrv_mpi_2proc hypredrv_mpi_4proc PROPERTIES TIMEOUT 30)
+set_property(TEST hypredrv_mpi_2proc hypredrv_mpi_4proc APPEND PROPERTY FAIL_REGULAR_EXPRESSION "FAIL:")
 
 setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)
 add_executable_test(setmatrix_from_csr_mpi_2proc test_setmatrix_from_csr_mpi 2 RUN_SERIAL)
-set_tests_properties(setmatrix_from_csr_mpi_2proc PROPERTIES TIMEOUT 30)
+add_executable_test(setmatrix_from_csr_mpi_4proc test_setmatrix_from_csr_mpi 4 RUN_SERIAL)
+set_tests_properties(setmatrix_from_csr_mpi_2proc setmatrix_from_csr_mpi_4proc PROPERTIES TIMEOUT 30)
+
+add_executable_test(state_vectors_mpi_2proc test_state_vectors 2 RUN_SERIAL)
+add_executable_test(state_vectors_mpi_4proc test_state_vectors 4 RUN_SERIAL)
+set_tests_properties(state_vectors_mpi_2proc state_vectors_mpi_4proc PROPERTIES TIMEOUT 30)
+
+add_executable_test(nullspace_mpi_2proc test_nullspace 2 RUN_SERIAL)
+add_executable_test(nullspace_mpi_4proc test_nullspace 4 RUN_SERIAL)
+set_tests_properties(nullspace_mpi_2proc nullspace_mpi_4proc PROPERTIES TIMEOUT 30)
+
+add_executable_test(solution_mpi_2proc test_solution 2 RUN_SERIAL)
+add_executable_test(solution_mpi_4proc test_solution 4 RUN_SERIAL)
+set_tests_properties(solution_mpi_2proc solution_mpi_4proc PROPERTIES TIMEOUT 30)
+set_property(TEST solution_mpi_2proc solution_mpi_4proc APPEND PROPERTY FAIL_REGULAR_EXPRESSION "FAIL:")
+
+add_executable_test(aux_operators_mpi_2proc test_aux_operators 2 RUN_SERIAL)
+set_tests_properties(aux_operators_mpi_2proc PROPERTIES TIMEOUT 30)
+set_property(TEST aux_operators_mpi_2proc APPEND PROPERTY FAIL_REGULAR_EXPRESSION "FAIL:")
+
+add_executable_test(dofmap_mpi_2proc test_dofmap 2 RUN_SERIAL)
+set_tests_properties(dofmap_mpi_2proc PROPERTIES TIMEOUT 30)
+set_property(TEST dofmap_mpi_2proc APPEND PROPERTY FAIL_REGULAR_EXPRESSION "FAIL:")
 
 add_executable_test(containers_mpi_2proc test_containers 2 RUN_SERIAL)
 set_tests_properties(containers_mpi_2proc PROPERTIES LABELS "unit;mpi" TIMEOUT 30)
+
+if(HYPREDRV_ENABLE_EIGSPEC)
+    setup_test_executable(test_eigspec_mpi test_eigspec_mpi.c)
+    add_executable_test(eigspec_mpi_2proc test_eigspec_mpi 2 RUN_SERIAL)
+    add_executable_test(eigspec_mpi_4proc test_eigspec_mpi 4 RUN_SERIAL)
+    set_tests_properties(eigspec_mpi_2proc eigspec_mpi_4proc PROPERTIES TIMEOUT 30)
+endif()

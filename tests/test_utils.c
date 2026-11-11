@@ -298,7 +298,7 @@ test_IsYAMLFilename_with_spaces(void)
 }
 
 /*-----------------------------------------------------------------------------
- * Test hypredrv_CheckBinaryDataExists and hypredrv_CheckASCIIDataExists
+ * Test hypredrv_CheckBinaryDataExists
  *-----------------------------------------------------------------------------*/
 
 static void
@@ -318,27 +318,6 @@ test_CheckDataExists_binary(void)
    }
 
    ASSERT_EQ(hypredrv_CheckBinaryDataExists(prefix), 1);
-
-   cleanup_temp_files();
-}
-
-static void
-test_CheckDataExists_ascii(void)
-{
-   /* Create a temporary ASCII file */
-   char prefix[] = "test_data";
-   char expected_file[256];
-   snprintf(expected_file, sizeof(expected_file), "%s.00000", prefix);
-
-   FILE *fp = fopen(expected_file, "w");
-   if (fp)
-   {
-      fprintf(fp, "ascii data");
-      fclose(fp);
-      add_temp_file(expected_file);
-   }
-
-   ASSERT_EQ(hypredrv_CheckASCIIDataExists(prefix), 1);
 
    cleanup_temp_files();
 }
@@ -417,7 +396,6 @@ test_PartitionFilename_too_long(void)
    prefix[sizeof(prefix) - 1] = '\0';
 
    ASSERT_EQ(hypredrv_CheckBinaryDataExists(prefix), 0);
-   ASSERT_EQ(hypredrv_CheckASCIIDataExists(prefix), 0);
    ASSERT_EQ(hypredrv_CountNumberOfPartitions(prefix), 0);
 }
 
@@ -462,7 +440,6 @@ main(void)
    RUN_TEST(test_IsYAMLFilename_with_spaces);
 
    RUN_TEST(test_CheckDataExists_binary);
-   RUN_TEST(test_CheckDataExists_ascii);
 
    RUN_TEST(test_CountNumberOfPartitions_binary);
    RUN_TEST(test_CountNumberOfPartitions_ascii);

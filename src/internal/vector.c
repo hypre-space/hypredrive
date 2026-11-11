@@ -20,11 +20,32 @@ enum
 };
 
 HYPRE_Complex *
-hypredrv_IJVectorData(HYPRE_IJVector vec)
+hypredrv_IJVectorData(HYPRE_IJVector vec, HYPRE_MemoryLocation location)
 {
-   void *object = NULL;
-   HYPRE_IJVectorGetObject(vec, &object);
-   return hypre_VectorData(hypre_ParVectorLocalVector((hypre_ParVector *)object));
+   void            *object = NULL;
+   HYPRE_Int        code   = HYPRE_IJVectorGetObject(vec, &object);
+   hypre_ParVector *par    = (hypre_ParVector *)object;
+   hypre_Vector    *local  = par ? hypre_ParVectorLocalVector(par) : NULL;
+   if (!code && (!local || (hypre_VectorSize(local) > 0 && !hypre_VectorData(local))))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Cannot access an uninitialized vector");
+      return NULL;
+   }
+   if (!code && location != HYPRE_MEMORY_UNDEFINED)
+   {
+      code = hypre_ParVectorMigrate(par, location);
+   }
+   if (code)
+   {
+      char message[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(code, message);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("Cannot access vector data: %s", message);
+      return NULL;
+   }
+   /* Migration replaces the local vector while preserving the ParVector. */
+   return hypre_VectorData(hypre_ParVectorLocalVector(par));
 }
 
 static int

@@ -67,8 +67,9 @@ void hypredrv_ADSCreate(const ADS_args *, HYPRE_Solver *);
 /* Inject the operator inputs ADS requires (discrete gradient + discrete curl +
  * vertex coordinate vectors). Arguments are IJ handles (may be NULL); the
  * underlying ParCSR/ParVector objects are extracted internally. Must be called
- * after ADSCreate and before setup. */
-void hypredrv_ADSSetOperators(HYPRE_Solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C,
-                              HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z);
+ * after ADSCreate and before setup. Returns 1 only when every required native
+ * operator object exists. */
+int hypredrv_ADSSetOperators(HYPRE_Solver, HYPRE_IJMatrix G, HYPRE_IJMatrix C,
+                             HYPRE_IJVector x, HYPRE_IJVector y, HYPRE_IJVector z);
 
 #endif /* ADS_HEADER */

@@ -44,6 +44,28 @@ enum
    PRECON_REUSE_MAX_OBSERVATIONS = 256,
 };
 
+struct PreconReuseState_struct
+{
+   const PreconReuse_args *args;
+   const IntArray         *timestep_starts;
+   const Stats            *stats;
+   PreconReuseObservation *observations;
+   size_t                  count;
+   size_t                  capacity;
+   int                     last_rebuild_level_ids[STATS_MAX_LEVELS];
+   int                     baseline_valid;
+   int                     bad_decision_streak;
+   int                     last_solve_succeeded;
+   int                     last_decision_ls_id;
+   double                  baseline_iters;
+   double                  baseline_setup_time;
+   double                  baseline_solve_time;
+   PreconReuseObservation  baseline;
+   PreconReuseObservation  last_observation;
+};
+
+static void PreconReuseStateReset(PreconReuseState *);
+
 static const double PRECON_REUSE_DEFAULT_MAX_ITERATION_RATIO = 3.0;
 
 static void
@@ -145,36 +167,19 @@ hypredrv_PreconReuseDestroyArgs(PreconReuse_args *args)
    args->enabled                 = 0;
 }
 
-static int
-PreconReuseParseMapped(StrIntMapArray map, const char *value, int *out)
-{
-   int result = hypredrv_StrIntMapArrayGetImage(map, value);
-   if (result == INT_MIN)
-   {
-      return 0;
-   }
-   *out = result;
-   return 1;
-}
-
 /* Generates a parser that maps a string value onto an enum via a StrIntMap table. */
-#define DEFINE_PRECON_REUSE_PARSE_ENUM(_name, _map, _type)                         \
-   static int _name(const char *value, _type *out)                                 \
-   {                                                                               \
-      int mapped;                                                                  \
-      if (!PreconReuseParseMapped(STR_INT_MAP_ARRAY_CREATE(_map), value, &mapped)) \
-      {                                                                            \
-         return 0;                                                                 \
-      }                                                                            \
-      *out = (_type)mapped;                                                        \
-      return 1;                                                                    \
+#define DEFINE_PRECON_REUSE_PARSE_ENUM(_name, _map, _type)                      \
+   static int _name(const char *value, _type *out)                              \
+   {                                                                            \
+      int mapped;                                                               \
+      if (!hypredrv_StrIntMapArrayLookup(STR_INT_MAP_ARRAY_CREATE(_map), value, \
+                                         &mapped))                              \
+      {                                                                         \
+         return 0;                                                              \
+      }                                                                         \
+      *out = (_type)mapped;                                                     \
+      return 1;                                                                 \
    }
-
-static int
-PreconReuseParseOnOff(const char *value, int *out)
-{
-   return PreconReuseParseMapped(hypredrv_OnOffMapArray, value, out);
-}
 
 static int
 PreconReuseValueIsAlways(const char *value)
@@ -449,84 +454,31 @@ hypredrv_PreconReuseResolveTimestepIndex(const IntArray *timestep_starts,
 }
 
 void
-hypredrv_PreconReuseBuildObservation(HYPREDRV_t hypredrv, const IntArray *timestep_starts,
-                                     PreconReuseObservation *obs)
-{            /* GCOVR_EXCL_BR_LINE */
-   if (!obs) /* GCOVR_EXCL_BR_LINE */
+hypredrv_PreconReuseRecordSolve(hypredrv_t *hypredrv, bool solve_succeeded)
+{
+   const PreconReuseState *state = hypredrv->precon_reuse_state;
+   if (!state->args->enabled || state->args->policy != PRECON_REUSE_POLICY_ADAPTIVE)
    {
       return;
    }
 
-   memset(obs, 0, sizeof(*obs));
-   obs->system_index    = -1;
-   obs->timestep_index  = -1;
-   obs->iters           = -1;
-   obs->solve_succeeded = 1;
-   obs->setup_time      = -1.0;
-   obs->solve_time      = -1.0;
+   PreconReuseObservation obs = {0};
+   obs.system_index           = hypredrv->current_system_index >= 0
+                                   ? hypredrv->current_system_index
+                                   : hypredrv_StatsGetLinearSystemID(state->stats);
+   obs.timestep_index         = hypredrv_PreconReuseResolveTimestepIndex(
+      state->timestep_starts, state->stats, obs.system_index);
+   obs.iters           = hypredrv_StatsGetLastIter(state->stats);
+   obs.setup_time      = hypredrv_StatsGetLastSetupTime(state->stats);
+   obs.solve_time      = hypredrv_StatsGetLastSolveTime(state->stats);
+   obs.solve_succeeded = (int)solve_succeeded;
    for (int level = 0; level < STATS_MAX_LEVELS; level++)
    {
-      obs->level_ids[level] = -1;
+      obs.level_ids[level] = state->stats->level_current_id[level] > 0
+                                ? state->stats->level_current_id[level] - 1
+                                : -1;
    }
-   if (!hypredrv || !hypredrv->stats) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   obs->system_index =
-      hypredrv->current_system_index >= 0
-         ? hypredrv->current_system_index                    /* GCOVR_EXCL_BR_LINE */
-         : hypredrv_StatsGetLinearSystemID(hypredrv->stats); /* GCOVR_EXCL_BR_LINE */
-
-   obs->timestep_index = hypredrv_PreconReuseResolveTimestepIndex(
-      timestep_starts, hypredrv->stats, obs->system_index);
-
-   obs->iters      = hypredrv_StatsGetLastIter(hypredrv->stats);
-   obs->setup_time = hypredrv_StatsGetLastSetupTime(hypredrv->stats);
-   obs->solve_time = hypredrv_StatsGetLastSolveTime(hypredrv->stats);
-
-   for (int level = 0; level < STATS_MAX_LEVELS; level++)
-   {
-      if (hypredrv->stats->level_current_id[level] > 0)
-      {
-         obs->level_ids[level] = hypredrv->stats->level_current_id[level] - 1;
-      }
-   }
-}
-
-static void
-PreconReuseResolveBootstrapBaseline(PreconReuseState *state)
-{
-   if (state->count < PRECON_REUSE_BOOTSTRAP_SOLVES) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   state->baseline = state->observations[0];
-
-   double iters_sum = 0.0;
-   double setup_sum = 0.0;
-   double solve_sum = 0.0;
-   for (int i = 0; i < PRECON_REUSE_BOOTSTRAP_SOLVES; i++)
-   {
-      iters_sum += (double)state->observations[i].iters;
-      setup_sum += state->observations[i].setup_time;
-      solve_sum += state->observations[i].solve_time;
-   }
-
-   state->baseline_iters      = iters_sum / (double)PRECON_REUSE_BOOTSTRAP_SOLVES;
-   state->baseline_setup_time = setup_sum / (double)PRECON_REUSE_BOOTSTRAP_SOLVES;
-   state->baseline_solve_time = solve_sum / (double)PRECON_REUSE_BOOTSTRAP_SOLVES;
-   state->baseline.iters      = (int)lrint(state->baseline_iters);
-   state->baseline.setup_time = state->baseline_setup_time;
-   state->baseline.solve_time = state->baseline_solve_time;
-   state->baseline_valid      = 1;
-}
-
-static int
-PreconReuseReuseAgeGet(const PreconReuseState *state)
-{
-   return (int)state->count;
+   hypredrv_PreconReuseStateRecordObservation(hypredrv->precon_reuse_state, &obs);
 }
 
 /* Track consecutive "bad" decisions (score >= threshold but below the streak limit).
@@ -547,105 +499,111 @@ PreconReuseUpdateBadDecisionStreak(PreconReuseState *state, int next_ls_id, int 
    return state->bad_decision_streak;
 }
 
-void
-hypredrv_PreconReuseMarkRebuild(HYPREDRV_t hypredrv, PreconReuseState *state)
-{                           /* GCOVR_EXCL_BR_LINE */
-   if (!hypredrv || !state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   hypredrv_PreconReuseStateReset(state); /* GCOVR_EXCL_BR_LINE */
-   if (!hypredrv->stats)                  /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   for (int level = 0; level < STATS_MAX_LEVELS; level++)
-   {
-      state->last_rebuild_level_ids[level] =
-         (hypredrv->stats->level_current_id[level] > 0)
-            ? (hypredrv->stats->level_current_id[level] - 1)
-            : -1;
-   }
-}
-
-void
-hypredrv_PreconReuseLogDecision(HYPREDRV_t hypredrv, int next_ls_id,
-                                const PreconReuseDecision *decision, const char *caller)
-{                              /* GCOVR_EXCL_BR_LINE */
-   if (!hypredrv || !decision) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   if (decision->used_adaptive)
-   {                       /* GCOVR_EXCL_BR_LINE */
-      HYPREDRV_LOG_OBJECTF(/* GCOVR_EXCL_BR_LINE */
-                           2, hypredrv,
-                           "%s adaptive reuse decision: next_ls_id=%d rebuild=%d "
-                           "score=%.6g age=%d "
-                           "history_points=%d %s",
-                           caller ? caller : "reuse", next_ls_id,
-                           decision->should_rebuild, decision->score, decision->age,
-                           decision->history_points, decision->summary);
-   }
-   else
-   {                       /* GCOVR_EXCL_BR_LINE */
-      HYPREDRV_LOG_OBJECTF(/* GCOVR_EXCL_BR_LINE */
-                           2, hypredrv,
-                           "%s preconditioner reuse decision: next_ls_id=%d rebuild=%d "
-                           "%s",
-                           caller ? caller : "reuse", next_ls_id,
-                           decision->should_rebuild, decision->summary);
-   }
-}
-
-/* Before an MGR preconditioner is destroyed (or recreated) for next_ls_id, mark
- * the cached component solvers that should survive for reuse and log them.
- * `phase` names the operation in the log ("destroy", "recreate"). */
-void
-hypredrv_PreconReuseKeepMGRHandles(HYPREDRV_t hypredrv, int next_ls_id, const char *phase)
+/* Rank-local half of the reuse decision. It writes only to the staged copy of the
+ * reuse state; the caller publishes it after the ranks agree. */
+static int
+PreconReuseDecideLocal(const hypredrv_t *hypredrv, PreconReusePhase phase,
+                       PreconReuseState *state, int next_ls_id,
+                       PreconReuseDecision *decision)
 {
-#if HYPRE_CHECK_MIN_VERSION(30100, 28)
-   if (!hypredrv || !hypredrv->iargs ||
-       hypredrv->iargs->precon_method != PRECON_MGR) /* GCOVR_EXCL_BR_LINE */
+   if (hypredrv_ErrorCodeActive())
    {
-      return;
+      return 1;
    }
-
-   MGR_args *mgr        = &hypredrv->iargs->precon.mgr;
-   int       num_frelax = 0;
-   int       num_grelax = 0;
-   int       num_coarse = 0;
-
-   hypredrv_MGRSelectCachedSolversToKeep(mgr, hypredrv->precon_reuse_timesteps.starts,
-                                         hypredrv->stats, next_ls_id);
-   hypredrv_MGRCountKeepFlags(mgr, &num_frelax, &num_grelax, &num_coarse);
-   if (num_frelax || num_grelax || num_coarse) /* GCOVR_EXCL_BR_LINE */
+   if (phase == PRECON_REUSE_CREATE && (!hypredrv->precon || !hypredrv->precon_is_setup))
    {
-      HYPREDRV_LOG_OBJECTF(2, hypredrv,
-                           "preserving cached MGR handles across %s: coarse=%d frelax=%d "
-                           "grelax=%d",
-                           phase, num_coarse, num_frelax, num_grelax);
+      bool pending_setup = (hypredrv->precon && !hypredrv->precon->setup_called) != 0;
+      decision->used_adaptive =
+         hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE;
+      const char *reason = "recreate because previous setup failed";
+      if (!hypredrv->precon) reason = "create because preconditioner is NULL";
+      else if (pending_setup) reason = "preconditioner pending setup";
+      snprintf(decision->summary, sizeof(decision->summary), "%s", reason);
+      return !pending_setup;
    }
-#else
-   (void)hypredrv;
-   (void)next_ls_id;
-   (void)phase;
-#endif
+   return hypredrv_PreconReuseShouldRebuild(state, next_ls_id, decision);
 }
 
 static void
-hypredrv_PreconReuseDecisionInit(PreconReuseDecision *decision)
-{                 /* GCOVR_EXCL_BR_LINE */
-   if (!decision) /* GCOVR_EXCL_BR_LINE */
+PreconReuseLogDecision(hypredrv_t *hypredrv, PreconReusePhase phase, int next_ls_id,
+                       int rebuild, int local_rebuild, PreconReuseDecision *decision)
+{
+   if (rebuild != local_rebuild)
    {
-      return;
+      size_t used = strlen(decision->summary);
+      snprintf(decision->summary + used, sizeof(decision->summary) - used,
+               "%scollective_rebuild=%d local_rebuild=%d", used ? " " : "", rebuild,
+               local_rebuild);
    }
+   const char *caller = "PreconDestroy";
+   if (phase == PRECON_REUSE_CREATE) caller = "PreconCreate";
+   else if (phase == PRECON_REUSE_SETUP) caller = "LinearSolverSetup";
+   if (decision->used_adaptive)
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "%s adaptive reuse decision: next_ls_id=%d rebuild=%d "
+                           "score=%.6g age=%d "
+                           "history_points=%d %s",
+                           caller, next_ls_id, rebuild, decision->score, decision->age,
+                           decision->history_points, decision->summary);
+   }
+   else
+   {
+      HYPREDRV_LOG_OBJECTF(2, hypredrv,
+                           "%s preconditioner reuse decision: next_ls_id=%d rebuild=%d "
+                           "%s",
+                           caller, next_ls_id, rebuild, decision->summary);
+   }
+}
 
-   memset(decision, 0, sizeof(*decision));
-   snprintf(decision->summary, sizeof(decision->summary), "%s", "static");
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
+static void
+PreconReuseKeepCachedMGRSolvers(hypredrv_t *hypredrv, PreconReusePhase phase,
+                                int next_ls_id)
+{
+   if (phase != PRECON_REUSE_SETUP && hypredrv->precon &&
+       hypredrv->iargs->precon_method == PRECON_MGR)
+   {
+      MGR_args *mgr        = &hypredrv->iargs->precon.mgr;
+      int       num_frelax = 0, num_grelax = 0, num_coarse = 0;
+      hypredrv_MGRSelectCachedSolversToKeep(mgr, hypredrv->precon_reuse_timesteps.starts,
+                                            hypredrv->stats, next_ls_id);
+      hypredrv_MGRCountKeepFlags(mgr, &num_frelax, &num_grelax, &num_coarse);
+      if (num_frelax || num_grelax || num_coarse)
+         HYPREDRV_LOG_OBJECTF(
+            2, hypredrv,
+            "preserving cached MGR handles across %s: coarse=%d frelax=%d grelax=%d",
+            phase == PRECON_REUSE_CREATE ? "recreate" : "destroy", num_coarse, num_frelax,
+            num_grelax);
+   }
+}
+#endif
+
+bool
+hypredrv_PreconReuseDecide(hypredrv_t *hypredrv, PreconReusePhase phase)
+{
+   int                 next_ls_id = hypredrv_StatsGetLinearSystemID(hypredrv->stats) + 1;
+   PreconReuseDecision decision   = {0};
+   /* Evaluation updates decision metadata, but only reads observation storage.
+    * Stage that metadata so a peer's policy failure cannot publish half a decision. */
+   PreconReuseState state = *hypredrv->precon_reuse_state;
+   int              local_rebuild =
+      PreconReuseDecideLocal(hypredrv, phase, &state, next_ls_id, &decision);
+   int rebuild = 1;
+   MPI_Allreduce(&local_rebuild, &rebuild, 1, MPI_INT, MPI_MAX, hypredrv->comm);
+   if (hypredrv_DistributedErrorStateSync(hypredrv->comm)) return false;
+   *hypredrv->precon_reuse_state = state;
+   PreconReuseLogDecision(hypredrv, phase, next_ls_id, rebuild, local_rebuild, &decision);
+   if (!rebuild) return false;
+   if (phase == PRECON_REUSE_CREATE &&
+       hypredrv->iargs->precon_reuse.policy == PRECON_REUSE_POLICY_ADAPTIVE)
+   {
+      PreconReuseStateReset(hypredrv->precon_reuse_state);
+   }
+#if HYPRE_CHECK_MIN_VERSION(30100, 28)
+   PreconReuseKeepCachedMGRSolvers(hypredrv, phase, next_ls_id);
+#endif
+   return true;
 }
 
 static void
@@ -663,57 +621,52 @@ PreconReuseObservationInitSentinels(PreconReuseObservation *obs)
    }
 }
 
-void
-hypredrv_PreconReuseStateInit(PreconReuseState *state)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!state) /* GCOVR_EXCL_BR_LINE */
+PreconReuseState *
+hypredrv_PreconReuseStateCreate(const PreconReuse_args *args,
+                                const IntArray *timestep_starts, const Stats *stats)
+{
+   if (!args)
    {
-      return;
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Preconditioner reuse requires parsed arguments");
+      return NULL;
    }
+   PreconReuseState *state = calloc(1, sizeof(*state));
+   if (!state)
+   {
+      hypredrv_AllocationFailure("Failed to allocate preconditioner reuse state");
+      return NULL;
+   }
+   state->args            = args;
+   state->timestep_starts = timestep_starts;
+   state->stats           = stats;
+   PreconReuseStateReset(state);
+   return state;
+}
 
-   memset(state, 0, sizeof(*state));
+void
+hypredrv_PreconReuseStateDestroy(PreconReuseState **state)
+{
+   if (!state || !*state) return;
+   free((*state)->observations);
+   free(*state);
+   *state = NULL;
+}
+
+static void
+PreconReuseStateReset(PreconReuseState *state)
+{
+   free(state->observations);
+   *state = (PreconReuseState){.args                 = state->args,
+                               .timestep_starts      = state->timestep_starts,
+                               .stats                = state->stats,
+                               .last_solve_succeeded = 1,
+                               .last_decision_ls_id  = -1};
    for (int i = 0; i < STATS_MAX_LEVELS; i++)
-   {
-      state->last_rebuild_level_ids[i] = -1;
-   }
-   state->last_solve_succeeded = 1;
-   state->last_decision_ls_id  = -1;
-   PreconReuseObservationInitSentinels(&state->baseline);
-   PreconReuseObservationInitSentinels(&state->last_observation);
-}
-
-void
-hypredrv_PreconReuseStateDestroy(PreconReuseState *state)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   free(state->observations);
-   hypredrv_PreconReuseStateInit(state);
-}
-
-void
-hypredrv_PreconReuseStateReset(PreconReuseState *state)
-{              /* GCOVR_EXCL_BR_LINE */
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return;
-   }
-
-   free(state->observations);
-   state->observations         = NULL;
-   state->count                = 0;
-   state->capacity             = 0;
-   state->bootstrap_count      = 0;
-   state->baseline_valid       = 0;
-   state->bad_decision_streak  = 0;
-   state->last_solve_succeeded = 1;
-   state->last_decision_ls_id  = -1;
-   state->baseline_iters       = 0.0;
-   state->baseline_setup_time  = 0.0;
-   state->baseline_solve_time  = 0.0;
+      state->last_rebuild_level_ids[i] =
+         state->stats && state->stats->level_current_id[i] > 0
+            ? state->stats->level_current_id[i] - 1
+            : -1;
    PreconReuseObservationInitSentinels(&state->baseline);
    PreconReuseObservationInitSentinels(&state->last_observation);
 }
@@ -762,18 +715,27 @@ hypredrv_PreconReuseStateRecordObservation(PreconReuseState             *state,
    state->last_observation             = *obs;
    state->last_solve_succeeded         = obs->solve_succeeded;
 
-   if (!state->baseline_valid)
+   if (!state->baseline_valid && state->count == PRECON_REUSE_BOOTSTRAP_SOLVES)
    {
-      size_t bootstrap_count = state->count;               /* GCOVR_EXCL_BR_LINE */
-      if (bootstrap_count > PRECON_REUSE_BOOTSTRAP_SOLVES) /* GCOVR_EXCL_BR_LINE */
+      state->baseline = state->observations[0];
+
+      double iters_sum = 0.0;
+      double setup_sum = 0.0;
+      double solve_sum = 0.0;
+      for (int i = 0; i < PRECON_REUSE_BOOTSTRAP_SOLVES; i++)
       {
-         bootstrap_count = PRECON_REUSE_BOOTSTRAP_SOLVES;
+         iters_sum += (double)state->observations[i].iters;
+         setup_sum += state->observations[i].setup_time;
+         solve_sum += state->observations[i].solve_time;
       }
-      state->bootstrap_count = (int)bootstrap_count;
-      if (state->bootstrap_count >= PRECON_REUSE_BOOTSTRAP_SOLVES)
-      {
-         PreconReuseResolveBootstrapBaseline(state);
-      }
+
+      state->baseline_iters      = iters_sum / (double)PRECON_REUSE_BOOTSTRAP_SOLVES;
+      state->baseline_setup_time = setup_sum / (double)PRECON_REUSE_BOOTSTRAP_SOLVES;
+      state->baseline_solve_time = solve_sum / (double)PRECON_REUSE_BOOTSTRAP_SOLVES;
+      state->baseline.iters      = (int)lrint(state->baseline_iters);
+      state->baseline.setup_time = state->baseline_setup_time;
+      state->baseline.solve_time = state->baseline_solve_time;
+      state->baseline_valid      = 1;
    }
    state->last_decision_ls_id = -1;
 }
@@ -1410,7 +1372,7 @@ PreconReuseAdaptiveBaselineGuards(const PreconReuse_args *args, PreconReuseState
       decision->should_rebuild = 0;
       snprintf(decision->summary, sizeof(decision->summary),
                "mode=bootstrap bootstrap=%d/%d baseline=pending streak=%d",
-               state->bootstrap_count, PRECON_REUSE_BOOTSTRAP_SOLVES,
+               (int)state->count, PRECON_REUSE_BOOTSTRAP_SOLVES,
                state->bad_decision_streak);
       *rebuild = 0;
       return 1;
@@ -1579,10 +1541,10 @@ PreconReuseAdaptiveScore(const PreconReuse_args *args, const Stats *stats,
    snprintf(status, sizeof(status),
             "mode=adaptive bootstrap=%d/%d baseline_iters=%.6g baseline_setup=%.6g "
             "baseline_solve=%.6g streak=%d/%d threshold=%.6g status=%s",
-            state->bootstrap_count, PRECON_REUSE_BOOTSTRAP_SOLVES, state->baseline_iters,
-            state->baseline_setup_time, state->baseline_solve_time, streak,
-            args->guards.bad_decisions_to_rebuild, args->adaptive.rebuild_threshold,
-            status_label);
+            PRECON_REUSE_BOOTSTRAP_SOLVES, PRECON_REUSE_BOOTSTRAP_SOLVES,
+            state->baseline_iters, state->baseline_setup_time, state->baseline_solve_time,
+            streak, args->guards.bad_decisions_to_rebuild,
+            args->adaptive.rebuild_threshold, status_label);
    PreconReuseAppendSummary(decision->summary, sizeof(decision->summary), status);
 
    return decision->should_rebuild;
@@ -1596,13 +1558,8 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
 {
    int rebuild = 0;
 
-   if (!state) /* GCOVR_EXCL_BR_LINE */
-   {
-      return 1;
-   }
-
    decision->used_adaptive  = 1;
-   decision->age            = PreconReuseReuseAgeGet(state);
+   decision->age            = (int)state->count;
    decision->history_points = (int)state->count;
 
    if (PreconReuseAdaptiveGuardsDecide(args, timestep_starts, stats, state, next_ls_id,
@@ -1615,40 +1572,30 @@ PreconReuseShouldRebuildAdaptive(const PreconReuse_args *args,
 }
 
 int
-hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *args,
-                                  const IntArray *timestep_starts, const Stats *stats,
-                                  PreconReuseState *state, int next_ls_id,
+hypredrv_PreconReuseShouldRebuild(PreconReuseState *state, int next_ls_id,
                                   PreconReuseDecision *decision)
 {
-   hypredrv_PreconReuseDecisionInit(decision);
-
-   if (!args)
+   PreconReuseDecision discarded;
+   if (!decision) decision = &discarded;
+   memset(decision, 0, sizeof(*decision));
+   if (!state)
    {
-      if (decision)
-      {
-         decision->should_rebuild = 1;
-      }
+      decision->should_rebuild = 1;
+      snprintf(decision->summary, sizeof(decision->summary), "%s", "initial build");
       return 1;
    }
-   if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE &&
-       args->enabled) /* GCOVR_EXCL_BR_LINE */
-   {
-      int should_rebuild = PreconReuseShouldRebuildAdaptive(args, timestep_starts, stats,
-                                                            state, next_ls_id, decision);
-      return should_rebuild;
-   }
+   const PreconReuse_args *args = state->args;
+   if (args->policy == PRECON_REUSE_POLICY_ADAPTIVE && args->enabled)
+      return PreconReuseShouldRebuildAdaptive(args, state->timestep_starts, state->stats,
+                                              state, next_ls_id, decision);
 
    int should_rebuild = hypredrv_PreconReuseShouldRebuildStatic(
-      args, timestep_starts, stats, next_ls_id); /* GCOVR_EXCL_BR_LINE */
-   if (decision)                                 /* GCOVR_EXCL_BR_LINE */
-   {
-      decision->should_rebuild = should_rebuild;
-      decision->used_adaptive  = 0;                             /* GCOVR_EXCL_BR_LINE */
-      decision->age            = state ? (int)state->count : 0; /* GCOVR_EXCL_BR_LINE */
-      snprintf(decision->summary, sizeof(decision->summary),
-               "static enabled=%d freq=%d per_timestep=%d", args->enabled,
-               args->frequency, args->per_timestep);
-   }
+      args, state->timestep_starts, state->stats, next_ls_id);
+   decision->should_rebuild = should_rebuild;
+   decision->age            = (int)state->count;
+   snprintf(decision->summary, sizeof(decision->summary),
+            "static enabled=%d freq=%d per_timestep=%d", args->enabled, args->frequency,
+            args->per_timestep);
    return should_rebuild;
 }
 
@@ -1902,7 +1849,8 @@ PreconReuseParseComponentScalar(const PreconReuseComponentSpec *spec, const char
 
       case PRECON_REUSE_FIELD_ONOFF:
          /* GCOVR_EXCL_BR_START */
-         return PreconReuseParseOnOff(value, (int *)(void *)(base + spec->offset));
+         return (int)hypredrv_StrIntMapArrayLookup(hypredrv_OnOffMapArray, value,
+                                                   (int *)(void *)(base + spec->offset));
          /* GCOVR_EXCL_BR_STOP */
 
       case PRECON_REUSE_FIELD_METRIC:
@@ -2152,7 +2100,8 @@ PreconReuseParseScalarGuard(const PreconReuseGuardSpec *spec, const char *value,
       if (spec->kind == PRECON_REUSE_GUARD_ONOFF)
       {
          /* GCOVR_EXCL_BR_START */
-         return PreconReuseParseOnOff(value, slot); /* GCOVR_EXCL_BR_STOP */
+         return (int)hypredrv_StrIntMapArrayLookup(hypredrv_OnOffMapArray, value,
+                                                   slot); /* GCOVR_EXCL_BR_STOP */
       }
       /* GCOVR_EXCL_BR_START */
       return (hypredrv_ParseInt(value, slot) && /* GCOVR_EXCL_BR_STOP */
@@ -2462,8 +2411,9 @@ PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKe
    const char *value =
       child->mapped_val ? child->mapped_val : child->val; /* GCOVR_EXCL_BR_LINE */
    if (!strcmp(child->key, "enabled"))
-   {                                                     /* GCOVR_EXCL_BR_LINE */
-      if (!PreconReuseParseOnOff(value, &args->enabled)) /* GCOVR_EXCL_BR_LINE */
+   { /* GCOVR_EXCL_BR_LINE */
+      if (!hypredrv_StrIntMapArrayLookup(hypredrv_OnOffMapArray, value,
+                                         &args->enabled)) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
          hypredrv_ErrorMsgAdd(
@@ -2510,8 +2460,9 @@ PreconReuseApplyChild(PreconReuse_args *args, YAMLnode *child, PreconReuseSeenKe
       YAML_NODE_SET_VALID(child);
    }
    else if (!strcmp(child->key, "per_timestep"))
-   {                                                          /* GCOVR_EXCL_BR_LINE */
-      if (!PreconReuseParseOnOff(value, &args->per_timestep)) /* GCOVR_EXCL_BR_LINE */
+   { /* GCOVR_EXCL_BR_LINE */
+      if (!hypredrv_StrIntMapArrayLookup(hypredrv_OnOffMapArray, value,
+                                         &args->per_timestep)) /* GCOVR_EXCL_BR_LINE */
       {
          hypredrv_ErrorCodeSet(ERROR_INVALID_VAL); /* GCOVR_EXCL_BR_LINE */
          hypredrv_ErrorMsgAdd(                     /* GCOVR_EXCL_BR_LINE */

@@ -3496,6 +3496,141 @@ test_lsseq_compressed_slice_fallback(void)
 }
 #endif
 
+/* Unsigned blob offsets must not wrap and make a payload read consume header
+ * bytes as if they were coefficients or dof labels. */
+static void
+test_lsseq_rejects_wrapped_blob_offsets(void)
+{
+   const char *filename = "test_lsseq_wrapped_blob.bin";
+   add_temp_file(filename);
+   for (int slot = 0; slot < 3; slot++)
+   {
+      for (int end_overflow = 0; end_overflow < 2; end_overflow++)
+      {
+         write_test_container_with_info(filename);
+         FILE       *fp = fopen(filename, "r+b");
+         LSSeqHeader header;
+         ASSERT_NOT_NULL(fp);
+         ASSERT_EQ_SIZE(fread(&header, sizeof(header), 1, fp), 1);
+         uint64_t offset = UINT64_MAX - header.offset_blob_data;
+         if (!end_overflow)
+         {
+            offset++; /* Adding the blob base would wrap to file offset zero. */
+         }
+         /* Otherwise the blob starts at UINT64_MAX and its end wraps. */
+         ASSERT_EQ(
+            fseek(fp, (long)(header.offset_part_blob_table + slot * 2 * sizeof(uint64_t)),
+                  SEEK_SET),
+            0);
+         ASSERT_EQ_SIZE(fwrite(&offset, sizeof(offset), 1, fp), 1);
+         ASSERT_EQ(fclose(fp), 0);
+         hypredrv_ErrorCodeResetAll();
+         if (slot == 0)
+         {
+            HYPRE_IJMatrix matrix = NULL;
+            ASSERT_FALSE(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, filename, 0,
+                                                  HYPRE_MEMORY_HOST, &matrix));
+            ASSERT_NULL(matrix);
+         }
+         else if (slot == 1)
+         {
+            HYPRE_IJVector rhs = NULL;
+            ASSERT_FALSE(hypredrv_LSSeqReadRHS(MPI_COMM_SELF, filename, 0,
+                                               HYPRE_MEMORY_HOST, &rhs));
+            ASSERT_NULL(rhs);
+         }
+         else
+         {
+            IntArray *dofmap = NULL;
+            ASSERT_FALSE(hypredrv_LSSeqReadDofmap(MPI_COMM_SELF, filename, 0, &dofmap));
+            ASSERT_NULL(dofmap);
+         }
+         ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_UNEXPECTED_ENTRY);
+      }
+   }
+   hypredrv_ErrorCodeResetAll();
+}
+
+/* Reader cleanup must close its stream on both successful imports and failures
+ * at the header, info and metadata stages. Sanitizers alone do not catch this. */
+static void
+test_lsseq_stream_cleanup(void)
+{
+#if defined(__linux__)
+   const char *files[] = {"test_lsseq_fd_valid.bin", "test_lsseq_fd_header.bin",
+                          "test_lsseq_fd_info.bin", "test_lsseq_fd_metadata.bin"};
+   write_test_container_with_info(files[0]);
+   write_lsseq_bad_magic(files[1]);
+   write_lsseq_info_bad_version(files[2]);
+   write_lsseq_truncated_pattern_metadata(files[3]);
+   for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+   {
+      add_temp_file(files[i]);
+   }
+
+   int open_files[2] = {0, 0};
+   for (int pass = 0; pass < 2; pass++)
+   {
+      DIR *fds = opendir("/proc/self/fd");
+      ASSERT_NOT_NULL(fds);
+      while (readdir(fds))
+      {
+         open_files[pass]++;
+      }
+      ASSERT_EQ(closedir(fds), 0);
+      if (pass)
+      {
+         break;
+      }
+      for (int repeat = 0; repeat < 16; repeat++)
+      {
+         for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++)
+         {
+            HYPRE_IJMatrix matrix = NULL;
+            HYPRE_IJVector rhs    = NULL;
+            IntArray      *dofmap = NULL;
+            hypredrv_ErrorCodeResetAll();
+            ASSERT_EQ(hypredrv_LSSeqReadMatrix(MPI_COMM_SELF, files[i], 0,
+                                               HYPRE_MEMORY_HOST, &matrix),
+                      i == 0);
+            hypredrv_ErrorCodeResetAll();
+            ASSERT_EQ(
+               hypredrv_LSSeqReadRHS(MPI_COMM_SELF, files[i], 0, HYPRE_MEMORY_HOST, &rhs),
+               i == 0);
+            hypredrv_ErrorCodeResetAll();
+            ASSERT_EQ(hypredrv_LSSeqReadDofmap(MPI_COMM_SELF, files[i], 0, &dofmap),
+                      i == 0);
+            if (matrix)
+            {
+               HYPRE_IJMatrixDestroy(matrix);
+            }
+            if (rhs)
+            {
+               HYPRE_IJVectorDestroy(rhs);
+            }
+            hypredrv_IntArrayDestroy(&dofmap);
+         }
+         char     *payload = NULL;
+         size_t    size    = 0;
+         IntArray *ids = NULL, *starts = NULL;
+         hypredrv_ErrorCodeResetAll();
+         ASSERT_TRUE(hypredrv_LSSeqReadSummary(files[0], NULL, NULL, NULL, NULL));
+         ASSERT_TRUE(hypredrv_LSSeqReadInfo(files[0], &payload, &size));
+         free(payload);
+         ASSERT_TRUE(hypredrv_LSSeqReadTimestepsWithIds(files[0], &ids, &starts));
+         hypredrv_IntArrayDestroy(&ids);
+         hypredrv_IntArrayDestroy(&starts);
+         ASSERT_FALSE(hypredrv_LSSeqReadInfo(files[2], &payload, &size));
+         ASSERT_NULL(payload);
+         hypredrv_ErrorCodeResetAll();
+         ASSERT_FALSE(hypredrv_LSSeqReadSummary(files[1], NULL, NULL, NULL, NULL));
+         hypredrv_ErrorCodeResetAll();
+      }
+   }
+   ASSERT_EQ(open_files[0], open_files[1]);
+#endif
+}
+
 int
 main(int argc, char **argv)
 {
@@ -3541,6 +3676,9 @@ main(int argc, char **argv)
    RUN_TEST(test_lsseq_timesteps_replace_existing_arrays);
    RUN_TEST(test_lsseq_dofmap_zero_entries_with_flag);
    RUN_TEST(test_lsseq_read_matrix_zero_nnz_and_rhs_zero_nrows);
+
+   RUN_TEST(test_lsseq_rejects_wrapped_blob_offsets);
+   RUN_TEST(test_lsseq_stream_cleanup);
 
    cleanup_temp_files();
 

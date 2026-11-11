@@ -50,8 +50,7 @@ typedef struct IntArray_struct
 IntArray *hypredrv_IntArrayCreate(size_t);
 void      hypredrv_IntArrayDestroy(IntArray **);
 void      hypredrv_IntArrayBuild(MPI_Comm, int, const int *, IntArray **);
-void      hypredrv_IntArrayBuildInterleaved(MPI_Comm, int, int, IntArray **);
-void      hypredrv_IntArrayBuildContiguous(MPI_Comm, int, int, IntArray **);
+void      hypredrv_IntArrayBuildPattern(MPI_Comm, int, int, bool, IntArray **);
 void      hypredrv_IntArrayParRead(MPI_Comm, const char *, IntArray **);
 uint32_t  hypredrv_IntArrayWriteAsciiByRank(MPI_Comm, const IntArray *, const char *);
 bool      hypredrv_IntArrayEntryExists(const IntArray *, int);
@@ -122,8 +121,9 @@ typedef struct StrIntMapArray_struct
 
 extern const StrIntMapArray hypredrv_OnOffMapArray;
 
-int   hypredrv_StrIntMapArrayGetImage(StrIntMapArray, const char *);
-bool  hypredrv_StrIntMapArrayDomainEntryExists(StrIntMapArray, const char *);
+/* Resolve a name or numeric alias in one lookup, including the full int range.
+ * The output is optional and remains unchanged when no entry matches. */
+bool  hypredrv_StrIntMapArrayLookup(StrIntMapArray, const char *, int *);
 char *hypredrv_StrIntMapArrayDomainToString(StrIntMapArray);
 
 /*--------------------------------------------------------------------------

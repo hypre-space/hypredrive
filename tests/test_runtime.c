@@ -1,5 +1,5 @@
 /******************************************************************************
- * Unit tests for src/runtime.c (runtime registry and finalize guards).
+ * Tests for the public runtime lifecycle and process environment.
  ******************************************************************************/
 
 #include <mpi.h>
@@ -14,8 +14,6 @@
 #include "HYPRE.h"
 #include "HYPREDRV.h"
 #include "internal/error.h"
-#include "object.h"
-#include "runtime.h"
 #include "test_helpers.h"
 
 #define ASSERT_HAS_FLAG(code, flag) ASSERT_TRUE(((code) & (flag)) != 0)
@@ -33,105 +31,55 @@ reset_lib_and_runtime(void)
 }
 
 static void
-test_RuntimeObjectIsLive_null(void)
+test_runtime_lifecycle_and_invalid_handles(void)
 {
-   ASSERT_FALSE(hypredrv_RuntimeObjectIsLive(NULL));
-}
+   reset_lib_and_runtime();
 
-static void
-test_RuntimeRegisterObject_requires_initialized(void)
-{
-   hypredrv_t *dummy = (hypredrv_t *)calloc(1, sizeof(hypredrv_t));
-   uint32_t    code;
+   HYPREDRV_t objects[3] = {NULL, NULL, NULL};
+   ASSERT_HAS_FLAG(HYPREDRV_Create(MPI_COMM_SELF, &objects[0]),
+                   ERROR_HYPREDRV_NOT_INITIALIZED);
+   ASSERT_NULL(objects[0]);
+   ASSERT_EQ_U32(HYPREDRV_Initialize(), ERROR_NONE);
+   ASSERT_HAS_FLAG(HYPREDRV_Create(MPI_COMM_SELF, NULL), ERROR_INVALID_VAL);
+   ASSERT_HAS_FLAG(HYPREDRV_Destroy(NULL), ERROR_INVALID_VAL);
+   ASSERT_HAS_FLAG(HYPREDRV_SetLibraryMode(NULL), ERROR_UNKNOWN_HYPREDRV_OBJ);
 
-   ASSERT_NOT_NULL(dummy);
-   hypredrv_ErrorCodeResetAll();
-   code = hypredrv_RuntimeRegisterObject((HYPREDRV_t)dummy);
-   ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
-   free(dummy);
-}
+   HYPREDRV_t invalid = (HYPREDRV_t)(uintptr_t)1;
+   ASSERT_HAS_FLAG(HYPREDRV_SetLibraryMode(invalid), ERROR_UNKNOWN_HYPREDRV_OBJ);
+   ASSERT_HAS_FLAG(HYPREDRV_Destroy(&invalid), ERROR_UNKNOWN_HYPREDRV_OBJ);
+   ASSERT_PTR_EQ(invalid, (HYPREDRV_t)(uintptr_t)1);
 
-static void
-test_RuntimeRegisterObject_null_and_duplicate(void)
-{
-   hypredrv_t *obj = (hypredrv_t *)calloc(1, sizeof(hypredrv_t));
+   for (int i = 0; i < 3; i++)
+   {
+      ASSERT_EQ_U32(HYPREDRV_Create(MPI_COMM_SELF, &objects[i]), ERROR_NONE);
+      ASSERT_NOT_NULL(objects[i]);
+   }
 
-   ASSERT_NOT_NULL(obj);
-   TEST_HYPRE_INIT();
-   ASSERT_EQ_U32(hypredrv_RuntimeInitialize(), ERROR_NONE);
-
-   hypredrv_ErrorCodeResetAll();
-   ASSERT_HAS_FLAG(hypredrv_RuntimeRegisterObject(NULL), ERROR_UNKNOWN_HYPREDRV_OBJ);
-
-   hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ_U32(hypredrv_RuntimeRegisterObject((HYPREDRV_t)obj), ERROR_NONE);
-
-   hypredrv_ErrorCodeResetAll();
-   ASSERT_HAS_FLAG(hypredrv_RuntimeRegisterObject((HYPREDRV_t)obj),
+   /* Removing an interior object must leave its neighbors live. Reinitializing
+    * an active runtime must keep those objects registered. */
+   uintptr_t removed = (uintptr_t)objects[1];
+   ASSERT_EQ_U32(HYPREDRV_Destroy(&objects[1]), ERROR_NONE);
+   ASSERT_NULL(objects[1]);
+   ASSERT_HAS_FLAG(HYPREDRV_SetLibraryMode((HYPREDRV_t)removed),
                    ERROR_UNKNOWN_HYPREDRV_OBJ);
+   ASSERT_EQ_U32(HYPREDRV_Initialize(), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_SetLibraryMode(objects[0]), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_SetLibraryMode(objects[2]), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_Destroy(&objects[0]), ERROR_NONE);
+   ASSERT_NULL(objects[0]);
 
-   hypredrv_RuntimeUnregisterObject((HYPREDRV_t)obj);
-   free(obj);
-   hypredrv_RuntimeFinalizeState();
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_RuntimeDestroyAllLiveObjects_null_destroy_fn(void)
-{
-   TEST_HYPRE_INIT();
-   ASSERT_EQ_U32(hypredrv_RuntimeInitialize(), ERROR_NONE);
-   (void)hypredrv_RuntimeDestroyAllLiveObjects(NULL);
-   hypredrv_RuntimeFinalizeState();
-   TEST_HYPRE_FINALIZE();
-}
-
-static uint32_t
-destroy_nested_finalize_sweep(HYPREDRV_t h)
-{
-   ASSERT_TRUE(hypredrv_RuntimeIsFinalizing());
-   (void)hypredrv_RuntimeDestroyAllLiveObjects(destroy_nested_finalize_sweep);
-   hypredrv_RuntimeUnregisterObject(h);
-   free(h);
-   return hypredrv_ErrorCodeGet();
-}
-
-static void
-test_RuntimeDestroyAllLiveObjects_nested_while_finalizing(void)
-{
-   hypredrv_t *obj = (hypredrv_t *)calloc(1, sizeof(hypredrv_t));
-
-   ASSERT_NOT_NULL(obj);
-   TEST_HYPRE_INIT();
-   ASSERT_EQ_U32(hypredrv_RuntimeInitialize(), ERROR_NONE);
-   ASSERT_EQ_U32(hypredrv_RuntimeRegisterObject((HYPREDRV_t)obj), ERROR_NONE);
-   ASSERT_EQ_U32(hypredrv_RuntimeDestroyAllLiveObjects(destroy_nested_finalize_sweep),
-                 ERROR_NONE);
-   hypredrv_RuntimeFinalizeState();
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_RuntimeFinalizeState_blocks_with_live_objects(void)
-{
-   hypredrv_t *obj = (hypredrv_t *)calloc(1, sizeof(hypredrv_t));
-   uint32_t    code;
-
-   ASSERT_NOT_NULL(obj);
-   TEST_HYPRE_INIT();
-   ASSERT_EQ_U32(hypredrv_RuntimeInitialize(), ERROR_NONE);
-   ASSERT_EQ_U32(hypredrv_RuntimeRegisterObject((HYPREDRV_t)obj), ERROR_NONE);
-
-   hypredrv_ErrorCodeResetAll();
-   code = hypredrv_RuntimeFinalizeState();
-   ASSERT_HAS_FLAG(code, ERROR_UNKNOWN);
-   ASSERT_TRUE(hypredrv_RuntimeIsInitialized());
-
-   hypredrv_RuntimeUnregisterObject((HYPREDRV_t)obj);
-   free(obj);
-   hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ_U32(hypredrv_RuntimeFinalizeState(), ERROR_NONE);
-   TEST_HYPRE_FINALIZE();
+   /* Finalization owns the remaining object; its old handle stays invalid
+    * after a fresh initialization, before any new allocation can reuse it. */
+   uintptr_t finalized = (uintptr_t)objects[2];
+   ASSERT_EQ_U32(HYPREDRV_Finalize(), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_Initialize(), ERROR_NONE);
+   invalid = (HYPREDRV_t)finalized;
+   ASSERT_HAS_FLAG(HYPREDRV_SetLibraryMode(invalid), ERROR_UNKNOWN_HYPREDRV_OBJ);
+   ASSERT_HAS_FLAG(HYPREDRV_Destroy(&invalid), ERROR_UNKNOWN_HYPREDRV_OBJ);
+   ASSERT_EQ_U32(HYPREDRV_Create(MPI_COMM_SELF, &objects[0]), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_Destroy(&objects[0]), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_Finalize(), ERROR_NONE);
+   ASSERT_EQ_U32(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
 #if HYPRE_CHECK_MIN_VERSION(23100, 0)
@@ -260,13 +208,7 @@ main(int argc, char **argv)
    TEST_HYPRE_INIT();
    reset_lib_and_runtime();
 
-   RUN_TEST(test_RuntimeObjectIsLive_null);
-   RUN_TEST(test_RuntimeRegisterObject_requires_initialized);
-
-   RUN_TEST(test_RuntimeRegisterObject_null_and_duplicate);
-   RUN_TEST(test_RuntimeDestroyAllLiveObjects_null_destroy_fn);
-   RUN_TEST(test_RuntimeDestroyAllLiveObjects_nested_while_finalizing);
-   RUN_TEST(test_RuntimeFinalizeState_blocks_with_live_objects);
+   RUN_TEST(test_runtime_lifecycle_and_invalid_handles);
 #if HYPRE_CHECK_MIN_VERSION(23100, 0)
    RUN_TEST(test_RuntimeGpuAwareMPI_defaults_to_disabled);
    RUN_TEST(test_RuntimeGpuAwareMPI_recognizes_enable_environment);

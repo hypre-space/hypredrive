@@ -10,9 +10,38 @@
 #include "HYPRE.h"
 #include "HYPRE_IJ_mv.h"
 #include "HYPRE_parcsr_mv.h"
+#include "_hypre_IJ_mv.h"
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/linsys.h"
 #include "internal/utils.h"
+
+uint32_t
+hypredrv_IJMatrixValidate(HYPRE_IJMatrix matrix, const char *operation)
+{
+   HYPRE_Int type = -1, code = 0;
+   void     *object = NULL;
+   if (matrix)
+   {
+      code = HYPRE_IJMatrixGetObjectType(matrix, &type);
+      if (!code) code = HYPRE_IJMatrixGetObject(matrix, &object);
+   }
+   if (code)
+   {
+      char message[HYPRE_MAX_MSG_LEN];
+      HYPRE_DescribeError(code, message);
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("%s: HYPRE call failed: %s", operation, message);
+      return ERROR_HYPRE_INTERNAL;
+   }
+   if (!matrix || type != HYPRE_PARCSR || !object ||
+       !hypre_IJMatrixAssembleFlag((hypre_IJMatrix *)matrix))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("%s: matrix must be an assembled ParCSR IJMatrix", operation);
+      return ERROR_INVALID_VAL;
+   }
+   return ERROR_NONE;
+}
 
 enum
 {

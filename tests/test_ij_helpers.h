@@ -11,11 +11,35 @@
 #include <mpi.h>
 
 #include "HYPRE_IJ_mv.h"
+#include "internal/linsys.h"
+#include "object.h"
 #include "test_helpers.h"
 #ifdef HYPRE_USING_GPU
 #include "_hypre_parcsr_mv.h"
-#include "internal/linsys.h"
 #endif
+
+/* File-format fixtures borrow options and the main matrix, when supplied.
+ * Return ownership of the installed output to the caller. A NULL main matrix
+ * selects a system-matrix read; otherwise read the configured preconditioner. */
+static inline void
+read_test_configured_matrix(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix main,
+                            HYPRE_IJMatrix *output, Stats *stats)
+{
+   input_args *inputs = calloc(1, sizeof(*inputs));
+   ASSERT_NOT_NULL(inputs);
+   inputs->ls                     = *args;
+   inputs->general.exec_policy    = args->exec_policy;
+   struct hypredrv_struct fixture = {
+      .comm  = comm,
+      .iargs = inputs,
+      .stats = stats,
+      .mat_A = {main ? main : *output, !main},
+      .mat_M = {main ? *output : NULL, main && *output != main}};
+   if (main) hypredrv_LinearSystemSetPrecMatrix(&fixture, NULL);
+   else hypredrv_LinearSystemReadMatrix(&fixture);
+   *output = main ? fixture.mat_M.handle : fixture.mat_A.handle;
+   free(inputs);
+}
 
 static inline HYPRE_IJMatrix
 create_test_ijmatrix_1x1(double diag)

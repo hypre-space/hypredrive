@@ -8,8 +8,9 @@
 #ifndef PRECON_REUSE_HEADER
 #define PRECON_REUSE_HEADER
 
-#include "HYPREDRV.h"
+#include <stdbool.h>
 #include "internal/containers.h"
+#include "internal/object_fwd.h"
 #include "internal/stats.h"
 
 struct YAMLnode_struct;
@@ -152,23 +153,7 @@ typedef struct PreconReuseObservation_struct
    double solve_time;
 } PreconReuseObservation;
 
-typedef struct PreconReuseState_struct
-{
-   PreconReuseObservation *observations;
-   size_t                  count;
-   size_t                  capacity;
-   int                     last_rebuild_level_ids[STATS_MAX_LEVELS];
-   int                     bootstrap_count;
-   int                     baseline_valid;
-   int                     bad_decision_streak;
-   int                     last_solve_succeeded;
-   int                     last_decision_ls_id;
-   double                  baseline_iters;
-   double                  baseline_setup_time;
-   double                  baseline_solve_time;
-   PreconReuseObservation  baseline;
-   PreconReuseObservation  last_observation;
-} PreconReuseState;
+typedef struct PreconReuseState_struct PreconReuseState;
 
 typedef struct PreconReuseDecision_struct
 {
@@ -186,25 +171,35 @@ typedef struct PreconReuseTimesteps_struct
    IntArray *starts;
 } PreconReuseTimesteps;
 
+typedef enum
+{
+   PRECON_REUSE_CREATE,
+   PRECON_REUSE_SETUP,
+   PRECON_REUSE_DESTROY,
+} PreconReusePhase;
+
 void hypredrv_PreconReuseSetDefaultArgs(PreconReuse_args *);
 void hypredrv_PreconReuseDestroyArgs(PreconReuse_args *);
 void hypredrv_PreconReuseSetArgsFromYAML(PreconReuse_args *, struct YAMLnode_struct *);
-void hypredrv_PreconReuseStateInit(PreconReuseState *);
-void hypredrv_PreconReuseStateDestroy(PreconReuseState *);
-void hypredrv_PreconReuseStateReset(PreconReuseState *);
-void hypredrv_PreconReuseStateRecordObservation(PreconReuseState *,
-                                                const PreconReuseObservation *);
-void hypredrv_PreconReuseBuildObservation(HYPREDRV_t, const IntArray *,
-                                          PreconReuseObservation *);
-void hypredrv_PreconReuseMarkRebuild(HYPREDRV_t, PreconReuseState *);
-void hypredrv_PreconReuseLogDecision(HYPREDRV_t, int, const PreconReuseDecision *,
-                                     const char *);
-void hypredrv_PreconReuseKeepMGRHandles(HYPREDRV_t, int, const char *);
+/* Bind validated configuration and its optional schedule/statistics for this
+ * history's lifetime. Destroy the history before retiring those inputs. */
+PreconReuseState *hypredrv_PreconReuseStateCreate(const PreconReuse_args *,
+                                                  const IntArray *, const Stats *);
+void              hypredrv_PreconReuseStateDestroy(PreconReuseState **);
+void              hypredrv_PreconReuseStateRecordObservation(PreconReuseState *,
+                                                             const PreconReuseObservation *);
+/* Lifecycle decisions require a live object with parsed args and statistics.
+ * Every rank participates in the same phase, including missing/pending handles.
+ * A create decision prepares rebuild history and retained component handles;
+ * native consumer creation/destruction remains with the object workflow.
+ * Errors remain in the diagnostic scope and leave policy bookkeeping unchanged. */
+bool hypredrv_PreconReuseDecide(hypredrv_t *, PreconReusePhase);
+/* Capture the completed solve and its owned schedule into adaptive history.
+ * Disabled/static policies do not record observations. Diagnostics are kept. */
+void hypredrv_PreconReuseRecordSolve(hypredrv_t *, bool);
 int  hypredrv_PreconReuseResolveTimestepIndex(const IntArray *, const Stats *, int);
 int  hypredrv_PreconReuseShouldRebuildStatic(const PreconReuse_args *, const IntArray *,
                                              const Stats *, int);
-int  hypredrv_PreconReuseShouldRebuild(const PreconReuse_args *, const IntArray *,
-                                       const Stats *, PreconReuseState *, int,
-                                       PreconReuseDecision *);
+int  hypredrv_PreconReuseShouldRebuild(PreconReuseState *, int, PreconReuseDecision *);
 
 #endif /* PRECON_REUSE_HEADER */

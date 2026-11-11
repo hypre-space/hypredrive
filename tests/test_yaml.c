@@ -12,10 +12,11 @@
 #ifndef _MSC_VER
 #include <unistd.h>
 #endif
-#include "test_helpers.h"
 #include "internal/containers.h"
 #include "internal/error.h"
+#include "internal/field.h"
 #include "internal/yaml.h"
+#include "test_helpers.h"
 
 /* Create the empty directory "<scratch>/<name>" for a YAML file-reading test. */
 static char *
@@ -759,19 +760,22 @@ test_YAMLtreeExpandIncludes_list_under_type(void)
    YAMLnode *amg = hypredrv_YAMLnodeFindChildByKey(precon, "amg");
    ASSERT_NOT_NULL(amg);
 
-   YAMLnode **items = NULL;
-   int        n     = hypredrv_YAMLnodeCollectSequenceItems(amg, &items);
-   ASSERT_EQ(n, 2);
+   YAMLnode *first = amg->children;
+   ASSERT_NOT_NULL(first);
+   YAMLnode *second = first->next;
+   ASSERT_NOT_NULL(second);
+   ASSERT_STREQ(first->key, "-");
+   ASSERT_STREQ(second->key, "-");
+   ASSERT_NULL(second->next);
 
-   YAMLnode *c0 = hypredrv_YAMLnodeFindChildByKey(items[0], "coarsening");
+   YAMLnode *c0 = hypredrv_YAMLnodeFindChildByKey(first, "coarsening");
    ASSERT_NOT_NULL(c0);
    ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(c0, "type"), "hmis");
 
-   YAMLnode *c1 = hypredrv_YAMLnodeFindChildByKey(items[1], "coarsening");
+   YAMLnode *c1 = hypredrv_YAMLnodeFindChildByKey(second, "coarsening");
    ASSERT_NOT_NULL(c1);
    ASSERT_STREQ(hypredrv_YAMLnodeFindChildValueByKey(c1, "type"), "pmis");
 
-   free(items);
    free(text);
    hypredrv_YAMLtreeDestroy(&tree);
 }
@@ -809,18 +813,19 @@ test_YAMLtreeExpandIncludes_list_under_preconditioner(void)
    YAMLnode *precon = hypredrv_YAMLnodeFindChildByKey(tree->root, "preconditioner");
    ASSERT_NOT_NULL(precon);
 
-   YAMLnode **items = NULL;
-   int        n     = hypredrv_YAMLnodeCollectSequenceItems(precon, &items);
-   ASSERT_EQ(n, 2);
+   YAMLnode *first = precon->children;
+   ASSERT_NOT_NULL(first);
+   YAMLnode *second = first->next;
+   ASSERT_NOT_NULL(second);
+   ASSERT_STREQ(first->key, "-");
+   ASSERT_STREQ(second->key, "-");
+   ASSERT_NULL(second->next);
 
-   ASSERT_NOT_NULL(items[0]->children);
-   ASSERT_NOT_NULL(items[1]->children);
-   ASSERT_TRUE(!strcmp(items[0]->children->key, "amg") ||
-               !strcmp(items[1]->children->key, "amg"));
-   ASSERT_TRUE(!strcmp(items[0]->children->key, "ilu") ||
-               !strcmp(items[1]->children->key, "ilu"));
+   ASSERT_NOT_NULL(first->children);
+   ASSERT_NOT_NULL(second->children);
+   ASSERT_STREQ(first->children->key, "amg");
+   ASSERT_STREQ(second->children->key, "ilu");
 
-   free(items);
    free(text);
    hypredrv_YAMLtreeDestroy(&tree);
 }
@@ -1171,60 +1176,6 @@ test_YAMLtreeBuild_indent_with_tabs(void)
 /*-----------------------------------------------------------------------------
  * Test that a scalar YAML value cannot also have nested entries
  *-----------------------------------------------------------------------------*/
-
-static void
-test_YAMLnodeCollectSequenceItems_null_items_out(void)
-{
-   const char *yaml_text = "preconditioner:\n"
-                           "  amg:\n"
-                           "    - print_level: 1\n";
-   size_t      len  = strlen(yaml_text);
-   char       *text = malloc(len + 1);
-   strcpy(text, yaml_text);
-
-   YAMLtree *tree = NULL;
-   hypredrv_YAMLtreeBuild(2, text, &tree);
-   ASSERT_NOT_NULL(tree);
-
-   YAMLnode *precon = hypredrv_YAMLnodeFindChildByKey(tree->root, "preconditioner");
-   ASSERT_NOT_NULL(precon);
-   YAMLnode *amg = hypredrv_YAMLnodeFindChildByKey(precon, "amg");
-   ASSERT_NOT_NULL(amg);
-
-   int n = hypredrv_YAMLnodeCollectSequenceItems(amg, NULL);
-   ASSERT_EQ(n, 0);
-
-   free(text);
-   hypredrv_YAMLtreeDestroy(&tree);
-}
-
-static void
-test_YAMLnodeCollectSequenceItems_no_dash_children(void)
-{
-   const char *yaml_text = "preconditioner:\n"
-                           "  amg:\n"
-                           "    print_level: 1\n";
-   size_t      len  = strlen(yaml_text);
-   char       *text = malloc(len + 1);
-   strcpy(text, yaml_text);
-
-   YAMLtree *tree = NULL;
-   hypredrv_YAMLtreeBuild(2, text, &tree);
-   ASSERT_NOT_NULL(tree);
-
-   YAMLnode *precon = hypredrv_YAMLnodeFindChildByKey(tree->root, "preconditioner");
-   ASSERT_NOT_NULL(precon);
-   YAMLnode *amg = hypredrv_YAMLnodeFindChildByKey(precon, "amg");
-   ASSERT_NOT_NULL(amg);
-
-   YAMLnode **items = NULL;
-   int        n     = hypredrv_YAMLnodeCollectSequenceItems(amg, &items);
-   ASSERT_EQ(n, 0);
-   ASSERT_NULL(items);
-
-   free(text);
-   hypredrv_YAMLtreeDestroy(&tree);
-}
 
 static void
 test_YAMLtreeBuild_scalar_with_children_is_error(void)
@@ -1863,12 +1814,49 @@ stub_schema_set_field(void *args, YAMLnode *node)
    (*counter)++;
 }
 
+static const FieldOffsetMap stub_schema_fields[] = {
+   {"solver", 0, sizeof(int), stub_schema_set_field},
+   {"k_empty", 0, sizeof(int), stub_schema_set_field},
+   {"type", 0, sizeof(int), stub_schema_set_field},
+};
+
+static StrIntMapArray
+integer_limit_values(const char *key)
+{
+   static const StrIntMap map[] = {{"minimum", INT_MIN}, {"maximum", INT_MAX}};
+   return !strcmp(key, "type") ? STR_INT_MAP_ARRAY_CREATE(map) : STR_INT_MAP_ARRAY_VOID();
+}
+
+static void
+test_YAMLnodeValidateSchema_integer_limits(void)
+{
+   const char *names[]  = {"minimum", "maximum"};
+   const int   values[] = {INT_MIN, INT_MAX};
+   for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); i++)
+   {
+      char expected[32];
+      snprintf(expected, sizeof(expected), "%d", values[i]);
+      const char *tokens[] = {names[i], expected};
+      for (size_t j = 0; j < sizeof(tokens) / sizeof(tokens[0]); j++)
+      {
+         YAMLnode *node = hypredrv_YAMLnodeCreate("type", tokens[j], 0);
+         hypredrv_YAMLnodeValidateSchema(node, stub_schema_keys(), integer_limit_values);
+         ASSERT_EQ(node->valid, YAML_NODE_VALID);
+         ASSERT_STREQ(node->mapped_val, expected);
+         int value = 0;
+         hypredrv_FieldTypeIntSet(&value, node);
+         ASSERT_EQ(value, values[i]);
+         hypredrv_YAMLnodeDestroy(node);
+      }
+   }
+}
+
 static void
 test_YAMLnodeValidateSchema_dash_key_is_valid(void)
 {
    YAMLnode *dash = hypredrv_YAMLnodeCreate("-", "ignored", 0);
 
-   hypredrv_YAMLnodeValidateSchema(dash, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(dash, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(dash->valid, YAML_NODE_VALID);
 
    hypredrv_YAMLnodeDestroy(dash);
@@ -1880,11 +1868,11 @@ test_YAMLnodeValidateSchema_skips_when_invalid_indent_or_divisor(void)
    YAMLnode *n = hypredrv_YAMLnodeCreate("solver", "on", 0);
    n->valid    = YAML_NODE_INVALID_INDENT;
 
-   hypredrv_YAMLnodeValidateSchema(n, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(n, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(n->valid, YAML_NODE_INVALID_INDENT);
 
    n->valid = YAML_NODE_INVALID_DIVISOR;
-   hypredrv_YAMLnodeValidateSchema(n, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(n, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(n->valid, YAML_NODE_INVALID_DIVISOR);
 
    hypredrv_YAMLnodeDestroy(n);
@@ -1894,21 +1882,21 @@ static void
 test_YAMLnodeValidateSchema_map_and_empty_map_branches(void)
 {
    YAMLnode *solver = hypredrv_YAMLnodeCreate("solver", "on", 0);
-   hypredrv_YAMLnodeValidateSchema(solver, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(solver, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(solver->valid, YAML_NODE_VALID);
    ASSERT_NOT_NULL(solver->mapped_val);
    ASSERT_STREQ(solver->mapped_val, "1");
    hypredrv_YAMLnodeDestroy(solver);
 
    YAMLnode *empty = hypredrv_YAMLnodeCreate("k_empty", "raw", 0);
-   hypredrv_YAMLnodeValidateSchema(empty, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(empty, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(empty->valid, YAML_NODE_VALID);
    ASSERT_NOT_NULL(empty->mapped_val);
    ASSERT_STREQ(empty->mapped_val, "raw");
    hypredrv_YAMLnodeDestroy(empty);
 
    YAMLnode *badkey = hypredrv_YAMLnodeCreate("unknown", "x", 0);
-   hypredrv_YAMLnodeValidateSchema(badkey, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(badkey, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(badkey->valid, YAML_NODE_INVALID_KEY);
    hypredrv_YAMLnodeDestroy(badkey);
 }
@@ -1939,7 +1927,7 @@ test_YAMLnodeValidateSchema_type_fallback_when_key_not_in_list(void)
 {
    YAMLnode *t = hypredrv_YAMLnodeCreate("type", "on", 0);
 
-   hypredrv_YAMLnodeValidateSchema(t, stub_keys_without_type, stub_vals_type_fallback);
+   hypredrv_YAMLnodeValidateSchema(t, stub_keys_without_type(), stub_vals_type_fallback);
    ASSERT_EQ(t->valid, YAML_NODE_VALID);
    ASSERT_NOT_NULL(t->mapped_val);
    ASSERT_STREQ(t->mapped_val, "1");
@@ -1969,6 +1957,71 @@ stub_vals_flat(const char *key)
 }
 
 static void
+inspect_borrowed_flat_key(void *args, YAMLnode *node)
+{
+   const char *borrowed = *(const char **)args;
+   ASSERT_STREQ(borrowed, "original-configuration-key");
+   ASSERT_STREQ(node->key, "type");
+}
+
+static void
+test_YAMLSetArgsGeneric_preserves_borrowed_key(void)
+{
+   YAMLnode   *node     = hypredrv_YAMLnodeCreate("original-configuration-key", "on", 0);
+   const char *borrowed = node->key;
+   const FieldOffsetMap field = {"type", 0, sizeof(borrowed), inspect_borrowed_flat_key};
+   ASSERT_TRUE(hypredrv_YAMLSetArgsGeneric(&borrowed, node, stub_keys_flat_only_type(),
+                                           stub_vals_flat, &field, NULL));
+   ASSERT_PTR_EQ(node->key, borrowed);
+   ASSERT_STREQ(borrowed, "original-configuration-key");
+   hypredrv_YAMLnodeDestroy(node);
+}
+
+static void
+test_YAMLSetArgsGeneric_assigns_only_matched_fields(void)
+{
+   typedef struct
+   {
+      int  solver;
+      char k_empty[MAX_FILENAME_LENGTH];
+      int  type;
+   } SchemaFixture;
+   const FieldOffsetMap fields[] = {
+      FIELD_OFFSET_MAP_ENTRY(SchemaFixture, solver, hypredrv_FieldTypeIntSet),
+      FIELD_OFFSET_MAP_ENTRY(SchemaFixture, k_empty, hypredrv_FieldTypeStringSet),
+      FIELD_OFFSET_MAP_ENTRY(SchemaFixture, type, hypredrv_FieldTypeIntSet),
+   };
+   SchemaFixture result     = {.solver = -1, .type = -1};
+   YAMLnode     *body       = hypredrv_YAMLnodeCreate("method", "", 0);
+   YAMLnode     *type       = hypredrv_YAMLnodeCreate("type", "off", 1);
+   YAMLnode     *ignored    = hypredrv_YAMLnodeCreate("type", "on", 1);
+   YAMLnode     *text       = hypredrv_YAMLnodeCreate("k_empty", "payload", 1);
+   YAMLnode     *solver     = hypredrv_YAMLnodeCreate("solver", "on", 1);
+   YAMLnode     *bad_value  = hypredrv_YAMLnodeCreate("solver", "bogus", 1);
+   YAMLnode     *bad_key    = hypredrv_YAMLnodeCreate("unknown", "on", 1);
+   YAMLnode     *sequence   = hypredrv_YAMLnodeCreate("-", "on", 1);
+   YAMLnode     *children[] = {type, ignored, text, solver, bad_value, bad_key, sequence};
+   for (size_t i = 0; i < sizeof(children) / sizeof(children[0]); i++)
+      hypredrv_YAMLnodeAddChild(body, children[i]);
+   int ignored_validity = ignored->valid;
+   hypredrv_ErrorStateReset();
+   hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
+   ASSERT_FALSE(hypredrv_YAMLSetArgsGeneric(&result, body, stub_schema_keys(),
+                                            stub_schema_vals, fields, ignored));
+   ASSERT_EQ(result.solver, 1);
+   ASSERT_STREQ(result.k_empty, "payload");
+   ASSERT_EQ(result.type, 0);
+   ASSERT_EQ(ignored->valid, ignored_validity);
+   ASSERT_NULL(ignored->mapped_val);
+   ASSERT_EQ(bad_value->valid, YAML_NODE_INVALID_VAL);
+   ASSERT_EQ(bad_key->valid, YAML_NODE_INVALID_KEY);
+   ASSERT_EQ(sequence->valid, YAML_NODE_VALID);
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_MISSING_SOLVER);
+   hypredrv_YAMLnodeDestroy(body);
+   hypredrv_ErrorStateReset();
+}
+
+static void
 test_YAMLSetArgsGeneric_nested_children(void)
 {
    YAMLtree *tree  = hypredrv_YAMLtreeCreate(2);
@@ -1979,8 +2032,8 @@ test_YAMLSetArgsGeneric_nested_children(void)
    hypredrv_YAMLnodeAddChild(wrap, child);
 
    int calls = 0;
-   hypredrv_YAMLSetArgsGeneric(&calls, wrap, stub_schema_keys, stub_schema_vals,
-                               stub_schema_set_field, NULL);
+   hypredrv_YAMLSetArgsGeneric(&calls, wrap, stub_schema_keys(), stub_schema_vals,
+                               stub_schema_fields, NULL);
    ASSERT_EQ(calls, 1);
 
    hypredrv_YAMLtreeDestroy(&tree);
@@ -1992,8 +2045,8 @@ test_YAMLSetArgsGeneric_flat_rewrites_key_to_type(void)
    YAMLnode *node = hypredrv_YAMLnodeCreate("mypre", "on", 0);
    int         calls = 0;
 
-   hypredrv_YAMLSetArgsGeneric(&calls, node, stub_keys_flat_only_type, stub_vals_flat,
-                               stub_schema_set_field, NULL);
+   hypredrv_YAMLSetArgsGeneric(&calls, node, stub_keys_flat_only_type(), stub_vals_flat,
+                               &stub_schema_fields[2], NULL);
    ASSERT_EQ(calls, 1);
    ASSERT_STREQ(node->key, "mypre");
 
@@ -2005,7 +2058,7 @@ test_YAMLnodeValidateSchema_records_avail_vals_and_keys(void)
 {
    /* Invalid value against a schema map records the map for error reporting */
    YAMLnode *bad = hypredrv_YAMLnodeCreate("solver", "bogus", 0);
-   hypredrv_YAMLnodeValidateSchema(bad, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(bad, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(bad->valid, YAML_NODE_INVALID_VAL);
    ASSERT_EQ(bad->avail_vals.size, 2);
    ASSERT_EQ(bad->avail_keys.size, 0);
@@ -2013,14 +2066,14 @@ test_YAMLnodeValidateSchema_records_avail_vals_and_keys(void)
 
    /* Keys accepting free-form values record no map */
    YAMLnode *freeform = hypredrv_YAMLnodeCreate("k_empty", "anything", 0);
-   hypredrv_YAMLnodeValidateSchema(freeform, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(freeform, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(freeform->valid, YAML_NODE_VALID);
    ASSERT_EQ(freeform->avail_vals.size, 0);
    hypredrv_YAMLnodeDestroy(freeform);
 
    /* Unknown key records the valid-keys list */
    YAMLnode *badkey = hypredrv_YAMLnodeCreate("unknown", "x", 0);
-   hypredrv_YAMLnodeValidateSchema(badkey, stub_schema_keys, stub_schema_vals);
+   hypredrv_YAMLnodeValidateSchema(badkey, stub_schema_keys(), stub_schema_vals);
    ASSERT_EQ(badkey->valid, YAML_NODE_INVALID_KEY);
    ASSERT_EQ(badkey->avail_keys.size, 3);
    hypredrv_YAMLnodeDestroy(badkey);
@@ -2028,8 +2081,8 @@ test_YAMLnodeValidateSchema_records_avail_vals_and_keys(void)
    /* Flat form: map recorded and original key restored for error reporting */
    YAMLnode *flat  = hypredrv_YAMLnodeCreate("mypre", "bogus", 0);
    int       calls = 0;
-   hypredrv_YAMLSetArgsGeneric(&calls, flat, stub_keys_flat_only_type, stub_vals_flat,
-                               stub_schema_set_field, NULL);
+   hypredrv_YAMLSetArgsGeneric(&calls, flat, stub_keys_flat_only_type(), stub_vals_flat,
+                               &stub_schema_fields[2], NULL);
    ASSERT_EQ(flat->valid, YAML_NODE_INVALID_VAL);
    ASSERT_EQ(calls, 0);
    ASSERT_EQ(flat->avail_vals.size, 2);
@@ -2427,11 +2480,17 @@ test_YAMLtreeExpandIncludes_null_tree(void)
 }
 
 static void
-test_YAMLtreeExpandIncludes_bad_base_dir(void)
+test_YAMLtreeExpandIncludes_resolves_root_only_for_includes(void)
 {
-   YAMLtree *tree = hypredrv_YAMLtreeCreate(2);
-
+   YAMLtree *tree = NULL;
    hypredrv_ErrorCodeResetAll();
+   hypredrv_YAMLtreeBuild(2, "solver: gmres\n", &tree);
+   hypredrv_YAMLtreeExpandIncludes(tree, "/nonexistent_hypredrv_expand_root");
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_STREQ(tree->root->children->val, "gmres");
+   hypredrv_YAMLtreeDestroy(&tree);
+
+   hypredrv_YAMLtreeBuild(2, "include: missing.yml\n", &tree);
    hypredrv_YAMLtreeExpandIncludes(tree, "/nonexistent_hypredrv_expand_root");
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE((hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND) != 0);
@@ -2486,8 +2545,8 @@ static void
 test_YAMLSetArgsGeneric_null_parent(void)
 {
    int calls = 0;
-   hypredrv_YAMLSetArgsGeneric(&calls, NULL, stub_schema_keys, stub_schema_vals,
-                               stub_schema_set_field, NULL);
+   hypredrv_YAMLSetArgsGeneric(&calls, NULL, stub_schema_keys(), stub_schema_vals,
+                               stub_schema_fields, NULL);
    ASSERT_EQ(calls, 0);
 }
 
@@ -2575,8 +2634,6 @@ main(void)
    RUN_TEST(test_YAMLtreeBuild_indent_4_spaces);
    RUN_TEST(test_YAMLtreeBuild_indent_with_tabs);
    RUN_TEST(test_YAMLtreeBuild_scalar_with_children_is_error);
-   RUN_TEST(test_YAMLnodeCollectSequenceItems_null_items_out);
-   RUN_TEST(test_YAMLnodeCollectSequenceItems_no_dash_children);
 
    RUN_TEST(test_YAMLnodeCreate_name_key_preserves_value_case);
    RUN_TEST(test_YAMLnodeCreate_nonname_lowercases_and_strips_quotes);
@@ -2606,9 +2663,12 @@ main(void)
    RUN_TEST(test_YAMLtreeExpandIncludes_nested_include_tree_build_fails);
 
    RUN_TEST(test_YAMLnodeValidateSchema_dash_key_is_valid);
+   RUN_TEST(test_YAMLnodeValidateSchema_integer_limits);
    RUN_TEST(test_YAMLnodeValidateSchema_skips_when_invalid_indent_or_divisor);
    RUN_TEST(test_YAMLnodeValidateSchema_map_and_empty_map_branches);
    RUN_TEST(test_YAMLnodeValidateSchema_type_fallback_when_key_not_in_list);
+   RUN_TEST(test_YAMLSetArgsGeneric_preserves_borrowed_key);
+   RUN_TEST(test_YAMLSetArgsGeneric_assigns_only_matched_fields);
    RUN_TEST(test_YAMLSetArgsGeneric_nested_children);
    RUN_TEST(test_YAMLSetArgsGeneric_flat_rewrites_key_to_type);
    RUN_TEST(test_YAMLnodeValidateSchema_records_avail_vals_and_keys);
@@ -2634,7 +2694,7 @@ main(void)
    RUN_TEST(test_YAMLtreeUpdate_sequence_leaf_create_and_replace);
 
    RUN_TEST(test_YAMLtreeExpandIncludes_null_tree);
-   RUN_TEST(test_YAMLtreeExpandIncludes_bad_base_dir);
+   RUN_TEST(test_YAMLtreeExpandIncludes_resolves_root_only_for_includes);
 
    RUN_TEST(test_YAMLnodeDestroy_validate_print_null);
    RUN_TEST(test_YAMLtreeValidate_sets_errors_for_invalid_nodes);

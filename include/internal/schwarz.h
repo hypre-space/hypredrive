@@ -8,7 +8,7 @@
 #ifndef SCHWARZ_HEADER
 #define SCHWARZ_HEADER
 
-#include "HYPRE_utilities.h"
+#include "HYPRE_parcsr_ls.h"
 
 struct YAMLnode_struct;
 

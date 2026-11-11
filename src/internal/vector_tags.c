@@ -48,7 +48,7 @@ SolverPrintsBlockResiduals(const input_args *args)
 }
 
 static int
-VectorTagsLayoutValid(HYPREDRV_t h)
+VectorTagsLayoutValid(hypredrv_t *h)
 {
    HYPRE_IJVector vectors[] = {h->vec_b.handle, h->vec_x.handle, h->vec_x0.handle,
                                h->vec_xref.handle};
@@ -100,7 +100,7 @@ VectorTagsAttach(hypredrv_VectorTags *ctx, HYPRE_IJVector ij, HYPRE_Int num_tags
 #endif
 
 void
-hypredrv_VectorTagsClear(HYPREDRV_t h)
+hypredrv_VectorTagsClear(hypredrv_t *h)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    hypredrv_VectorTags *ctx = h->vector_tags;
@@ -126,7 +126,7 @@ hypredrv_VectorTagsClear(HYPREDRV_t h)
 }
 
 uint32_t
-hypredrv_VectorTagsSet(HYPREDRV_t h)
+hypredrv_VectorTagsSet(hypredrv_t *h)
 {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    hypredrv_VectorTagsClear(h);

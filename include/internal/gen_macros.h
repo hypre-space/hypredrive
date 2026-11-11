@@ -11,32 +11,6 @@
 #include "internal/field.h"
 
 /**
- * @brief Defines a function to set a field by name.
- *
- * @details This macro generates a function that sets the field of a structure
- * based on the provided name. The function uses a map to find the correct field
- * and then assigns the appropriate value.
- *
- * @param _funcName Name of the generated function.
- * @param _argsType Type of the argument structure.
- * @param _map Name of the map containing field information.
- * @param _numFields Number of fields in the map.
- */
-#define DEFINE_SET_FIELD_BY_NAME_FUNC(_funcName, _argsType, _map, _numFields) \
-   void _funcName(void *vargs, YAMLnode *_node)                               \
-   {                                                                          \
-      _argsType *_args = (_argsType *)vargs;                                  \
-      for (size_t i = 0; i < (_numFields); i++)                               \
-      {                                                                       \
-         if (!strcmp((_map)[i].name, (_node)->key))                           \
-         {                                                                    \
-            hypredrv_FieldOffsetMapSet(&(_map)[i], (void *)(_args), (_node)); \
-            return;                                                           \
-         }                                                                    \
-      }                                                                       \
-   }
-
-/**
  * @brief Defines a function to get valid keys.
  *
  * @details This macro generates a function that constructs a static array
@@ -110,13 +84,13 @@
  * @param _prefix Struct prefix for args type (e.g. AMG).
  * @param _fnPrefix Function name prefix (e.g. hypredrv_AMG).
  */
-#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix, _fnPrefix)                              \
-   void _fnPrefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)                       \
-   {                                                                                    \
-      _prefix##_args *args = (_prefix##_args *)vargs;                                   \
-      hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys,        \
-                                  _fnPrefix##GetValidValues, _fnPrefix##SetFieldByName, \
-                                  NULL);                                                \
+#define DEFINE_SET_ARGS_FROM_YAML_FUNC(_prefix, _fnPrefix)                               \
+   void _fnPrefix##SetArgsFromYAML(void *vargs, YAMLnode *parent)                        \
+   {                                                                                     \
+      _prefix##_args *args = (_prefix##_args *)vargs;                                    \
+      hypredrv_YAMLSetArgsGeneric((void *)args, parent, _fnPrefix##GetValidKeys(),       \
+                                  _fnPrefix##GetValidValues, _prefix##_field_offset_map, \
+                                  NULL);                                                 \
    }
 
 /**
@@ -167,20 +141,18 @@
  *
  * @details This is an aggregate macro that generates several utility functions,
  * declarations and a field offset map. Callable functions use the hypredrv_ prefix
- * (e.g. hypredrv_AMGSetFieldByName); struct types use the bare prefix (e.g. AMG_args).
+ * (e.g. hypredrv_AMGSetArgs); struct types use the bare prefix (e.g. AMG_args).
  *
  * Usage:
  * @code
  * GENERATE_PREFIXED_COMPONENTS(AMG)
  * @endcode
  *
- * Generates hypredrv_AMGSetFieldByName, hypredrv_AMGGetValidKeys, hypredrv_AMGSetArgs,
+ * Generates hypredrv_AMGGetValidKeys, hypredrv_AMGSetArgsFromYAML, hypredrv_AMGSetArgs,
  * etc., with AMG_args and AMG_field_offset_map for types.
  */
 #define GENERATE_PREFIXED_COMPONENTS(prefix)                                        \
    DEFINE_FIELD_OFFSET_MAP(prefix)                                                  \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
                               prefix##_field_offset_map)                            \
    DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                  \
@@ -234,8 +206,6 @@
  */
 #define GENERATE_PREFIXED_COMPONENTS_WITH_DEFAULTS(prefix)                          \
    DEFINE_FIELD_OFFSET_MAP4(prefix)                                                 \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,  \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)    \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS, \
                               prefix##_field_offset_map)                            \
    DEFINE_SET_DEFAULT_ARGS_FROM_FIELDS(prefix)                                      \
@@ -263,8 +233,6 @@
  */
 #define hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML_WITH(prefix, _set_args_def) \
    DEFINE_FIELD_OFFSET_MAP(prefix)                                                    \
-   DEFINE_SET_FIELD_BY_NAME_FUNC(hypredrv_##prefix##SetFieldByName, prefix##_args,    \
-                                 prefix##_field_offset_map, prefix##_NUM_FIELDS)      \
    DEFINE_GET_VALID_KEYS_FUNC(hypredrv_##prefix##GetValidKeys, prefix##_NUM_FIELDS,   \
                               prefix##_field_offset_map)                              \
    DECLARE_SET_DEFAULT_ARGS_FUNC(hypredrv_##prefix, prefix##_args)                    \
@@ -280,7 +248,6 @@
  *          help printer, and the tests.
  */
 #define DECLARE_PREFIXED_COMPONENTS(prefix)                               \
-   void           hypredrv_##prefix##SetFieldByName(void *, YAMLnode *);  \
    StrArray       hypredrv_##prefix##GetValidKeys(void);                  \
    StrIntMapArray hypredrv_##prefix##GetValidValues(const char *);        \
    void           hypredrv_##prefix##SetArgsFromYAML(void *, YAMLnode *); \
@@ -289,10 +256,6 @@
 DECLARE_PREFIXED_COMPONENTS(General)
 DECLARE_PREFIXED_COMPONENTS(Scaling)
 DECLARE_PREFIXED_COMPONENTS(EigSpec)
-DECLARE_PREFIXED_COMPONENTS(PCG)
-DECLARE_PREFIXED_COMPONENTS(GMRES)
-DECLARE_PREFIXED_COMPONENTS(FGMRES)
-DECLARE_PREFIXED_COMPONENTS(BiCGSTAB)
 DECLARE_PREFIXED_COMPONENTS(Cheby)
 DECLARE_PREFIXED_COMPONENTS(AMG)
 DECLARE_PREFIXED_COMPONENTS(AMGint)

@@ -58,6 +58,51 @@ test_FieldOffsetMapSet_widens_integer_fields(void)
 }
 
 static void
+test_FieldOffsetMapSet_uses_integer_parse_result(void)
+{
+   if (sizeof(long long) == sizeof(int)) return;
+
+   const FieldOffsetMap map[] = {
+      FIELD_OFFSET_MAP_ENTRY(WideFields, wide_int, hypredrv_FieldTypeIntSet),
+      FIELD_OFFSET_MAP_ENTRY(WideFields, wide_int, hypredrv_FieldTypeNonNegIntSet),
+      FIELD_OFFSET_MAP_ENTRY(WideFields, wide_int, hypredrv_FieldTypePositiveIntSet),
+   };
+   const char *rejected[] = {"2147483648", "-1", "0"};
+   /* The old member and the accepted value have the same low int bits. A
+    * successful parse must still replace the entire wide member. */
+   long long previous = UINT_MAX;
+   previous += 4;
+   YAMLnode *three = make_node("3");
+   YAMLnode *bad   = make_node("invalid");
+   for (size_t i = 0; i < sizeof(map) / sizeof(map[0]); i++)
+   {
+      WideFields fields = {previous, -1};
+      hypredrv_ErrorStateReset();
+      hypredrv_ErrorCodeSet(ERROR_MISSING_SOLVER);
+      hypredrv_FieldOffsetMapSet(&map[i], &fields, three);
+      ASSERT_TRUE(fields.wide_int == 3);
+      ASSERT_TRUE(fields.wide_nonneg == -1);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_MISSING_SOLVER);
+
+      fields.wide_int = previous;
+      hypredrv_ErrorStateReset();
+      hypredrv_FieldOffsetMapSet(&map[i], &fields, bad);
+      ASSERT_TRUE(fields.wide_int == previous);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+
+      YAMLnode *out_of_range = make_node(rejected[i]);
+      hypredrv_ErrorStateReset();
+      hypredrv_FieldOffsetMapSet(&map[i], &fields, out_of_range);
+      ASSERT_TRUE(fields.wide_int == previous);
+      ASSERT_EQ_U32(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+      hypredrv_YAMLnodeDestroy(out_of_range);
+   }
+   hypredrv_ErrorStateReset();
+   hypredrv_YAMLnodeDestroy(three);
+   hypredrv_YAMLnodeDestroy(bad);
+}
+
+static void
 test_FieldTypeDoubleSet(void)
 {
    double    target = 0.0;
@@ -311,6 +356,7 @@ main(void)
 {
    RUN_TEST(test_FieldTypeIntSet);
    RUN_TEST(test_FieldOffsetMapSet_widens_integer_fields);
+   RUN_TEST(test_FieldOffsetMapSet_uses_integer_parse_result);
    RUN_TEST(test_FieldTypeIntSet_rejects_invalid_values);
    RUN_TEST(test_FieldTypeNonNegIntSet_bounds);
    RUN_TEST(test_FieldTypePositiveIntSet_bounds);

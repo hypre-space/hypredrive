@@ -183,20 +183,13 @@ set(SOURCE_FILES
     src/internal/precon.c
     src/internal/precon_reuse.c
     src/internal/presets.c
-    src/internal/krylov.c
-    src/internal/pcg.c
-    src/internal/gmres.c
-    src/internal/fgmres.c
-    src/internal/bicgstab.c
     src/internal/solver.c
     src/internal/args.c
     src/internal/comp.c
     src/internal/lsseq.c
     src/internal/scaling.c
-    src/internal/runtime.c
+    src/internal/object.c
     src/internal/logging.c
-    src/internal/execution.c
-    src/internal/diagnostics.c
     src/internal/help.c
     src/HYPREDRV.c
 )

@@ -24,9 +24,11 @@ typedef enum
 const char *hypredrv_compression_get_name(comp_alg_t algo);
 const char *hypredrv_compression_get_extension(comp_alg_t algo);
 
-/* compression_level: algorithm-dependent; use -1 for default. ZSTD: 1-22, -1=5. */
+/* compression_level: algorithm-dependent; use -1 for default. ZSTD: 1-22, -1=5.
+ * Compression and decompression leave valid output arguments empty on failure. */
 void hypredrv_compress(comp_alg_t algo, size_t isize, const void *input,
                        size_t *osize_ptr, void **output_ptr, int compression_level);
+/* Full decoding succeeds only when the codec output matches its size header. */
 void hypredrv_decompress(comp_alg_t algo, size_t isize, const void *input,
                          size_t *osize_ptr, void **output_ptr);
 int  hypredrv_decompress_slice(comp_alg_t algo, size_t isize, const void *input,
@@ -40,7 +42,6 @@ typedef struct
    int (*read_at)(void *ctx, uint64_t offset, void *buffer, size_t size);
    void *ctx;
 } hypredrv_SliceSource;
-hypredrv_SliceSource hypredrv_SliceSourceFromMemory(const void *blob);
 
 /* Resumable slice decoder over one compressed blob of `isize` bytes (zstd/zlib
  * only; Create returns NULL for other codecs). Compressed input is read from

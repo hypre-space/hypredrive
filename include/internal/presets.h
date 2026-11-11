@@ -8,39 +8,30 @@
 #ifndef HYPREDRV_PRESETS_HEADER
 #define HYPREDRV_PRESETS_HEADER
 
-#include <stddef.h>
-
-typedef struct hypredrv_preset_struct
-{
-   char *name; /* lowercase key */
-   char *text; /* YAML snippet that expands under `preconditioner:` */
-   char *help; /* short help text */
-   int   kind; /* hypredrv_PresetKind */
-} hypredrv_Preset;
+#include <stdint.h>
+#include "internal/yaml.h"
 
 typedef enum
 {
-   HYPREDRV_PRESET_ANY    = -1,
    HYPREDRV_PRESET_PRECON = 0,
    HYPREDRV_PRESET_SOLVER = 1,
 } hypredrv_PresetKind;
 
-/* Convenience initializer macro (keeps fields consistent when adding presets). */
-#define HYPREDRV_PRESET(_id, _kind, _help)                                 \
-   {                                                                       \
-      .name = #_id, .text = preset_##_id, .help = (_help), .kind = (_kind) \
-   }
-
-/* Returns NULL if name is unknown. Name matching is case-insensitive. */
-const hypredrv_Preset *hypredrv_PresetFindTyped(const char         *name,
-                                                hypredrv_PresetKind kind);
+/* Load exactly one known solver/preconditioner type. The returned node is owned
+ * by *tree_out; callers parse method options and then destroy that tree. Failure
+ * returns NULL, destroys *tree_out, and preserves diagnostics. Prior failures
+ * abort without loading. Names are case-insensitive, with '-' and '_' equivalent.
+ * Registry storage stays private. */
+YAMLnode *hypredrv_PresetLoadTypeNode(const char *, hypredrv_PresetKind, YAMLtree **,
+                                      int *);
 
 /* Returns a formatted help string listing available presets (caller must free). */
 char *hypredrv_PresetHelpTyped(hypredrv_PresetKind kind);
 
-/* Registers a new user preset. Returns 0 on success, -1 on failure. */
-int hypredrv_PresetRegisterTyped(const char *name, const char *yaml_text,
-                                 const char *help, hypredrv_PresetKind kind);
+/* Validate identity and copy a complete registration before publication. Return
+ * this operation's status without resetting the caller's diagnostic scope. */
+uint32_t hypredrv_PresetRegisterTyped(const char *, const char *, const char *,
+                                      hypredrv_PresetKind);
 
 /* Frees all user-registered presets. Called from HYPREDRV_Finalize(). */
 void hypredrv_PresetFreeUserPresets(void);

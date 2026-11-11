@@ -8,18 +8,18 @@
 #include <unistd.h>
 #endif
 
-#include "HYPRE_utilities.h"
 #include "HYPREDRV.h"
+#include "HYPRE_utilities.h"
 #include "internal/args.h"
 #include "internal/containers.h"
 #include "internal/error.h"
-#include "object.h"
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "internal/stats.h"
 #include "logging.h"
-#include "test_ij_helpers.h"
+#include "object.h"
 #include "test_helpers.h"
+#include "test_ij_helpers.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
 #define HYPREDRIVE_SOURCE_DIR "."
@@ -771,7 +771,8 @@ test_IntArrayBuild_interleaved_and_contiguous_values(void)
    IntArray *ia               = NULL;
 
    /* Interleaved: dof types cycle within each block: 0,1, 0,1, 0,1 */
-   hypredrv_IntArrayBuildInterleaved(MPI_COMM_SELF, num_local_blocks, num_dof_types, &ia);
+   hypredrv_IntArrayBuildPattern(MPI_COMM_SELF, num_local_blocks, num_dof_types, true,
+                                 &ia);
    ASSERT_NOT_NULL(ia);
    ASSERT_EQ_SIZE(ia->size, (size_t)(num_local_blocks * num_dof_types));
    for (int b = 0; b < num_local_blocks; b++)
@@ -785,7 +786,8 @@ test_IntArrayBuild_interleaved_and_contiguous_values(void)
    hypredrv_IntArrayDestroy(&ia);
 
    /* Contiguous: each dof type fills a contiguous range: 0,0,0, 1,1,1 */
-   hypredrv_IntArrayBuildContiguous(MPI_COMM_SELF, num_local_blocks, num_dof_types, &ia);
+   hypredrv_IntArrayBuildPattern(MPI_COMM_SELF, num_local_blocks, num_dof_types, false,
+                                 &ia);
    ASSERT_NOT_NULL(ia);
    ASSERT_EQ_SIZE(ia->size, (size_t)(num_local_blocks * num_dof_types));
    for (int t = 0; t < num_dof_types; t++)
@@ -1096,6 +1098,37 @@ test_HYPREDRV_log_level_input_args_internal_logs_use_object_name(void)
    ASSERT_NULL(strstr(output, "[HYPREDRV][L3][unnamed] args parse begin"));
 
    unsetenv("HYPREDRV_LOG_LEVEL");
+}
+
+static void
+test_HYPREDRV_preset_only_configuration_solves(void)
+{
+   for (int first = 0; first < 2; first++)
+   {
+      reset_state();
+      HYPREDRV_t obj = create_initialized_obj();
+      ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+      if (first)
+      {
+         ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(obj, "poisson"), ERROR_NONE);
+         ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "pcg"), ERROR_NONE);
+      }
+      else
+      {
+         ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "pcg"), ERROR_NONE);
+         ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(obj, "poisson"), ERROR_NONE);
+      }
+      ASSERT_NOT_NULL(obj->precon_reuse_state);
+      HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+      HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+      attach_library_scalar_system(obj, A, b);
+      run_library_linear_solve(obj, NULL);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
+      ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+      ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+      ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+      ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   }
 }
 
 static void
@@ -1855,15 +1888,11 @@ test_HYPREDRV_state_vectors_and_eigspec_error_paths(void)
    /* Eigenspectrum API entrypoint: always succeeds (no-op when built without eigspec) */
    ASSERT_EQ(HYPREDRV_LinearSystemComputeEigenspectrum(obj), ERROR_NONE);
 
-   /* Force error branches in GetValues/Copy by nulling an internal vec_s entry */
-   HYPRE_IJVector saved_state0 = state->vec_s[state->states[0]];
-   state->vec_s[state->states[0]] = NULL;
-   hypredrv_ErrorCodeResetAll();
-   ASSERT_TRUE(HYPREDRV_StateVectorGetValues(obj, 0, &data) & ERROR_INVALID_VAL);
-   hypredrv_ErrorCodeResetAll();
-   ASSERT_TRUE(HYPREDRV_StateVectorCopy(obj, 0, 1) & ERROR_INVALID_VAL);
-   hypredrv_ErrorCodeResetAll();
-   state->vec_s[state->states[0]] = saved_state0;
+   /* Invalid registration is rejected at ingress; existing states remain usable. */
+   HYPRE_IJVector invalid_states[] = {vecs[0], NULL};
+   ASSERT_TRUE(HYPREDRV_StateVectorSet(obj, 2, invalid_states) & ERROR_INVALID_VAL);
+   ASSERT_EQ(HYPREDRV_StateVectorGetValues(obj, 0, &data), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_StateVectorCopy(obj, 0, 1), ERROR_NONE);
 
    /* State vectors stay caller-owned outside library mode too (no double free). */
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -2477,16 +2506,24 @@ test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation(void)
    attach_library_scalar_system(obj, mat_A, vec_b);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   /* This regression exercises iteration degradation, not wall-clock timing.
+    * Real solve timings can otherwise build a bad-decision streak before the
+    * first injected observation when other tests contend for the CPU. */
+   PreconReuseAdaptive_args *adaptive = &state->iargs->precon_reuse.adaptive;
+   for (size_t i = 0; i < adaptive->num_components; i++)
+      if (adaptive->components[i].metric == PRECON_REUSE_METRIC_SOLVE_OVERHEAD_VS_SETUP)
+         adaptive->components[i].enabled = 0;
 
    run_library_linear_solve(obj, NULL);
-   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 1);
+   ASSERT_EQ_SIZE(test_reuse_decision(state->precon_reuse_state, 0).age, 1);
 
    run_library_linear_solve(obj, NULL);
-   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 2);
+   ASSERT_EQ_SIZE(test_reuse_decision(state->precon_reuse_state, 0).age, 2);
 
    run_library_linear_solve(obj, NULL);
-   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 3);
-   ASSERT_TRUE(state->precon_reuse_state.baseline_valid);
+   ASSERT_EQ_SIZE(test_reuse_decision(state->precon_reuse_state, 0).age, 3);
+   ASSERT_NULL(strstr(test_reuse_decision(state->precon_reuse_state, 3).summary,
+                      "mode=bootstrap"));
 
    /* Inject a bad observation so the next solve decision sees high iteration count.
     * Using setup_time=solve_time=0 means only the stability (iterations) component
@@ -2496,23 +2533,23 @@ test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation(void)
    bad_obs.iters           = 100;
    bad_obs.solve_succeeded = 1;
    for (int l = 0; l < STATS_MAX_LEVELS; l++) bad_obs.level_ids[l] = -1;
-   hypredrv_PreconReuseStateRecordObservation(&state->precon_reuse_state, &bad_obs);
+   hypredrv_PreconReuseStateRecordObservation(state->precon_reuse_state, &bad_obs);
 
    /* Solve #4: score exceeds threshold but streak(1) < bad_decisions_to_rebuild(2),
     * so no rebuild yet.  A real observation is appended after the solve. */
    run_library_linear_solve(obj, NULL);
-   ASSERT_EQ(state->precon_reuse_state.bad_decision_streak, 1);
+   ASSERT_EQ(test_reuse_decision(state->precon_reuse_state, 0).age, 5);
 
    /* Inject a second bad observation to push the streak to the rebuild threshold. */
-   hypredrv_PreconReuseStateRecordObservation(&state->precon_reuse_state, &bad_obs);
+   hypredrv_PreconReuseStateRecordObservation(state->precon_reuse_state, &bad_obs);
 
    /* Solve #5: streak reaches 2 >= bad_decisions_to_rebuild(2), rebuild fires.
     * MarkRebuild resets state; one real observation is recorded after the rebuild. */
    run_library_linear_solve(obj, NULL);
-   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 1);
+   ASSERT_EQ_SIZE(test_reuse_decision(state->precon_reuse_state, 0).age, 1);
    /* After rebuild: baseline is cleared and streak is reset. */
-   ASSERT_FALSE(state->precon_reuse_state.baseline_valid);
-   ASSERT_EQ(state->precon_reuse_state.bad_decision_streak, 0);
+   ASSERT_NOT_NULL(strstr(test_reuse_decision(state->precon_reuse_state, 6).summary,
+                          "mode=bootstrap"));
    /* Preconditioner was actually rebuilt (not NULL). */
    ASSERT_NOT_NULL(state->precon);
 
@@ -2523,59 +2560,63 @@ test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation(void)
 }
 
 static void
-test_HYPREDRV_PreconReuseBuildObservation_and_MarkRebuild_library(void)
+test_HYPREDRV_PreconReuse_records_solve_and_rebuild_context(void)
 {
    reset_state();
-
    HYPREDRV_t obj = create_initialized_obj();
    ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
-
-   char yaml_config[] =
-      "general:\n"
-      "  statistics: on\n"
-      "  exec_policy: host\n"
-      "linear_system:\n"
-      "  init_guess_mode: zeros\n"
-      "solver:\n"
-      "  pcg:\n"
-      "    max_iter: 5\n"
-      "preconditioner:\n"
-      "  reuse: adaptive\n"
-      "  amg:\n"
-      "    print_level: 0\n";
-   parse_yaml_into_obj(obj, yaml_config);
-
+   char schedule[PATH_MAX];
+   test_scratch_path(schedule, sizeof(schedule), "reuse-context-schedule.txt");
+   FILE *fp = fopen(schedule, "w");
+   ASSERT_NOT_NULL(fp);
+   ASSERT_TRUE(fputs("2\n10 0\n20 5\n", fp) >= 0);
+   ASSERT_EQ(fclose(fp), 0);
+   char yaml[PATH_MAX + 1024];
+   snprintf(yaml, sizeof(yaml),
+            "general:\n  statistics: on\n  exec_policy: host\n"
+            "linear_system:\n  init_guess_mode: zeros\n  timestep_filename: %s\n"
+            "solver:\n  pcg:\n    max_iter: 5\n"
+            "preconditioner:\n  reuse:\n    type: adaptive\n    guards:\n"
+            "      rebuild_on_new_timestep: 1\n      rebuild_on_new_level: [0]\n"
+            "  amg:\n    print_level: 0\n",
+            schedule);
+   parse_yaml_into_obj(obj, yaml);
    HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
    attach_library_scalar_system(obj, mat_A, vec_b);
-
-   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
-
    run_library_linear_solve(obj, NULL);
+   ASSERT_EQ(test_reuse_decision(obj->precon_reuse_state, 0).age, 1);
 
-   PreconReuseObservation obs;
-   memset(&obs, 0, sizeof(obs));
-   hypredrv_PreconReuseBuildObservation(obj, NULL, &obs);
-   ASSERT_TRUE(obs.iters >= 0);
-   ASSERT_TRUE(obs.setup_time >= 0.0);
-   ASSERT_TRUE(obs.solve_time >= 0.0);
+   obj->current_system_index = 4;
+   hypredrv_PreconReuseRecordSolve(obj, true);
+   PreconReuseDecision decision = test_reuse_decision(obj->precon_reuse_state, 5);
+   ASSERT_TRUE(decision.should_rebuild);
+   ASSERT_NOT_NULL(strstr(decision.summary, "guard=new_timestep"));
+   obj->current_system_index = 5;
+   hypredrv_PreconReuseRecordSolve(obj, true);
+   decision = test_reuse_decision(obj->precon_reuse_state, 5);
+   ASSERT_EQ(decision.age, 3);
+   ASSERT_NULL(strstr(decision.summary, "guard=new_timestep"));
 
-   {
-      int       starts[2] = { 0, 5 };
-      IntArray *ts        = NULL;
-      hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, starts, &ts);
-      ASSERT_NOT_NULL(ts);
-      hypredrv_PreconReuseBuildObservation(obj, ts, &obs);
-      hypredrv_IntArrayDestroy(&ts);
-   }
+   hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+   hypredrv_PreconReuseRecordSolve(obj, false);
+   ASSERT_EQ(hypredrv_ErrorCodeGet(), ERROR_INVALID_VAL);
+   decision = test_reuse_decision(obj->precon_reuse_state, 5);
+   ASSERT_TRUE(decision.should_rebuild);
+   ASSERT_NOT_NULL(strstr(decision.summary, "guard=solver_failure"));
+   hypredrv_ErrorStateReset();
 
-   ASSERT_NOT_NULL(state->stats);
-   state->stats->level_active |= (1u << 0);
-   state->stats->level_current_id[0] = 4;
-
-   hypredrv_PreconReuseMarkRebuild(obj, &state->precon_reuse_state);
-   ASSERT_EQ(state->precon_reuse_state.last_rebuild_level_ids[0], 3);
-   ASSERT_EQ_SIZE(state->precon_reuse_state.count, 0u);
+   obj->stats->level_active |= (1u << 0);
+   obj->stats->level_current_id[0] = 4;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_EQ(test_reuse_decision(obj->precon_reuse_state, 0).age, 0);
+   hypredrv_PreconReuseRecordSolve(obj, true);
+   ASSERT_NULL(
+      strstr(test_reuse_decision(obj->precon_reuse_state, 5).summary, "guard=new_level"));
+   obj->stats->level_current_id[0] = 5;
+   decision                        = test_reuse_decision(obj->precon_reuse_state, 5);
+   ASSERT_TRUE(decision.should_rebuild);
+   ASSERT_NOT_NULL(strstr(decision.summary, "guard=new_level"));
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPRE_IJVectorDestroy(vec_b), 0);
@@ -4994,6 +5035,97 @@ test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref(void)
 }
 
 static void
+test_HYPREDRV_scaled_setup_preserves_borrowed_inputs(void)
+{
+   const char *modes[] = {"rhs_l2",
+                          "dofmap_mag",
+                          "dofmap_custom",
+                          "dofmap_row_custom",
+                          "dofmap_col_custom",
+                          "dofmap_similarity_custom"};
+   for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); i++)
+   {
+      reset_state();
+      HYPREDRV_t obj = create_initialized_obj();
+      ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+      char yaml[512];
+      snprintf(yaml, sizeof(yaml),
+               "general:\n  statistics: off\n  exec_policy: host\n"
+               "linear_system:\n  init_guess_mode: ones\n"
+               "solver:\n  scaling:\n    enabled: 1\n    type: %s\n"
+               "    custom_values: [2]\n  gmres:\n    max_iter: 20\n"
+               "preconditioner: amg\n",
+               modes[i]);
+      parse_yaml_into_obj(obj, yaml);
+      HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+      HYPRE_IJMatrix M = create_test_ijmatrix_1x1(8.0);
+      HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+      attach_library_scalar_system(obj, A, b);
+      ASSERT_EQ(HYPREDRV_LinearSystemSetPrecMatrix(obj, (HYPRE_Matrix)M), ERROR_NONE);
+      const int label = 0;
+      ASSERT_EQ(HYPREDRV_LinearSystemSetDofmap(obj, 1, &label), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+      ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 4.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(M), 8.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(b), 2.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 1.0, 1e-12);
+
+      HYPRE_IJVector other_b = create_test_ijvector_1x1(8.0);
+      HYPRE_IJVector other_x = create_test_ijvector_1x1(0.0);
+      ASSERT_EQ(HYPREDRV_PreconApply(obj, (HYPRE_Vector)other_b, (HYPRE_Vector)other_x),
+                ERROR_NONE);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(other_x), 2.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(other_b), 8.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(b), 2.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 1.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 4.0, 1e-12);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(M), 8.0, 1e-12);
+      ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
+      ASSERT_EQ(HYPREDRV_PreconSetup(obj), ERROR_NONE);
+      ASSERT_NULL(obj->scaling_ctx);
+      ASSERT_EQ(HYPREDRV_PreconApply(obj, (HYPRE_Vector)other_b, (HYPRE_Vector)other_x),
+                ERROR_NONE);
+      ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(other_x), 2.0, 1e-12);
+      ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+      ASSERT_EQ(HYPRE_IJVectorDestroy(other_x), 0);
+      ASSERT_EQ(HYPRE_IJVectorDestroy(other_b), 0);
+      ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+      ASSERT_EQ(HYPRE_IJMatrixDestroy(M), 0);
+      ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+      ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+   }
+}
+
+static void
+test_HYPREDRV_repeated_scaled_setup_restores_borrowed_system(void)
+{
+   reset_state();
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_yaml_into_obj(obj, "general:\n  statistics: off\n  exec_policy: host\n"
+                            "linear_system:\n  init_guess_mode: zeros\n"
+                            "solver:\n  scaling:\n    enabled: 1\n    type: rhs_l2\n"
+                            "  gmres:\n    max_iter: 20\npreconditioner: amg\n");
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, A, b);
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 4.0, 1e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(b), 2.0, 1e-12);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 test_HYPREDRV_reset_after_scaled_setup_keeps_initial_guess(void)
 {
    reset_state();
@@ -5021,8 +5153,8 @@ test_HYPREDRV_reset_after_scaled_setup_keeps_initial_guess(void)
    HYPRE_IJVector vec_b = create_test_ijvector_1x1(2.0);
    attach_library_scalar_system(obj, mat_A, vec_b);
 
-   /* Setup scales the working solution; a reset afterwards must land in the same
-    * space, so a zero-iteration solve returns the configured guess unchanged. */
+   /* A reset between setup and apply uses the original coordinates; a
+    * zero-iteration solve must return the configured guess unchanged. */
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
@@ -5066,14 +5198,20 @@ test_HYPREDRV_scaled_setup_failure_restores_borrowed_system(void)
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
 
    struct hypredrv_struct *state        = (struct hypredrv_struct *)obj;
-   HYPRE_Solver           saved_solver = state->solver;
+   hypredrv_Solver        *saved_solver = state->solver;
    state->solver                       = NULL;
    uint32_t code                       = HYPREDRV_LinearSolverSetup(obj);
    state->solver                       = saved_solver;
 
    ASSERT_TRUE(code & ERROR_INVALID_SOLVER);
-   ASSERT_NOT_NULL(state->scaling_ctx);
-   ASSERT_FALSE(state->scaling_ctx->is_applied);
+   ASSERT_NULL(state->scaling_ctx);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(state->vec_x.handle), 0.5, 1.0e-12);
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(state->scaling_ctx));
    ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
    ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
 
@@ -5117,14 +5255,14 @@ test_HYPREDRV_scaled_solve_failure_restores_borrowed_system(void)
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
 
    struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
-   ASSERT_TRUE(state->scaling_ctx->is_applied);
-   solver_t saved_method             = state->iargs->solver_method;
-   state->iargs->solver_method       = (solver_t)999;
-   uint32_t code                     = HYPREDRV_LinearSolverApply(obj);
-   state->iargs->solver_method       = saved_method;
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(state->scaling_ctx));
+   hypredrv_Solver *saved_solver = state->solver;
+   state->solver                 = NULL;
+   uint32_t code                 = HYPREDRV_LinearSolverApply(obj);
+   state->solver                 = saved_solver;
 
    ASSERT_TRUE(code & ERROR_INVALID_SOLVER);
-   ASSERT_FALSE(state->scaling_ctx->is_applied);
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(state->scaling_ctx));
    ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1.0e-12);
    ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(vec_b), 2.0, 1.0e-12);
 
@@ -5789,6 +5927,7 @@ run_hypredrv_lifecycle_and_guards(void)
    RUN_TEST(test_HYPREDRV_log_stream_invalid_value_falls_back_to_stderr);
    RUN_TEST(test_HYPREDRV_log_level_input_args_internal_logs_use_object_name);
    RUN_TEST(test_HYPREDRV_preset_only_configuration_does_not_print_execution_policy);
+   RUN_TEST(test_HYPREDRV_preset_only_configuration_solves);
    RUN_TEST(test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_object_name);
    RUN_TEST(
       test_HYPREDRV_log_level_solver_and_linsys_internal_logs_use_default_object_name);
@@ -5829,7 +5968,7 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(
       test_HYPREDRV_library_mode_reuse_per_timestep_frequency_with_object_annotations);
    RUN_TEST(test_HYPREDRV_library_mode_adaptive_reuse_rebuilds_after_degradation);
-   RUN_TEST(test_HYPREDRV_PreconReuseBuildObservation_and_MarkRebuild_library);
+   RUN_TEST(test_HYPREDRV_PreconReuse_records_solve_and_rebuild_context);
    RUN_TEST(test_HYPREDRV_library_mode_mgr_recreates_precon_on_new_timestep);
    RUN_TEST(test_HYPREDRV_library_mode_mgr_component_reuse_refreshes_selected_handles);
    RUN_TEST(test_HYPREDRV_InputArgsSetPreconVariant_discards_cached_mgr_handles);
@@ -5857,6 +5996,8 @@ run_hypredrv_solver_and_reuse(void)
    RUN_TEST(test_HYPREDRV_LinearSolverDestroy_without_precon);
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    RUN_TEST(test_HYPREDRV_LinearSolverApply_scaling_deferred_and_xref);
+   RUN_TEST(test_HYPREDRV_scaled_setup_preserves_borrowed_inputs);
+   RUN_TEST(test_HYPREDRV_repeated_scaled_setup_restores_borrowed_system);
    RUN_TEST(test_HYPREDRV_reset_after_scaled_setup_keeps_initial_guess);
    RUN_TEST(test_HYPREDRV_scaled_setup_failure_restores_borrowed_system);
    RUN_TEST(test_HYPREDRV_scaled_solve_failure_restores_borrowed_system);
@@ -5889,11 +6030,120 @@ run_hypredrv_misc_and_preconditioners(void)
    RUN_TEST(test_HYPREDRV_linear_system_setters_replace_owned_solution_and_xref);
 }
 
+static void
+test_failed_native_precon_setup_is_rebuilt(void)
+{
+   reset_state();
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_yaml_into_obj(obj, "general:\n  statistics: off\n  exec_policy: host\n"
+                            "linear_system:\n  init_guess_mode: zeros\n"
+                            "solver: gmres\npreconditioner: amg\n");
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, A, b);
+   obj->iargs->precon_reuse.enabled      = 1;
+   obj->iargs->precon_reuse.per_timestep = 1;
+   ASSERT_EQ(HYPREDRV_PreconCreate(obj), ERROR_NONE);
+   ASSERT_FALSE(hypredrv_PreconReuseDecide(obj, PRECON_REUSE_CREATE));
+
+   /* Native AMG reports a setup error for this incompatible interpolation and
+    * coarsening pair. Enter with clean error flags so setup itself must fail. */
+   ASSERT_EQ(HYPRE_BoomerAMGSetInterpVecVariant(obj->precon->main, 1), 0);
+   ASSERT_EQ(HYPRE_BoomerAMGSetNodal(obj->precon->main, 0), 0);
+   ASSERT_EQ(HYPRE_GetError(), 0);
+   hypredrv_PreconSetup(obj->precon, A);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
+
+   /* A failed attempt must force reconstruction rather than look like a
+    * freshly created preconditioner still waiting for its first setup. */
+   ASSERT_TRUE(hypredrv_PreconReuseDecide(obj, PRECON_REUSE_CREATE));
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_solver_teardown_uses_creation_configuration(void)
+{
+   reset_state();
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_yaml_into_obj(obj, "general:\n  statistics: off\n  exec_policy: host\n"
+                            "linear_system:\n  init_guess_mode: zeros\n"
+                            "solver: gmres\npreconditioner: amg\n");
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, A, b);
+   run_library_linear_solve(obj, NULL);
+   ASSERT_NOT_NULL(obj->solver);
+   ASSERT_NOT_NULL(obj->precon);
+
+   /* Teardown follows live consumers even when no current input is selected. */
+   input_args *created_with = obj->iargs;
+   obj->iargs               = NULL;
+   hypredrv_ObjectDestroySolvers(obj);
+   obj->iargs = created_with;
+   ASSERT_NULL(obj->solver);
+   ASSERT_NULL(obj->precon);
+   ASSERT_FALSE(obj->precon_is_setup);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   hypredrv_ObjectDestroySolvers(obj);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
+test_solver_queries_use_bound_runtime(void)
+{
+   reset_state();
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   parse_yaml_into_obj(obj, "general:\n  statistics: off\n  exec_policy: host\n"
+                            "linear_system:\n  init_guess_mode: zeros\n"
+                            "solver: gmres\npreconditioner: amg\n");
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, A, b);
+   run_library_linear_solve(obj, NULL);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
+
+   obj->iargs->solver_method = (solver_t)999;
+   int    converged          = 0;
+   double norm               = -1.0;
+   ASSERT_EQ(HYPREDRV_LinearSolverGetConverged(obj, &converged), ERROR_NONE);
+   ASSERT_EQ(converged, 1);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(obj, &norm), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(norm, 0.0, 1e-12);
+
+   input_args *saved_args = obj->iargs;
+   obj->iargs             = NULL;
+   ASSERT_EQ(HYPREDRV_LinearSolverGetConverged(obj, &converged), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverGetFinalRelativeResidualNorm(obj, &norm), ERROR_NONE);
+   obj->iargs = saved_args;
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   ASSERT_NULL(obj->solver);
+   obj->iargs->solver_method = SOLVER_GMRES;
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+}
 
 int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+   RUN_TEST(test_failed_native_precon_setup_is_rebuilt);
+   RUN_TEST(test_solver_teardown_uses_creation_configuration);
+   RUN_TEST(test_solver_queries_use_bound_runtime);
 
    run_hypredrv_lifecycle_and_guards();
    run_hypredrv_solver_and_reuse();

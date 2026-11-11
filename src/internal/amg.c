@@ -10,6 +10,7 @@
 #include <string.h>
 #include "HYPRE_parcsr_mv.h"
 #include "_hypre_IJ_mv.h"     // For hypre_IJVectorGlobalNumRows
+#include "_hypre_parcsr_ls.h" // For hypre_ParAMGDataSmoother
 #include "_hypre_parcsr_mv.h" // For hypre_ParVectorComm, hypre_ParVectorInitialize_v2
 #include "_hypre_utilities.h" // For hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/gen_macros.h"
@@ -1112,6 +1113,16 @@ AMGApplyNodalInterpolation(HYPRE_Solver precon, AMG_args *args)
    (void)smooth;
 #endif
    HYPRE_BoomerAMGSetInterpVectors(precon, args->num_rbms, args->rbms);
+}
+
+HYPRE_Int
+hypredrv_AMGDestroy(HYPRE_Solver precon)
+{
+   hypre_ParAMGData *data = (hypre_ParAMGData *)precon;
+   /* Before setup (or after an early setup failure), configured smoother levels
+    * may have no storage. Native teardown otherwise indexes a NULL array. */
+   if (data && !hypre_ParAMGDataSmoother(data)) hypre_ParAMGDataSmoothNumLevels(data) = 0;
+   return HYPRE_BoomerAMGDestroy(precon);
 }
 
 void

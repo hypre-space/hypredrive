@@ -51,7 +51,6 @@ char *hypredrv_StrTrim(char *);
 void  hypredrv_TrimTrailingWhitespace(char *);
 void  hypredrv_NormalizeWhitespace(char *);
 int   hypredrv_CheckBinaryDataExists(const char *);
-int   hypredrv_CheckASCIIDataExists(const char *);
 int   hypredrv_CountNumberOfPartitions(const char *);
 int   hypredrv_BinaryPathPrefixIsSafe(const char *prefix);
 FILE *hypredrv_FopenCreateRestricted(const char *path, int append, int binary);
@@ -97,8 +96,10 @@ hypredrv_MultipartRange(uint64_t num_parts, int num_procs, int rank, uint64_t *f
  * Convergence and argument-flag warnings are treated as soft results.
  * Use this at API edges that previously called HYPRE_ClearAllErrors(). For
  * nested/inexact solvers that should only discard HYPRE_ERROR_CONV, call
- * hypredrv_HypreClearConvergenceErrors() instead. */
-void hypredrv_HypreConsumeErrors(MPI_Comm);
+ * hypredrv_HypreClearConvergenceErrors() instead.
+ * Returns this rank's newly observed hard-error status, independently of any
+ * earlier HypreDrive diagnostics. Callers synchronize their operation status. */
+uint32_t hypredrv_HypreConsumeErrors(MPI_Comm);
 
 /* Clear hypre's sticky error flag only when it is exclusively HYPRE_ERROR_CONV.
  * Harder hypre failures are left intact. Prefer hypredrv_HypreConsumeErrors() at

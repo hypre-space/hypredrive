@@ -21,7 +21,7 @@
 #include "internal/compatibility.h"
 #include "internal/error.h"
 #include "internal/gen_macros.h"
-#include "internal/krylov.h"
+#include "internal/solver.h"
 #include "internal/stats.h"
 #include "logging.h"
 
@@ -300,7 +300,8 @@ hypredrv_MGRfrlxReleaseArgs(MGRfrlx_args *args)
             GENERATE_PREFIXED_COMPONENTS(MGRlvl)
 
 /* Generate all boilerplate (field maps, setters, YAML parsing, etc.) */
-GENERATE_PREFIXED_LIST_MGR                             // LCOV_EXCL_LINE
+GENERATE_PREFIXED_LIST_MGR // LCOV_EXCL_LINE
+
 hypredrv_GENERATE_PREFIXED_COMPONENTS_CUSTOM_YAML(MGR) // LCOV_EXCL_LINE
 
    static void MGRCycleSet(void *field, YAMLnode *node)
@@ -385,7 +386,7 @@ MGRIsNestedKrylovKey(const char *key)
    /* GCOVR_EXCL_STOP */
    hypredrv_StrToLowerCase(tmp);
    bool is_valid =
-      hypredrv_StrIntMapArrayDomainEntryExists(hypredrv_SolverGetValidTypeIntMap(), tmp);
+      hypredrv_StrIntMapArrayLookup(hypredrv_SolverGetValidTypeIntMap(), tmp, NULL);
    free(tmp);
    return is_valid;
 }
@@ -627,193 +628,6 @@ hypredrv_MGRBuildDofLabelPresenceMask(const IntArray *dofmap,
    }
 
    return 1;
-}
-/* GCOVR_EXCL_BR_STOP */
-
-/*-----------------------------------------------------------------------------
- * Build a projected dofmap for nested MGR F-relaxation.
- *
- * Nested MGR acts on the outer level's F-block. Preserve the parent's original
- * labels when filtering to the selected F-point rows so nested `f_dofs` continue to
- * refer to the same label values as the parent MGR.
- *-----------------------------------------------------------------------------*/
-
-/* GCOVR_EXCL_BR_START */
-/* Marks each parent F label that the nested hierarchy keeps, rejecting labels
- * that are out of range, absent from the parent dofmap, or repeated. */
-static int
-MGRBuildFDofKeepMask(const StackIntArray *parent_f_dofs, const HYPRE_Int *parent_present,
-                     size_t parent_label_space, HYPRE_Int *keep_label)
-{
-   for (size_t i = 0; i < parent_f_dofs->size; i++)
-   {
-      int label = parent_f_dofs->data[i];
-
-      /* GCOVR_EXCL_START */
-      if (label < 0 || (size_t)label >= parent_label_space)
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "Invalid parent MGR f_dofs label %d for nested MGR (valid range: [0,%d])",
-            label, (int)parent_label_space - 1);
-         return 0;
-      }
-      if (!parent_present[label])
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd(
-            "Parent MGR f_dofs label %d is not present in parent dofmap", label);
-         return 0;
-      }
-      if (keep_label[label])
-      {
-         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-         hypredrv_ErrorMsgAdd("Duplicate parent MGR f_dofs label %d for nested MGR",
-                              label);
-         return 0;
-      }
-      /* GCOVR_EXCL_STOP */
-      keep_label[label] = 1;
-   }
-
-   return 1;
-}
-
-/* unique_data and g_unique_data are both the sorted set of kept labels
- * (keep_label[i] == 1 iff label i is an F-dof that appears in the projection). */
-static int
-MGRFillProjectedUniqueLabels(IntArray *nested_dofmap, const HYPRE_Int *keep_label,
-                             size_t parent_label_space, size_t nested_num_labels)
-{
-   nested_dofmap->unique_size   = nested_num_labels;
-   nested_dofmap->g_unique_size = nested_num_labels;
-   if (nested_num_labels == 0)
-   {
-      return 1;
-   }
-
-   nested_dofmap->unique_data   = (int *)malloc(nested_num_labels * sizeof(int));
-   nested_dofmap->g_unique_data = (int *)malloc(nested_num_labels * sizeof(int));
-   /* GCOVR_EXCL_START */
-   if (!nested_dofmap->unique_data || !nested_dofmap->g_unique_data)
-   {
-      hypredrv_AllocationFailure("Failed to allocate nested MGR dof label arrays");
-      return 0;
-   }
-   /* GCOVR_EXCL_STOP */
-
-   for (size_t i = 0, j = 0; i < parent_label_space; i++)
-   {
-      if (keep_label[i])
-      {
-         nested_dofmap->unique_data[j]   = (int)i;
-         nested_dofmap->g_unique_data[j] = (int)i;
-         j++;
-      }
-   }
-
-   return 1;
-}
-
-IntArray *
-hypredrv_MGRBuildProjectedFRelaxDofmap(const IntArray      *parent_dofmap,
-                                       const StackIntArray *parent_f_dofs)
-{
-   /* GCOVR_EXCL_START */
-   if (!parent_dofmap || !parent_f_dofs)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Nested MGR requires a valid parent dofmap and parent f_dofs");
-      return NULL;
-   }
-
-   if (parent_f_dofs->size == 0)
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Nested MGR requires non-empty parent f_dofs");
-      return NULL;
-   }
-   /* GCOVR_EXCL_STOP */
-
-   size_t     parent_label_space = 0;
-   size_t     nested_num_labels  = parent_f_dofs->size;
-   size_t     nested_size        = 0;
-   HYPRE_Int *parent_present     = NULL;
-   HYPRE_Int *keep_label         = NULL;
-   IntArray  *nested_dofmap      = NULL;
-   int        ok                 = 0;
-
-   if (!hypredrv_MGRBuildDofLabelPresenceMask(parent_dofmap, &parent_label_space, NULL,
-                                              &parent_present))
-   {
-      /* GCOVR_EXCL_START */
-      goto cleanup;
-      /* GCOVR_EXCL_STOP */
-   }
-
-   keep_label = (HYPRE_Int *)calloc(parent_label_space, sizeof(HYPRE_Int));
-   /* GCOVR_EXCL_START */
-   if (!keep_label)
-   {
-      hypredrv_AllocationFailure(
-         "Failed to allocate nested MGR dof label selection mask");
-      goto cleanup;
-   }
-   /* GCOVR_EXCL_STOP */
-
-   if (!MGRBuildFDofKeepMask(parent_f_dofs, parent_present, parent_label_space,
-                             keep_label))
-   {
-      goto cleanup;
-   }
-
-   /* Count filtered entries. Labels in parent_dofmap are bounded by parent_label_space
-    * (guaranteed by hypredrv_MGRBuildDofLabelPresenceMask), so no range check is needed
-    * here. */
-   for (size_t i = 0; i < parent_dofmap->size; i++)
-   {
-      if (keep_label[parent_dofmap->data[i]])
-      {
-         nested_size++;
-      }
-   }
-
-   nested_dofmap = hypredrv_IntArrayCreate(nested_size);
-   /* GCOVR_EXCL_START */
-   if (!nested_dofmap || (nested_size > 0 && !nested_dofmap->data))
-   {
-      hypredrv_AllocationFailure("Failed to allocate nested MGR projected dofmap");
-      goto cleanup;
-   }
-   /* GCOVR_EXCL_STOP */
-
-   for (size_t i = 0, j = 0; i < parent_dofmap->size; i++)
-   {
-      int label = parent_dofmap->data[i];
-      if (keep_label[label])
-      {
-         nested_dofmap->data[j++] = label;
-      }
-   }
-
-   if (!MGRFillProjectedUniqueLabels(nested_dofmap, keep_label, parent_label_space,
-                                     nested_num_labels))
-   {
-      goto cleanup;
-   }
-
-   ok = 1;
-
-cleanup:
-   free(keep_label);
-   free(parent_present);
-   /* GCOVR_EXCL_START */
-   if (!ok)
-   {
-      hypredrv_IntArrayDestroy(&nested_dofmap);
-   }
-   /* GCOVR_EXCL_STOP */
-   return ok ? nested_dofmap : NULL;
 }
 /* GCOVR_EXCL_BR_STOP */
 
@@ -1083,7 +897,7 @@ typedef struct
 {
    StrArray (*get_valid_keys)(void);
    StrIntMapArray (*get_valid_values)(const char *);
-   void (*set_field_by_name)(void *, YAMLnode *);
+   const FieldOffsetMap *fields;
    void (*apply_type_defaults)(void *, HYPRE_Int);
    void (*krylov_selected)(void *); /* optional type adjustment, may be NULL */
    size_t type_offset;
@@ -1118,6 +932,7 @@ MGRComponentSetArgsFromYAML(const MGRComponentParseOps *ops, void *vargs,
       return;
    }
 
+   StrArray   keys = ops->get_valid_keys();
    HYPRE_Int *type = (HYPRE_Int *)((char *)vargs + ops->type_offset);
 
    if (!parent->children)
@@ -1127,11 +942,11 @@ MGRComponentSetArgsFromYAML(const MGRComponentParseOps *ops, void *vargs,
       char     *saved_key = parent->key;
       HYPRE_Int old_type  = *type;
 
-      parent->key = strdup("type");
-      YAML_NODE_VALIDATE(parent, ops->get_valid_keys, ops->get_valid_values);
-      YAML_NODE_SET_FIELD(parent, vargs, ops->set_field_by_name);
+      parent->key  = "type";
+      size_t field = hypredrv_YAMLnodeValidateSchema(parent, keys, ops->get_valid_values);
+      if (field != SIZE_MAX)
+         hypredrv_FieldOffsetMapSet(&ops->fields[field], vargs, parent);
       ops->apply_type_defaults(vargs, old_type);
-      free(parent->key);
       parent->key = saved_key;
       return;
    }
@@ -1170,8 +985,9 @@ MGRComponentSetArgsFromYAML(const MGRComponentParseOps *ops, void *vargs,
       }
 
       HYPRE_Int old_type = *type;
-      YAML_NODE_VALIDATE(child, ops->get_valid_keys, ops->get_valid_values);
-      YAML_NODE_SET_FIELD(child, vargs, ops->set_field_by_name);
+      size_t field = hypredrv_YAMLnodeValidateSchema(child, keys, ops->get_valid_values);
+      if (field != SIZE_MAX)
+         hypredrv_FieldOffsetMapSet(&ops->fields[field], vargs, child);
       if (!strcmp(child->key, "type"))
       {
          ops->apply_type_defaults(vargs, old_type);
@@ -1185,7 +1001,7 @@ hypredrv_MGRclsSetArgsFromYAML(void *vargs, YAMLnode *parent)
    static const MGRComponentParseOps cls_parse_ops = {
       .get_valid_keys      = hypredrv_MGRclsGetValidKeys,
       .get_valid_values    = hypredrv_MGRclsGetValidValues,
-      .set_field_by_name   = hypredrv_MGRclsSetFieldByName,
+      .fields              = MGRcls_field_offset_map,
       .apply_type_defaults = MGRclsApplyTypeDefaults,
       .krylov_selected     = MGRclsKrylovSelected,
       .type_offset         = offsetof(MGRcls_args, type),
@@ -1203,7 +1019,7 @@ hypredrv_MGRfrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
    static const MGRComponentParseOps frlx_parse_ops = {
       .get_valid_keys      = hypredrv_MGRfrlxGetValidKeys,
       .get_valid_values    = hypredrv_MGRfrlxGetValidValues,
-      .set_field_by_name   = hypredrv_MGRfrlxSetFieldByName,
+      .fields              = MGRfrlx_field_offset_map,
       .apply_type_defaults = MGRfrlxApplyTypeDefaults,
       .krylov_selected     = NULL,
       .type_offset         = offsetof(MGRfrlx_args, type),
@@ -1221,7 +1037,7 @@ hypredrv_MGRgrlxSetArgsFromYAML(void *vargs, YAMLnode *parent)
    static const MGRComponentParseOps grlx_parse_ops = {
       .get_valid_keys      = hypredrv_MGRgrlxGetValidKeys,
       .get_valid_values    = hypredrv_MGRgrlxGetValidValues,
-      .set_field_by_name   = hypredrv_MGRgrlxSetFieldByName,
+      .fields              = MGRgrlx_field_offset_map,
       .apply_type_defaults = MGRgrlxApplyTypeDefaults,
       .krylov_selected     = MGRgrlxKrylovSelected,
       .type_offset         = offsetof(MGRgrlx_args, type),
@@ -1550,6 +1366,7 @@ hypredrv_MGRGetValidValues(const char *key)
 static void
 MGRMarkLevelComponentNodes(MGR_args *args, YAMLnode *grandchild, int lvl)
 {
+   StrArray keys = hypredrv_MGRlvlGetValidKeys();
    YAML_NODE_ITERATE(grandchild, great_grandchild)
    {
       if ((!strcmp(great_grandchild->key, "f_relaxation") ||
@@ -1560,16 +1377,17 @@ MGRMarkLevelComponentNodes(MGR_args *args, YAMLnode *grandchild, int lvl)
             !strcmp(great_grandchild->children->key, "mgr"))))
       {
          YAML_NODE_SET_VALID(great_grandchild);
-         YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
-                             hypredrv_MGRlvlSetFieldByName);
+         if (!strcmp(great_grandchild->key, "f_relaxation"))
+            hypredrv_MGRfrlxSetArgs(&args->level[lvl].f_relaxation, great_grandchild);
+         else hypredrv_MGRgrlxSetArgs(&args->level[lvl].g_relaxation, great_grandchild);
          continue;
       }
 
-      YAML_NODE_VALIDATE(great_grandchild, hypredrv_MGRlvlGetValidKeys,
-                         hypredrv_MGRlvlGetValidValues);
-
-      YAML_NODE_SET_FIELD(great_grandchild, &args->level[lvl],
-                          hypredrv_MGRlvlSetFieldByName);
+      size_t field = hypredrv_YAMLnodeValidateSchema(great_grandchild, keys,
+                                                     hypredrv_MGRlvlGetValidValues);
+      if (field != SIZE_MAX)
+         hypredrv_FieldOffsetMapSet(&MGRlvl_field_offset_map[field], &args->level[lvl],
+                                    great_grandchild);
    }
 }
 
@@ -1657,6 +1475,7 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
    MGR_args *args            = (MGR_args *)vargs;
    HYPRE_Int derived_levels  = 0; /* from `level` and `coarsest_level` entries */
    int       explicit_levels = 0; /* `num_levels` key present */
+   StrArray  keys            = hypredrv_MGRGetValidKeys();
    YAML_NODE_ITERATE(parent, child)
    {
       if (!strcmp(child->key, "level"))
@@ -1672,8 +1491,10 @@ hypredrv_MGRSetArgsFromYAML(void *vargs, YAMLnode *parent)
       else
       {
          explicit_levels |= !strcmp(child->key, "num_levels");
-         YAML_NODE_VALIDATE(child, hypredrv_MGRGetValidKeys, hypredrv_MGRGetValidValues);
-         YAML_NODE_SET_FIELD(child, args, hypredrv_MGRSetFieldByName);
+         size_t field =
+            hypredrv_YAMLnodeValidateSchema(child, keys, hypredrv_MGRGetValidValues);
+         if (field != SIZE_MAX)
+            hypredrv_FieldOffsetMapSet(&MGR_field_offset_map[field], args, child);
       }
    }
 

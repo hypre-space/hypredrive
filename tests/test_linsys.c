@@ -13,14 +13,66 @@
 #include "HYPRE.h"
 #include "internal/containers.h"
 #include "internal/error.h"
-#include "logging.h"
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "internal/scaling.h"
 #include "internal/stats.h"
+#include "internal/yaml.h"
+#include "logging.h"
+#include "object.h"
 #include "test_helpers.h"
 #include "test_ij_helpers.h"
-#include "internal/yaml.h"
+
+/* Preserve the low-level file-format fixtures while exercising the typed
+ * vector workflow. The fixture owns the output handles and borrows metadata. */
+static void
+build_test_rhs(MPI_Comm comm, const LS_args *args, HYPRE_IJMatrix matrix,
+               HYPRE_IJVector *reference, HYPRE_IJVector *rhs, Stats *stats)
+{
+   input_args *inputs = calloc(1, sizeof(*inputs));
+   ASSERT_NOT_NULL(inputs);
+   inputs->ls                     = *args;
+   inputs->general.exec_policy    = args->exec_policy;
+   struct hypredrv_struct fixture = {.comm     = comm,
+                                     .iargs    = inputs,
+                                     .stats    = stats,
+                                     .mat_A    = {matrix, false},
+                                     .vec_b    = {*rhs, true},
+                                     .vec_xref = {*reference, true}};
+   hypredrv_LinearSystemSetRHS(&fixture, NULL);
+   *rhs       = fixture.vec_b.handle;
+   *reference = fixture.vec_xref.handle;
+   free(inputs);
+}
+
+static void
+read_test_reference(MPI_Comm comm, const LS_args *args, HYPRE_IJVector *reference,
+                    Stats *stats)
+{
+   input_args *inputs = calloc(1, sizeof(*inputs));
+   ASSERT_NOT_NULL(inputs);
+   inputs->ls                     = *args;
+   inputs->general.exec_policy    = args->exec_policy;
+   struct hypredrv_struct fixture = {
+      .comm = comm, .iargs = inputs, .stats = stats, .vec_xref = {*reference, true}};
+   hypredrv_LinearSystemSetReferenceSolution(&fixture, NULL);
+   *reference = fixture.vec_xref.handle;
+   free(inputs);
+}
+
+/* The fixture borrows input options and owns the installed map. */
+static void
+read_test_dofmap(MPI_Comm comm, const LS_args *args, IntArray **dofmap, Stats *stats)
+{
+   input_args *inputs = calloc(1, sizeof(*inputs));
+   ASSERT_NOT_NULL(inputs);
+   inputs->ls                     = *args;
+   struct hypredrv_struct fixture = {
+      .comm = comm, .iargs = inputs, .stats = stats, .dofmap = *dofmap};
+   hypredrv_LinearSystemSetDofmap(&fixture, DOFMAP_FROM_INPUT, 0, 0, NULL);
+   *dofmap = fixture.dofmap;
+   free(inputs);
+}
 
 static uint64_t
 test_fnv1a64(const void *data, size_t nbytes)
@@ -155,68 +207,50 @@ static HYPRE_IJVector create_test_ijvector(MPI_Comm comm, HYPRE_BigInt ilower,
                                            HYPRE_BigInt iupper,
                                            const HYPRE_Complex *vals);
 
-static int
-get_matrix_local_num_entries(HYPRE_IJMatrix mat)
-{
-   HYPRE_BigInt ilower = 0, iupper = 0, jlower = 0, jupper = 0;
-   HYPRE_IJMatrixGetLocalRange(mat, &ilower, &iupper, &jlower, &jupper);
-   return (int)(jupper - jlower + 1);
-}
-
-static HYPRE_IJMatrix
-create_nearnullspace_test_matrix(int *num_entries)
-{
-   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(1.0);
-   ASSERT_NOT_NULL(mat);
-   ASSERT_NOT_NULL(num_entries);
-   *num_entries = get_matrix_local_num_entries(mat);
-   return mat;
-}
-
 static void
 test_hypredrv_LinearSystemGetValidValues_type(void)
 {
    StrIntMapArray map = hypredrv_LinearSystemGetValidValues("type");
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "online"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "ij"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "parcsr"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "mtx"));
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "online"), 0);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "ij"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "parcsr"), 2);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "mtx"), 3);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "online", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "ij", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "parcsr", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "mtx", NULL));
+   ASSERT_MAP_VALUE(map, "online", 0);
+   ASSERT_MAP_VALUE(map, "ij", 1);
+   ASSERT_MAP_VALUE(map, "parcsr", 2);
+   ASSERT_MAP_VALUE(map, "mtx", 3);
 }
 
 static void
 test_hypredrv_LinearSystemGetValidValues_rhs_mode(void)
 {
    StrIntMapArray map = hypredrv_LinearSystemGetValidValues("rhs_mode");
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "zeros"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "ones"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "file"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "random"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "randsol"));
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "zeros"), 0);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "ones"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "file"), 2);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "random"), 3);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "randsol"), 4);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "zeros", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "ones", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "file", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "random", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "randsol", NULL));
+   ASSERT_MAP_VALUE(map, "zeros", 0);
+   ASSERT_MAP_VALUE(map, "ones", 1);
+   ASSERT_MAP_VALUE(map, "file", 2);
+   ASSERT_MAP_VALUE(map, "random", 3);
+   ASSERT_MAP_VALUE(map, "randsol", 4);
 }
 
 static void
 test_hypredrv_LinearSystemGetValidValues_init_guess_mode(void)
 {
    StrIntMapArray map = hypredrv_LinearSystemGetValidValues("init_guess_mode");
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "zeros"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "ones"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "file"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "random"));
-   ASSERT_TRUE(hypredrv_StrIntMapArrayDomainEntryExists(map, "previous"));
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "zeros"), 0);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "ones"), 1);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "file"), 2);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "random"), 3);
-   ASSERT_EQ(hypredrv_StrIntMapArrayGetImage(map, "previous"), 4);
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "zeros", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "ones", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "file", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "random", NULL));
+   ASSERT_TRUE(hypredrv_StrIntMapArrayLookup(map, "previous", NULL));
+   ASSERT_MAP_VALUE(map, "zeros", 0);
+   ASSERT_MAP_VALUE(map, "ones", 1);
+   ASSERT_MAP_VALUE(map, "file", 2);
+   ASSERT_MAP_VALUE(map, "random", 3);
+   ASSERT_MAP_VALUE(map, "previous", 4);
 }
 
 static void
@@ -482,26 +516,6 @@ static void
 test_hypredrv_LinearSystemGetSuffix_null_args(void)
 {
    ASSERT_EQ(hypredrv_LinearSystemGetSuffix(NULL, 7), 7);
-}
-
-static void
-test_hypredrv_LinearSystemCreateWorkingSolution_invalid_args(void)
-{
-   TEST_HYPRE_INIT();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-
-   HYPRE_IJVector x = NULL;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemCreateWorkingSolution(MPI_COMM_SELF, &args, NULL, &x);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemCreateWorkingSolution(MPI_COMM_SELF, &args, NULL, NULL);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   HYPRE_ClearAllErrors();
 }
 
 static void
@@ -1451,59 +1465,6 @@ test_hypredrv_LinearSystemSetArgsFromYAML_print_system_threshold_invalid_combo(v
 }
 
 static void
-test_hypredrv_LinearSystemSetNearNullSpace_mismatch_error(void)
-{
-   TEST_HYPRE_INIT();
-
-   int           num_entries = 0;
-   HYPRE_IJMatrix mat        = create_nearnullspace_test_matrix(&num_entries);
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJVector vec_nn = NULL;
-
-   /* Test mismatch: num_entries doesn't match local size */
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetNearNullSpace(MPI_COMM_SELF, &args, mat, num_entries + 1, 1, NULL,
-                                &vec_nn);
-
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_NULL(vec_nn);
-
-   HYPRE_IJMatrixDestroy(mat);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemSetNearNullSpace_success(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-   int            size = 0;
-   HYPRE_IJMatrix mat  = create_nearnullspace_test_matrix(&size);
-   ASSERT_EQ(size, 1);
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   HYPRE_IJVector vec      = NULL;
-   HYPRE_BigInt   index    = 0;
-   HYPRE_Complex  supplied = 2.5, actual = -1.0;
-   /* Replacing the vector exercises ownership as well as default zero values. */
-   for (int pass = 0; pass < 2; pass++)
-   {
-      hypredrv_ErrorStateReset();
-      hypredrv_LinearSystemSetNearNullSpace(MPI_COMM_SELF, &args, mat, 1, 1,
-                                            pass ? &supplied : NULL, &vec);
-      ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      ASSERT_NOT_NULL(vec);
-      ASSERT_EQ(HYPRE_IJVectorGetValues(vec, 1, &index, &actual), 0);
-      ASSERT_EQ_DOUBLE(actual, pass ? supplied : 0.0, 0.0);
-   }
-   HYPRE_IJVectorDestroy(vec);
-   HYPRE_IJMatrixDestroy(mat);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
 test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
 {
    TEST_REQUIRE_FILE(HYPREDRIVE_SOURCE_DIR "/data/ps3d10pt7/np1/IJ.out.A.00000");
@@ -1512,6 +1473,7 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(1.0);
+   HYPRE_IJMatrix original = mat;
 
    /* Test dirname pattern branch */
    strncpy(args.dirname, "test_dir", sizeof(args.dirname) - 1);
@@ -1520,9 +1482,10 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
    args.init_suffix = 0;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
-   ASSERT_NULL(mat);
+   ASSERT_PTR_EQ(mat, original);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat), 1.0, 1e-12);
 
    /* Test basename pattern branch */
    args.dirname[0] = '\0';
@@ -1532,9 +1495,9 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
    args.init_suffix = 0;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
-   ASSERT_NULL(mat);
+   ASSERT_PTR_EQ(mat, original);
 
    /* Test direct filename branch */
    args.matrix_basename[0] = '\0';
@@ -1542,7 +1505,7 @@ test_hypredrv_LinearSystemReadMatrix_filename_patterns(void)
            sizeof(args.matrix_filename) - 1);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(mat);
 
@@ -1578,14 +1541,14 @@ test_hypredrv_LinearSystemRead_ascii_part_count_mismatch(void)
    /* Four ASCII parts on one rank must fail cleanly instead of aborting in hypre */
    HYPRE_IJMatrix mat = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    ASSERT_NULL(mat);
 
    HYPRE_IJVector rhs = NULL, xref = NULL;
    mat                = create_test_ijmatrix_1x1(1.0);
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    ASSERT_NULL(rhs);
 
@@ -1609,7 +1572,7 @@ test_hypredrv_LinearSystemReadMatrix_path_truncation_error(void)
    strncpy(args.matrix_filename, "matrix.A", sizeof(args.matrix_filename) - 1);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
    ASSERT_NULL(mat);
 
@@ -1630,7 +1593,7 @@ test_hypredrv_LinearSystemReadMatrix_no_filename_error(void)
    HYPRE_IJMatrix mat = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
 
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(mat);
@@ -1667,7 +1630,7 @@ test_hypredrv_LinearSystemReadMatrix_partition_count_errors(void)
       strncpy(args.matrix_filename, fake_file, sizeof(args.matrix_filename) - 1);
 
       hypredrv_ErrorCodeResetAll();
-      hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+      read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
 
       /* Should fail with file not found due to partition count mismatch */
       ASSERT_TRUE(hypredrv_ErrorCodeActive() || mat == NULL);
@@ -1687,7 +1650,9 @@ test_hypredrv_LinearSystemReadMatrix_partition_count_errors(void)
 static void
 write_lsseq_two_systems_fixture(const char *filename)
 {
+   const char          payload[] = "foo=bar\nhello=world\n";
    LSSeqHeader         header;
+   LSSeqInfoHeader     info;
    LSSeqPartMeta       part_meta[1];
    LSSeqPatternMeta    pattern_meta[2];
    LSSeqSystemPartMeta sys_meta[2];
@@ -1703,11 +1668,13 @@ write_lsseq_two_systems_fixture(const char *filename)
    int32_t             dof0[2]  = {0, 1};
    int32_t             dof1[2]  = {1, 1};
    uint64_t            blob_offset;
+   uint64_t            part_blob_table[LSSEQ_PART_BLOB_ENTRIES];
    FILE               *fp = fopen(filename, "wb");
 
    ASSERT_NOT_NULL(fp);
 
    memset(&header, 0, sizeof(header));
+   memset(&info, 0, sizeof(info));
    memset(part_meta, 0, sizeof(part_meta));
    memset(pattern_meta, 0, sizeof(pattern_meta));
    memset(sys_meta, 0, sizeof(sys_meta));
@@ -1715,18 +1682,30 @@ write_lsseq_two_systems_fixture(const char *filename)
 
    header.magic         = LSSEQ_MAGIC;
    header.version       = LSSEQ_VERSION;
-   header.flags         = LSSEQ_FLAG_HAS_DOFMAP | LSSEQ_FLAG_HAS_TIMESTEPS;
+   header.flags = LSSEQ_FLAG_HAS_INFO | LSSEQ_FLAG_HAS_DOFMAP | LSSEQ_FLAG_HAS_TIMESTEPS;
    header.codec         = (uint32_t)COMP_NONE;
    header.num_systems   = 2;
    header.num_parts     = 1;
    header.num_patterns  = 2;
    header.num_timesteps = 2;
 
-   header.offset_part_meta     = sizeof(LSSeqHeader);
-   header.offset_pattern_meta  = header.offset_part_meta + sizeof(part_meta);
-   header.offset_sys_part_meta = header.offset_pattern_meta + sizeof(pattern_meta);
-   header.offset_timestep_meta = header.offset_sys_part_meta + sizeof(sys_meta);
-   header.offset_blob_data     = header.offset_timestep_meta + sizeof(timesteps);
+   header.offset_part_meta =
+      sizeof(LSSeqHeader) + sizeof(LSSeqInfoHeader) + (uint64_t)(sizeof(payload) - 1u);
+   header.offset_pattern_meta    = header.offset_part_meta + sizeof(part_meta);
+   header.offset_sys_part_meta   = header.offset_pattern_meta + sizeof(pattern_meta);
+   header.offset_part_blob_table = header.offset_sys_part_meta + sizeof(sys_meta);
+   header.offset_timestep_meta =
+      header.offset_part_blob_table +
+      (uint64_t)(1 * LSSEQ_PART_BLOB_ENTRIES * sizeof(uint64_t));
+   header.offset_blob_data = header.offset_timestep_meta + sizeof(timesteps);
+
+   info.magic                = LSSEQ_INFO_MAGIC;
+   info.version              = LSSEQ_INFO_VERSION;
+   info.flags                = LSSEQ_INFO_FLAG_PAYLOAD_KV;
+   info.endian_tag           = UINT32_C(0x01020304);
+   info.payload_size         = (uint64_t)(sizeof(payload) - 1u);
+   info.payload_hash_fnv1a64 = test_fnv1a64(payload, sizeof(payload) - 1u);
+   info.blob_hash_fnv1a64    = 0;
 
    part_meta[0].row_lower      = 0;
    part_meta[0].row_upper      = 1;
@@ -1754,55 +1733,105 @@ write_lsseq_two_systems_fixture(const char *filename)
    pattern_meta[1].cols_blob_size   = sizeof(cols1);
    blob_offset += sizeof(cols1);
 
-   sys_meta[0].pattern_id         = 0;
-   sys_meta[0].nnz                = 2;
-   sys_meta[0].values_blob_offset = blob_offset;
-   sys_meta[0].values_blob_size   = sizeof(vals0);
-   blob_offset += sizeof(vals0);
-   sys_meta[0].rhs_blob_offset    = blob_offset;
-   sys_meta[0].rhs_blob_size      = sizeof(rhs0);
-   blob_offset += sizeof(rhs0);
-   sys_meta[0].dof_blob_offset    = blob_offset;
-   sys_meta[0].dof_blob_size      = sizeof(dof0);
-   sys_meta[0].dof_num_entries    = 2;
-   blob_offset += sizeof(dof0);
+   {
+      uint64_t pattern_size = blob_offset - header.offset_blob_data;
+      part_blob_table[0]    = pattern_size;
+      part_blob_table[1]    = sizeof(vals0) + sizeof(vals1);
+      part_blob_table[2]    = pattern_size + part_blob_table[1];
+      part_blob_table[3]    = sizeof(rhs0) + sizeof(rhs1);
+      part_blob_table[4]    = part_blob_table[2] + part_blob_table[3];
+      part_blob_table[5]    = sizeof(dof0) + sizeof(dof1);
 
-   sys_meta[1].pattern_id         = 1;
-   sys_meta[1].nnz                = 3;
-   sys_meta[1].values_blob_offset = blob_offset;
-   sys_meta[1].values_blob_size   = sizeof(vals1);
-   blob_offset += sizeof(vals1);
-   sys_meta[1].rhs_blob_offset    = blob_offset;
-   sys_meta[1].rhs_blob_size      = sizeof(rhs1);
-   blob_offset += sizeof(rhs1);
-   sys_meta[1].dof_blob_offset    = blob_offset;
-   sys_meta[1].dof_blob_size      = sizeof(dof1);
-   sys_meta[1].dof_num_entries    = 2;
-   blob_offset += sizeof(dof1);
+      sys_meta[0].pattern_id         = 0;
+      sys_meta[0].nnz                = 2;
+      sys_meta[0].values_blob_offset = 0;
+      sys_meta[0].values_blob_size   = sizeof(vals0);
+      sys_meta[0].rhs_blob_offset    = 0;
+      sys_meta[0].rhs_blob_size      = sizeof(rhs0);
+      sys_meta[0].dof_blob_offset    = 0;
+      sys_meta[0].dof_blob_size      = sizeof(dof0);
+      sys_meta[0].dof_num_entries    = 2;
+
+      sys_meta[1].pattern_id         = 1;
+      sys_meta[1].nnz                = 3;
+      sys_meta[1].values_blob_offset = sizeof(vals0);
+      sys_meta[1].values_blob_size   = sizeof(vals1);
+      sys_meta[1].rhs_blob_offset    = sizeof(rhs0);
+      sys_meta[1].rhs_blob_size      = sizeof(rhs1);
+      sys_meta[1].dof_blob_offset    = sizeof(dof0);
+      sys_meta[1].dof_blob_size      = sizeof(dof1);
+      sys_meta[1].dof_num_entries    = 2;
+
+      blob_offset = header.offset_blob_data + pattern_size + part_blob_table[1] +
+                    part_blob_table[3] + part_blob_table[5];
+   }
 
    timesteps[0].timestep = 0;
    timesteps[0].ls_start = 0;
    timesteps[1].timestep = 1;
    timesteps[1].ls_start = 1;
 
+   info.blob_bytes = blob_offset - header.offset_blob_data;
+
    ASSERT_EQ_SIZE(fwrite(&header, sizeof(header), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(&info, sizeof(info), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(payload, sizeof(payload) - 1u, 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(part_meta, sizeof(part_meta), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(pattern_meta, sizeof(pattern_meta), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(sys_meta, sizeof(sys_meta), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(part_blob_table, sizeof(part_blob_table), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(timesteps, sizeof(timesteps), 1, fp), 1);
 
+   /* Blobs: pattern then batched part 0 (vals, rhs, dof) */
    ASSERT_EQ_SIZE(fwrite(rows0, sizeof(rows0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(cols0, sizeof(cols0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(rows1, sizeof(rows1), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(cols1, sizeof(cols1), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(vals0, sizeof(vals0), 1, fp), 1);
-   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
-   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(vals1, sizeof(vals1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(rhs0, sizeof(rhs0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(rhs1, sizeof(rhs1), 1, fp), 1);
+   ASSERT_EQ_SIZE(fwrite(dof0, sizeof(dof0), 1, fp), 1);
    ASSERT_EQ_SIZE(fwrite(dof1, sizeof(dof1), 1, fp), 1);
 
    fclose(fp);
+}
+
+static void
+test_hypredrv_LinearSystemReadDofmap_sequence_replacements(void)
+{
+   TEST_HYPRE_INIT();
+   char path[256];
+   test_scratch_path(path, sizeof(path), "dofmap-sequence");
+   write_lsseq_two_systems_fixture(path);
+   LS_args args;
+   hypredrv_LinearSystemSetDefaultArgs(&args);
+   snprintf(args.sequence_filename, sizeof(args.sequence_filename), "%s", path);
+   Stats *stats = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(stats);
+   IntArray *map = NULL;
+   hypredrv_ErrorStateReset();
+   read_test_dofmap(MPI_COMM_SELF, &args, &map, stats);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NOT_NULL(map);
+   ASSERT_EQ_SIZE(map->size, 2);
+   ASSERT_EQ_SIZE(map->g_unique_size, 2);
+   ASSERT_EQ(map->data[0], 0);
+   ASSERT_EQ(map->data[1], 1);
+   stats->ls_counter = 1;
+   read_test_dofmap(MPI_COMM_SELF, &args, &map, stats);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ_SIZE(map->g_unique_size, 1);
+   ASSERT_EQ(map->data[0], 1);
+   ASSERT_EQ(map->data[1], 1);
+   IntArray *saved   = map;
+   stats->ls_counter = 99;
+   read_test_dofmap(MPI_COMM_SELF, &args, &map, stats);
+   ASSERT_TRUE(hypredrv_ErrorCodeActive());
+   ASSERT_PTR_EQ(map, saved);
+   hypredrv_IntArrayDestroy(&map);
+   hypredrv_StatsDestroy(&stats);
+   TEST_HYPRE_FINALIZE();
 }
 
 static void
@@ -1834,7 +1863,7 @@ test_hypredrv_LinearSystemReadMatrix_sequence_ls_id_out_of_range(void)
 
    HYPRE_IJMatrix mat = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, stats);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, stats);
 
    ASSERT_TRUE(mat == NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
@@ -1879,7 +1908,7 @@ test_hypredrv_LinearSystemSetRHS_sequence_ls_id_out_of_range(void)
    stats->ls_counter = 99;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, stats);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, stats);
 
    ASSERT_TRUE(rhs == NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
@@ -1915,7 +1944,7 @@ test_LinearSystemReadRHS_file_patterns(void)
    args.init_suffix = 0;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
    ASSERT_NULL(rhs);
    ASSERT_NULL(refsol);
@@ -1927,7 +1956,7 @@ test_LinearSystemReadRHS_file_patterns(void)
    strncpy(args.rhs_basename, "rhs", sizeof(args.rhs_basename) - 1);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
    ASSERT_NULL(rhs);
    ASSERT_NULL(refsol);
@@ -1964,7 +1993,7 @@ test_hypredrv_LinearSystemSetRHS_generated_values(void)
    {
       args.rhs_mode = modes[i];
       hypredrv_ErrorStateReset();
-      hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
+      build_test_rhs(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
       ASSERT_NOT_NULL(rhs);
       HYPRE_Complex value = 0.0;
@@ -2020,7 +2049,7 @@ test_hypredrv_LinearSystemSetReferenceSolution_keeps_randsol_reference(void)
    HYPRE_IJMatrixAssemble(mat);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
    ASSERT_NOT_NULL(rhs);
    ASSERT_NOT_NULL(xref);
 
@@ -2028,7 +2057,7 @@ test_hypredrv_LinearSystemSetReferenceSolution_keeps_randsol_reference(void)
 
    /* No xref file is provided, so existing randsol reference must be preserved. */
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref, NULL);
+   read_test_reference(MPI_COMM_SELF, &args, &xref, NULL);
    ASSERT_NOT_NULL(xref);
    ASSERT_TRUE(xref == xref_before);
 
@@ -2052,7 +2081,7 @@ test_hypredrv_LinearSystemSetReferenceSolution_file_override(void)
    const HYPRE_Complex old_value = 17.0;
    HYPRE_IJVector      xref      = create_test_ijvector(MPI_COMM_SELF, 0, 0, &old_value);
    hypredrv_ErrorStateReset();
-   hypredrv_LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref, NULL);
+   read_test_reference(MPI_COMM_SELF, &args, &xref, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(xref);
    HYPRE_BigInt  lower = -1, upper = -1, index = 0;
@@ -3730,7 +3759,7 @@ test_hypredrv_LinearSystemReadMatrix_mtx_success(void)
 
    HYPRE_IJMatrix mat = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadMatrix(MPI_COMM_SELF, &args, &mat, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &mat, NULL);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(mat);
@@ -3783,7 +3812,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_file_success(void)
 
    HYPRE_IJVector refsol = NULL, rhs = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(rhs);
    ASSERT_NULL(refsol);
@@ -3832,7 +3861,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_crlf_tabs(void)
 
    HYPRE_IJVector refsol = NULL, rhs = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(rhs);
    HYPRE_BigInt  index = 0;
@@ -3882,7 +3911,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_dim_mismatch_errors(void)
 
    HYPRE_IJVector refsol = NULL, rhs = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    ASSERT_NULL(rhs);
 
@@ -3930,7 +3959,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
                      "hypredrive_rhs_missing_file.mtx");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -3949,7 +3978,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
    args.rhs_filename[sizeof(args.rhs_filename) - 1] = '\0';
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -3969,7 +3998,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
                    "1.0\n");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -3990,7 +4019,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
                    "2.0\n");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -4007,7 +4036,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
    write_text_file(rhsfile, "% no values\n1 1\n");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -4027,7 +4056,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
                    "not_a_number\n");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -4044,7 +4073,7 @@ test_hypredrv_LinearSystemSetRHS_mtx_mm_read_failures(void)
    write_text_file(rhsfile, "% only comments\n% still nothing\n");
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &refsol, &rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    if (rhs)
    {
@@ -4146,66 +4175,6 @@ test_hypredrv_LinearSystemComputeVectorNorm_guards(void)
 }
 
 static void
-test_hypredrv_LinearSystemSetInitialGuess_x0_filename_branches(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-
-   /* Build a small RHS vector so hypredrv_LinearSystemSetInitialGuess can size x/x0 */
-   const HYPRE_Complex rhs_vals[3] = {1.0, 2.0, 3.0};
-   HYPRE_IJVector      rhs         = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_vals);
-
-   HYPRE_IJVector x0 = NULL;
-   HYPRE_IJVector x  = NULL;
-
-   /* 1) ASCII x0 file path (hypredrv_CheckBinaryDataExists false) */
-#ifndef HYPREDRIVE_SOURCE_DIR
-#define HYPREDRIVE_SOURCE_DIR "."
-#endif
-   char x0_ascii[4096];
-   snprintf(x0_ascii, sizeof(x0_ascii), "%s/data/ps3d10pt7/np1/IJ.out.b",
-            HYPREDRIVE_SOURCE_DIR);
-   strncpy(args.x0_filename, x0_ascii, sizeof(args.x0_filename) - 1);
-   args.x0_filename[sizeof(args.x0_filename) - 1] = '\0';
-   args.exec_policy                               = 0;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   /* Might set hypre errors depending on build; just ensure no crash and cleanup */
-   if (x) HYPRE_IJVectorDestroy(x);
-   if (x0) HYPRE_IJVectorDestroy(x0);
-   x = x0 = NULL;
-
-#ifdef HYPRE_USING_GPU
-   /* 1b) Same ASCII path with exec_policy enabled (covers migrate branch) */
-   args.exec_policy = 1;
-   hypredrv_ErrorCodeResetAll();
-   HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x) HYPRE_IJVectorDestroy(x);
-   if (x0) HYPRE_IJVectorDestroy(x0);
-   x = x0 = NULL;
-#endif
-
-   /* 2) Binary-detection branch (create <prefix>.00000.bin so hypredrv_CheckBinaryDataExists true) */
-   (void)memset(args.x0_filename, 0, sizeof(args.x0_filename));
-   strncpy(args.x0_filename, "tmp_x0", sizeof(args.x0_filename) - 1);
-   args.exec_policy = 0;
-   write_text_file("tmp_x0.00000.bin", ""); /* dummy file - read may fail but should not crash */
-   hypredrv_ErrorCodeResetAll();
-   HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x, NULL);
-   if (x) HYPRE_IJVectorDestroy(x);
-   if (x0) HYPRE_IJVectorDestroy(x0);
-   unlink("tmp_x0.00000.bin");
-
-   HYPRE_IJVectorDestroy(rhs);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
 test_hypredrv_LinearSystemSetRHS_destroys_existing_xref(void)
 {
    TEST_HYPRE_INIT();
@@ -4241,69 +4210,12 @@ test_hypredrv_LinearSystemSetRHS_destroys_existing_xref(void)
    HYPRE_IJVector rhs = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetRHS(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
+   build_test_rhs(MPI_COMM_SELF, &args, mat, &xref, &rhs, NULL);
    ASSERT_NULL(xref);
    ASSERT_NOT_NULL(rhs);
 
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemSetInitialGuess_generated_modes(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   const HYPRE_Complex rhs_values[] = {1.0, 2.0, 3.0};
-   HYPRE_BigInt        indices[]    = {0, 1, 2};
-   HYPRE_IJVector      rhs     = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_values);
-   const int           modes[] = {0, 1, 3, 4, 99};
-   for (size_t i = 0; i < sizeof(modes) / sizeof(modes[0]); i++)
-   {
-      HYPRE_IJVector x0 = NULL, x = NULL;
-      HYPRE_Complex  values[3];
-      args.init_guess_mode = modes[i];
-      hypredrv_ErrorStateReset();
-      hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, NULL, rhs, &x0, &x,
-                                           NULL);
-      ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      ASSERT_NOT_NULL(x0);
-      ASSERT_NOT_NULL(x);
-      ASSERT_EQ(HYPRE_IJVectorGetValues(x0, 3, indices, values), 0);
-      for (int j = 0; j < 3; j++)
-      {
-         if (modes[i] == 3)
-         {
-            ASSERT_TRUE(isfinite(values[j]) && fabs(values[j]) <= 1.0);
-         }
-         else
-         {
-            ASSERT_EQ_DOUBLE(values[j], modes[i] == 1 ? 1.0 : 0.0, 0.0);
-         }
-      }
-      HYPRE_IJVectorDestroy(x0);
-      HYPRE_IJVectorDestroy(x);
-   }
-   HYPRE_IJVectorDestroy(rhs);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemResetInitialGuess_null_guard(void)
-{
-   TEST_HYPRE_INIT();
-
-   Stats *stats = hypredrv_StatsCreate();
-   ASSERT_NOT_NULL(stats);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemResetInitialGuess(NULL, NULL, stats);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_StatsDestroy(&stats);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -4362,7 +4274,7 @@ test_hypredrv_LinearSystemReadDofmap_filename_branches(void)
    args.dofmap_basename[0]                               = '\0';
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadDofmap(MPI_COMM_SELF, &args, &dofmap, stats);
+   read_test_dofmap(MPI_COMM_SELF, &args, &dofmap, stats);
    if (dofmap)
    {
       hypredrv_IntArrayDestroy(&dofmap);
@@ -4376,40 +4288,13 @@ test_hypredrv_LinearSystemReadDofmap_filename_branches(void)
    args.dofmap_basename[sizeof(args.dofmap_basename) - 1] = '\0';
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadDofmap(MPI_COMM_SELF, &args, &dofmap, stats);
+   read_test_dofmap(MPI_COMM_SELF, &args, &dofmap, stats);
    if (dofmap)
    {
       hypredrv_IntArrayDestroy(&dofmap);
    }
 
    hypredrv_StatsDestroy(&stats);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x(void)
-{
-   TEST_HYPRE_INIT();
-
-   LS_args args;
-   hypredrv_LinearSystemSetDefaultArgs(&args);
-   args.exec_policy = 0;
-
-   const HYPRE_Complex rhs_vals[3] = {1.0, 2.0, 3.0};
-   HYPRE_IJVector      rhs         = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_vals);
-   HYPRE_IJVector      x           = create_test_ijvector(MPI_COMM_SELF, 0, 2, rhs_vals);
-   HYPRE_BigInt        ilow = -1, iup = -1;
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemCreateWorkingSolution(MPI_COMM_SELF, &args, rhs, &x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(x);
-   HYPRE_IJVectorGetLocalRange(x, &ilow, &iup);
-   ASSERT_EQ(ilow, 0);
-   ASSERT_EQ(iup, 2);
-
-   HYPRE_IJVectorDestroy(x);
-   HYPRE_IJVectorDestroy(rhs);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -4523,7 +4408,7 @@ test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
 
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(mat_M);
    ASSERT_TRUE(mat_M != mat_A);
@@ -4537,7 +4422,7 @@ test_hypredrv_LinearSystemSetPrecMatrix_sequence(void)
    args.sequence_filename[sizeof(args.sequence_filename) - 1] = '\0';
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, mat_A, &mat_M, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_TRUE(mat_M == mat_A);
 
@@ -4563,10 +4448,13 @@ test_hypredrv_LinearSystemSetPrecMatrix_sources(void)
       strcpy(args.precmat_filename, files[i]);
       strcpy(args.precmat_basename, bases[i]);
       HYPRE_IJMatrix precon = create_test_ijmatrix_1x1(2.0);
+      HYPRE_IJMatrix original = precon;
       hypredrv_ErrorStateReset();
-      hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+      read_test_configured_matrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
       ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_FILE_NOT_FOUND);
-      ASSERT_NULL(precon);
+      ASSERT_PTR_EQ(precon, original);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(precon), 2.0, 1e-12);
+      HYPRE_IJMatrixDestroy(precon);
       HYPRE_ClearAllErrors();
    }
 
@@ -4576,21 +4464,51 @@ test_hypredrv_LinearSystemSetPrecMatrix_sources(void)
    hypredrv_LinearSystemSetDefaultArgs(&args);
    HYPRE_IJMatrix precon = create_test_ijmatrix_1x1(3.0);
    hypredrv_ErrorStateReset();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_PTR_EQ(precon, mat);
    strcpy(args.dirname, "/missing_hypredrive_dir");
    strcpy(args.matrix_filename, "same_matrix");
    strcpy(args.precmat_filename, "same_matrix");
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_PTR_EQ(precon, mat);
    args.matrix_filename[0] = args.precmat_filename[0] = '\0';
    strcpy(args.matrix_basename, "same_base");
    strcpy(args.precmat_basename, "same_base");
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_PTR_EQ(precon, mat);
+   /* ASCII fallback paths may contain parent components. Inspect the actual
+    * rank's file rather than applying the binary-prefix path restrictions. */
+   char prefix[512], directory[512], relative_prefix[600];
+   test_scratch_path(prefix, sizeof(prefix), "matrix-fallback");
+   test_scratch_path(directory, sizeof(directory), "matrix-parent");
+   ASSERT_EQ(mkdir(directory, 0700), 0);
+   snprintf(relative_prefix, sizeof(relative_prefix), "%s/../matrix-fallback", directory);
+   ASSERT_EQ(HYPRE_IJMatrixPrint(mat, prefix), 0);
+   for (int type = 0; type <= 2; type += 2)
+   {
+      hypredrv_LinearSystemSetDefaultArgs(&args);
+      args.type = type;
+      snprintf(args.matrix_filename, sizeof(args.matrix_filename), "%s", relative_prefix);
+      HYPRE_IJMatrix read = NULL;
+      read_test_configured_matrix(MPI_COMM_SELF, &args, NULL, &read, NULL);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(read);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(read), 1.0, 1e-12);
+      HYPRE_IJMatrixDestroy(read);
+      args.matrix_filename[0] = '\0';
+      snprintf(args.precmat_filename, sizeof(args.precmat_filename), "%s",
+               relative_prefix);
+      read_test_configured_matrix(MPI_COMM_SELF, &args, mat, &precon, NULL);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_NOT_NULL(precon);
+      ASSERT_TRUE(precon != mat);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(precon), 1.0, 1e-12);
+      HYPRE_IJMatrixDestroy(precon);
+      precon = NULL;
+   }
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
 }
@@ -4598,7 +4516,6 @@ test_hypredrv_LinearSystemSetPrecMatrix_sources(void)
 struct LinsysLogContext
 {
    HYPRE_IJMatrix mat;
-   HYPRE_IJVector rhs;
 };
 
 static void
@@ -4608,8 +4525,6 @@ run_linsys_branch_logging_capture(void *context)
 
    LS_args args;
    hypredrv_LinearSystemSetDefaultArgs(&args);
-   strncpy(args.x0_filename, "missing_x0_file", sizeof(args.x0_filename) - 1);
-   args.x0_filename[sizeof(args.x0_filename) - 1] = '\0';
    strncpy(args.xref_filename, "missing_xref_file", sizeof(args.xref_filename) - 1);
    args.xref_filename[sizeof(args.xref_filename) - 1] = '\0';
    strncpy(args.precmat_filename, "missing_precmat_file",
@@ -4620,23 +4535,18 @@ run_linsys_branch_logging_capture(void *context)
    strncpy(args.dofmap_filename, "missing_dofmap_file", sizeof(args.dofmap_filename) - 1);
    args.dofmap_filename[sizeof(args.dofmap_filename) - 1] = '\0';
 
-   HYPRE_IJVector x0 = NULL, x = NULL, xref = NULL;
+   HYPRE_IJVector xref = NULL;
    HYPRE_IJMatrix precmat = NULL;
    IntArray      *dofmap  = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetInitialGuess(MPI_COMM_SELF, &args, log_context->mat,
-                                        log_context->rhs, &x0, &x, NULL);
+   read_test_reference(MPI_COMM_SELF, &args, &xref, NULL);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetReferenceSolution(MPI_COMM_SELF, &args, &xref, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, log_context->mat, &precmat, NULL);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, log_context->mat, &precmat,
-                                      NULL);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_LinearSystemReadDofmap(MPI_COMM_SELF, &args, &dofmap, NULL);
+   read_test_dofmap(MPI_COMM_SELF, &args, &dofmap, NULL);
 
    if (dofmap)
    {
@@ -4650,14 +4560,6 @@ run_linsys_branch_logging_capture(void *context)
    {
       HYPRE_IJVectorDestroy(xref);
    }
-   if (x0)
-   {
-      HYPRE_IJVectorDestroy(x0);
-   }
-   if (x)
-   {
-      HYPRE_IJVectorDestroy(x);
-   }
 }
 
 static void
@@ -4668,22 +4570,18 @@ test_hypredrv_linsys_branch_logs(void)
    setenv("HYPREDRV_LOG_LEVEL", "3", 1);
    hypredrv_LogInitializeFromEnv();
 
-   const HYPRE_Complex rhs_vals[1] = {1.0};
    struct LinsysLogContext context = {
       .mat = create_test_ijmatrix_1x1(1.0),
-      .rhs = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_vals),
    };
 
    char output[16384];
    capture_stderr_output(run_linsys_branch_logging_capture, &context, output,
                          sizeof(output));
 
-   ASSERT_NOT_NULL(strstr(output, "initial guess source:"));
    ASSERT_NOT_NULL(strstr(output, "reference solution source:"));
    ASSERT_NOT_NULL(strstr(output, "preconditioner matrix source:"));
    ASSERT_NOT_NULL(strstr(output, "dofmap read begin"));
 
-   HYPRE_IJVectorDestroy(context.rhs);
    HYPRE_IJMatrixDestroy(context.mat);
 
    hypredrv_LogReset();
@@ -4755,6 +4653,8 @@ static void
 test_hypredrv_Scaling_valid_values_and_defaults(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
 
    StrIntMapArray en = hypredrv_ScalingGetValidValues("enabled");
    ASSERT_TRUE(en.size > 0);
@@ -4772,9 +4672,9 @@ test_hypredrv_Scaling_valid_values_and_defaults(void)
    ASSERT_EQ((int)args.type, (int)SCALING_RHS_L2);
    ASSERT_NULL(args.custom_values);
 
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   ASSERT_NOT_NULL(ctx);
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   ASSERT_TRUE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, NULL, NULL, NULL));
+   ASSERT_NULL(ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    ASSERT_NULL(ctx);
 
    TEST_HYPRE_FINALIZE();
@@ -4784,6 +4684,7 @@ static void
 test_hypredrv_Scaling_rhs_l2_apply_undo(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
@@ -4798,22 +4699,40 @@ test_hypredrv_Scaling_rhs_l2_apply_undo(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_M, rhs, x);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_TRUE(ctx->is_applied);
+   ASSERT_TRUE(hypredrv_ScalingIsApplied(ctx));
 
-   hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_M, rhs, x);
-
-   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_M, rhs, x);
+   HYPRE_IJMatrix other_A = create_test_ijmatrix_1x1(7.0);
+   HYPRE_IJVector other_b = create_test_ijvector_1x1(5.0);
+   HYPRE_IJVector other_x = create_test_ijvector_1x1(3.0);
+   /* Repeated apply must neither transform nor rebind a second system. */
+   hypredrv_ScalingApplyToSystem(ctx, other_A, other_A, other_b, other_x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(ctx));
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(mat_A), 4.0, 1e-12);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(other_A), 7.0, 1e-12);
+   HYPRE_BigInt  row   = 0;
+   HYPRE_Complex value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(rhs, 1, &row, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 9.0, 1e-12);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(x, 1, &row, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 1.0, 1e-12);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(other_b, 1, &row, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 5.0, 1e-12);
+   ASSERT_EQ(HYPRE_IJVectorGetValues(other_x, 1, &row, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 3.0, 1e-12);
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
+   HYPRE_IJMatrixDestroy(other_A);
+   HYPRE_IJVectorDestroy(other_b);
+   HYPRE_IJVectorDestroy(other_x);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJMatrixDestroy(mat_A);
@@ -4824,6 +4743,7 @@ static void
 test_hypredrv_Scaling_undo_preserves_preexisting_error(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
@@ -4837,19 +4757,19 @@ test_hypredrv_Scaling_undo_preserves_preexisting_error(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_A, rhs, x);
-   ASSERT_TRUE(ctx->is_applied);
+   ASSERT_TRUE(hypredrv_ScalingIsApplied(ctx));
 
    hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
    hypredrv_ErrorMsgAdd("injected solve failure");
-   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_A, rhs, x);
+   hypredrv_ScalingUndoOnSystem(ctx);
 
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_HYPRE_INTERNAL);
-   ASSERT_FALSE(ctx->is_applied);
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(ctx));
 
    HYPRE_BigInt  index = 0;
    HYPRE_Complex matrix_after = 0.0, rhs_after = 0.0, x_after = 0.0;
@@ -4861,7 +4781,7 @@ test_hypredrv_Scaling_undo_preserves_preexisting_error(void)
    ASSERT_EQ_DOUBLE((double)x_after, 1.0, 1.0e-12);
 
    hypredrv_ErrorStateReset();
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJMatrixDestroy(mat_A);
@@ -4872,6 +4792,7 @@ static void
 test_hypredrv_Scaling_partial_apply_restores_completed_transforms(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix      mat = create_test_ijmatrix_1x1(4.0);
@@ -4886,22 +4807,19 @@ test_hypredrv_Scaling_partial_apply_restores_completed_transforms(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, NULL);
+
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    /* Matrix and RHS transforms complete before the uninitialized x fails. */
    hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, invalid_x);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_TRUE(ctx->is_applied);
-   ASSERT_TRUE(ctx->matrices_are_scaled);
-   ASSERT_TRUE(ctx->rhs_is_scaled);
-   ASSERT_FALSE(ctx->x_is_scaled);
+   ASSERT_TRUE(hypredrv_ScalingIsApplied(ctx));
 
    uint32_t saved_error = hypredrv_ErrorCodeGet();
-   hypredrv_ScalingUndoOnSystem(ctx, mat, mat, rhs, invalid_x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_EQ(hypredrv_ErrorCodeGet(), saved_error);
-   ASSERT_FALSE(ctx->is_applied);
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(ctx));
 
    HYPRE_BigInt  index = 0;
    HYPRE_Complex matrix_after = 0.0, rhs_after = 0.0;
@@ -4911,7 +4829,7 @@ test_hypredrv_Scaling_partial_apply_restores_completed_transforms(void)
    ASSERT_EQ_DOUBLE((double)rhs_after, 9.0, 1.0e-12);
 
    hypredrv_ErrorStateReset();
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(invalid_x);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
@@ -4922,6 +4840,7 @@ static void
 test_hypredrv_Scaling_dofmap_custom_1x1(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -4939,24 +4858,22 @@ test_hypredrv_Scaling_dofmap_custom_1x1(void)
    sargs.type           = SCALING_DOFMAP_CUSTOM;
    sargs.custom_values  = cv;
 
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
    const HYPRE_Complex rv[1] = {5.0};
    const HYPRE_Complex xv[1] = {7.0};
    HYPRE_IJVector      rhs   = create_test_ijvector(MPI_COMM_SELF, 0, 0, rv);
    HYPRE_IJVector      x     = create_test_ijvector(MPI_COMM_SELF, 0, 0, xv);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, x);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingUndoOnSystem(ctx, mat, mat, rhs, x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    hypredrv_DoubleArrayDestroy(&cv);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
@@ -4969,6 +4886,7 @@ static void
 test_hypredrv_Scaling_dofmap_mag_1x1(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -4982,24 +4900,22 @@ test_hypredrv_Scaling_dofmap_mag_1x1(void)
    sargs.enabled = 1;
    sargs.type    = SCALING_DOFMAP_MAG;
 
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
    const HYPRE_Complex rv[1] = {5.0};
    const HYPRE_Complex xv[1] = {7.0};
    HYPRE_IJVector      rhs   = create_test_ijvector(MPI_COMM_SELF, 0, 0, rv);
    HYPRE_IJVector      x     = create_test_ijvector(MPI_COMM_SELF, 0, 0, xv);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, x);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingUndoOnSystem(ctx, mat, mat, rhs, x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
@@ -5010,10 +4926,10 @@ test_hypredrv_Scaling_dofmap_mag_1x1(void)
 static void
 test_hypredrv_Scaling_context_destroy_null_safe(void)
 {
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, NULL);
+   hypredrv_ScalingContextDestroy(NULL);
    {
       Scaling_context *p = NULL;
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &p);
+      hypredrv_ScalingContextDestroy(&p);
    }
 }
 
@@ -5022,36 +4938,90 @@ test_hypredrv_Scaling_compute_null_args_disabled_and_unknown_type(void)
 {
    TEST_HYPRE_INIT();
    Scaling_args     args;
-   Scaling_context  ctx_mem;
    Scaling_context *ctx = NULL;
-
-   memset(&ctx_mem, 0, sizeof(ctx_mem));
    hypredrv_ScalingSetDefaultArgs(&args);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, NULL, &ctx_mem, NULL, NULL, NULL);
+   hypredrv_ErrorStateReset();
+   ASSERT_FALSE(hypredrv_ScalingPrepare(MPI_COMM_SELF, NULL, &ctx, NULL, NULL, NULL));
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL);
+   hypredrv_ErrorStateReset();
+   ASSERT_FALSE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, NULL, NULL, NULL, NULL));
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   args.enabled = 0;
-   ctx_mem.enabled = 0;
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &args, &ctx_mem, NULL, NULL, NULL);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(ctx_mem.enabled, 0);
-
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   hypredrv_ScalingSetDefaultArgs(&args);
+   hypredrv_ErrorStateReset();
+   ASSERT_TRUE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, NULL, NULL, NULL));
+   ASSERT_NULL(ctx);
    args.enabled = 1;
    args.type    = (scaling_type_t)999;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &args, ctx, NULL, NULL, NULL);
+   ASSERT_FALSE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, NULL, NULL, NULL));
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   ASSERT_NULL(ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
+   TEST_HYPRE_FINALIZE();
+}
 
+static void
+test_scaling_preparation_preserves_installed_runtime(void)
+{
+   TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(2.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(5.0);
+   HYPRE_IJVector x = create_test_ijvector_1x1(7.0);
+   Scaling_args   args;
+   hypredrv_ScalingSetDefaultArgs(&args);
+   args.enabled         = 1;
+   Scaling_context *ctx = NULL;
+   ASSERT_TRUE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, A, b, NULL));
+   Scaling_context *original = ctx;
+   const int        label    = 0;
+   IntArray        *dofmap   = NULL;
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, &label, &dofmap);
+   DoubleArray *values = hypredrv_DoubleArrayCreate(1);
+   args.custom_values  = values;
+
+   for (int bad = 0; bad < 5; bad++)
+   {
+      args.type       = bad == 0   ? (scaling_type_t)999
+                        : bad == 1 ? SCALING_DOFMAP_MAG
+                                   : SCALING_DOFMAP_CUSTOM;
+      values->data[0] = bad == 3 ? NAN : bad == 4 ? INFINITY : 0.0;
+      ASSERT_FALSE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, A, b,
+                                           bad < 2 ? NULL : dofmap));
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_PTR_EQ(ctx, original);
+      hypredrv_ErrorStateReset();
+      hypredrv_ScalingApplyToSystem(ctx, A, A, b, x);
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 0.4, 1e-12);
+      hypredrv_ScalingUndoOnSystem(ctx);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 2.0, 1e-12);
+      HYPRE_BigInt  row   = 0;
+      HYPRE_Complex value = 0.0;
+      ASSERT_EQ(HYPRE_IJVectorGetValues(b, 1, &row, &value), 0);
+      ASSERT_EQ_DOUBLE(value, 5.0, 1e-12);
+      ASSERT_EQ(HYPRE_IJVectorGetValues(x, 1, &row, &value), 0);
+      ASSERT_EQ_DOUBLE(value, 7.0, 1e-12);
+   }
+   args.type       = SCALING_DOFMAP_CUSTOM;
+   values->data[0] = 2.0;
+   ASSERT_TRUE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, A, b, dofmap));
+   hypredrv_ScalingApplyToSystem(ctx, A, A, b, x);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 8.0, 1e-12);
+   Scaling_context *applied = ctx;
+   args.enabled             = 0;
+   ASSERT_FALSE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, A, b, dofmap));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_PTR_EQ(ctx, applied);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 8.0, 1e-12);
+   hypredrv_ErrorStateReset();
+   hypredrv_ScalingUndoOnSystem(ctx);
+   ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(A), 2.0, 1e-12);
+   ASSERT_TRUE(hypredrv_ScalingPrepare(MPI_COMM_SELF, &args, &ctx, A, b, dofmap));
+   ASSERT_NULL(ctx);
+   hypredrv_DoubleArrayDestroy(&values);
+   hypredrv_IntArrayDestroy(&dofmap);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
    TEST_HYPRE_FINALIZE();
 }
 
@@ -5059,6 +5029,7 @@ static void
 test_hypredrv_Scaling_dofmap_custom_error_paths(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5071,15 +5042,13 @@ test_hypredrv_Scaling_dofmap_custom_error_paths(void)
    sargs.enabled = 1;
    sargs.type    = SCALING_DOFMAP_CUSTOM;
 
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
    /* Missing dofmap */
    {
       DoubleArray *cv = hypredrv_DoubleArrayCreate(1);
       cv->data[0]     = 1.0;
       sargs.custom_values = cv;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, NULL);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, NULL);
       ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_MISSING_DOFMAP);
       hypredrv_DoubleArrayDestroy(&cv);
       sargs.custom_values = NULL;
@@ -5093,7 +5062,7 @@ test_hypredrv_Scaling_dofmap_custom_error_paths(void)
       DoubleArray *empty = hypredrv_DoubleArrayCreate(0);
       sargs.custom_values = empty;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       hypredrv_DoubleArrayDestroy(&empty);
       hypredrv_IntArrayDestroy(&dofmap);
@@ -5109,13 +5078,13 @@ test_hypredrv_Scaling_dofmap_custom_error_paths(void)
       sargs.type          = SCALING_DOFMAP_SIMILARITY_CUSTOM;
       sargs.custom_values = cv;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
-      ASSERT_NULL(ctx->scaling_vector);
+      ASSERT_NULL(ctx);
       hypredrv_DoubleArrayDestroy(&cv);
       hypredrv_IntArrayDestroy(&dofmap);
    }
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
@@ -5125,6 +5094,7 @@ static void
 test_hypredrv_Scaling_rhs_l2_zero_norm(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
@@ -5138,14 +5108,12 @@ test_hypredrv_Scaling_rhs_l2_zero_norm(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_EQ(ctx->scalar_factor, 1.0);
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJMatrixDestroy(mat_A);
@@ -5188,203 +5156,12 @@ test_hypredrv_IJMigrate_wrappers_keep_host_data(void)
    TEST_HYPRE_FINALIZE();
 }
 
-static void
-test_hypredrv_Scaling_system_comm_resolve_fallbacks(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-
-   const HYPRE_Complex rhs_v[1] = {1.0};
-   const HYPRE_Complex x_v[1]   = {1.0};
-   HYPRE_IJVector      rhs      = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
-   HYPRE_IJVector      x        = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_v);
-   HYPRE_IJMatrix      mat_M    = create_test_ijmatrix_1x1(2.0);
-
-   Scaling_context *ctx = NULL;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   ASSERT_NOT_NULL(ctx);
-   /* enabled=0, is_applied=0: apply/undo return early after ScalingSystemCommResolve */
-   ASSERT_EQ(ctx->enabled, 0);
-   ASSERT_EQ(ctx->is_applied, 0);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToSystem(ctx, NULL, NULL, rhs, x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToSystem(ctx, NULL, NULL, NULL, x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToSystem(ctx, NULL, mat_M, NULL, x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnSystem(ctx, NULL, NULL, rhs, x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnSystem(ctx, NULL, NULL, NULL, x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnSystem(ctx, NULL, mat_M, NULL, x);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
-   HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(x);
-   HYPRE_IJMatrixDestroy(mat_M);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_Scaling_unknown_type_apply_undo_vector_and_system(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-
-   HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
-   HYPRE_IJMatrix      mat_M = mat_A;
-   const HYPRE_Complex rhs_v[1] = {9.0};
-   const HYPRE_Complex x_v[1]   = {1.0};
-   HYPRE_IJVector      rhs      = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
-   HYPRE_IJVector      x        = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_v);
-
-   Scaling_args     sargs;
-   Scaling_context *ctx = NULL;
-   hypredrv_ScalingSetDefaultArgs(&sargs);
-   sargs.enabled = 1;
-   sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   ctx->type = (scaling_type_t)999;
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToVector(ctx, rhs, SCALING_VECTOR_RHS);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnVector(ctx, rhs, SCALING_VECTOR_RHS);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_M, rhs, x);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   ctx->is_applied = 1;
-   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_M, rhs, x);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
-   HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(x);
-   HYPRE_IJMatrixDestroy(mat_A);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_Scaling_dofmap_apply_without_scaling_vector(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-   hypredrv_ErrorCodeResetAll();
-
-   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
-   int            dm_data[1] = {0};
-   IntArray      *dofmap     = NULL;
-   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, dm_data, &dofmap);
-   DoubleArray *cv = hypredrv_DoubleArrayCreate(1);
-   cv->data[0]     = 3.0;
-
-   const HYPRE_Complex rhs_v[1] = {5.0};
-   const HYPRE_Complex x_v[1]   = {7.0};
-   HYPRE_IJVector      rhs      = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
-   HYPRE_IJVector      x        = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_v);
-
-   Scaling_args     sargs;
-   Scaling_context *ctx = NULL;
-   hypredrv_ScalingSetDefaultArgs(&sargs);
-   sargs.enabled       = 1;
-   sargs.type          = SCALING_DOFMAP_CUSTOM;
-   sargs.custom_values = cv;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   {
-      HYPRE_ParVector saved = ctx->scaling_vector;
-      ctx->scaling_vector   = NULL;
-      hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, x);
-      ASSERT_TRUE(hypredrv_ErrorCodeActive());
-      ctx->scaling_vector = saved;
-   }
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
-   hypredrv_DoubleArrayDestroy(&cv);
-   hypredrv_IntArrayDestroy(&dofmap);
-   HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(x);
-   HYPRE_IJMatrixDestroy(mat);
-   TEST_HYPRE_FINALIZE();
-}
-
-static void
-test_hypredrv_Scaling_rhs_l2_apply_fails_zero_scalar(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-   hypredrv_ErrorCodeResetAll();
-
-   HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
-   HYPRE_IJMatrix      mat_M = mat_A;
-   const HYPRE_Complex rhs_v[1] = {9.0};
-   const HYPRE_Complex x_v[1]   = {1.0};
-   HYPRE_IJVector      rhs      = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
-   HYPRE_IJVector      x        = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_v);
-
-   Scaling_args     sargs;
-   Scaling_context *ctx = NULL;
-   hypredrv_ScalingSetDefaultArgs(&sargs);
-   sargs.enabled = 1;
-   sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
-   ASSERT_FALSE(hypredrv_ErrorCodeActive());
-
-   ctx->scalar_factor = 0.0;
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_M, rhs, x);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   ASSERT_FALSE(ctx->is_applied);
-
-   HYPRE_Complex matrix_after = 0.0;
-   matrix_after = get_test_ijmatrix_1x1(mat_A);
-   ASSERT_EQ_DOUBLE((double)matrix_after, 4.0, 1.0e-12);
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
-   HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(x);
-   HYPRE_IJMatrixDestroy(mat_A);
-   TEST_HYPRE_FINALIZE();
-}
 
 static void
 test_hypredrv_Scaling_rhs_l2_distinct_M_apply_undo(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
@@ -5401,20 +5178,19 @@ test_hypredrv_Scaling_rhs_l2_distinct_M_apply_undo(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_M, rhs, x);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_TRUE(ctx->is_applied);
+   ASSERT_TRUE(hypredrv_ScalingIsApplied(ctx));
 
-   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_M, rhs, x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJMatrixDestroy(mat_M);
@@ -5426,6 +5202,7 @@ static void
 test_hypredrv_Scaling_dofmap_custom_distinct_M_apply_undo(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(2.0);
@@ -5450,19 +5227,17 @@ test_hypredrv_Scaling_dofmap_custom_distinct_M_apply_undo(void)
    sargs.type          = SCALING_DOFMAP_CUSTOM;
    sargs.custom_values = cv;
 
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, dofmap);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, dofmap);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_M, rhs, x);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_M, rhs, x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    hypredrv_DoubleArrayDestroy(&cv);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
@@ -5476,6 +5251,7 @@ static void
 test_hypredrv_Scaling_dofmap_mag_missing_dofmap_and_size_mismatch(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5487,10 +5263,9 @@ test_hypredrv_Scaling_dofmap_mag_missing_dofmap_and_size_mismatch(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_DOFMAP_MAG;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, NULL);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_MISSING_DOFMAP);
 
    {
@@ -5498,7 +5273,7 @@ test_hypredrv_Scaling_dofmap_mag_missing_dofmap_and_size_mismatch(void)
       IntArray *dofmap2   = NULL;
       hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, dm_bad, &dofmap2);
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap2);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap2);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       hypredrv_IntArrayDestroy(&dofmap2);
    }
@@ -5509,12 +5284,12 @@ test_hypredrv_Scaling_dofmap_mag_missing_dofmap_and_size_mismatch(void)
       IntArray *dofmap3   = NULL;
       hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, dm_neg, &dofmap3);
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap3);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap3);
       ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
       hypredrv_IntArrayDestroy(&dofmap3);
    }
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
@@ -5524,6 +5299,7 @@ static void
 test_hypredrv_Scaling_dofmap_custom_validation_errors(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5535,7 +5311,6 @@ test_hypredrv_Scaling_dofmap_custom_validation_errors(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_DOFMAP_CUSTOM;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    /* Tag 0 only => num_tags=1; pass two custom values => mismatch */
    {
@@ -5547,7 +5322,7 @@ test_hypredrv_Scaling_dofmap_custom_validation_errors(void)
       cv->data[1]     = 2.0;
       sargs.custom_values = cv;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       hypredrv_DoubleArrayDestroy(&cv);
       hypredrv_IntArrayDestroy(&dofmap);
@@ -5563,7 +5338,7 @@ test_hypredrv_Scaling_dofmap_custom_validation_errors(void)
       cv->data[0]     = 1.0;
       sargs.custom_values = cv;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap2);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap2);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       hypredrv_DoubleArrayDestroy(&cv);
       hypredrv_IntArrayDestroy(&dofmap2);
@@ -5581,13 +5356,13 @@ test_hypredrv_Scaling_dofmap_custom_validation_errors(void)
       cv->data[2] = 1.0;
       sargs.custom_values = cv;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap3);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap3);
       ASSERT_TRUE(hypredrv_ErrorCodeActive());
       hypredrv_DoubleArrayDestroy(&cv);
       hypredrv_IntArrayDestroy(&dofmap3);
    }
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
@@ -5597,6 +5372,7 @@ static void
 test_hypredrv_Scaling_rhs_l2_vector_transform_branches(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat_A = create_test_ijmatrix_1x1(4.0);
@@ -5611,12 +5387,12 @@ test_hypredrv_Scaling_rhs_l2_vector_transform_branches(void)
       hypredrv_ScalingSetDefaultArgs(&sargs);
       sargs.enabled = 1;
       sargs.type    = SCALING_RHS_L2;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingApplyToVector(ctx, rhs, SCALING_VECTOR_RHS);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
    }
    /* Apply UNKNOWN */
@@ -5627,14 +5403,14 @@ test_hypredrv_Scaling_rhs_l2_vector_transform_branches(void)
       hypredrv_ScalingSetDefaultArgs(&sargs);
       sargs.enabled = 1;
       sargs.type    = SCALING_RHS_L2;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
+
       HYPRE_IJVector rhs = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
       HYPRE_IJVectorDestroy(rhs);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingApplyToVector(ctx, x, SCALING_VECTOR_UNKNOWN);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(x);
    }
    /* Undo RHS (needs prior apply state: use compute + apply system then undo vector) */
@@ -5646,13 +5422,13 @@ test_hypredrv_Scaling_rhs_l2_vector_transform_branches(void)
       hypredrv_ScalingSetDefaultArgs(&sargs);
       sargs.enabled = 1;
       sargs.type    = SCALING_RHS_L2;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
       hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_A, rhs, x);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingUndoOnVector(ctx, rhs, SCALING_VECTOR_RHS);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
       HYPRE_IJVectorDestroy(x);
    }
@@ -5665,13 +5441,13 @@ test_hypredrv_Scaling_rhs_l2_vector_transform_branches(void)
       hypredrv_ScalingSetDefaultArgs(&sargs);
       sargs.enabled = 1;
       sargs.type    = SCALING_RHS_L2;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
       hypredrv_ScalingApplyToSystem(ctx, mat_A, mat_A, rhs, x);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingUndoOnVector(ctx, x, SCALING_VECTOR_UNKNOWN);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
       HYPRE_IJVectorDestroy(x);
    }
@@ -5684,6 +5460,7 @@ static void
 test_hypredrv_Scaling_dofmap_vector_transform_branches(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5706,12 +5483,12 @@ test_hypredrv_Scaling_dofmap_vector_transform_branches(void)
       sargs.enabled       = 1;
       sargs.type          = SCALING_DOFMAP_CUSTOM;
       sargs.custom_values = cv;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingApplyToVector(ctx, rhs, SCALING_VECTOR_RHS);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
       HYPRE_IJVectorDestroy(x);
    }
@@ -5725,12 +5502,12 @@ test_hypredrv_Scaling_dofmap_vector_transform_branches(void)
       sargs.enabled       = 1;
       sargs.type          = SCALING_DOFMAP_CUSTOM;
       sargs.custom_values = cv;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingApplyToVector(ctx, x, SCALING_VECTOR_UNKNOWN);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
       HYPRE_IJVectorDestroy(x);
    }
@@ -5744,13 +5521,13 @@ test_hypredrv_Scaling_dofmap_vector_transform_branches(void)
       sargs.enabled       = 1;
       sargs.type          = SCALING_DOFMAP_CUSTOM;
       sargs.custom_values = cv;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, x);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingUndoOnVector(ctx, rhs, SCALING_VECTOR_RHS);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
       HYPRE_IJVectorDestroy(x);
    }
@@ -5764,13 +5541,13 @@ test_hypredrv_Scaling_dofmap_vector_transform_branches(void)
       sargs.enabled       = 1;
       sargs.type          = SCALING_DOFMAP_CUSTOM;
       sargs.custom_values = cv;
-      hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-      hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+
+      hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
       hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, x);
       hypredrv_ErrorCodeResetAll();
       hypredrv_ScalingUndoOnVector(ctx, x, SCALING_VECTOR_UNKNOWN);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+      hypredrv_ScalingContextDestroy(&ctx);
       HYPRE_IJVectorDestroy(rhs);
       HYPRE_IJVectorDestroy(x);
    }
@@ -5781,58 +5558,12 @@ test_hypredrv_Scaling_dofmap_vector_transform_branches(void)
    TEST_HYPRE_FINALIZE();
 }
 
-static void
-test_hypredrv_Scaling_dofmap_undo_without_scaling_vector(void)
-{
-   TEST_HYPRE_INIT();
-   HYPRE_ClearAllErrors();
-
-   HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
-   int            dm_data[1] = {0};
-   IntArray      *dofmap     = NULL;
-   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, dm_data, &dofmap);
-   DoubleArray *cv = hypredrv_DoubleArrayCreate(1);
-   cv->data[0]     = 3.0;
-
-   const HYPRE_Complex rhs_v[1] = {5.0};
-   const HYPRE_Complex x_v[1]   = {7.0};
-   HYPRE_IJVector      rhs      = create_test_ijvector(MPI_COMM_SELF, 0, 0, rhs_v);
-   HYPRE_IJVector      x        = create_test_ijvector(MPI_COMM_SELF, 0, 0, x_v);
-
-   Scaling_args     sargs;
-   Scaling_context *ctx = NULL;
-   hypredrv_ScalingSetDefaultArgs(&sargs);
-   sargs.enabled       = 1;
-   sargs.type          = SCALING_DOFMAP_CUSTOM;
-   sargs.custom_values = cv;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
-   hypredrv_ScalingApplyToSystem(ctx, mat, mat, rhs, x);
-   ASSERT_TRUE(ctx->is_applied);
-
-   /* Remove scaling storage as if corrupted; IJ destroy owns the ParVector */
-   HYPRE_SAFE_CALL(HYPRE_IJVectorDestroy(ctx->scaling_ijvec));
-   ctx->scaling_ijvec  = NULL;
-   ctx->scaling_vector = NULL;
-
-   hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnSystem(ctx, mat, mat, rhs, x);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
-   hypredrv_DoubleArrayDestroy(&cv);
-   hypredrv_IntArrayDestroy(&dofmap);
-   HYPRE_IJVectorDestroy(rhs);
-   HYPRE_IJVectorDestroy(x);
-   HYPRE_IJMatrixDestroy(mat);
-   TEST_HYPRE_FINALIZE();
-}
 
 static void
 test_hypredrv_Scaling_context_switch_custom_then_mag(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5849,20 +5580,16 @@ test_hypredrv_Scaling_context_switch_custom_then_mag(void)
 
    Scaling_args     sargs;
    Scaling_context *ctx = NULL;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    sargs.enabled       = 1;
    sargs.type          = SCALING_DOFMAP_CUSTOM;
    sargs.custom_values = cv;
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
-   ASSERT_NOT_NULL(ctx->scaling_ijvec);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
 
    sargs.type = SCALING_DOFMAP_MAG;
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
-   ASSERT_NULL(ctx->scaling_ijvec);
-   ASSERT_NOT_NULL(ctx->scaling_vector);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    hypredrv_DoubleArrayDestroy(&cv);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
@@ -5875,6 +5602,7 @@ static void
 test_hypredrv_Scaling_context_switch_mag_then_custom(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5891,19 +5619,16 @@ test_hypredrv_Scaling_context_switch_mag_then_custom(void)
 
    Scaling_args     sargs;
    Scaling_context *ctx = NULL;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    sargs.enabled = 1;
    sargs.type    = SCALING_DOFMAP_MAG;
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
-   ASSERT_NOT_NULL(ctx->scaling_vector);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
 
    sargs.type          = SCALING_DOFMAP_CUSTOM;
    sargs.custom_values = cv;
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
-   ASSERT_NOT_NULL(ctx->scaling_ijvec);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    hypredrv_DoubleArrayDestroy(&cv);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
@@ -5916,6 +5641,8 @@ static void
 test_hypredrv_Scaling_null_ctx_vector_and_system_guards(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
    const HYPRE_Complex v[1] = {1.0};
@@ -5934,7 +5661,7 @@ test_hypredrv_Scaling_null_ctx_vector_and_system_guards(void)
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnSystem(NULL, mat, mat, vec, vec);
+   hypredrv_ScalingUndoOnSystem(NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
    HYPRE_IJVectorDestroy(vec);
@@ -5946,6 +5673,7 @@ static void
 test_hypredrv_Scaling_dofmap_data_null(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5957,17 +5685,16 @@ test_hypredrv_Scaling_dofmap_data_null(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_DOFMAP_MAG;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    IntArray dm_bad = {0};
    dm_bad.size     = 1;
    dm_bad.data     = NULL;
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, &dm_bad);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, &dm_bad);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_MISSING_DOFMAP);
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
    TEST_HYPRE_FINALIZE();
@@ -5977,6 +5704,7 @@ static void
 test_hypredrv_Scaling_custom_values_null(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix mat = create_test_ijmatrix_1x1(2.0);
@@ -5993,13 +5721,12 @@ test_hypredrv_Scaling_custom_values_null(void)
    sargs.enabled       = 1;
    sargs.type          = SCALING_DOFMAP_CUSTOM;
    sargs.custom_values = NULL;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat, rhs, dofmap);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat, rhs, dofmap);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJMatrixDestroy(mat);
@@ -6010,6 +5737,7 @@ static void
 test_hypredrv_Scaling_vector_api_extra_guards(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
@@ -6023,15 +5751,13 @@ test_hypredrv_Scaling_vector_api_extra_guards(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
 
-   ctx->enabled = 0;
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
+
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingApplyToVector(ctx, rhs, SCALING_VECTOR_RHS);
+   hypredrv_ScalingApplyToVector(NULL, rhs, SCALING_VECTOR_RHS);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   ctx->enabled = 1;
    hypredrv_ErrorCodeResetAll();
    hypredrv_ScalingApplyToVector(ctx, NULL, SCALING_VECTOR_RHS);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
@@ -6040,7 +5766,7 @@ test_hypredrv_Scaling_vector_api_extra_guards(void)
    hypredrv_ScalingUndoOnVector(ctx, NULL, SCALING_VECTOR_RHS);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJMatrixDestroy(mat_A);
@@ -6051,6 +5777,7 @@ static void
 test_hypredrv_Scaling_undo_system_when_not_applied(void)
 {
    TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
    HYPRE_ClearAllErrors();
 
    HYPRE_IJMatrix      mat_A = create_test_ijmatrix_1x1(4.0);
@@ -6064,15 +5791,15 @@ test_hypredrv_Scaling_undo_system_when_not_applied(void)
    hypredrv_ScalingSetDefaultArgs(&sargs);
    sargs.enabled = 1;
    sargs.type    = SCALING_RHS_L2;
-   hypredrv_ScalingContextCreate(MPI_COMM_SELF, &ctx);
-   hypredrv_ScalingCompute(MPI_COMM_SELF, &sargs, ctx, mat_A, rhs, NULL);
 
-   ASSERT_FALSE(ctx->is_applied);
+   hypredrv_ScalingPrepare(MPI_COMM_SELF, &sargs, &ctx, mat_A, rhs, NULL);
+
+   ASSERT_FALSE(hypredrv_ScalingIsApplied(ctx));
    hypredrv_ErrorCodeResetAll();
-   hypredrv_ScalingUndoOnSystem(ctx, mat_A, mat_A, rhs, x);
+   hypredrv_ScalingUndoOnSystem(ctx);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
 
-   hypredrv_ScalingContextDestroy(MPI_COMM_SELF, &ctx);
+   hypredrv_ScalingContextDestroy(&ctx);
    HYPRE_IJVectorDestroy(rhs);
    HYPRE_IJVectorDestroy(x);
    HYPRE_IJMatrixDestroy(mat_A);
@@ -6097,7 +5824,6 @@ run_linsys_args_and_validation_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_dof_labels_repeated);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_dof_labels_flow_bad_value);
    RUN_TEST(test_hypredrv_LinearSystemGetSuffix_null_args);
-   RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_invalid_args);
    RUN_TEST(test_hypredrv_PrintSystem_defaults);
    RUN_TEST(test_hypredrv_PrintSystem_null_args);
    RUN_TEST(test_hypredrv_PrintSystem_yaml_scalar_enabled);
@@ -6109,8 +5835,6 @@ run_linsys_args_and_validation_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_invalid_combo);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_thresholds);
    RUN_TEST(test_hypredrv_LinearSystemSetArgsFromYAML_print_system_threshold_invalid_combo);
-   RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_mismatch_error);
-   RUN_TEST(test_hypredrv_LinearSystemSetNearNullSpace_success);
 }
 
 static void
@@ -6122,6 +5846,7 @@ run_linsys_matrix_and_rhs_io_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemRead_ascii_part_count_mismatch);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_path_truncation_error);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_partition_count_errors);
+   RUN_TEST(test_hypredrv_LinearSystemReadDofmap_sequence_replacements);
    RUN_TEST(test_hypredrv_LinearSystemReadMatrix_sequence_ls_id_out_of_range);
    RUN_TEST(test_LinearSystemReadRHS_file_patterns);
    RUN_TEST(test_hypredrv_LinearSystemSetRHS_sequence_ls_id_out_of_range);
@@ -6159,13 +5884,9 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_LinearSystemComputeVectorNorm_all_modes);
    RUN_TEST(test_hypredrv_LinearSystemComputeVectorNorm_guards);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
-   RUN_TEST(test_hypredrv_LinearSystemSetInitialGuess_x0_filename_branches);
 #endif
-   RUN_TEST(test_hypredrv_LinearSystemSetInitialGuess_generated_modes);
-   RUN_TEST(test_hypredrv_LinearSystemResetInitialGuess_null_guard);
    RUN_TEST(test_hypredrv_LinearSystem_norm_error_and_residual);
    RUN_TEST(test_hypredrv_LinearSystemReadDofmap_filename_branches);
-   RUN_TEST(test_hypredrv_LinearSystemCreateWorkingSolution_recreates_x);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_sequence);
    RUN_TEST(test_hypredrv_LinearSystemSetPrecMatrix_sources);
    RUN_TEST(test_hypredrv_linsys_branch_logs);
@@ -6173,18 +5894,15 @@ run_linsys_misc_and_numeric_tests(void)
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
    RUN_TEST(test_hypredrv_Scaling_context_destroy_null_safe);
    RUN_TEST(test_hypredrv_Scaling_compute_null_args_disabled_and_unknown_type);
+   RUN_TEST(test_scaling_preparation_preserves_installed_runtime);
    RUN_TEST(test_hypredrv_Scaling_dofmap_custom_error_paths);
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_zero_norm);
    RUN_TEST(test_hypredrv_Scaling_valid_values_and_defaults);
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_apply_undo);
    RUN_TEST(test_hypredrv_Scaling_undo_preserves_preexisting_error);
    RUN_TEST(test_hypredrv_Scaling_partial_apply_restores_completed_transforms);
-   RUN_TEST(test_hypredrv_Scaling_system_comm_resolve_fallbacks);
    RUN_TEST(test_hypredrv_IJMigrate_wrappers_keep_host_data);
-   RUN_TEST(test_hypredrv_Scaling_unknown_type_apply_undo_vector_and_system);
-   RUN_TEST(test_hypredrv_Scaling_rhs_l2_apply_fails_zero_scalar);
    RUN_TEST(test_hypredrv_Scaling_dofmap_custom_1x1);
-   RUN_TEST(test_hypredrv_Scaling_dofmap_apply_without_scaling_vector);
    RUN_TEST(test_hypredrv_Scaling_dofmap_mag_1x1);
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_distinct_M_apply_undo);
    RUN_TEST(test_hypredrv_Scaling_dofmap_custom_distinct_M_apply_undo);
@@ -6192,7 +5910,6 @@ run_linsys_misc_and_numeric_tests(void)
    RUN_TEST(test_hypredrv_Scaling_dofmap_custom_validation_errors);
    RUN_TEST(test_hypredrv_Scaling_rhs_l2_vector_transform_branches);
    RUN_TEST(test_hypredrv_Scaling_dofmap_vector_transform_branches);
-   RUN_TEST(test_hypredrv_Scaling_dofmap_undo_without_scaling_vector);
    RUN_TEST(test_hypredrv_Scaling_context_switch_custom_then_mag);
    RUN_TEST(test_hypredrv_Scaling_context_switch_mag_then_custom);
    RUN_TEST(test_hypredrv_Scaling_null_ctx_vector_and_system_guards);

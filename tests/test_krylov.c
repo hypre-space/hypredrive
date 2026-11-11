@@ -9,9 +9,9 @@
 #include <stdlib.h>
 
 #include "HYPRE.h"
+#include "_hypre_utilities.h"
 #include "internal/containers.h"
 #include "internal/error.h"
-#include "internal/krylov.h"
 #include "internal/precon.h"
 #include "internal/solver.h"
 #include "internal/yaml.h"
@@ -93,7 +93,6 @@ run_nested_lifecycle(solver_t method, int use_precon_amg)
       nk.precon.amg.max_iter = 1;
    }
 
-   HYPRE_Solver inner = NULL;
    IntArray *dofmap = NULL;
 
    if (use_precon_amg)
@@ -104,14 +103,17 @@ run_nested_lifecycle(solver_t method, int use_precon_amg)
    }
 
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   ASSERT_TRUE(hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL));
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(inner);
-   if (use_precon_amg)
-   {
-      ASSERT_NOT_NULL(nk.precon_obj);
-      ASSERT_FALSE(nk.precon_obj->is_setup);
-   }
+   ASSERT_NOT_NULL(nk.runtime);
+   ASSERT_FALSE(nk.base.is_setup);
+   HYPRE_PtrToSolverFcn setup = hypredrv_NestedKrylovSetup;
+   HYPRE_PtrToSolverFcn solve = hypredrv_NestedKrylovSolve;
+#if HYPRE_CHECK_MIN_VERSION(30100, 0)
+   hypre_Solver *native = (hypre_Solver *)&nk;
+   setup                = hypre_SolverSetup(native);
+   solve                = hypre_SolverSolve(native);
+#endif
 
    HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
@@ -123,22 +125,50 @@ run_nested_lifecycle(solver_t method, int use_precon_amg)
    ASSERT_EQ(HYPRE_IJVectorGetObject(ij_x, &par_x), 0);
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A,
-                                        (HYPRE_Vector)par_b, (HYPRE_Vector)par_x),
+   ASSERT_NE(solve((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A, (HYPRE_Vector)par_b,
+                   (HYPRE_Vector)par_x),
              0);
-   if (use_precon_amg)
-   {
-      ASSERT_TRUE(nk.precon_obj->is_setup);
-   }
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
+   ASSERT_FALSE(nk.base.is_setup);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(setup((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A, (HYPRE_Vector)par_b,
+                   (HYPRE_Vector)par_x),
+             0);
+   ASSERT_TRUE(nk.base.is_setup);
+
+   const void *original_runtime = nk.runtime;
+   ASSERT_TRUE(hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL));
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_PTR_EQ(nk.runtime, original_runtime);
+   ASSERT_TRUE(nk.base.is_setup);
 
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ(hypredrv_NestedKrylovSolve((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A,
-                                        (HYPRE_Vector)par_b, (HYPRE_Vector)par_x),
+   ASSERT_EQ(solve((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A, (HYPRE_Vector)par_b,
+                   (HYPRE_Vector)par_x),
              0);
 
+   /* Native execution and destruction use the operations bound at creation,
+    * even if pending configuration no longer names that solver method. */
+   nk.solver_method = (solver_t)999;
+   ASSERT_TRUE(hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL));
+   ASSERT_PTR_EQ(nk.runtime, original_runtime);
+   ASSERT_EQ(HYPRE_ParVectorSetConstantValues((HYPRE_ParVector)par_x, 0.0), 0);
+   ASSERT_EQ(solve((HYPRE_Solver)&nk, NULL, (HYPRE_Vector)par_b, (HYPRE_Vector)par_x), 0);
+   HYPRE_BigInt index = 0;
+   double       value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(ij_x, 1, &index, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 0.25, 1e-10);
+#if HYPRE_CHECK_MIN_VERSION(30100, 0)
+   ASSERT_EQ(hypre_SolverDestroy(native)((HYPRE_Solver)&nk), 0);
+#else
    hypredrv_NestedKrylovDestroy(&nk);
-   ASSERT_NULL(nk.base_solver);
-   ASSERT_NULL(nk.precon_obj);
+#endif
+   ASSERT_NULL(nk.runtime);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_FALSE(hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL));
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_SOLVER);
+   ASSERT_NULL(nk.runtime);
+   hypredrv_ErrorCodeResetAll();
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(ij_x), 0);
    ASSERT_EQ(HYPRE_IJVectorDestroy(ij_b), 0);
@@ -152,7 +182,7 @@ test_nested_krylov_null_and_invalid_paths(void)
 {
    hypredrv_NestedKrylovSetDefaultArgs(NULL);
 
-   /* hypredrv_NestedKrylovSetArgsFromYAML(NULL, node): hits !args branch (krylov.c). */
+   /* hypredrv_NestedKrylovSetArgsFromYAML(NULL, node): hits !args branch. */
    {
       YAMLnode *solver = hypredrv_YAMLnodeCreate("gmres", "", 0);
       add_yaml_child(solver, "max_iter", "2", 1);
@@ -163,27 +193,22 @@ test_nested_krylov_null_and_invalid_paths(void)
    NestedKrylov_args nk;
    hypredrv_NestedKrylovSetDefaultArgs(&nk);
 
-   HYPRE_Solver out = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, NULL, NULL, NULL, &out);
-   ASSERT_TRUE(hypredrv_ErrorCodeActive());
-   hypredrv_ErrorCodeResetAll();
-
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, NULL);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, NULL, NULL, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeActive());
    hypredrv_ErrorCodeResetAll();
 
    nk.is_set = 0;
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, &out);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NULL(out);
+   ASSERT_NULL(nk.runtime);
 
    hypredrv_NestedKrylovSetDefaultArgs(&nk);
    nk.is_set = 1;
    nk.solver_method = SOLVER_GMRES;
    hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_GMRES, &nk.solver);
    nk.solver.gmres.max_iter = 5;
-   /* base_solver intentionally unset */
+   /* No runtime has been created. */
    hypredrv_ErrorCodeResetAll();
    ASSERT_NE(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, NULL, NULL, NULL), 0);
    hypredrv_ErrorCodeResetAll();
@@ -193,6 +218,17 @@ test_nested_krylov_null_and_invalid_paths(void)
    ASSERT_NE(hypredrv_NestedKrylovSetup(NULL, NULL, NULL, NULL), 0);
    hypredrv_ErrorCodeResetAll();
    ASSERT_NE(hypredrv_NestedKrylovSolve(NULL, NULL, NULL, NULL), 0);
+
+   /* Reject an invalid method before creating its otherwise valid preconditioner. */
+   configure_nested_solver(&nk, (solver_t)999);
+   nk.has_precon    = 1;
+   nk.precon_method = PRECON_BOOMERAMG;
+   hypredrv_PreconArgsSetDefaultsForMethod(nk.precon_method, &nk.precon);
+   hypredrv_ErrorCodeResetAll();
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL);
+   ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_SOLVER);
+   ASSERT_NULL(nk.runtime);
+   hypredrv_ErrorCodeResetAll();
 
    hypredrv_NestedKrylovDestroy(NULL);
 }
@@ -212,15 +248,14 @@ run_nested_lifecycle_precon_ilu(solver_t method)
    hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
-   HYPRE_Solver inner = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
    if (hypredrv_ErrorCodeActive())
    {
       hypredrv_IntArrayDestroy(&dofmap);
       return;
    }
-   ASSERT_NOT_NULL(inner);
+   ASSERT_NOT_NULL(nk.runtime);
 
    HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
@@ -262,15 +297,14 @@ run_nested_lifecycle_precon_fsai(solver_t method)
    hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
-   HYPRE_Solver inner = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
    if (hypredrv_ErrorCodeActive())
    {
       hypredrv_IntArrayDestroy(&dofmap);
       return;
    }
-   ASSERT_NOT_NULL(inner);
+   ASSERT_NOT_NULL(nk.runtime);
 
    HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
@@ -307,11 +341,10 @@ run_nested_lifecycle_precon_schwarz(solver_t method)
    nk.precon_method = PRECON_SCHWARZ;
    hypredrv_PreconArgsSetDefaultsForMethod(PRECON_SCHWARZ, &nk.precon);
 
-   HYPRE_Solver inner = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(inner);
+   ASSERT_NOT_NULL(nk.runtime);
 
    HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
    HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
@@ -330,8 +363,7 @@ run_nested_lifecycle_precon_schwarz(solver_t method)
              0);
 
    hypredrv_NestedKrylovDestroy(&nk);
-   ASSERT_NULL(nk.base_solver);
-   ASSERT_NULL(nk.precon_obj);
+   ASSERT_NULL(nk.runtime);
 
    ASSERT_EQ(HYPRE_IJVectorDestroy(ij_x), 0);
    ASSERT_EQ(HYPRE_IJVectorDestroy(ij_b), 0);
@@ -421,11 +453,10 @@ test_nested_krylov_setup_without_vectors(void)
    NestedKrylov_args nk;
    configure_nested_solver(&nk, SOLVER_GMRES);
 
-   HYPRE_Solver inner = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(inner);
+   ASSERT_NOT_NULL(nk.runtime);
 
    HYPRE_IJMatrix ij_A  = create_test_ijmatrix_1x1(4.0);
    void          *par_A = NULL;
@@ -433,7 +464,7 @@ test_nested_krylov_setup_without_vectors(void)
 
    ASSERT_EQ(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, (HYPRE_Matrix)par_A, NULL, NULL),
              0);
-   ASSERT_TRUE(nk.is_setup);
+   ASSERT_TRUE(nk.base.is_setup);
 
    hypredrv_NestedKrylovDestroy(&nk);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(ij_A), 0);
@@ -451,16 +482,14 @@ test_nested_krylov_precon_missing_operators(void)
       nk.has_precon = 1;
       nk.precon_method = methods[i];
       hypredrv_PreconArgsSetDefaultsForMethod(methods[i], &nk.precon);
-      HYPRE_Solver inner = NULL;
       hypredrv_ErrorCodeResetAll();
-      hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL, &inner);
+      hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, NULL, NULL);
       ASSERT_FALSE(hypredrv_ErrorCodeActive());
-      ASSERT_NOT_NULL(inner);
-      ASSERT_FALSE(nk.precon_obj->is_setup);
+      ASSERT_NOT_NULL(nk.runtime);
+      ASSERT_FALSE(nk.base.is_setup);
       ASSERT_NE(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, NULL, NULL, NULL), 0);
       ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_MISSING_PRECON);
-      ASSERT_FALSE(nk.precon_obj->is_setup);
-      ASSERT_FALSE(nk.is_setup);
+      ASSERT_FALSE(nk.base.is_setup);
       hypredrv_NestedKrylovDestroy(&nk);
       hypredrv_ErrorCodeResetAll();
       HYPRE_ClearAllErrors();
@@ -486,11 +515,10 @@ test_nested_mgr_rejects_short_marker_storage(void)
    const int map[] = {0, 1};
    IntArray *dofmap = NULL;
    hypredrv_IntArrayBuild(MPI_COMM_SELF, 2, map, &dofmap);
-   HYPRE_Solver inner = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(inner);
+   ASSERT_NOT_NULL(nk.runtime);
    HYPRE_IJMatrix matrix = NULL;
    ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 2, 0, 2, &matrix), 0);
    ASSERT_EQ(HYPRE_IJMatrixSetObjectType(matrix, HYPRE_PARCSR), 0);
@@ -505,8 +533,7 @@ test_nested_mgr_rejects_short_marker_storage(void)
    ASSERT_NE(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, (HYPRE_Matrix)par_matrix,
                                         NULL, NULL), 0);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_VAL);
-   ASSERT_FALSE(nk.is_setup);
-   ASSERT_FALSE(nk.precon_obj->is_setup);
+   ASSERT_FALSE(nk.base.is_setup);
    hypredrv_NestedKrylovDestroy(&nk);
    hypredrv_IntArrayDestroy(&dofmap);
    HYPRE_IJMatrixDestroy(matrix);
@@ -583,16 +610,13 @@ test_nested_krylov_destroy_clears_mgr_runtime_state(void)
    hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
    ASSERT_NOT_NULL(dofmap);
 
-   HYPRE_Solver inner = NULL;
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(inner);
-   ASSERT_NOT_NULL(nk.precon_obj);
+   ASSERT_NOT_NULL(nk.runtime);
 
    hypredrv_NestedKrylovDestroy(&nk);
-   ASSERT_NULL(nk.base_solver);
-   ASSERT_NULL(nk.precon_obj);
+   ASSERT_NULL(nk.runtime);
    ASSERT_NULL(nk.precon.mgr.frelax[0]);
    ASSERT_NULL(nk.precon.mgr.csolver);
    ASSERT_EQ(nk.precon.mgr.csolver_type, -1);
@@ -612,25 +636,127 @@ test_nested_krylov_matched_schur_requires_fgmres(void)
    ASSERT_NOT_NULL(dofmap);
 
    NestedKrylov_args nk;
-   HYPRE_Solver      inner = NULL;
+
    configure_nested_matched_schur(&nk, SOLVER_GMRES);
    hypredrv_ErrorCodeResetAll();
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
    ASSERT_TRUE(hypredrv_ErrorCodeGet() & ERROR_INVALID_SOLVER);
-   ASSERT_NULL(inner);
-   ASSERT_NULL(nk.precon_obj);
+   ASSERT_NULL(nk.runtime);
 
    hypredrv_ErrorCodeResetAll();
    HYPRE_ClearAllErrors();
    configure_nested_matched_schur(&nk, SOLVER_FGMRES);
-   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL, &inner);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
-   ASSERT_NOT_NULL(inner);
-   ASSERT_NOT_NULL(nk.precon_obj);
+   ASSERT_NOT_NULL(nk.runtime);
 
    hypredrv_NestedKrylovDestroy(&nk);
    hypredrv_IntArrayDestroy(&dofmap);
 #endif
+}
+
+static void
+test_nested_krylov_rejected_precon_keeps_live_solver(void)
+{
+   NestedKrylov_args nk;
+   configure_nested_solver(&nk, SOLVER_GMRES);
+   nk.has_precon    = 1;
+   nk.precon_method = PRECON_BOOMERAMG;
+   hypredrv_PreconArgsSetDefaultsForMethod(PRECON_BOOMERAMG, &nk.precon);
+   nk.precon.amg.max_iter = 1;
+
+   IntArray *dofmap = NULL;
+   const int map[]  = {0};
+   hypredrv_IntArrayBuild(MPI_COMM_SELF, 1, map, &dofmap);
+   HYPRE_IJMatrix ij_A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector ij_b = create_test_ijvector_1x1(1.0);
+   HYPRE_IJVector ij_x = create_test_ijvector_1x1(0.0);
+   void          *A = NULL, *b = NULL, *x = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixGetObject(ij_A, &A), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetObject(ij_b, &b), 0);
+   ASSERT_EQ(HYPRE_IJVectorGetObject(ij_x, &x), 0);
+   hypredrv_ErrorStateReset();
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, A, b, x), 0);
+   const void *original_runtime = nk.runtime;
+
+   const char *replacements[] = {
+      "  preconditioner: unknown_precon\n",
+      "  preconditioner:\n",
+      "  preconditioner:\n    amg:\n    ilu:\n",
+      "  preconditioner:\n    amg:\n      max_iter: invalid\n",
+      "  preconditioner:\n    ilu:\n      type: unknown_ilu\n",
+      "  preconditioner:\n    amg:\n      unknown_option: 1\n",
+      "  preconditioner:\n    mgr:\n      level:\n        0:\n"
+      "          f_dofs: [0]\n          f_relaxation:\n            gmres:\n"
+      "              max_iter: 2\n      unknown_option: 1\n",
+   };
+   for (size_t i = 0; i < sizeof(replacements) / sizeof(replacements[0]); i++)
+   {
+      char text[1024];
+      snprintf(text, sizeof(text), "fgmres:\n  max_iter: 3\n%s", replacements[i]);
+      YAMLtree *tree = NULL;
+      hypredrv_ErrorStateReset();
+      hypredrv_YAMLtreeBuild(2, text, &tree);
+      ASSERT_NOT_NULL(tree);
+      hypredrv_NestedKrylovSetArgsFromYAML(&nk, tree->root->children);
+      ASSERT_TRUE(hypredrv_ErrorCodeActive());
+      ASSERT_PTR_EQ(nk.runtime, original_runtime);
+      ASSERT_TRUE(nk.base.is_setup);
+      ASSERT_TRUE(nk.has_precon);
+      ASSERT_EQ(nk.solver_method, SOLVER_GMRES);
+      ASSERT_EQ(nk.solver.gmres.max_iter, 20);
+      ASSERT_EQ(nk.precon_method, PRECON_BOOMERAMG);
+      ASSERT_EQ(nk.precon.amg.max_iter, 1);
+      hypredrv_YAMLtreeDestroy(&tree);
+
+      hypredrv_ErrorStateReset();
+      HYPRE_ClearAllErrors();
+      ASSERT_EQ(HYPRE_ParVectorSetConstantValues(x, 0.0), 0);
+      ASSERT_EQ(hypredrv_NestedKrylovSolve((HYPRE_Solver)&nk, NULL, b, x), 0);
+      HYPRE_BigInt index = 0;
+      double       value = 0.0;
+      ASSERT_EQ(HYPRE_IJVectorGetValues(ij_x, 1, &index, &value), 0);
+      ASSERT_EQ_DOUBLE(value, 0.25, 1e-10);
+   }
+
+   YAMLnode *accepted = hypredrv_YAMLnodeCreate("fgmres", "", 0);
+   add_yaml_child(accepted, "max_iter", "3", 1);
+   add_yaml_child(accepted, "preconditioner", "ilu", 1);
+   hypredrv_ErrorStateReset();
+   hypredrv_NestedKrylovSetArgsFromYAML(&nk, accepted);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_NULL(nk.runtime);
+   ASSERT_FALSE(nk.base.is_setup);
+   ASSERT_EQ(nk.solver_method, SOLVER_FGMRES);
+   ASSERT_EQ(nk.precon_method, PRECON_ILU);
+   hypredrv_NestedKrylovCreate(MPI_COMM_SELF, &nk, dofmap, NULL);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(hypredrv_NestedKrylovSetup((HYPRE_Solver)&nk, A, b, x), 0);
+   ASSERT_EQ(HYPRE_ParVectorSetConstantValues(x, 0.0), 0);
+   ASSERT_EQ(hypredrv_NestedKrylovSolve((HYPRE_Solver)&nk, NULL, b, x), 0);
+   HYPRE_BigInt index = 0;
+   double       value = 0.0;
+   ASSERT_EQ(HYPRE_IJVectorGetValues(ij_x, 1, &index, &value), 0);
+   ASSERT_EQ_DOUBLE(value, 0.25, 1e-10);
+   hypredrv_YAMLnodeDestroy(accepted);
+
+   YAMLnode *solver_only = hypredrv_YAMLnodeCreate("gmres", "", 0);
+   add_yaml_child(solver_only, "max_iter", "4", 1);
+   hypredrv_NestedKrylovSetArgsFromYAML(&nk, solver_only);
+   ASSERT_FALSE(hypredrv_ErrorCodeActive());
+   ASSERT_EQ(nk.precon_method, PRECON_ILU);
+   ASSERT_TRUE(nk.has_precon);
+   ASSERT_NULL(nk.runtime);
+   hypredrv_YAMLnodeDestroy(solver_only);
+
+   hypredrv_NestedKrylovDestroy(&nk);
+   hypredrv_PreconArgsDestroyOwnedConfig(nk.precon_method, &nk.precon);
+   hypredrv_IntArrayDestroy(&dofmap);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(ij_x), 0);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(ij_b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(ij_A), 0);
 }
 
 int
@@ -648,6 +774,7 @@ main(int argc, char **argv)
    RUN_TEST(test_nested_krylov_precon_missing_operators);
    RUN_TEST(test_nested_mgr_rejects_short_marker_storage);
    RUN_TEST(test_nested_krylov_solver_matrix_with_amg_precon);
+   RUN_TEST(test_nested_krylov_rejected_precon_keeps_live_solver);
    RUN_TEST(test_nested_krylov_precon_ilu_matrix);
    RUN_TEST(test_nested_krylov_precon_fsai_matrix);
    RUN_TEST(test_nested_krylov_precon_schwarz_matrix);

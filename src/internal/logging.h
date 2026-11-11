@@ -8,9 +8,10 @@
 #ifndef HYPREDRV_LOGGING_HEADER
 #define HYPREDRV_LOGGING_HEADER
 
+#include <mpi.h>
 #include <stdbool.h>
 #include <stddef.h>
-#include "HYPREDRV.h"
+#include "internal/object_fwd.h"
 
 #include "internal/error.h" /* HYPREDRV_PRINTF_FORMAT */
 
@@ -31,14 +32,14 @@ void hypredrv_LogCommf(int level, MPI_Comm comm, const char *object_name, int ls
 
 void hypredrv_Logf(int level, int mypid, const char *object_name, int ls_id,
                    const char *fmt, ...) HYPREDRV_PRINTF_FORMAT(5, 6);
-void hypredrv_LogObjectf(int level, HYPREDRV_t hypredrv, const char *fmt, ...)
+void hypredrv_LogObjectf(int level, hypredrv_t *hypredrv, const char *fmt, ...)
    HYPREDRV_PRINTF_FORMAT(3, 4);
 void hypredrv_LogTextBlock(int level, int mypid, const char *object_name, int ls_id,
                            const char *header, const char *text);
 const char *hypredrv_FormatLogObjectId(int object_id, char *buffer, size_t buffer_size);
 
 /* The supplied name buffer must outlive use of the returned name. */
-const char *hypredrv_ResolveLogObjectName(HYPREDRV_t hypredrv, char *default_object_name,
+const char *hypredrv_ResolveLogObjectName(hypredrv_t *hypredrv, char *default_object_name,
                                           size_t default_object_name_size);
 
 #define HYPREDRV_LOGF(_level, _mypid, _object_name, _ls_id, _fmt, ...)       \

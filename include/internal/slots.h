@@ -9,6 +9,7 @@
 #define HYPREDRV_SLOTS_HEADER
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "HYPRE_IJ_mv.h"
 
 typedef struct
@@ -30,9 +31,9 @@ hypredrv_AttachmentIsOwned(bool library_mode)
 }
 
 static inline void
-hypredrv_MatrixSlotRelease(hypredrv_MatrixSlot *slot, HYPRE_IJMatrix alias)
+hypredrv_MatrixSlotRelease(hypredrv_MatrixSlot *slot)
 {
-   if (slot->handle && slot->owned && slot->handle != alias)
+   if (slot->handle && slot->owned)
    {
       HYPRE_IJMatrixDestroy(slot->handle);
    }
@@ -40,42 +41,15 @@ hypredrv_MatrixSlotRelease(hypredrv_MatrixSlot *slot, HYPRE_IJMatrix alias)
    slot->owned  = false;
 }
 
-/* Reattaching a live handle preserves the original ownership decision. */
 static inline void
-hypredrv_MatrixSlotSet(hypredrv_MatrixSlot *slot, HYPRE_IJMatrix handle, bool owned,
-                       HYPRE_IJMatrix alias)
+hypredrv_VectorSlotRelease(hypredrv_VectorSlot *slot)
 {
-   if (slot->handle == handle)
-   {
-      return;
-   }
-   hypredrv_MatrixSlotRelease(slot, alias);
-   slot->handle = handle;
-   slot->owned  = (bool)(owned && handle != NULL);
-}
-
-static inline void
-hypredrv_VectorSlotRelease(hypredrv_VectorSlot *slot, HYPRE_IJVector alias)
-{
-   if (slot->handle && slot->owned && slot->handle != alias)
+   if (slot->handle && slot->owned)
    {
       HYPRE_IJVectorDestroy(slot->handle);
    }
    slot->handle = NULL;
    slot->owned  = false;
-}
-
-static inline void
-hypredrv_VectorSlotSet(hypredrv_VectorSlot *slot, HYPRE_IJVector handle, bool owned,
-                       HYPRE_IJVector alias)
-{
-   if (slot->handle == handle)
-   {
-      return;
-   }
-   hypredrv_VectorSlotRelease(slot, alias);
-   slot->handle = handle;
-   slot->owned  = (bool)(owned && handle != NULL);
 }
 
 #endif

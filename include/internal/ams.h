@@ -72,8 +72,8 @@ void hypredrv_AMSCreate(const AMS_args *, HYPRE_Solver *);
 /* Inject the operator inputs AMS requires (discrete gradient + vertex
  * coordinate vectors). Arguments are IJ handles (may be NULL); ParCSR/ParVector
  * objects are extracted internally. Must be called after AMSCreate and before
- * setup. */
-void hypredrv_AMSSetOperators(HYPRE_Solver, HYPRE_IJMatrix G, HYPRE_IJVector x,
-                              HYPRE_IJVector y, HYPRE_IJVector z);
+ * setup. Returns 1 only when every required native operator object exists. */
+int hypredrv_AMSSetOperators(HYPRE_Solver, HYPRE_IJMatrix G, HYPRE_IJVector x,
+                             HYPRE_IJVector y, HYPRE_IJVector z);
 
 #endif /* AMS_HEADER */

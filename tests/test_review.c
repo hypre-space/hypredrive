@@ -7,7 +7,7 @@
 #include "HYPREDRV.h"
 #include "internal/args.h"
 #include "internal/error.h"
-#include "internal/krylov.h"
+#include "internal/solver.h"
 #include "internal/linsys.h"
 #include "internal/lsseq.h"
 #include "object.h"
@@ -38,8 +38,7 @@ test_aggressive_integer_and_preset_retry(void)
    HYPREDRV_t obj = NULL;
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
    ASSERT_NE(HYPREDRV_InputArgsSetPreconPreset(obj, "does-not-exist"), ERROR_NONE);
-   ASSERT_NULL(obj->iargs->precon_methods);
-   ASSERT_NULL(obj->iargs->precon_variants);
+   ASSERT_NULL(obj->iargs);
    ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(obj, "poisson"), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_Create(MPI_COMM_SELF, &obj), ERROR_NONE);
@@ -208,7 +207,7 @@ test_preconditioner_matrix_file_formats_and_read_default(void)
    snprintf(args.precmat_filename, sizeof(args.precmat_filename),
             "%s/data/poromech2k/np1/ls_00000/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
    HYPRE_IJMatrix main = create_test_ijmatrix_1x1(1.0), M = NULL;
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, main, &M, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, main, &M, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(M);
    ASSERT_TRUE(hypredrv_LinearSystemMatrixGetNumRows(M) > 1);
@@ -218,7 +217,7 @@ test_preconditioner_matrix_file_formats_and_read_default(void)
    args.type = 2;
    snprintf(args.precmat_filename, sizeof(args.precmat_filename),
             "%s/data/ps3d10pt7/np1/IJ.out.A", HYPREDRIVE_SOURCE_DIR);
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, main, &M, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, main, &M, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(M);
    ASSERT_TRUE(hypredrv_LinearSystemMatrixGetNumRows(M) > 1);
@@ -237,7 +236,7 @@ test_preconditioner_matrix_file_formats_and_read_default(void)
    fclose(fp);
    args.type = 3;
    snprintf(args.precmat_filename, sizeof(args.precmat_filename), "%s", filename);
-   hypredrv_LinearSystemSetPrecMatrix(MPI_COMM_SELF, &args, main, &M, NULL);
+   read_test_configured_matrix(MPI_COMM_SELF, &args, main, &M, NULL);
    ASSERT_FALSE(hypredrv_ErrorCodeActive());
    ASSERT_NOT_NULL(M);
    ASSERT_EQ_DOUBLE(get_test_ijmatrix_1x1(M), 3.0, 1e-15);
