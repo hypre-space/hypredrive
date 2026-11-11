@@ -251,7 +251,7 @@ static const PreconOps precon_ops[] = {
                          .args_offset = offsetof(precon_args, amg),
                          .setup       = HYPRE_BoomerAMGSetup,
                          .solve       = HYPRE_BoomerAMGSolve,
-                         .destroy     = HYPRE_BoomerAMGDestroy},
+                         .destroy     = hypredrv_AMGDestroy},
    [PRECON_MGR] =
       {
          .name        = "mgr",

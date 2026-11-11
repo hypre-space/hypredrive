@@ -4187,6 +4187,28 @@ test_PreconSetup_null_A(void)
 }
 
 static void
+test_PreconDestroy_amg_smoother_without_setup(void)
+{
+   TEST_HYPRE_INIT();
+   const int smoother_types[] = {4, 5};
+   for (size_t i = 0; i < sizeof(smoother_types) / sizeof(smoother_types[0]); i++)
+   {
+      precon_args args;
+      hypredrv_PreconSetDefaultArgs(&args);
+      hypredrv_AMGSetDefaultArgs(&args.amg);
+      args.amg.smoother.type       = smoother_types[i];
+      args.amg.smoother.num_levels = 1;
+      HYPRE_Precon precon          = NULL;
+      hypredrv_PreconCreate(MPI_COMM_WORLD, PRECON_BOOMERAMG, &args, NULL, NULL, &precon,
+                            NULL, 0, NULL);
+      ASSERT_NOT_NULL(precon);
+      hypredrv_PreconDestroy(&precon, NULL, 0);
+      ASSERT_NULL(precon);
+   }
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_Precon_lifecycle_boomeramg_1x1(void)
 {
    TEST_HYPRE_INIT();
@@ -8457,6 +8479,7 @@ main(int argc, char **argv)
    RUN_TEST(test_PreconCreate_precon_none);
    RUN_TEST(test_PreconSetup_null_precon);
    RUN_TEST(test_PreconSetup_null_A);
+   RUN_TEST(test_PreconDestroy_amg_smoother_without_setup);
    RUN_TEST(test_Precon_lifecycle_boomeramg_1x1);
    RUN_TEST(test_Precon_lifecycle_stationary_2x2);
 #if HYPRE_CHECK_MIN_VERSION(21900, 0)

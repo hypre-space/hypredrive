@@ -189,6 +189,8 @@ CompressBound(comp_alg_t algo, size_t isize, size_t *bound)
 {
    (void)isize;
    (void)bound;
+#if defined(HYPREDRV_USING_ZLIB) || defined(HYPREDRV_USING_LZ4) || \
+   defined(HYPREDRV_USING_BLOSC) || defined(HYPREDRV_USING_ZSTD)
    switch (algo)
    {
 #ifdef HYPREDRV_USING_ZLIB
@@ -227,6 +229,10 @@ CompressBound(comp_alg_t algo, size_t isize, size_t *bound)
       default:
          return 1; /* Availability was checked by the caller. */
    }
+#else
+   (void)algo;
+   return 1;
+#endif
 }
 
 /* Each backend compresses `isize` bytes into `dest` (capacity `bound`). On
@@ -315,6 +321,8 @@ CompressPayload(comp_alg_t algo, const void *input, size_t isize, unsigned char 
    (void)bound;
    (void)compression_level;
    (void)comp_size;
+#if defined(HYPREDRV_USING_ZLIB) || defined(HYPREDRV_USING_LZ4) || \
+   defined(HYPREDRV_USING_BLOSC) || defined(HYPREDRV_USING_ZSTD)
    switch (algo)
    {
 #ifdef HYPREDRV_USING_ZLIB
@@ -337,6 +345,10 @@ CompressPayload(comp_alg_t algo, const void *input, size_t isize, unsigned char 
       default:
          return 0;
    }
+#else
+   (void)algo;
+   return 0;
+#endif
 }
 
 void
@@ -506,6 +518,8 @@ DecompressCheckLimits(comp_alg_t algo, const unsigned char *payload, size_t payl
    (void)payload;
    (void)payload_size;
    (void)original_size;
+#if defined(HYPREDRV_USING_ZLIB) || defined(HYPREDRV_USING_LZ4) || \
+   defined(HYPREDRV_USING_BLOSC)
    switch (algo)
    {
 #ifdef HYPREDRV_USING_ZLIB
@@ -545,6 +559,10 @@ DecompressCheckLimits(comp_alg_t algo, const unsigned char *payload, size_t payl
       default:
          return 1;
    }
+#else
+   (void)algo;
+   return 1;
+#endif
 }
 
 /* Each backend decodes `payload` into `output` (capacity `original_size`). On
@@ -627,6 +645,8 @@ DecompressPayload(comp_alg_t algo, const unsigned char *payload, size_t payload_
    (void)output;
    (void)original_size;
    (void)decoded_size;
+#if defined(HYPREDRV_USING_ZLIB) || defined(HYPREDRV_USING_LZ4) || \
+   defined(HYPREDRV_USING_BLOSC) || defined(HYPREDRV_USING_ZSTD)
    switch (algo)
    {
 #ifdef HYPREDRV_USING_ZLIB
@@ -651,6 +671,10 @@ DecompressPayload(comp_alg_t algo, const unsigned char *payload, size_t payload_
       default:
          return 0;
    }
+#else
+   (void)algo;
+   return 0;
+#endif
 }
 
 /* Replaces the fully decoded buffer with a copy of the requested slice; frees

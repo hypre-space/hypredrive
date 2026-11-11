@@ -369,7 +369,7 @@ hypredrv_MGRFRelaxEquilWrapperDestroy(HYPRE_Solver wrapper_v)
 {
    MGRFRelaxEquilWrapper *wrapper = (MGRFRelaxEquilWrapper *)wrapper_v;
    if (!wrapper) return 0;
-   HYPRE_BoomerAMGDestroy(wrapper->inner);
+   hypredrv_AMGDestroy(wrapper->inner);
    MGRFRelaxEquilWorkDestroy(wrapper->work);
    free(wrapper);
    return 0;
@@ -382,7 +382,7 @@ hypredrv_MGRFRelaxEquilWrapperCreate(MPI_Comm comm, HYPRE_Solver inner)
    if (comm == MPI_COMM_NULL || !child || !hypre_SolverSetup(child) ||
        !hypre_SolverSolve(child))
    {
-      if (inner) HYPRE_BoomerAMGDestroy(inner);
+      if (inner) hypredrv_AMGDestroy(inner);
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd(
          "Symmetric F-block scaling requires a communicator and initialized AMG child");
@@ -391,7 +391,7 @@ hypredrv_MGRFRelaxEquilWrapperCreate(MPI_Comm comm, HYPRE_Solver inner)
    MGRFRelaxEquilWrapper *wrapper = calloc(1, sizeof(*wrapper));
    if (!wrapper)
    {
-      HYPRE_BoomerAMGDestroy(inner);
+      hypredrv_AMGDestroy(inner);
       hypredrv_AllocationFailure("Failed to allocate symmetric F-block scaling wrapper");
       return NULL;
    }
@@ -812,7 +812,7 @@ MGRGRelaxRuntimeDestroy(HYPRE_Solver solver)
 }
 
 static const MGRGRelaxOps g_mgr_grelax_methods[] = {
-   {20, HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGDestroy},
+   {20, HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, hypredrv_AMGDestroy},
    {16, HYPRE_ILUSetup, HYPRE_ILUSolve, HYPRE_ILUDestroy},
 #ifdef HYPRE_USING_DSUPERLU
    {29, HYPRE_MGRDirectSolverSetup, HYPRE_MGRDirectSolverSolve,
@@ -1348,7 +1348,7 @@ MGRFRelaxSelectMethod(const MGRfrlx_args *f_relaxation, int active_lvl,
             hypredrv_ErrorMsgAdd("Managed AMG F-solvers above level 0 require hypre "
                                  ">= 2.31.0 (develop >= 9)");
 #endif
-         *destroy = HYPRE_BoomerAMGDestroy;
+         *destroy = hypredrv_AMGDestroy;
 #if HYPRE_CHECK_MIN_VERSION(30100, 0)
          if (f_relaxation->symmetric_diagonal_scaling)
             *destroy = hypredrv_MGRFRelaxEquilWrapperDestroy;
@@ -1554,7 +1554,7 @@ MGRFRelaxCreateAMG(MGR_args *args, MGRfrlx_args *f_relaxation,
 #if HYPRE_CHECK_MIN_VERSION(30100, 0)
       solver = hypredrv_MGRFRelaxEquilWrapperCreate(args->comm, solver);
 #else
-      HYPRE_BoomerAMGDestroy(solver);
+      hypredrv_AMGDestroy(solver);
       solver = NULL;
       hypredrv_ErrorCodeSet(ERROR_INVALID_PRECON);
       hypredrv_ErrorMsgAdd("MGR symmetric_diagonal_scaling requires hypre >= 3.1.0");

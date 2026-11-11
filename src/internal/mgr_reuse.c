@@ -672,7 +672,7 @@ static const MGRCoarseSolverOps *
 MGRCoarseSolverOperations(HYPRE_Int type)
 {
    static const MGRCoarseSolverOps methods[] = {
-      {0, HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, HYPRE_BoomerAMGDestroy},
+      {0, HYPRE_BoomerAMGSetup, HYPRE_BoomerAMGSolve, hypredrv_AMGDestroy},
       {32, HYPRE_ILUSetup, HYPRE_ILUSolve, HYPRE_ILUDestroy},
 #if defined(HYPRE_USING_DSUPERLU)
       {29, HYPRE_MGRDirectSolverSetup, HYPRE_MGRDirectSolverSolve,
