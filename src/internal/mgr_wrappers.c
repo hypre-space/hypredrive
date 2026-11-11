@@ -1214,11 +1214,14 @@ hypredrv_MGRFRelaxDestroy(HYPRE_Solver *slot, int parent_destroyed)
    {
       MGRFRelaxBinding *binding = *cursor;
       *cursor                   = binding->next;
-      int release_child         = !parent_destroyed;
+      int release_child;
 #if HYPRE_CHECK_MIN_VERSION(30100, 28)
+      (void)parent_destroyed;
       release_child = 1;
 #elif !HYPRE_CHECK_MIN_VERSION(30100, 5)
-      release_child |= binding->active_level == 0;
+      release_child = !parent_destroyed || binding->active_level == 0;
+#else
+      release_child = !parent_destroyed;
 #endif
       MGRFRelaxBindingDestroy(binding, release_child);
    }
@@ -1385,8 +1388,10 @@ MGRFRelaxSelectMethod(const MGRfrlx_args *f_relaxation, int active_lvl,
             *destroy  = MGRSchwarzWrapperDestroy;
          }
          else
+         {
             hypredrv_ErrorMsgAdd(
                "MGR F-relaxation 'schwarz' is only supported at MGR level 0");
+         }
 #else
          hypredrv_ErrorMsgAdd(
             "MGR F-relaxation 'schwarz' requires hypre >= 3.1.0 (develop >= 55)");
