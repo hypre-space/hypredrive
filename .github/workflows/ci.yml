@@ -27,6 +27,10 @@ permissions:
   contents: read
   actions: write
 
+env:
+  PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
+  OMPI_MCA_memory: "^patcher"
+
 jobs:
   source-list-sync:
     if: >-
@@ -794,7 +798,7 @@ jobs:
           cmake --build "$BUILD_DIR" --target data --parallel
 
       - name: Run tests
-        timeout-minutes: 5
+        timeout-minutes: ${{ matrix.os == 'macos-latest' && 10 || 5 }}
         env:
           OMPI_ALLOW_RUN_AS_ROOT: 1
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1

@@ -1709,9 +1709,9 @@ hypredrv_MGRFRelaxAttach(MGR_args *args, HYPRE_Solver parent, int active_lvl, in
    if (f_relaxation)
       supported = MGRFRelaxSelectMethod(f_relaxation, active_lvl, &destroy);
    MGRFRelaxValidate(args, f_relaxation, supported, active_lvl, refresh, previous);
-   int kind   = supported ? (2 * (int)f_relaxation->type) +
-                             !!f_relaxation->symmetric_diagonal_scaling
-                          : 0;
+   int kind   = supported && f_relaxation ? (2 * (int)f_relaxation->type) +
+                                             !!f_relaxation->symmetric_diagonal_scaling
+                                          : 0;
    int level  = f_relaxation ? active_lvl : 0;
    int create = 0;
    if (!MGRFRelaxAgreeAdmission(args->comm, refresh || !cached || cached->kind != kind,

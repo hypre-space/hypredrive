@@ -2468,7 +2468,12 @@ YAMLtreeApplyOverride(YAMLtree *tree, int argc, char **argv, int i, bool full_ar
    /* Apply override */
    {
       char *path = strdup(k);
-      char *p    = path;
+      if (!path)
+      {
+         hypredrv_AllocationFailure("Failed to copy YAML override path");
+         return 0;
+      }
+      char *p = path;
 
       if (!strncmp(p, "--", 2))
       {

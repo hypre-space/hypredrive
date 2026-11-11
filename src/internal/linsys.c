@@ -1420,7 +1420,12 @@ hypredrv_LinearSystemSetArgsFromYAML(LS_args *args, YAMLnode *parent)
          {
             /* Flow mapping: val is already lowercased by the YAML parser,
              * so keys inside the string are also lowercase. */
-            char *buf   = strdup(child->val);
+            char *buf = strdup(child->val);
+            if (!buf)
+            {
+               hypredrv_AllocationFailure("Failed to copy dof_labels flow mapping");
+               break;
+            }
             char *inner = buf;
             /* GCOVR_EXCL_BR_START */
             while (*inner == '{' || *inner == ' ') inner++;

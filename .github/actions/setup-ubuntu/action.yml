@@ -39,6 +39,11 @@ runs:
       id: setup
       shell: bash
       run: |
+        # Open MPI 5 delegates process placement to PRRTE.
+        echo "PRTE_MCA_rmaps_default_mapping_policy=:oversubscribe" >> "$GITHUB_ENV"
+        # Open MPI's UCX memory patcher conflicts with sanitizer interceptors.
+        # https://github.com/open-mpi/ompi/issues/13069
+        echo "OMPI_MCA_memory=^patcher" >> "$GITHUB_ENV"
         if [ "${{ inputs.compiler }}" = "clang" ]; then
           echo "ompi_cc=clang" >> $GITHUB_OUTPUT
           echo "ompi_cxx=clang++" >> $GITHUB_OUTPUT

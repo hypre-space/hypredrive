@@ -51,7 +51,7 @@ test_failed_replacement_preserves_modes(void)
    HYPRE_Complex modes[] = {1.0, 2.0, 2.0, 4.0};
    ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, 2, 1, modes), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemSetNearNullSpace(obj, 2, 1, modes), ERROR_NONE);
-   HYPRE_IJVector exact = obj->vec_ns, near = obj->vec_nn;
+   HYPRE_IJVector exact = obj->vec_ns, near_modes = obj->vec_nn;
    int            generation = obj->iargs->precon.mgr.rbm_input_generation;
 
    ASSERT_TRUE(HYPREDRV_LinearSystemSetNullSpace(obj, 2, 1, NULL) & ERROR_INVALID_VAL);
@@ -62,15 +62,15 @@ test_failed_replacement_preserves_modes(void)
    ASSERT_EQ(obj->num_ns, 1);
    ASSERT_TRUE(HYPREDRV_LinearSystemSetNearNullSpace(obj, 1, 1, modes) &
                ERROR_INVALID_VAL);
-   ASSERT_PTR_EQ(obj->vec_nn, near);
-   ASSERT_PTR_EQ(obj->iargs->precon.mgr.vec_nn, near);
+   ASSERT_PTR_EQ(obj->vec_nn, near_modes);
+   ASSERT_PTR_EQ(obj->iargs->precon.mgr.vec_nn, near_modes);
    ASSERT_EQ(obj->iargs->precon.mgr.rbm_input_generation, generation);
    ASSERT_TRUE(HYPREDRV_LinearSystemSetNearNullSpace(obj, 2, -1, modes) &
                ERROR_INVALID_VAL);
-   ASSERT_PTR_EQ(obj->vec_nn, near);
+   ASSERT_PTR_EQ(obj->vec_nn, near_modes);
    ASSERT_TRUE(HYPREDRV_LinearSystemSetNearNullSpace(obj, 2, 0, NULL) &
                ERROR_INVALID_VAL);
-   ASSERT_PTR_EQ(obj->vec_nn, near);
+   ASSERT_PTR_EQ(obj->vec_nn, near_modes);
    ASSERT_TRUE(HYPREDRV_LinearSystemSetNullSpace(obj, -1, 1, modes) & ERROR_INVALID_VAL);
    ASSERT_PTR_EQ(obj->vec_ns, exact);
    HYPRE_Complex zero[] = {0.0, 0.0};
@@ -83,14 +83,14 @@ test_failed_replacement_preserves_modes(void)
    invalid[0] = INFINITY;
    ASSERT_TRUE(HYPREDRV_LinearSystemSetNearNullSpace(obj, 2, 1, invalid) &
                ERROR_INVALID_VAL);
-   ASSERT_PTR_EQ(obj->vec_nn, near);
+   ASSERT_PTR_EQ(obj->vec_nn, near_modes);
 
    HYPRE_Complex *orthogonal = hypredrv_IJVectorData(exact, HYPRE_MEMORY_HOST);
    ASSERT_EQ_DOUBLE((double)orthogonal[0], 1.0 / sqrt(5.0), 1e-12);
    ASSERT_EQ_DOUBLE((double)orthogonal[1], 2.0 / sqrt(5.0), 1e-12);
    /* Replacement may read from the object's currently installed storage. */
    ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, 2, 1, orthogonal), ERROR_NONE);
-   HYPRE_Complex *existing = hypredrv_IJVectorData(near, HYPRE_MEMORY_HOST);
+   HYPRE_Complex *existing = hypredrv_IJVectorData(near_modes, HYPRE_MEMORY_HOST);
    ASSERT_EQ(HYPREDRV_LinearSystemSetNearNullSpace(obj, 2, 1, existing), ERROR_NONE);
    existing = hypredrv_IJVectorData(obj->vec_nn, HYPRE_MEMORY_HOST);
    ASSERT_EQ_DOUBLE((double)existing[0], 1.0, 0.0);
@@ -213,7 +213,7 @@ test_distributed_validation_and_empty_rank(void)
       const HYPRE_Complex *values  = count ? modes : NULL;
       ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, count, 1, values), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemSetNearNullSpace(obj, count, 1, values), ERROR_NONE);
-      HYPRE_IJVector exact = obj->vec_ns, near = obj->vec_nn;
+      HYPRE_IJVector exact = obj->vec_ns, near_modes = obj->vec_nn;
 
       /* Every rank must reject before entering orthogonalization or native assembly. */
       ASSERT_TRUE(
@@ -224,19 +224,19 @@ test_distributed_validation_and_empty_rank(void)
       ASSERT_TRUE(HYPREDRV_LinearSystemSetNearNullSpace(
                      obj, rank == 1 ? count + 1 : count, 1, values) &
                   ERROR_INVALID_VAL);
-      ASSERT_PTR_EQ(obj->vec_nn, near);
+      ASSERT_PTR_EQ(obj->vec_nn, near_modes);
       ASSERT_TRUE(HYPREDRV_LinearSystemSetNullSpace(obj, count, rank ? 1 : 0, values) &
                   ERROR_INVALID_VAL);
       ASSERT_PTR_EQ(obj->vec_ns, exact);
       ASSERT_TRUE(
          HYPREDRV_LinearSystemSetNearNullSpace(obj, count, rank ? 1 : 2, values) &
          ERROR_INVALID_VAL);
-      ASSERT_PTR_EQ(obj->vec_nn, near);
+      ASSERT_PTR_EQ(obj->vec_nn, near_modes);
       ASSERT_TRUE((rank ? HYPREDRV_LinearSystemSetNullSpace(obj, count, 1, values)
                         : HYPREDRV_LinearSystemSetNearNullSpace(obj, count, 1, values)) &
                   ERROR_INVALID_VAL);
       ASSERT_PTR_EQ(obj->vec_ns, exact);
-      ASSERT_PTR_EQ(obj->vec_nn, near);
+      ASSERT_PTR_EQ(obj->vec_nn, near_modes);
 
       if (rank == 1) modes[0] = NAN;
       ASSERT_TRUE(HYPREDRV_LinearSystemSetNullSpace(obj, count, 1, values) &
@@ -254,8 +254,8 @@ test_distributed_validation_and_empty_rank(void)
          hypre_error_w_msg(HYPRE_ERROR_GENERIC, "injected mode construction failure");
       ASSERT_TRUE(HYPREDRV_LinearSystemSetNearNullSpace(obj, count, 1, values) &
                   ERROR_HYPRE_INTERNAL);
-      ASSERT_PTR_EQ(obj->vec_nn, near);
-      ASSERT_PTR_EQ(obj->iargs->precon.mgr.vec_nn, near);
+      ASSERT_PTR_EQ(obj->vec_nn, near_modes);
+      ASSERT_PTR_EQ(obj->iargs->precon.mgr.vec_nn, near_modes);
       ASSERT_EQ(HYPRE_GetError(), 0);
       ASSERT_EQ(HYPREDRV_LinearSystemSetNullSpace(obj, count, 1, values), ERROR_NONE);
       hypredrv_ErrorStateReset();

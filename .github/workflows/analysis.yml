@@ -110,7 +110,18 @@ jobs:
         uses: ./.github/actions/setup-ubuntu
         with:
           compiler: 'clang'
-          extra_packages: 'clang-tidy'
+
+      - name: Install clang-tidy 23
+        # LLVM 23 fixes false positives for C boolean ternary conditions.
+        # https://github.com/llvm/llvm-project/issues/195604
+        run: |
+          . /etc/os-release
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | \
+            sudo gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] https://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-23 main" | \
+            sudo tee /etc/apt/sources.list.d/llvm-23.list
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy-23
 
       - name: Build HYPRE
         id: build-hypre
@@ -128,6 +139,7 @@ jobs:
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_COMPILE_WARNING_AS_ERROR=ON \
+            -DCLANG_TIDY_EXECUTABLE=/usr/bin/clang-tidy-23 \
             -DCMAKE_C_FLAGS="-Wconversion -Wextra -Wshadow" \
             -DHYPREDRV_ENABLE_ANALYSIS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
