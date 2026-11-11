@@ -1052,8 +1052,8 @@ hypredrv_InputArgsSetPreconVariant(hypredrv_t *hypredrv, int variant_idx)
    {
       current_variant = iargs->active_precon_variant;
       variant_changed = variant_idx != current_variant;
-      method =
-         variant_changed ? iargs->precon_methods[variant_idx] : iargs->precon_method;
+      method          = (int)(variant_changed ? iargs->precon_methods[variant_idx]
+                                              : iargs->precon_method);
 
 #ifdef HYPRE_USING_GPU
       if (variant_changed && !hypredrv_ErrorCodeActive())
@@ -1233,7 +1233,7 @@ hypredrv_InputArgsSetPreset(hypredrv_t *hypredrv, hypredrv_PresetKind kind,
    input_args       *iargs = hypredrv->iargs, *created = NULL;
    PreconReuseState *reuse_state = NULL;
    PresetReplacement repl        = {0};
-   repl.method = kind == HYPREDRV_PRESET_PRECON ? PRECON_NONE : SOLVER_PCG;
+   repl.method = kind == HYPREDRV_PRESET_PRECON ? (int)PRECON_NONE : (int)SOLVER_PCG;
    if (!preset)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);

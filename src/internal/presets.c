@@ -256,8 +256,9 @@ hypredrv_PresetLoadTypeNode(const char *preset_name, hypredrv_PresetKind kind,
    }
    normalize_preset_name(norm);
    const Preset *preset =
-      PresetFindIn(g_presets, sizeof(g_presets) / sizeof(g_presets[0]), norm, kind);
-   if (!preset) preset = PresetFindIn(g_user_presets, g_num_user_presets, norm, kind);
+      PresetFindIn(g_presets, sizeof(g_presets) / sizeof(g_presets[0]), norm, (int)kind);
+   if (!preset)
+      preset = PresetFindIn(g_user_presets, g_num_user_presets, norm, (int)kind);
    free(norm);
    if (!preset)
    {

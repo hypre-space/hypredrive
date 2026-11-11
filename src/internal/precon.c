@@ -76,7 +76,7 @@ uint32_t
 hypredrv_PreconSetDiscreteOperator(hypredrv_t *hypredrv, hypredrv_DiscreteOperator kind,
                                    HYPRE_IJMatrix matrix)
 {
-   uint32_t status = PreconOperatorBegin(hypredrv, kind, -1);
+   uint32_t status = PreconOperatorBegin(hypredrv, (int)kind, -1);
    if (!status && matrix) status = hypredrv_IJMatrixValidate(matrix, "Discrete operator");
    if ((status = PreconOperatorStatusSync(hypredrv->comm, status)) != ERROR_NONE)
       return status;
