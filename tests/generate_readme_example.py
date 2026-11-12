@@ -19,9 +19,9 @@ snippet = snippet.replace(
 )
 snippet = snippet.replace(
     "HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hdrv));",
-    "HYPRE_Vector x = NULL;\n"
-    "HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolution(hdrv, &x));\n"
-    "ASSERT_EQ_DOUBLE(get_test_ijvector_1x1((HYPRE_IJVector)x), 2.0, 1e-12);\n"
+    "HYPRE_Vector test_solution_handle = NULL;\n"
+    "HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolution(hdrv, &test_solution_handle));\n"
+    "ASSERT_EQ_DOUBLE(get_test_ijvector_1x1((HYPRE_IJVector)test_solution_handle), 2.0, 1e-12);\n"
     "HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hdrv));",
 )
 snippet = snippet.replace(
