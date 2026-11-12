@@ -1,0 +1,48 @@
+name: Prepare Release
+
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+  actions: write
+
+# Binding and staging must finish together, even if another commit arrives.
+concurrency:
+  group: prepare-release-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: >-
+      ${{
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        (
+          (github.event.action == 'labeled' && github.event.label.name == 'Prepare Release') ||
+          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Prepare Release'))
+        )
+      }}
+    name: Stage release and validate final candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Prepare draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
+          RELEASE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python scripts/prepare_release.py
+          --repo "$RELEASE_REPOSITORY"
+          --branch "$RELEASE_BRANCH"
+          --sha "$RELEASE_SHA"

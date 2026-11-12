@@ -185,8 +185,8 @@ else
     echo "Files updated. Next steps:"
     echo "  1. Review CHANGELOG and the updated core and binding version files"
     echo "  2. Commit and push the release candidate branch"
-    echo "  3. Run Julia Artifacts with release_tag=v${NEW_VERSION} and update_artifacts_toml=true"
-    echo "  4. Review the binding commit and staged draft assets; finish candidate validation"
+    echo "  3. Add Prepare Release to bind/stage packages and validate the final commit"
+    echo "  4. Review CHANGELOG, the binding commit, and the staged draft assets"
     echo "  5. Tag that candidate, wait for tag workflows, then publish the draft release"
   fi
 fi
