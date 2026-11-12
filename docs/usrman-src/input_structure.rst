@@ -142,6 +142,8 @@ caller may instead attach the matrix and vectors programmatically.
   matrix source. This parameter has no default. Library callers can omit all file
   sources and use ``HYPREDRV_LinearSystemSetMatrix`` or
   ``HYPREDRV_LinearSystemSetMatrixFromCSR``.
+  For MPI runs, a Matrix Market file is read on rank zero and split into contiguous
+  row blocks. The matrix must be square and have at least one row per rank.
 
 - ``precmat_filename`` - Filename of the matrix that hypredrive uses to compute the
   preconditioner. ``precmat_basename`` and ``precmat_sequence_filename`` are alternative

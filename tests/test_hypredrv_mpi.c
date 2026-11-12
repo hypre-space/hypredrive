@@ -11,6 +11,7 @@
 #include "_hypre_parcsr_mv.h"
 #include "_hypre_utilities.h"
 #include "internal/error.h"
+#include "internal/linsys.h"
 #include "internal/mgr_internal.h"
 #include "internal/solver.h"
 #include "logging.h"
@@ -104,6 +105,113 @@ assert_local_system_restored(HYPREDRV_t obj)
    ASSERT_EQ_DOUBLE((double)matrix_value, 2.0, 1.0e-12);
    ASSERT_EQ_DOUBLE((double)rhs_value, 1.0, 1.0e-12);
 }
+
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+static void
+test_mtx_matrix_is_partitioned_across_ranks(void)
+{
+   int rank = 0, nprocs = 1;
+   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+   if (nprocs != 2)
+   {
+      return;
+   }
+
+   char filename[256] = {0};
+   if (rank == 0)
+   {
+      snprintf(filename, sizeof(filename), "/tmp/hypredrive_mpi_mtx_%d.mtx",
+               (int)getpid());
+   }
+   MPI_Bcast(filename, (int)sizeof(filename), MPI_CHAR, 0, MPI_COMM_WORLD);
+
+   int write_ok = 1;
+   if (rank == 0)
+   {
+      FILE *fp = fopen(filename, "w");
+      if (!fp)
+      {
+         write_ok = 0;
+      }
+      else
+      {
+         fputs("%%MatrixMarket matrix coordinate real symmetric\n"
+               "4 4 6\n"
+               "1 1 4.0\n"
+               "2 2 5.0\n"
+               "3 3 6.0\n"
+               "4 4 7.0\n"
+               "1 2 -1.0\n"
+               "3 4 -2.0\n",
+               fp);
+         write_ok = (fclose(fp) == 0);
+      }
+   }
+   MPI_Bcast(&write_ok, 1, MPI_INT, 0, MPI_COMM_WORLD);
+   ASSERT_EQ(write_ok, 1);
+   MPI_Barrier(MPI_COMM_WORLD);
+
+   char yaml[1024];
+   snprintf(yaml, sizeof(yaml),
+            "general:\n"
+            "  statistics: 0\n"
+            "  exec_policy: host\n"
+            "linear_system:\n"
+            "  type: mtx\n"
+            "  matrix_filename: %s\n"
+            "  rhs_mode: randsol\n"
+            "  init_guess_mode: zeros\n"
+            "solver:\n"
+            "  pcg:\n"
+            "    max_iter: 20\n"
+            "    relative_tol: 1.0e-10\n"
+            "preconditioner:\n"
+            "  fsai:\n"
+            "    max_steps: 20\n",
+            filename);
+   char      *yaml_argv[] = {yaml};
+   HYPREDRV_t obj         = NULL;
+   ASSERT_EQ(HYPREDRV_Create(MPI_COMM_WORLD, &obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsParse(1, yaml_argv, obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSystemBuild(obj), ERROR_NONE);
+
+   struct hypredrv_struct *state = (struct hypredrv_struct *)obj;
+   ASSERT_EQ(hypredrv_LinearSystemMatrixGetNumRows(state->mat_A.handle), 4);
+   ASSERT_EQ(hypredrv_LinearSystemMatrixGetNumNonzeros(state->mat_A.handle), 8);
+
+   HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+   ASSERT_EQ(HYPRE_IJMatrixGetLocalRange(state->mat_A.handle, &ilower, &iupper, &jlower,
+                                         &jupper),
+             0);
+   ASSERT_EQ(ilower, (HYPRE_BigInt)(rank * 2));
+   ASSERT_EQ(iupper, (HYPRE_BigInt)(rank * 2 + 1));
+
+   for (HYPRE_BigInt row = ilower; row <= iupper; row++)
+   {
+      HYPRE_Int     ncols     = 2;
+      HYPRE_BigInt  cols[2]   = {row, row ^ 1};
+      HYPRE_Complex values[2] = {0.0, 0.0};
+      ASSERT_EQ(
+         HYPRE_IJMatrixGetValues(state->mat_A.handle, 1, &ncols, &row, cols, values), 0);
+      ASSERT_EQ_DOUBLE((double)values[0], 4.0 + (double)row, 0.0);
+      ASSERT_EQ_DOUBLE((double)values[1], row < 2 ? -1.0 : -2.0, 0.0);
+   }
+
+   ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   MPI_Barrier(MPI_COMM_WORLD);
+   if (rank == 0)
+   {
+      unlink(filename);
+   }
+   MPI_Barrier(MPI_COMM_WORLD);
+}
+#endif
 
 static void
 test_configured_construction_errors_are_collective(void)
@@ -1990,6 +2098,9 @@ main(int argc, char **argv)
    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
    if (nprocs >= 2)
    {
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+      RUN_TEST(test_mtx_matrix_is_partitioned_across_ranks);
+#endif
       RUN_TEST(test_configured_construction_errors_are_collective);
       RUN_TEST(test_tagged_reduction_with_empty_rank);
    RUN_TEST(test_independent_self_solve_and_recycled_log_comm);

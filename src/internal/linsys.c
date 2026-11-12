@@ -22,6 +22,7 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "internal/containers.h"
 #include "internal/error.h"
@@ -1272,6 +1273,469 @@ MatrixInputReadable(MPI_Comm comm, int format, int nparts, int nprocs,
    return readable;
 }
 
+#if HYPRE_CHECK_MIN_VERSION(22600, 0)
+/* HYPRE_IJMatrixReadMM reads the full file on every process. Use it on rank
+ * zero with MPI_COMM_SELF, then distribute its assembled rows as CSR. */
+static uint32_t
+LinearSystemMatrixMarketReadSerialCSR(const char *filename, HYPRE_BigInt *num_rows_out,
+                                      HYPRE_BigInt   *num_cols_out,
+                                      HYPRE_BigInt   *num_nonzeros_out,
+                                      HYPRE_BigInt  **indptr_out,
+                                      HYPRE_BigInt  **col_indices_out,
+                                      HYPRE_Complex **values_out)
+{
+   HYPRE_IJMatrix     ij_A   = NULL;
+   HYPRE_ParCSRMatrix par_A  = NULL;
+   void              *object = NULL;
+   HYPRE_BigInt      *indptr = NULL, *col_indices = NULL;
+   HYPRE_Complex     *values   = NULL;
+   HYPRE_BigInt       num_rows = 0, num_cols = 0, num_nonzeros = 0, cursor = 0;
+   uint32_t           code = ERROR_NONE;
+
+   *indptr_out      = NULL;
+   *col_indices_out = NULL;
+   *values_out      = NULL;
+
+   HYPRE_Int ierr = HYPRE_IJMatrixReadMM(filename, MPI_COMM_SELF, HYPRE_PARCSR, &ij_A);
+   if (ierr || HYPRE_GetError())
+   {
+      hypredrv_ErrorCodeSet(ERROR_FILE_NOT_FOUND);
+      hypredrv_ErrorMsgAddInvalidFilename(filename);
+      code = ERROR_FILE_NOT_FOUND;
+      goto fail;
+   }
+   if (!ij_A || HYPRE_IJMatrixGetObject(ij_A, &object) || !object)
+   {
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("Could not access the serial Matrix Market matrix");
+      code = ERROR_HYPRE_INTERNAL;
+      goto fail;
+   }
+
+   par_A = (HYPRE_ParCSRMatrix)object;
+   if (HYPRE_ParCSRMatrixGetDims(par_A, &num_rows, &num_cols) || num_rows <= 0 ||
+       num_rows != num_cols)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("MPI Matrix Market input must be a nonempty square matrix");
+      code = ERROR_INVALID_VAL;
+      goto fail;
+   }
+
+   long long num_nonzeros_ll = hypredrv_LinearSystemMatrixGetNumNonzeros(ij_A);
+   num_nonzeros              = (HYPRE_BigInt)num_nonzeros_ll;
+   if (num_nonzeros_ll < 0 || (long long)num_nonzeros != num_nonzeros_ll ||
+       (uint64_t)num_rows >= (uint64_t)(SIZE_MAX / sizeof(HYPRE_BigInt)) ||
+       (uint64_t)num_nonzeros > (uint64_t)(SIZE_MAX / sizeof(HYPRE_BigInt)) ||
+       (uint64_t)num_nonzeros > (uint64_t)(SIZE_MAX / sizeof(HYPRE_Complex)))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Matrix Market dimensions exceed addressable host memory");
+      code = ERROR_INVALID_VAL;
+      goto fail;
+   }
+
+   indptr      = hypre_TAlloc(HYPRE_BigInt, (size_t)num_rows + 1u, HYPRE_MEMORY_HOST);
+   col_indices = hypre_TAlloc(HYPRE_BigInt, num_nonzeros > 0 ? (size_t)num_nonzeros : 1u,
+                              HYPRE_MEMORY_HOST);
+   values      = hypre_TAlloc(HYPRE_Complex, num_nonzeros > 0 ? (size_t)num_nonzeros : 1u,
+                              HYPRE_MEMORY_HOST);
+   if (!indptr || !col_indices || !values)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("Could not allocate the serial Matrix Market CSR");
+      code = ERROR_UNKNOWN;
+      goto fail;
+   }
+
+   indptr[0] = 0;
+   for (HYPRE_BigInt row = 0; row < num_rows; row++)
+   {
+      HYPRE_Int      row_size = 0;
+      HYPRE_BigInt  *row_cols = NULL;
+      HYPRE_Complex *row_vals = NULL;
+
+      ierr = HYPRE_ParCSRMatrixGetRow(par_A, row, &row_size, &row_cols, &row_vals);
+      if (ierr || row_size < 0 || (HYPRE_BigInt)row_size > num_nonzeros - cursor)
+      {
+         if (!ierr)
+         {
+            HYPRE_ParCSRMatrixRestoreRow(par_A, row, &row_size, &row_cols, &row_vals);
+         }
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+         hypredrv_ErrorMsgAdd("Could not extract row %lld from the Matrix Market matrix",
+                              (long long)row);
+         code = ERROR_HYPRE_INTERNAL;
+         goto fail;
+      }
+
+      for (HYPRE_Int j = 0; j < row_size; j++)
+      {
+         col_indices[cursor + j] = row_cols[j];
+         values[cursor + j]      = row_vals[j];
+      }
+      ierr = HYPRE_ParCSRMatrixRestoreRow(par_A, row, &row_size, &row_cols, &row_vals);
+      if (ierr)
+      {
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+         hypredrv_ErrorMsgAdd("Could not restore row %lld from the Matrix Market matrix",
+                              (long long)row);
+         code = ERROR_HYPRE_INTERNAL;
+         goto fail;
+      }
+
+      cursor += (HYPRE_BigInt)row_size;
+      indptr[row + 1] = cursor;
+   }
+   if (cursor != num_nonzeros)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Matrix Market CSR contains %lld entries; expected %lld",
+                           (long long)cursor, (long long)num_nonzeros);
+      code = ERROR_INVALID_VAL;
+      goto fail;
+   }
+
+   ierr = HYPRE_IJMatrixDestroy(ij_A);
+   ij_A = NULL;
+   if (ierr)
+   {
+      hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+      hypredrv_ErrorMsgAdd("Could not destroy the serial Matrix Market matrix");
+      code = ERROR_HYPRE_INTERNAL;
+      goto fail;
+   }
+
+   *num_rows_out     = num_rows;
+   *num_cols_out     = num_cols;
+   *num_nonzeros_out = num_nonzeros;
+   *indptr_out       = indptr;
+   *col_indices_out  = col_indices;
+   *values_out       = values;
+   return ERROR_NONE;
+
+fail:
+   if (ij_A)
+   {
+      HYPRE_IJMatrixDestroy(ij_A);
+   }
+   hypre_TFree(indptr, HYPRE_MEMORY_HOST);
+   hypre_TFree(col_indices, HYPRE_MEMORY_HOST);
+   hypre_TFree(values, HYPRE_MEMORY_HOST);
+   return code;
+}
+
+static void
+LinearSystemMatrixRowPartition(HYPRE_BigInt num_rows, int num_procs, int rank,
+                               HYPRE_BigInt *row_start, HYPRE_BigInt *local_rows)
+{
+   HYPRE_BigInt quotient  = num_rows / num_procs;
+   HYPRE_BigInt remainder = num_rows % num_procs;
+
+   *local_rows = quotient + (rank < remainder ? 1 : 0);
+   *row_start =
+      (HYPRE_BigInt)rank * quotient + (rank < remainder ? (HYPRE_BigInt)rank : remainder);
+}
+
+typedef struct
+{
+   uint64_t             num_rows;
+   uint64_t             num_nonzeros;
+   const HYPRE_BigInt  *rows;
+   const HYPRE_BigInt  *cols;
+   const HYPRE_Complex *values;
+   const char          *label;
+} LinearSystemMatrixMarketPart;
+
+/* The IJ matrix source builder owns each loaded buffer, so return copies of
+ * the local triplets requested by its metadata/index/value passes. */
+static int
+LinearSystemMatrixMarketPartLoad(void *ctx, uint32_t part_id, int want,
+                                 hypredrv_IJMatrixMemPart *part)
+{
+   LinearSystemMatrixMarketPart *source = (LinearSystemMatrixMarketPart *)ctx;
+   size_t                        nnz    = 0;
+
+   if (!source || !part || part_id != 0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Invalid Matrix Market part request");
+      return 0;
+   }
+   if (source->num_nonzeros > SIZE_MAX / sizeof(HYPRE_BigInt) ||
+       source->num_nonzeros > SIZE_MAX / sizeof(HYPRE_Complex))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Matrix Market part is too large to copy");
+      return 0;
+   }
+
+   nnz              = (size_t)source->num_nonzeros;
+   part->nrows      = source->num_rows;
+   part->nnz        = source->num_nonzeros;
+   part->index_size = sizeof(HYPRE_BigInt);
+   part->value_size = sizeof(HYPRE_Complex);
+   part->label      = source->label;
+
+   if (nnz > 0 && (want & HYPREDRV_PART_INDICES))
+   {
+      part->rows = (HYPRE_BigInt *)malloc(nnz * sizeof(HYPRE_BigInt));
+      part->cols = (HYPRE_BigInt *)malloc(nnz * sizeof(HYPRE_BigInt));
+      if (!part->rows || !part->cols)
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Could not copy Matrix Market row/column indices");
+         goto fail;
+      }
+      memcpy(part->rows, source->rows, nnz * sizeof(HYPRE_BigInt));
+      memcpy(part->cols, source->cols, nnz * sizeof(HYPRE_BigInt));
+   }
+
+   if (nnz > 0 && (want & HYPREDRV_PART_VALUES))
+   {
+      part->vals = malloc(nnz * sizeof(HYPRE_Complex));
+      if (!part->vals)
+      {
+         hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+         hypredrv_ErrorMsgAdd("Could not copy Matrix Market values");
+         goto fail;
+      }
+      memcpy(part->vals, source->values, nnz * sizeof(HYPRE_Complex));
+   }
+
+   return 1;
+
+fail:
+   free(part->rows);
+   free(part->cols);
+   free(part->vals);
+   part->rows = part->cols = part->vals = NULL;
+   return 0;
+}
+
+/* Partition a single Matrix Market file into contiguous rank-local triplet parts.
+ * The IJ matrix source builder assembles those parts into the normal ParCSR layout. */
+static int
+LinearSystemMatrixMarketReadDistributed(MPI_Comm             comm,
+                                        HYPRE_MemoryLocation memory_location,
+                                        const char *filename, HYPRE_IJMatrix *matrix_ptr)
+{
+   int            rank = 0, num_procs = 1;
+   uint32_t       root_code = ERROR_NONE;
+   int            setup_ok = 1, all_ok = 0;
+   HYPRE_BigInt   num_rows = 0, num_cols = 0, num_nonzeros = 0;
+   HYPRE_BigInt  *global_indptr = NULL, *global_cols = NULL;
+   HYPRE_Complex *global_values = NULL;
+   HYPRE_BigInt  *local_indptr = NULL, *local_cols = NULL, *local_row_ids = NULL;
+   HYPRE_Complex *local_values    = NULL;
+   int           *send_row_counts = NULL, *send_row_displs = NULL;
+   int           *send_nnz_counts = NULL, *send_nnz_displs = NULL;
+   int            local_nnz = 0;
+   HYPRE_BigInt   row_start = 0, local_rows = 0;
+
+   MPI_Comm_rank(comm, &rank);
+   MPI_Comm_size(comm, &num_procs);
+
+   if (rank == 0)
+   {
+      root_code = LinearSystemMatrixMarketReadSerialCSR(filename, &num_rows, &num_cols,
+                                                        &num_nonzeros, &global_indptr,
+                                                        &global_cols, &global_values);
+   }
+   MPI_Bcast(&root_code, 1, MPI_UINT32_T, 0, comm);
+   if (root_code != ERROR_NONE)
+   {
+      if (rank != 0)
+      {
+         hypredrv_ErrorCodeSet(root_code);
+         hypredrv_ErrorMsgAdd("Rank zero could not read Matrix Market input '%s'",
+                              filename);
+      }
+      goto fail;
+   }
+
+   HYPRE_BigInt dimensions[3] = {num_rows, num_cols, num_nonzeros};
+   MPI_Bcast(dimensions, 3, HYPRE_MPI_BIG_INT, 0, comm);
+   num_rows     = dimensions[0];
+   num_cols     = dimensions[1];
+   num_nonzeros = dimensions[2];
+
+   if (num_rows < num_procs || num_rows >= INT_MAX || num_cols != num_rows ||
+       num_nonzeros > INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "MPI Matrix Market distribution requires a square matrix with at least "
+         "one row per rank and fewer than INT_MAX rows and entries");
+      goto fail;
+   }
+   LinearSystemMatrixRowPartition(num_rows, num_procs, rank, &row_start, &local_rows);
+   if (local_rows <= 0 || local_rows >= INT_MAX)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "MPI Matrix Market partition has an unsupported local row count");
+      goto fail;
+   }
+
+   if (rank == 0)
+   {
+      send_row_counts = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
+      send_row_displs = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
+      send_nnz_counts = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
+      send_nnz_displs = hypre_TAlloc(int, num_procs, HYPRE_MEMORY_HOST);
+      if (!send_row_counts || !send_row_displs || !send_nnz_counts || !send_nnz_displs)
+      {
+         setup_ok = 0;
+      }
+      for (int part = 0; setup_ok && part < num_procs; part++)
+      {
+         HYPRE_BigInt part_start = 0, part_rows = 0;
+         LinearSystemMatrixRowPartition(num_rows, num_procs, part, &part_start,
+                                        &part_rows);
+         HYPRE_BigInt part_nnz_start = global_indptr[part_start];
+         HYPRE_BigInt part_nnz = global_indptr[part_start + part_rows] - part_nnz_start;
+         if (part_rows + 1 > INT_MAX || part_start > INT_MAX ||
+             part_nnz_start > INT_MAX || part_nnz > INT_MAX)
+         {
+            setup_ok = 0;
+            break;
+         }
+         send_row_counts[part] = (int)(part_rows + 1);
+         send_row_displs[part] = (int)part_start;
+         send_nnz_counts[part] = (int)part_nnz;
+         send_nnz_displs[part] = (int)part_nnz_start;
+      }
+   }
+   MPI_Bcast(&setup_ok, 1, MPI_INT, 0, comm);
+   if (!setup_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd(
+         "Matrix Market row or nonzero partition exceeds MPI Scatterv limits");
+      goto fail;
+   }
+
+   MPI_Scatter(send_nnz_counts, 1, MPI_INT, &local_nnz, 1, MPI_INT, 0, comm);
+   local_indptr  = hypre_TAlloc(HYPRE_BigInt, (size_t)local_rows + 1u, HYPRE_MEMORY_HOST);
+   local_cols    = hypre_TAlloc(HYPRE_BigInt, local_nnz > 0 ? (size_t)local_nnz : 1u,
+                                HYPRE_MEMORY_HOST);
+   local_row_ids = hypre_TAlloc(HYPRE_BigInt, local_nnz > 0 ? (size_t)local_nnz : 1u,
+                                HYPRE_MEMORY_HOST);
+   local_values  = hypre_TAlloc(HYPRE_Complex, local_nnz > 0 ? (size_t)local_nnz : 1u,
+                                HYPRE_MEMORY_HOST);
+   int local_alloc_ok = local_indptr && local_cols && local_row_ids && local_values;
+   MPI_Allreduce(&local_alloc_ok, &all_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!all_ok)
+   {
+      hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
+      hypredrv_ErrorMsgAdd("Could not allocate the local Matrix Market CSR partition");
+      goto fail;
+   }
+
+   MPI_Scatterv(global_indptr, send_row_counts, send_row_displs, HYPRE_MPI_BIG_INT,
+                local_indptr, (int)local_rows + 1, HYPRE_MPI_BIG_INT, 0, comm);
+   HYPRE_BigInt local_nnz_start = local_indptr[0];
+   for (HYPRE_BigInt i = 0; i <= local_rows; i++)
+   {
+      local_indptr[i] -= local_nnz_start;
+   }
+   MPI_Scatterv(global_cols, send_nnz_counts, send_nnz_displs, HYPRE_MPI_BIG_INT,
+                local_cols, local_nnz, HYPRE_MPI_BIG_INT, 0, comm);
+   MPI_Scatterv(global_values, send_nnz_counts, send_nnz_displs, HYPRE_MPI_COMPLEX,
+                local_values, local_nnz, HYPRE_MPI_COMPLEX, 0, comm);
+
+   int local_csr_ok = 1;
+   for (HYPRE_BigInt row = 0; row < local_rows; row++)
+   {
+      HYPRE_BigInt begin = local_indptr[row];
+      HYPRE_BigInt end   = local_indptr[row + 1];
+      if (begin < 0 || end < begin || end > local_nnz)
+      {
+         hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+         hypredrv_ErrorMsgAdd(
+            "Invalid local CSR offsets while partitioning Matrix Market rows");
+         local_csr_ok = 0;
+         break;
+      }
+      for (HYPRE_BigInt k = begin; k < end; k++)
+      {
+         local_row_ids[k] = row_start + row;
+      }
+   }
+   MPI_Allreduce(&local_csr_ok, &all_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!all_ok)
+   {
+      goto fail;
+   }
+
+   LinearSystemMatrixMarketPart local_part = {
+      .num_rows     = (uint64_t)local_rows,
+      .num_nonzeros = (uint64_t)local_nnz,
+      .rows         = local_row_ids,
+      .cols         = local_cols,
+      .values       = local_values,
+      .label        = filename,
+   };
+   hypredrv_IJMatrixPartSource source = {
+      .ctx    = &local_part,
+      .nparts = 1,
+      .load   = LinearSystemMatrixMarketPartLoad,
+   };
+   hypre_TFree(local_indptr, HYPRE_MEMORY_HOST);
+   local_indptr = NULL;
+   hypredrv_IJMatrixBuildFromSource(comm, &source, memory_location, matrix_ptr);
+   int local_build_ok = !hypredrv_ErrorCodeActive() && *matrix_ptr != NULL;
+   MPI_Allreduce(&local_build_ok, &all_ok, 1, MPI_INT, MPI_MIN, comm);
+   if (!all_ok)
+   {
+      if (local_build_ok)
+      {
+         hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
+         hypredrv_ErrorMsgAdd("Another rank failed to build its Matrix Market partition");
+      }
+      if (*matrix_ptr)
+      {
+         HYPRE_IJMatrixDestroy(*matrix_ptr);
+         *matrix_ptr = NULL;
+      }
+      goto fail;
+   }
+
+   hypre_TFree(local_cols, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_row_ids, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_values, HYPRE_MEMORY_HOST);
+   if (rank == 0)
+   {
+      hypre_TFree(global_indptr, HYPRE_MEMORY_HOST);
+      hypre_TFree(global_cols, HYPRE_MEMORY_HOST);
+      hypre_TFree(global_values, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_row_counts, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_row_displs, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_nnz_counts, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_nnz_displs, HYPRE_MEMORY_HOST);
+   }
+   return 1;
+
+fail:
+   hypre_TFree(local_indptr, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_cols, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_row_ids, HYPRE_MEMORY_HOST);
+   hypre_TFree(local_values, HYPRE_MEMORY_HOST);
+   if (rank == 0)
+   {
+      hypre_TFree(global_indptr, HYPRE_MEMORY_HOST);
+      hypre_TFree(global_cols, HYPRE_MEMORY_HOST);
+      hypre_TFree(global_values, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_row_counts, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_row_displs, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_nnz_counts, HYPRE_MEMORY_HOST);
+      hypre_TFree(send_nnz_displs, HYPRE_MEMORY_HOST);
+   }
+   return 0;
+}
+#endif
+
 static int
 LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
                                  const char *matrix_filename, HYPRE_IJMatrix *matrix_ptr)
@@ -1306,7 +1770,22 @@ LinearSystemIJMatrixReadFromFile(MPI_Comm comm, const LS_args *args,
                                            matrix_ptr);
 #if HYPRE_CHECK_MIN_VERSION(22600, 0)
    else if (format == MATRIX_INPUT_MARKET)
-      HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+   {
+      if (nprocs > 1)
+      {
+         (void)LinearSystemMatrixMarketReadDistributed(
+            comm, LinearSystemMemoryLocationGet(args), matrix_filename, matrix_ptr);
+      }
+      else
+      {
+         HYPRE_IJMatrixReadMM(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+      }
+   }
+#else
+   else if (format == MATRIX_INPUT_MARKET)
+   {
+      HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
+   }
 #endif
    else HYPRE_IJMatrixRead(matrix_filename, comm, HYPRE_PARCSR, matrix_ptr);
    if (HYPRE_GetError() || !*matrix_ptr)
@@ -3042,10 +3521,10 @@ BlockFrobeniusPrepare(MPI_Comm comm, HYPRE_IJMatrix matrix, const IntArray *dofm
    HYPRE_Int num_cols_diag = hypre_CSRMatrixNumCols(diag);
    HYPRE_Int num_cols_offd = hypre_CSRMatrixNumCols(offd);
    local_valid             = dofmap->size == (size_t)num_rows &&
-                 dofmap->size == (size_t)num_cols_diag &&
-                 (num_rows == 0 || dofmap->data != NULL) &&
-                 dofmap->g_unique_data != NULL && dofmap->g_unique_size > 0 &&
-                 dofmap->g_unique_size <= HYPREDRV_BLOCK_NORM_MAX_LABELS;
+                             dofmap->size == (size_t)num_cols_diag &&
+                             (num_rows == 0 || dofmap->data != NULL) &&
+                             dofmap->g_unique_data != NULL && dofmap->g_unique_size > 0 &&
+                             dofmap->g_unique_size <= HYPREDRV_BLOCK_NORM_MAX_LABELS;
    if (!BlockDiagnosticsAgree(
           comm, local_valid, log_object_name, ls_id,
           "block Frobenius diagnostics skipped: incompatible matrix/dofmap layout"))
@@ -3287,7 +3766,7 @@ hypredrv_LinearSystemLogBlockFrobenius(MPI_Comm comm, HYPRE_IJMatrix matrix,
    local_counts  = hypre_CTAlloc(long long, (4 * num_block_pairs) + 1, HYPRE_MEMORY_HOST);
    global_counts = hypre_CTAlloc(long long, (4 * num_block_pairs) + 1, HYPRE_MEMORY_HOST);
    local_valid   = block_labels && label_to_pos && local_stats && global_stats &&
-                 local_counts && global_counts;
+                   local_counts && global_counts;
    if (!BlockDiagnosticsAgree(comm, local_valid, log_object_name, ls_id,
                               "block Frobenius diagnostics skipped: allocation failed"))
    {
