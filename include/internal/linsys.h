@@ -258,11 +258,11 @@ uint32_t hypredrv_IJMatrixValidate(HYPRE_IJMatrix, const char *);
  * the vector in its current space. Empty ranks may return NULL without an error. */
 HYPRE_Complex *hypredrv_IJVectorData(HYPRE_IJVector, HYPRE_MemoryLocation);
 /* Native access and explicit host copies preserve the solution's storage. */
-uint32_t  hypredrv_LinearSystemGetSolutionValues(hypredrv_t *, HYPRE_Complex **,
-                                                 HYPRE_MemoryLocation *);
-uint32_t  hypredrv_LinearSystemCopySolutionValues(hypredrv_t *, HYPRE_BigInt,
-                                                  HYPRE_Complex *);
-void hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector, const char *, double *);
+uint32_t hypredrv_LinearSystemGetSolutionValues(hypredrv_t *, HYPRE_Complex **,
+                                                HYPRE_MemoryLocation *);
+uint32_t hypredrv_LinearSystemCopySolutionValues(hypredrv_t *, HYPRE_BigInt,
+                                                 HYPRE_Complex *);
+void     hypredrv_LinearSystemComputeVectorNorm(HYPRE_IJVector, const char *, double *);
 void hypredrv_LinearSystemComputeErrorNorm(HYPRE_IJVector, HYPRE_IJVector, const char *,
                                            double *);
 void hypredrv_LinearSystemComputeResidualNorm(HYPRE_IJMatrix, HYPRE_IJVector,

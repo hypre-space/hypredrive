@@ -78,11 +78,18 @@ The top-level CMake build can also build the Python extension directly:
 .. code-block:: bash
 
    cmake -S . -B build -DHYPREDRV_ENABLE_PYTHON=ON
-   cmake --build build --target _core --parallel
+   cmake --build build --target _core hypredrive_python_sources --parallel
 
 Use this mode for developer and CI builds. It requires Python, NumPy, and Cython
 during configuration and build. Thus, CMake disables ``HYPREDRV_ENABLE_PYTHON``
 by default.
+
+Save the minimal example below as ``minimal.py`` and run it against the in-tree
+build from the repository root:
+
+.. code-block:: bash
+
+   PYTHONPATH="$PWD/build/interfaces/python/python" python minimal.py
 
 Wheel artifacts
 ~~~~~~~~~~~~~~~
@@ -109,7 +116,7 @@ label when only Python wheels are needed. It can also be started manually with
    source .venv/bin/activate
 
    unzip hypredrive-wheels-*.zip -d wheelhouse
-   python -m pip install wheelhouse/hypredrive-*.whl
+   python -m pip install --find-links=wheelhouse hypredrive
 
 CI builds CPython 3.10 through 3.14 wheels for MPICH and OpenMPI on Linux
 x86_64/aarch64, MPICH and OpenMPI on macOS x86_64/arm64, and Microsoft MPI on
@@ -124,6 +131,10 @@ does not compile ``mpi4py`` against a different MPI implementation.
 For a version tag, the workflow uploads all wheels to the corresponding
 GitHub Release. Pull-request and manually dispatched runs provide the wheels
 as GitHub Actions artifacts only.
+
+On Windows, use ``hypredrive-msmpi`` instead of ``hypredrive`` in the install
+command. ``--find-links`` lets pip select a wheel compatible with your Python
+version while fetching dependencies from the package index.
 
 Use a source install instead for custom HYPRE builds, GPU support,
 BIGINT/MIXEDINT, vendor MPI stacks, or downstream-packager control over shared
@@ -152,8 +163,14 @@ library instead of exposing its own Python MPI wrapper.
 Quick start
 -----------
 
-One-shot solve
-~~~~~~~~~~~~~~
+Minimal example
+~~~~~~~~~~~~~~~
+
+This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
+``b = [1, 1]``, giving ``x = [1, 1]``.
+
+Install the ``scipy`` extra for this example. ``hd.solve`` manages initialization
+and driver cleanup and returns a copy of the solution.
 
 .. code-block:: python
 
@@ -161,24 +178,12 @@ One-shot solve
    import scipy.sparse as sp
    import hypredrive as hd
 
-   n = 64
-   diag_main = 2.0 * np.ones(n)
-   diag_off = -np.ones(n - 1)
-   A = sp.diags([diag_off, diag_main, diag_off], [-1, 0, 1], format="csr")
-   b = np.ones(n)
-
-   options = hd.configure(
-       solver="pcg",
-       preconditioner="amg",
-       pcg={"max_iter": 100, "relative_tol": 1.0e-8},
-       amg={"print_level": 0},
-   )
-
+   A = sp.csr_matrix([[2.0, -1.0], [-1.0, 2.0]])
+   b = np.ones(2)
+   options = hd.configure(solver="pcg", preconditioner="amg")
    result = hd.solve(A, b, options=options)
-
-   print("solution norm:", result.solution_norm)
-   print("first entries:", result.x[:5])
-   print("iterations:", result.iterations, "converged:", result.converged)
+   print(result.x)  # [1. 1.]
+   print(result.converged)
 
 ``hd.solve`` does not raise when the solver stops before reaching its tolerance; check
 ``result.converged``. ``SolveResult`` also carries ``final_res_norm``, ``setup_time`` and

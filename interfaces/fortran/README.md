@@ -48,21 +48,29 @@ Fortran tests.
 
 ## Installed use
 
-The install exports a CMake target for downstream Fortran applications:
+Save the minimal example below as `minimal.f90` and use this `CMakeLists.txt`
+in the same directory to link an installed hypredrive:
 
 ```cmake
+cmake_minimum_required(VERSION 3.23)
+project(minimal LANGUAGES C Fortran)
 find_package(MPI COMPONENTS Fortran REQUIRED)
-find_package(HYPREDRV REQUIRED)
-target_link_libraries(my_solver PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
+find_package(HYPREDRV CONFIG REQUIRED)
+add_executable(minimal minimal.f90)
+target_link_libraries(minimal PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
 ```
+
+Configure this application with `-DCMAKE_PREFIX_PATH=/path/to/hypredrive/install`,
+then build and run `minimal`.
 
 Fortran module files are compiler-specific. Build downstream code with the same
 Fortran compiler family used to install hypredrive, otherwise the compiler may
 not be able to read `hypredrive.mod`. The module is installed as
 `include/hypredrive.mod` under the installation prefix.
 
-Installed executables use a relative runtime search path so prefix-local
-libraries in `lib` are found without setting `LD_LIBRARY_PATH`.
+Installed hypredrive executables use relative runtime paths for prefix-local
+libraries. External HYPRE or MPI libraries must also be on the runtime search
+path (for example, `LD_LIBRARY_PATH` on Linux).
 
 ## Design
 
@@ -134,8 +142,11 @@ sections.
 
 ## Minimal example
 
+This serial example solves `A x = b` for `A = [[2, -1], [-1, 2]]` and
+`b = [1, 1]`, giving `x = [1, 1]`.
+
 ```fortran
-program solve
+program minimal
    use, intrinsic :: iso_c_binding
    use hypredrive
    implicit none
@@ -143,28 +154,36 @@ program solve
 
    integer :: ierr
    type(c_ptr) :: drv
-   character(len=:), allocatable :: yaml
+   real(c_double) :: x(2)
+   integer(c_int64_t) :: indptr(3) = [0_c_int64_t, 2_c_int64_t, 4_c_int64_t]
+   integer(c_int64_t) :: cols(4) = [0_c_int64_t, 1_c_int64_t, 0_c_int64_t, 1_c_int64_t]
+   real(c_double) :: values(4) = [2.0_c_double, -1.0_c_double, -1.0_c_double, 2.0_c_double]
+   real(c_double) :: rhs(2) = [1.0_c_double, 1.0_c_double]
 
    call MPI_Init(ierr)
-
-   yaml = 'solver:' // new_line('a') // &
-          '  pcg:' // new_line('a') // &
-          '    relative_tol: 1.0e-8' // new_line('a') // &
-          'preconditioner:' // new_line('a') // &
-          '  amg:' // new_line('a') // &
-          '    max_iter: 1' // new_line('a') // &
-          '    tolerance: 0.0' // new_line('a')
-
    call HYPREDRV_Check(HYPREDRV_Initialize())
-   call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_WORLD, c_int), drv))
-   call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, yaml))
-   ! Install matrix/RHS or call HYPREDRV_LinearSystemBuild here.
+   call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_SELF, c_int), drv))
+   call HYPREDRV_Check(HYPREDRV_SetLibraryMode(drv))
+   call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, &
+      'general: {statistics: 0}' // new_line('a') // &
+      'solver: pcg' // new_line('a') // 'preconditioner: amg' // new_line('a')))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, &
+      0_c_int64_t, 1_c_int64_t, indptr, cols, values))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetRHSFromArray(drv, 0_c_int64_t, 1_c_int64_t, rhs))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetInitialGuess(drv, c_null_ptr))
+   call HYPREDRV_Check(HYPREDRV_LinearSolverCreate(drv))
+   call HYPREDRV_Check(HYPREDRV_LinearSolverSetup(drv))
+   call HYPREDRV_Check(HYPREDRV_LinearSolverApply(drv))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemCopySolutionValues(drv, 2_c_int64_t, x))
+   print *, x
    call HYPREDRV_Check(HYPREDRV_Destroy(drv))
    call HYPREDRV_Check(HYPREDRV_Finalize())
-
    call MPI_Finalize(ierr)
-end program solve
+end program minimal
 ```
+
+The solution is copied into the Fortran-owned array `x`. The CSR and RHS
+helpers also copy the input arrays.
 
 ## Examples
 

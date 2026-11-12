@@ -37,10 +37,10 @@ IJVectorCallSucceeded(HYPRE_Int code)
 static hypre_ParVector *
 IJVectorReadInput(HYPRE_IJVector vec)
 {
-   void            *object = NULL;
+   void *object = NULL;
    if (!IJVectorCallSucceeded(HYPRE_IJVectorGetObject(vec, &object))) return NULL;
-   hypre_ParVector *par    = (hypre_ParVector *)object;
-   hypre_Vector    *local  = par ? hypre_ParVectorLocalVector(par) : NULL;
+   hypre_ParVector *par   = (hypre_ParVector *)object;
+   hypre_Vector    *local = par ? hypre_ParVectorLocalVector(par) : NULL;
    if (!local || hypre_VectorSize(local) < 0 ||
        (hypre_VectorSize(local) > 0 && !hypre_VectorData(local)))
    {

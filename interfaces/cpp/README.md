@@ -17,30 +17,38 @@ cmake --build build-cpp --target cpp-test --parallel
 
 The public header is `hypredrive.hpp`.
 
-## Use
+## Minimal example
+
+This serial example solves `A x = b` for `A = [[2, -1], [-1, 2]]` and
+`b = [1, 1]`, giving `x = [1, 1]`.
 
 ```cpp
 #include <hypredrive.hpp>
+#include <iostream>
 
-hypredrive::initialize();
-hypredrive::driver drv(MPI_COMM_SELF);
-drv.set_library_mode();
-drv.parse_yaml(R"yaml(
-general:
-  statistics: 0
-solver:
-  pcg:
-    max_iter: 100
-    relative_tol: 1.0e-8
-preconditioner:
-  amg:
-    print_level: 0
-)yaml");
-drv.set_matrix_from_csr(row_start, row_end, indptr, cols, values);
-drv.set_rhs_from_array(row_start, row_end, rhs);
-drv.set_zero_initial_guess();
-drv.solve();
-hypredrive::finalize();
+int main(int argc, char **argv)
+{
+   MPI_Init(&argc, &argv);
+   hypredrive::initialize();
+   {
+      hypredrive::driver drv(MPI_COMM_SELF);
+      drv.set_library_mode();
+      drv.parse_yaml("general: {statistics: 0}\n"
+                     "solver: pcg\npreconditioner: amg\n");
+      const hypredrive::bigint indptr[] = {0, 2, 4};
+      const hypredrive::bigint cols[] = {0, 1, 0, 1};
+      const hypredrive::real values[] = {2.0, -1.0, -1.0, 2.0};
+      const hypredrive::real rhs[] = {1.0, 1.0};
+      drv.set_matrix_from_csr(0, 1, indptr, cols, values);
+      drv.set_rhs_from_array(0, 1, rhs);
+      drv.set_zero_initial_guess();
+      drv.solve();
+      const auto x = drv.get_solution_values();
+      std::cout << x[0] << " " << x[1] << "\n";
+   } // Destroy the driver before finalizing hypredrive and MPI.
+   hypredrive::finalize();
+   MPI_Finalize();
+}
 ```
 
 The wrapper throws `hypredrive::error` for nonzero HYPREDRV status codes. The
@@ -63,6 +71,26 @@ exposed by the C API. String-like inputs are treated as file paths when they loo
 like paths, otherwise as inline YAML text. YAML text is passed to the C parser as
 a C string, so embedded NUL bytes are rejected.
 
+## Installed use
+
+Build with `HYPREDRV_ENABLE_CPP=ON` and install hypredrive. Save the minimal
+example as `minimal.cpp` and add this `CMakeLists.txt` beside it:
+
+```cmake
+cmake_minimum_required(VERSION 3.23)
+project(minimal LANGUAGES C CXX)
+find_package(HYPREDRV CONFIG REQUIRED)
+add_executable(minimal minimal.cpp)
+target_link_libraries(minimal PRIVATE HYPREDRV::CXX)
+```
+
+Configure this application with `-DCMAKE_PREFIX_PATH=/path/to/hypredrive/install`,
+then build and run `minimal`. `HYPREDRV::CXX` supplies the C++17 requirement,
+headers, and library dependencies.
+
+With HYPRE or MPI in a nonstandard install prefix, ensure their shared libraries
+are on the runtime search path (for example, `LD_LIBRARY_PATH` on Linux).
+
 ## API coverage
 
 The `driver` class mirrors the handle-based public `HYPREDRV_` API using
@@ -78,6 +106,6 @@ Laplacian directly in C++ and solves it through the wrapper:
 
 ```bash
 mpiexec -n 4 ./build-cpp/laplacian-cpp -n 16 16 16 -P 2 2 1 -s 7
+```
 
 Pass a custom YAML file with `-i/--input options.yml`.
-```

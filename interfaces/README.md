@@ -5,6 +5,16 @@ full native ports or rewrites. We keep them separate from the core C library so 
 language can fully own its idiomatic packaging, examples, testing frameworks, and
 developer tooling.
 
+## Minimal calling examples
+
+Each interface README solves the same two-row system with solution `[1, 1]`:
+
+- [C++](cpp/README.md#minimal-example)
+- [Fortran](fortran/README.md#minimal-example)
+- [Python](python/README.md#minimal-example)
+- [MATLAB/Octave](matlab-octave/README.md#minimal-example)
+- [Julia](julia/README.md#minimal-example)
+
 ## C++
 
 The C++ interface is in [`cpp/`](cpp/). It provides a header-only C++17 RAII
@@ -45,6 +55,7 @@ For source builds against an installed hypredrive:
 
 ```bash
 python -m pip install ./interfaces/python \
+  --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
   --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
 ```
 
