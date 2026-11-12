@@ -64,10 +64,10 @@ jobs:
           - os: macos-15-intel
             arch: x86_64
             mpi_flavor: openmpi
-          - os: macos-14
+          - os: macos-15
             arch: arm64
             mpi_flavor: mpich
-          - os: macos-14
+          - os: macos-15
             arch: arm64
             mpi_flavor: openmpi
           - os: windows-latest
