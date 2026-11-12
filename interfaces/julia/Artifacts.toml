@@ -1,42 +1,42 @@
 [[hypredrive_mpi_trampoline]]
 arch = "aarch64"
-git-tree-sha1 = "e72fafad41644b0b7f8757f21bafd7358ae0d6a0"
+git-tree-sha1 = "57dc817fe56be1267851a3eb37dd0498a2ec1532"
 os = "macos"
 
     [[hypredrive_mpi_trampoline.download]]
-    sha256 = "537c6ca6808c4522616a10cb4b6179091993fff5758a8f37d47bc4fbeacffa9d"
+    sha256 = "7a782923decc4e86fe8bc57a125566b896ff3904662346e05a773842d5f3ef69"
     url = "https://github.com/hypre-space/hypredrive/releases/download/v0.4.0/HYPREDRV.v0.4.0.aarch64-apple-darwin.tar.gz"
 [[hypredrive_mpi_trampoline]]
 arch = "aarch64"
-git-tree-sha1 = "eabf8d841043d530ae443815647a868925d2ff35"
+git-tree-sha1 = "ec70c49c1e556ab641b6c84f01c5b354109c6ebd"
 libc = "glibc"
 os = "linux"
 
     [[hypredrive_mpi_trampoline.download]]
-    sha256 = "c18bfef14bb9e1a0f1ad953f70ccd94a066ae101330c302ce6dd79c9cb283c74"
+    sha256 = "3bf027912f42f368d5ecd5467f3c7a90f2c258e43ab85b70a90048f63f168591"
     url = "https://github.com/hypre-space/hypredrive/releases/download/v0.4.0/HYPREDRV.v0.4.0.aarch64-linux-gnu.tar.gz"
 [[hypredrive_mpi_trampoline]]
 arch = "x86_64"
-git-tree-sha1 = "0e0a7637e5681d1ed1f1a5eada13d01a79883fb9"
+git-tree-sha1 = "17454ef53ac2efb6fbb979b0ffa6362836be8efe"
 os = "macos"
 
     [[hypredrive_mpi_trampoline.download]]
-    sha256 = "0ddabd8aa53085ef7b075efad02b838fc384106eb96e446f490e5989b474ff5c"
+    sha256 = "1c415125fceae3b43f84261ebab9619845cd33caddef8c0418405971f3334c6b"
     url = "https://github.com/hypre-space/hypredrive/releases/download/v0.4.0/HYPREDRV.v0.4.0.x86_64-apple-darwin.tar.gz"
 [[hypredrive_mpi_trampoline]]
 arch = "x86_64"
-git-tree-sha1 = "c995628e48bcaf60bf7b35066e4d55663eefa528"
+git-tree-sha1 = "cdfcd3491c781a38a8f3674fe54c358266915d22"
 libc = "glibc"
 os = "linux"
 
     [[hypredrive_mpi_trampoline.download]]
-    sha256 = "2930217087801a913bb4037095ae72f1976d4103a4011916ec0c654e554f6fe9"
+    sha256 = "0f222ceb31248c7ab8dc0c0ecd5124241b45c056f3ea249742282b05e09d99c2"
     url = "https://github.com/hypre-space/hypredrive/releases/download/v0.4.0/HYPREDRV.v0.4.0.x86_64-linux-gnu.tar.gz"
 [[hypredrive_mpi_trampoline]]
 arch = "x86_64"
-git-tree-sha1 = "873f57ea73a9b1d27e9c52b58c59080dd2268cb0"
+git-tree-sha1 = "7cc6a838e86feead7628fdd383b79a6288e86f8c"
 os = "windows"
 
     [[hypredrive_mpi_trampoline.download]]
-    sha256 = "b179788a228ab522f7cce5e3cfa35000963e6b2e0d84b9c1e7b2d174bf42c879"
+    sha256 = "e4e03288d5380e537770aba7417b8984fc7b27b92d71071baeb620bd8054d699"
     url = "https://github.com/hypre-space/hypredrive/releases/download/v0.4.0/HYPREDRV.v0.4.0.x86_64-w64-mingw32.tar.gz"
