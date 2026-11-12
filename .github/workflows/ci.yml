@@ -286,9 +286,10 @@ jobs:
       - name: Install system dependencies (macOS)
         timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
         run: |
           brew untap --force aws/tap >/dev/null 2>&1 || true
-          brew update
           brew install cmake ninja mpich
           echo "MPICH_CC=clang" >> $GITHUB_ENV
           echo "MPICH_CXX=clang++" >> $GITHUB_ENV
@@ -716,9 +717,10 @@ jobs:
       - name: Install dependencies (macOS)
         timeout-minutes: 3
         if: startsWith(runner.os, 'macOS')
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: '1'
         run: |
           brew untap --force aws/tap >/dev/null 2>&1 || true
-          brew update
           brew install mpich clang-format
           # Get and display compiler version
           VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
