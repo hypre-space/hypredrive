@@ -119,11 +119,10 @@ test_mtx_matrix_is_partitioned_across_ranks(void)
       return;
    }
 
-   char filename[256] = {0};
+   char filename[PATH_MAX] = {0};
    if (rank == 0)
    {
-      snprintf(filename, sizeof(filename), "/tmp/hypredrive_mpi_mtx_%d.mtx",
-               (int)getpid());
+      test_scratch_path(filename, sizeof(filename), "matrix-market.mtx");
    }
    MPI_Bcast(filename, (int)sizeof(filename), MPI_CHAR, 0, MPI_COMM_WORLD);
 
@@ -153,7 +152,7 @@ test_mtx_matrix_is_partitioned_across_ranks(void)
    ASSERT_EQ(write_ok, 1);
    MPI_Barrier(MPI_COMM_WORLD);
 
-   char yaml[1024];
+   char yaml[PATH_MAX + 512];
    snprintf(yaml, sizeof(yaml),
             "general:\n"
             "  statistics: 0\n"
