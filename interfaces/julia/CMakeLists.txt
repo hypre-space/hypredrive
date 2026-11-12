@@ -69,12 +69,11 @@ set_target_properties(HYPREDRV_Julia PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
     ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/bin
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
     POSITION_INDEPENDENT_CODE ON
     BUILD_RPATH "${_hypredrv_julia_build_rpath}"
 )
 
+hypredrv_set_library_abi(HYPREDRV_Julia)
 hypredrv_set_relative_install_rpath(HYPREDRV_Julia)
 foreach(_hypredrv_julia_runtime_dir IN LISTS _hypredrv_julia_runtime_dirs)
     if(IS_ABSOLUTE "${_hypredrv_julia_runtime_dir}")

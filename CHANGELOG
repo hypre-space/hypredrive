@@ -7,12 +7,29 @@
 # This file chronicles user-level changes, beginning with the most recent.
 #=============================================================================
 
-Unreleased
+Version 0.4.0 released 2026/11/11
 
-- Return the native solution pointer and memory location from
-  HYPREDRV_LinearSystemGetSolutionValues (adds a required output argument).
-- Add HYPREDRV_LinearSystemCopySolutionValues for explicit host copies that
-  preserve device residency, and use it in the language interfaces.
+- Return native solution pointers and memory locations, and add explicit host copies (#262)
+- Bump the shared-library ABI from 0 to 1; rebuild applications using the changed solution getter
+- Distribute Matrix Market inputs across MPI ranks (#263)
+- Improve interface examples, ownership documentation, and installation instructions (#261)
+- Refactor core modules, MGR, solver lifecycles, and system loaders (#245, #248, #249, #254, #260)
+- Consolidate configuration parsing and shared utilities (#246)
+- Improve solver, preconditioner, input ownership, and collective error handling (#255, #257)
+- Improve Python package layout, buffer validation, and binding runtimes (#245, #252, #255, #257)
+- Stream compressed slices and improve LSSeq size validation and tools (#247, #258)
+- Validate steady example inputs, stencils, assembly, and visualization output (#250)
+- Share transient example halos and preserve actual output times (#251)
+- Add Windows MSVC and clang-cl CI coverage (#258, #259)
+- Improve fuzz regression replay, allocation checks, and coverage collection (#253)
+- Require HYPRE 2.20.0 or newer and improve version compatibility (#260)
+- Retain known CUDA/SYCL runtime limitations and skip affected GPU tests (#260)
+- Add the vendor sparse-transpose option and improve code organization (#244)
+- Add GEOS dataset generator
+- Move the regression runner into scripts (#256)
+- Fix source distribution contents and clarify release artifact publication
+
+#====================================
 
 Version 0.3.0 released 2026/08/28
 

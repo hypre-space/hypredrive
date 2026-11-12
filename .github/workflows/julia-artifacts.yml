@@ -223,6 +223,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Earlier serialized runs may already have refreshed the bindings.
+          # Bind this run's exact archives on top of the current branch tip.
+          ref: ${{ github.ref_name }}
 
       - name: Set up Julia
         uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
@@ -252,7 +256,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add interfaces/julia/Artifacts.toml
-          git commit -m "Update Julia artifact bindings for ${RELEASE_TAG}"
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Julia artifact bindings for ${RELEASE_TAG}"
+          fi
           for attempt in 1 2 3; do
             if { git pull --rebase --autostash && git push; } 2>push.log; then
               exit 0

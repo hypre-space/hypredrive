@@ -1193,7 +1193,7 @@ hypredrv_LSSeqReadRHS(MPI_Comm comm, const char *filename, int ls_id,
 }
 
 /* The dofmap payload is int32; IntArray stores it as int. */
-_Static_assert(sizeof(int) == sizeof(int32_t), "LSSeq dofmap requires 32-bit int");
+typedef char hypredrv_lsseq_requires_32_bit_int[sizeof(int) == sizeof(int32_t) ? 1 : -1];
 
 /* This rank's parts are the same contiguous range IntArrayParRead would
  * assign, so concatenate their slices and build the distributed array.

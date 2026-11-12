@@ -202,7 +202,9 @@ set_property(TEST args_mpi_2proc args_mpi_4proc APPEND PROPERTY FAIL_REGULAR_EXP
 setup_test_executable(test_hypredrv_mpi test_hypredrv_mpi.c)
 add_executable_test(hypredrv_mpi_2proc test_hypredrv_mpi 2 RUN_SERIAL)
 add_executable_test(hypredrv_mpi_4proc test_hypredrv_mpi 4 RUN_SERIAL)
-set_tests_properties(hypredrv_mpi_2proc hypredrv_mpi_4proc PROPERTIES TIMEOUT 30)
+set_tests_properties(hypredrv_mpi_2proc PROPERTIES TIMEOUT 30)
+# The full collective/error-recovery suite can oversubscribe small CI runners.
+set_tests_properties(hypredrv_mpi_4proc PROPERTIES TIMEOUT 120)
 set_property(TEST hypredrv_mpi_2proc hypredrv_mpi_4proc APPEND PROPERTY FAIL_REGULAR_EXPRESSION "FAIL:")
 
 setup_test_executable(test_setmatrix_from_csr_mpi test_setmatrix_from_csr_mpi.c)

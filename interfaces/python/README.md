@@ -53,6 +53,11 @@ when only Python wheels are needed. It can also be started manually with
 `workflow_dispatch` from the
 [Python Wheels][python-wheels-workflow] workflow page.
 
+On a `release-<version>` pull request, use `Prepare Release` to build and stage
+both Python wheels and Julia archives on a draft release, refresh Julia's
+artifact bindings, and validate the final candidate. `Run CI` keeps its existing
+behavior. Tagging and publishing remain manual.
+
 Each artifact is tied to an MPI flavor:
 
 * `mpich` wheels require an MPICH-compatible runtime.

@@ -1,10 +1,16 @@
 AC_PREREQ([2.69])
 AC_INIT([hypredrive],
-        [0.3.0],
+        [0.4.0],
         [https://github.com/hypre-space/hypredrive/issues],
         [hypredrive],
         [https://github.com/hypre-space/hypredrive])
 AM_INIT_AUTOMAKE([-Wall -Werror foreign subdir-objects])
+
+dnl Shared-library ABI generation; keep cmake/HYPREDRV_ABI.cmake aligned.
+HYPREDRV_ABI_VERSION=1
+AC_SUBST([HYPREDRV_ABI_VERSION])
+AC_DEFINE_UNQUOTED([HYPREDRV_ABI_VERSION], [$HYPREDRV_ABI_VERSION],
+                   [Shared-library ABI generation])
 
 dnl Capture git version info (if available)
 AC_PATH_PROG([GIT], [git])

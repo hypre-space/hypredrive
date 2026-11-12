@@ -104,6 +104,11 @@ shared label also runs the Julia artifact workflow; use the component-specific
 label when only Python wheels are needed. It can also be started manually with
 ``workflow_dispatch``.
 
+For a ``release-<version>`` pull request, ``Prepare Release`` builds and stages
+both Python wheels and Julia archives on a draft release, refreshes Julia's
+artifact bindings, and validates the final candidate. ``Run CI`` keeps its
+existing behavior. Tagging and publishing remain manual.
+
 1. Download a wheel artifact from a GitHub Actions ``Python Wheels`` workflow run.
 
 2. Extract the wheel from the zip file.
