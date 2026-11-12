@@ -183,9 +183,10 @@ if [[ -n "$DO_TAG" ]]; then
 else
   if [[ -z "$DRY_RUN" ]]; then
     echo "Files updated. Next steps:"
-    echo "  1. Update CHANGELOG with release notes for ${NEW_VERSION}"
-    echo "  2. Commit the updated core and binding version files"
-    echo "  3. Tag:    git tag -a v${NEW_VERSION} -m 'hypredrive ${NEW_VERSION}'"
-    echo "  4. Push:   git push && git push origin v${NEW_VERSION}"
+    echo "  1. Review CHANGELOG and the updated core and binding version files"
+    echo "  2. Commit and push the release candidate branch"
+    echo "  3. Run Julia Artifacts with release_tag=v${NEW_VERSION} and update_artifacts_toml=true"
+    echo "  4. Review the binding commit and staged draft assets; finish candidate validation"
+    echo "  5. Tag that candidate, wait for tag workflows, then publish the draft release"
   fi
 fi

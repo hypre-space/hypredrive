@@ -28,12 +28,13 @@ AM_CPPFLAGS += -DHYPREDRV_STATIC_DEFINE
 endif
 libHYPREDRV_la_SOURCES =
 libHYPREDRV_la_LIBADD = libHYPREDRV_internal.la
-libHYPREDRV_la_LDFLAGS = -version-info 0:1:0 \
+libHYPREDRV_la_LDFLAGS = -version-info $(HYPREDRV_ABI_VERSION):0:0 \
 	-export-symbols-regex '^HYPREDRV_.*$$'
 
 include_HEADERS = include/HYPREDRV.h include/HYPREDRV_utils.h
 nodist_include_HEADERS = HYPREDRV_config.h
 INTERNAL_HEADER_FILES = include/internal/amg.h include/internal/args.h \
+			include/internal/bridge_row_bounds.h \
 			include/internal/ads.h include/internal/ams.h \
 			include/internal/cheby.h \
 			include/internal/compatibility.h include/internal/comp.h \
@@ -54,7 +55,11 @@ INTERNAL_HEADER_FILES = include/internal/amg.h include/internal/args.h \
 noinst_HEADERS = src/internal/vector_tags.h src/internal/object.h src/internal/logging.h $(INTERNAL_HEADER_FILES)
 ACLOCAL_AMFLAGS = -I m4
 
-EXTRA_DIST = autogen.sh docs/Makefile docs/README.md docs/usrman-src docs/usrman-hypredrive.pdf docs/devman-hypredrive.pdf data examples utils
+EXTRA_DIST = CMakeLists.txt cmake scripts interfaces tests data examples utils \
+		docs/Makefile docs/README.md docs/usrman-src docs/gen_doxygen_xml.sh \
+		docs/doxygen-latex-extra.sty docs/hypredrive-logo.png docs/joss \
+		.clang-format .readthedocs.yaml README.md CHANGELOG CITATION.cff \
+		CONTRIBUTING.md COPYRIGHT LICENSE NOTICE
 MOSTLYCLEANFILES =
 
 @DX_RULES@

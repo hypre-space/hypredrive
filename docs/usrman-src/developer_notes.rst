@@ -44,6 +44,13 @@ identifiable throughout the process.
       $ ./scripts/generate_release.sh <version> --dry-run
       $ ./scripts/generate_release.sh <version>
 
+   Package versions and shared-library ABI versions are independent. Release
+   0.4.0 uses ABI 1 (``libHYPREDRV.so.1``); CMake's
+   ``cmake/HYPREDRV_ABI.cmake`` and Autotools' ``HYPREDRV_ABI_VERSION`` in
+   ``configure.ac`` must agree. Increase that generation when public calling
+   conventions change or symbols are removed, and reset the library revision.
+   Applications and language interfaces built against ABI 0 must be rebuilt.
+
    The script updates the top-level CMake and Autotools versions, the Sphinx
    fallback version, the Julia package and BinaryBuilder default versions,
    and the Python package and runtime versions.  C++, Fortran, and
@@ -116,17 +123,17 @@ identifiable throughout the process.
 
    .. code-block:: console
 
-      $ cmake -S . -B build-hypre-v3.1 -G Ninja \
+      $ cmake -S . -B build-hypre-v3.2.1 -G Ninja \
           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          -DCMAKE_INSTALL_PREFIX="$PWD/install-hypre-v3.1" \
-          -DHYPRE_ROOT=<hypre-v3.1-install> \
+          -DCMAKE_INSTALL_PREFIX="$PWD/install-hypre-v3.2.1" \
+          -DHYPRE_ROOT=<hypre-v3.2.1-install> \
           -DHYPREDRV_ENABLE_TESTING=ON \
           -DHYPREDRV_ENABLE_EXAMPLES=ON \
           -DHYPREDRV_ENABLE_COVERAGE=OFF \
           -DHYPREDRV_ENABLE_ANALYSIS=OFF
-      $ cmake --build build-hypre-v3.1 --parallel
-      $ cmake --install build-hypre-v3.1
-      $ cmake --build build-hypre-v3.1 --target test
+      $ cmake --build build-hypre-v3.2.1 --parallel
+      $ cmake --install build-hypre-v3.2.1
+      $ cmake --build build-hypre-v3.2.1 --target test
 
       $ cmake -S . -B build-hypre-v2.20 -G Ninja \
           -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -159,7 +166,8 @@ identifiable throughout the process.
       update_artifacts_toml=true
 
    Wait for the workflow's bot commit updating
-   ``interfaces/julia/Artifacts.toml``.  The workflow builds and binds the
+   ``interfaces/julia/Artifacts.toml`` and its draft release containing the bound
+   archives. The workflow builds and binds the
    x86_64/aarch64 Linux glibc, x86_64/aarch64 macOS, and x86_64 Windows Julia
    archives; the Linux and macOS archives use MPItrampoline and the Windows
    archive uses Microsoft MPI. Windows ARM64 is not included because the
@@ -171,9 +179,10 @@ identifiable throughout the process.
 
 6. **Tag and publish the release.**
 
-   From the artifact-binding commit, create and push the annotated tag, then
-   wait for the Julia artifact release job to upload its assets.  Tag this
-   commit manually; do not rerun the version generator with ``--tag`` after
+   After reviewing the final candidate, create and push the annotated tag from
+   the branch containing the artifact-binding commit. Keep the staged GitHub
+   Release as a draft until the tag workflows finish. Tag this commit manually;
+   do not rerun the version generator with ``--tag`` after
    the version files have already been committed:
 
    .. code-block:: console
@@ -181,15 +190,16 @@ identifiable throughout the process.
       $ git tag -a v<version> -m "Release v<version>"
       $ git push origin v<version>
 
-   The tag-triggered ``Julia Artifacts`` workflow creates the GitHub Release
-   and uploads all Julia archives.  The tag-triggered ``Python Wheels``
-   workflow then uploads the Linux MPICH/OpenMPI, macOS MPICH/OpenMPI, and
-   Windows Microsoft MPI wheels to that same release; wait for both
-   ``release-assets`` jobs to finish.  Pull-request or manually dispatched
-   workflow runs produce Actions artifacts only, not release assets.  Use the
-   corresponding ``CHANGELOG`` section as the GitHub Release notes.  Finally,
+   The manual binding workflow has already staged the five Julia archives on a
+   draft GitHub Release. The tag-triggered ``Julia Artifacts`` workflow downloads
+   those exact archives and verifies their checksums, tree hashes, and bindings;
+   it does not upload its rebuild. The tag-triggered ``Python Wheels`` workflow
+   uploads the Linux MPICH/OpenMPI, macOS MPICH/OpenMPI, and Windows Microsoft MPI
+   wheels to that same draft. Wait for both ``release-assets`` jobs to finish,
    verify the tag, source archive, Julia archives, Python wheels, and package
-   versions from a clean checkout.
+   versions, then publish the draft with the corresponding ``CHANGELOG`` section
+   as the release notes. Pull-request packaging runs produce Actions artifacts;
+   they do not stage a release or update ``Artifacts.toml``.
 
 CI artifact topology
 ~~~~~~~~~~~~~~~~~~~~

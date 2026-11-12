@@ -57,7 +57,7 @@ include("artifacts.jl")
 
 function _library_names()
     if Sys.iswindows()
-        return ("HYPREDRV_Julia.dll", "libHYPREDRV_Julia.dll")
+        return ("HYPREDRV_Julia-1.dll", "libHYPREDRV_Julia-1.dll")
     elseif Sys.isapple()
         return ("libHYPREDRV_Julia.dylib", "HYPREDRV_Julia.dylib")
     else

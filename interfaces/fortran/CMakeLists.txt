@@ -47,6 +47,7 @@ set_target_properties(HYPREDRV_Fortran PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
+hypredrv_set_library_abi(HYPREDRV_Fortran)
 target_link_libraries(HYPREDRV_Fortran PUBLIC HYPREDRV::HYPREDRV MPI::MPI_C MPI::MPI_Fortran)
 hypredrv_set_relative_install_rpath(HYPREDRV_Fortran)
 target_include_directories(HYPREDRV_Fortran

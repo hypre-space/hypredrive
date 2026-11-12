@@ -7,12 +7,13 @@
 cmake_minimum_required(VERSION 3.23)
 
 # Project name and version
-project(hypredrive VERSION 0.3.0 LANGUAGES C)
+project(hypredrive VERSION 0.4.0 LANGUAGES C)
 set(PROJECT_URL "https://github.com/hypre-space/hypredrive")
 set(PROJECT_BUGREPORT "https://github.com/hypre-space/hypredrive/issues")
 
 # Include GNUInstallDirs
 include(GNUInstallDirs)
+include(cmake/HYPREDRV_ABI.cmake)
 
 # Specify the C standard
 set(CMAKE_C_STANDARD 99)
@@ -208,13 +209,12 @@ hypredrv_add_hypre_build_dependency(HYPREDRV)
 
 # Set library properties
 set_target_properties(HYPREDRV PROPERTIES
-    VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
     POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden
     DEFINE_SYMBOL HYPREDRV_EXPORTS
     PUBLIC_HEADER "${PROJECT_SOURCE_DIR}/include/HYPREDRV.h;${PROJECT_SOURCE_DIR}/include/HYPREDRV_utils.h;${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_config.h"
 )
+hypredrv_set_library_abi(HYPREDRV)
 set_target_properties(HYPREDRV_objects PROPERTIES
     POSITION_INDEPENDENT_CODE ON
     C_VISIBILITY_PRESET hidden

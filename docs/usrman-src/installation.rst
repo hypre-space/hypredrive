@@ -225,6 +225,16 @@ The auto-fetched HYPRE test drivers remain disabled by default. Set
 ``-DHYPRE_BUILD_TESTS=ON`` to add native drivers such as ``struct`` to the
 same HYPREDRV build tree; an explicit setting is preserved.
 
+.. note::
+
+   Release 0.4.0 retains known CUDA and SYCL runtime limitations in selected
+   Schwarz, MGR, mixed-elasticity, and distributed cases. The affected tests are
+   listed in ``cmake/HYPREDRV_GPUKnownFailures.cmake`` and are disabled only for
+   the matching GPU backend; CPU coverage remains enabled. Use
+   ``-DHYPREDRV_ENABLE_ALL_TESTS=ON`` to include these cases when diagnosing a
+   GPU configuration. A default GPU test pass therefore covers the enabled
+   configurations, not every solver/backend combination.
+
 With HYPRE 2.31.0 or newer, HYPREDRV configures HYPRE's GPU-aware MPI mode
 during initialization. The mode is enabled when any of ``MV2_USE_CUDA``,
 ``MV2_USE_HIP``, ``MPIR_CVAR_ENABLE_GPU``, or

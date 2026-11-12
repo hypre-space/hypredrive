@@ -91,10 +91,16 @@ endif()
 
 # Create and install Config files
 include(CMakePackageConfigHelpers)
+# Before 1.0, a minor release can change the public API and ABI.
+if(PROJECT_VERSION_MAJOR EQUAL 0)
+    set(_hypredrv_version_compatibility SameMinorVersion)
+else()
+    set(_hypredrv_version_compatibility SameMajorVersion)
+endif()
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
+    COMPATIBILITY ${_hypredrv_version_compatibility}
 )
 
 set(HYPREDRV_CONFIG_HYPRE_INCLUDE_DIRS "")

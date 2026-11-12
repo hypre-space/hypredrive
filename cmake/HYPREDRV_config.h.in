@@ -154,6 +154,9 @@
 /* Define to the version of this package. */
 #define PACKAGE_VERSION "@PROJECT_VERSION@"
 
+/* Shared-library ABI generation, independent of the package version. */
+#define HYPREDRV_ABI_VERSION @HYPREDRV_ABI_VERSION@
+
 /* Define to the release version of hypredrive. */
 #define HYPREDRV_RELEASE_VERSION "@PROJECT_VERSION@"
 

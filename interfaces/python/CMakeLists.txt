@@ -130,7 +130,7 @@ if(_hypredrive_python_bundle_core AND NOT TARGET HYPREDRV::HYPREDRV)
 endif()
 
 if(NOT TARGET HYPREDRV::HYPREDRV)
-    find_package(HYPREDRV CONFIG REQUIRED)
+    find_package(HYPREDRV 0.4 CONFIG REQUIRED)
 endif()
 
 # ---- Find Python + numpy + Cython ------------------------------------------

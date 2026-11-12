@@ -5,7 +5,7 @@
 using BinaryBuilder
 
 name = "HYPREDRV"
-version = VersionNumber(get(ENV, "HYPREDRV_BINARY_VERSION", "0.3.0"))
+version = VersionNumber(get(ENV, "HYPREDRV_BINARY_VERSION", "0.4.0"))
 repo_url = get(ENV, "HYPREDRV_BINARY_REPOSITORY", "https://github.com/hypre-space/hypredrive.git")
 default_hypre_ref = "341f9089807934407a52ea8324759f3af1e49a57"
 
@@ -102,8 +102,8 @@ platforms = [
 ]
 
 products = [
-    LibraryProduct("libHYPREDRV", :libHYPREDRV; dont_dlopen=true),
-    LibraryProduct("libHYPREDRV_Julia", :libHYPREDRV_Julia; dont_dlopen=true),
+    LibraryProduct(["libHYPREDRV", "libHYPREDRV-1"], :libHYPREDRV; dont_dlopen=true),
+    LibraryProduct(["libHYPREDRV_Julia", "libHYPREDRV_Julia-1"], :libHYPREDRV_Julia; dont_dlopen=true),
 ]
 
 dependencies = [
