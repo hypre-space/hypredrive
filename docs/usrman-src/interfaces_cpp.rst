@@ -23,32 +23,40 @@ Build
      -DHYPREDRV_ENABLE_EXAMPLES=ON
    cmake --build build-cpp --target cpp-test --parallel
 
-Usage
------
+Minimal example
+---------------
+
+This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
+``b = [1, 1]``, giving ``x = [1, 1]``.
 
 .. code-block:: cpp
 
    #include <hypredrive.hpp>
+   #include <iostream>
 
-   hypredrive::initialize();
-   hypredrive::driver drv(MPI_COMM_SELF);
-   drv.set_library_mode();
-   drv.parse_yaml(R"yaml(
-   general:
-     statistics: 0
-   solver:
-     pcg:
-       max_iter: 100
-       relative_tol: 1.0e-8
-   preconditioner:
-     amg:
-       print_level: 0
-   )yaml");
-   drv.set_matrix_from_csr(row_start, row_end, indptr, cols, values);
-   drv.set_rhs_from_array(row_start, row_end, rhs);
-   drv.set_zero_initial_guess();
-   drv.solve();
-   hypredrive::finalize();
+   int main(int argc, char **argv)
+   {
+      MPI_Init(&argc, &argv);
+      hypredrive::initialize();
+      {
+         hypredrive::driver drv(MPI_COMM_SELF);
+         drv.set_library_mode();
+         drv.parse_yaml("general: {statistics: 0}\n"
+                        "solver: pcg\npreconditioner: amg\n");
+         const hypredrive::bigint indptr[] = {0, 2, 4};
+         const hypredrive::bigint cols[] = {0, 1, 0, 1};
+         const hypredrive::real values[] = {2.0, -1.0, -1.0, 2.0};
+         const hypredrive::real rhs[] = {1.0, 1.0};
+         drv.set_matrix_from_csr(0, 1, indptr, cols, values);
+         drv.set_rhs_from_array(0, 1, rhs);
+         drv.set_zero_initial_guess();
+         drv.solve();
+         const auto x = drv.get_solution_values();
+         std::cout << x[0] << " " << x[1] << "\n";
+      } // Destroy the driver before finalizing hypredrive and MPI.
+      hypredrive::finalize();
+      MPI_Finalize();
+   }
 
 ``hypredrive::driver`` is move-only and destroys its underlying ``HYPREDRV_t`` in
 its destructor. Methods throw ``hypredrive::error`` when the underlying C API
@@ -82,6 +90,27 @@ solves it through the wrapper:
 Pass a custom YAML file with ``-i/--input options.yml``. Append `hypredrive`
 command-line overrides after ``-a`` or ``--args``. For example, use
 ``-a --solver:pcg:max_iter 50``.
+
+Installed use
+-------------
+
+Build with ``HYPREDRV_ENABLE_CPP=ON`` and install hypredrive. Save the minimal
+example as ``minimal.cpp`` and add this ``CMakeLists.txt`` beside it:
+
+.. code-block:: cmake
+
+   cmake_minimum_required(VERSION 3.23)
+   project(minimal LANGUAGES C CXX)
+   find_package(HYPREDRV CONFIG REQUIRED)
+   add_executable(minimal minimal.cpp)
+   target_link_libraries(minimal PRIVATE HYPREDRV::CXX)
+
+Configure this application with ``-DCMAKE_PREFIX_PATH=/path/to/hypredrive/install``,
+then build and run ``minimal``. ``HYPREDRV::CXX`` supplies the C++17 requirement,
+headers, and library dependencies.
+
+With HYPRE or MPI in a nonstandard install prefix, ensure their shared libraries
+are on the runtime search path (for example, ``LD_LIBRARY_PATH`` on Linux).
 
 API correspondence
 ------------------
@@ -197,7 +226,7 @@ to the generated API reference.
    * - ``hypredrive::driver::get_solution_length``
      - :cpp:func:`HYPREDRV_LinearSystemGetSolutionLength`
    * - ``hypredrive::driver::get_solution_values``
-     - :cpp:func:`HYPREDRV_LinearSystemGetSolutionValues`
+     - :cpp:func:`HYPREDRV_LinearSystemCopySolutionValues`
    * - ``hypredrive::driver::get_solution_norm``
      - :cpp:func:`HYPREDRV_LinearSystemGetSolutionNorm`
    * - ``hypredrive::driver::get_solution``
@@ -267,10 +296,11 @@ to the generated API reference.
 
 .. END CXX API TABLE
 
-``hypredrive::driver::get_solution_values_raw`` returns the same
-HYPREDRV-owned host pointer as ``HYPREDRV_LinearSystemGetSolutionValues``. On
-GPU builds, this method moves or synchronizes the solution to host memory before
-it returns the pointer.
+``hypredrive::driver::get_solution_values_raw(memory_location)`` returns a borrowed
+native pointer and fills a ``HYPRE_MemoryLocation`` variable. It performs no copy,
+synchronization or migration. Device pointers require device-aware code. Use
+``get_solution_values()`` for an owned host vector; it explicitly copies the values
+without changing the solution's residency.
 
 Installation
 ------------

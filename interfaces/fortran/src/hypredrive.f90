@@ -12,6 +12,9 @@ module hypredrive
    integer, parameter, public :: hypredrv_bigint_kind = c_int64_t
    integer, parameter, public :: hypredrv_real_kind = c_double
    integer(hypredrv_error_kind), parameter, public :: HYPREDRV_SUCCESS = 0_c_int32_t
+   integer(c_int), parameter, public :: HYPRE_MEMORY_UNDEFINED = -1_c_int
+   integer(c_int), parameter, public :: HYPRE_MEMORY_HOST = 0_c_int
+   integer(c_int), parameter, public :: HYPRE_MEMORY_DEVICE = 1_c_int
 
    public :: HYPREDRV_Initialize, HYPREDRV_Finalize, HYPREDRV_ErrorCodeDescribe
    public :: HYPREDRV_ErrorInvalidValue, HYPREDRV_Create, HYPREDRV_Destroy
@@ -33,7 +36,7 @@ module hypredrive
    public :: HYPREDRV_LinearSystemSetContiguousDofmap, HYPREDRV_LinearSystemReadDofmap
    public :: HYPREDRV_LinearSystemPrintDofmap, HYPREDRV_LinearSystemPrint
    public :: HYPREDRV_LinearSystemSetNearNullSpace, HYPREDRV_LinearSystemSetNullSpace
-   public :: HYPREDRV_LinearSystemGetSolutionValues
+   public :: HYPREDRV_LinearSystemGetSolutionValues, HYPREDRV_LinearSystemCopySolutionValues
    public :: HYPREDRV_LinearSystemGetSolutionLength, HYPREDRV_LinearSystemGetSolutionNorm
    public :: HYPREDRV_LinearSystemGetSolution, HYPREDRV_LinearSystemGetRHSValues
    public :: HYPREDRV_LinearSystemGetRHS, HYPREDRV_LinearSystemGetMatrix
@@ -346,11 +349,21 @@ module hypredrive
          integer(c_int32_t) :: ierr
       end function
 
-      function HYPREDRV_LinearSystemGetSolutionValues(hypredrv, sol_data) &
+      function HYPREDRV_LinearSystemGetSolutionValues(hypredrv, sol_data, memory_location) &
          bind(C, name="HYPREDRV_LinearSystemGetSolutionValues") result(ierr)
-         import :: c_int32_t, c_ptr
+         import :: c_int, c_int32_t, c_ptr
          type(c_ptr), value :: hypredrv
          type(c_ptr) :: sol_data
+         integer(c_int) :: memory_location
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSystemCopySolutionValues(hypredrv, count, values) &
+         bind(C, name="HYPREDRV_FortranLinearSystemCopySolutionValues") result(ierr)
+         import :: c_int32_t, c_int64_t, c_double, c_ptr
+         type(c_ptr), value :: hypredrv
+         integer(c_int64_t), value :: count
+         real(c_double) :: values(*)
          integer(c_int32_t) :: ierr
       end function
 

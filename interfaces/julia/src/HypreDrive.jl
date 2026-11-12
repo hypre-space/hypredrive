@@ -798,14 +798,10 @@ function _read_solution!(x::AbstractVector{Float64}, session::HypreDriveSession)
     drv = _require_open(session)
     local_n = session.row_end - session.row_start + 1
     length(x) == local_n || throw(ArgumentError("solution output length does not match row range"))
-    src = Ref{Ptr{Cvoid}}(C_NULL)
-    len = Ref{Int64}(0)
-    _check(ccall((:HYPREDRV_JuliaGetSolutionValues, _lib()), UInt32,
-                 (Ptr{Cvoid}, Ref{Ptr{Cvoid}}, Ref{Int64}), drv, src, len),
-           "get solution")
-    len[] == local_n || error("solution length $(len[]) does not match local row count $local_n")
     GC.@preserve x begin
-        unsafe_copyto!(pointer(x), Ptr{Float64}(src[]), local_n)
+        _check(ccall((:HYPREDRV_JuliaCopySolutionValues, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ptr{Cvoid}, Int64), drv, pointer(x), Int64(local_n)),
+               "copy solution")
     end
     return x
 end
@@ -923,15 +919,10 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
             _check(ccall((:HYPREDRV_JuliaResetInitialGuess, _lib()), UInt32, (Ptr{Cvoid},), drv), "reset initial guess")
             _check(ccall((:HYPREDRV_JuliaLinearSolverApply, _lib()), UInt32, (Ptr{Cvoid},), drv), "apply solver")
 
-            src = Ref{Ptr{Cvoid}}(C_NULL)
-            len = Ref{Int64}(0)
-            _check(ccall((:HYPREDRV_JuliaGetSolutionValues, _lib()), UInt32,
-                         (Ptr{Cvoid}, Ref{Ptr{Cvoid}}, Ref{Int64}), drv, src, len), "get solution")
-            len[] == local_n || error("solution length $(len[]) does not match local row count $local_n")
-            # src is a borrowed pointer owned by HYPREDRV. Copy it before the
-            # next solver call, reset, or driver destroy can invalidate it.
             GC.@preserve x begin
-                unsafe_copyto!(pointer(x), Ptr{Float64}(src[]), local_n)
+                _check(ccall((:HYPREDRV_JuliaCopySolutionValues, _lib()), UInt32,
+                             (Ptr{Cvoid}, Ptr{Cvoid}, Int64), drv, pointer(x), Int64(local_n)),
+                       "copy solution")
             end
 
             iterations = Ref{Cint}(0)

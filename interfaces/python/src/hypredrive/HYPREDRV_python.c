@@ -208,33 +208,30 @@ HYPREDRV_PythonSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start, int64_t r
                                                (const HYPRE_Real *)values);
 }
 
-/**
- * @brief Return an opaque pointer to the current solution values.
- */
+/** @brief Copy local solution values into a caller-owned host array. */
 uint32_t
-HYPREDRV_PythonGetSolutionValues(HYPREDRV_t hypredrv, const void **sol_data,
-                                 size_t *sol_length)
+HYPREDRV_PythonCopySolutionValues(HYPREDRV_t hypredrv, void *sol_data, size_t sol_length)
 {
-   if (!sol_data || !sol_length)
+   HYPRE_BigInt count = (HYPRE_BigInt)sol_length;
+   if (count < 0 || (size_t)count != sol_length)
    {
       return HYPREDRV_ErrorInvalidValue(
-         "HYPREDRV_PythonGetSolutionValues: sol_data and sol_length must be non-NULL");
+         "solution length exceeds the active HYPRE_BigInt range");
    }
+   return HYPREDRV_LinearSystemCopySolutionValues(hypredrv, count,
+                                                  (HYPRE_Complex *)sol_data);
+}
 
-   HYPRE_Complex *src        = NULL;
-   HYPRE_BigInt   length_big = 0;
-   uint32_t       code = HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &length_big);
-   if (code != 0)
-   {
-      return code;
-   }
-   if (length_big < 0)
-   {
-      return HYPREDRV_ErrorInvalidValue(
-         "HYPREDRV_PythonGetSolutionValues: solution length is negative");
-   }
-   code        = HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &src);
-   *sol_data   = (const void *)src;
-   *sol_length = (size_t)length_big;
-   return code;
+/** @brief Return the local solution length using the Python bridge's size type. */
+uint32_t
+HYPREDRV_PythonGetSolutionLength(HYPREDRV_t hypredrv, size_t *sol_length)
+{
+   if (!sol_length) return HYPREDRV_ErrorInvalidValue("solution length output is NULL");
+   HYPRE_BigInt count = 0;
+   uint32_t     code  = HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &count);
+   if (code) return code;
+   if (count < 0 || (uintmax_t)count > SIZE_MAX)
+      return HYPREDRV_ErrorInvalidValue("solution length exceeds size_t range");
+   *sol_length = (size_t)count;
+   return HYPREDRV_SUCCESS;
 }

@@ -720,19 +720,35 @@ HYPREDRV_LinearSystemResetInitialGuess(HYPREDRV_t hypredrv)
  *-----------------------------------------------------------------------------*/
 
 uint32_t
-HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data)
+HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data,
+                                       HYPRE_MemoryLocation *memory_location)
 {
    HYPREDRV_API_ENTER();
 
-   if (!sol_data || !hypredrv->vec_x.handle)
+   if (!sol_data || !memory_location || !hypredrv->vec_x.handle)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       return hypredrv_ErrorCodeGet();
    }
 
-   *sol_data = hypredrv_IJVectorData(hypredrv->vec_x.handle, HYPRE_MEMORY_HOST);
+   return hypredrv_LinearSystemGetSolutionValues(hypredrv, sol_data, memory_location);
+}
 
-   return hypredrv_ErrorCodeGet();
+/*-----------------------------------------------------------------------------
+ * Copy local solution values into caller-owned host storage
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSystemCopySolutionValues(HYPREDRV_t hypredrv, HYPRE_BigInt count,
+                                        HYPRE_Complex *values)
+{
+   HYPREDRV_API_ENTER();
+   if (count < 0 || (count && !values) || !hypredrv->vec_x.handle)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      return hypredrv_ErrorCodeGet();
+   }
+   return hypredrv_LinearSystemCopySolutionValues(hypredrv, count, values);
 }
 
 /*-----------------------------------------------------------------------------

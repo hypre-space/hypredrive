@@ -1,22 +1,23 @@
 # hypredrive documentation
 
-This folder contains the sources for hypredrive's Sphinx user manual plus generated PDF
-artifacts when documentation is built.
+This folder contains the sources for hypredrive's Sphinx user manual and the
+Doxygen API reference. Generated documentation is written to the build tree.
 
 ## Building docs with CMake
 
-The supported path is the top-level CMake build:
+Install Doxygen and the Python packages in `usrman-src/requirements.txt` first.
+The HTML build does not require LaTeX. Use the top-level CMake build:
 
 ```bash
 cmake -S . -B build-docs -DHYPREDRV_ENABLE_DOCS=ON
-cmake --build build-docs --target docs
+cmake --build build-docs --target sphinx-doc
 ```
 
 Useful targets:
 
-- `docs`: build Doxygen first, then Sphinx
-- `sphinx-doc`: build the HTML user manual
-- `sphinx-latexpdf`: build the PDF user manual when LaTeX is available
+- `sphinx-doc`: build Doxygen XML first, then the HTML user manual
+- `sphinx-latexpdf`: build Doxygen XML first, then the PDF user manual (requires LaTeX)
+- `docs`: build the Doxygen reference and PDF user manual (requires LaTeX)
 
 The HTML output is written under `build-docs/docs/usrman-build/html/index.html`.
 

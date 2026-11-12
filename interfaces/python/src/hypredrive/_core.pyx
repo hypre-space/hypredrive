@@ -22,7 +22,6 @@ The binding follows three principles:
 
 from libc.stdint cimport int64_t, uint32_t, intptr_t
 from libc.stdlib cimport malloc, free
-from libc.string cimport memcpy
 
 cimport cython
 import numpy as np
@@ -427,31 +426,23 @@ cdef class HypreDriveCore:
     def copy_solution(self, cnp.ndarray out):
         """Copy the local solution slab into ``out`` (a contiguous float64 array).
 
-        We always copy: HYPRE owns the underlying HYPRE_ParVector storage and
-        may (e.g. on GPU builds) keep it in device memory; surfacing a
-        device pointer to NumPy would be a footgun for v1.
+        Device values are synchronized and copied without changing the native
+        solution vector's memory location or data pointer.
         """
         self._require_open()
         real_dtype = np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE}")
         validate_native_array(out, "out", real_dtype, writable=True)
-        cdef const void *src = NULL
-        cdef size_t src_length = 0
-        _check(
-            _c.HYPREDRV_PythonGetSolutionValues(self._handle, &src, &src_length),
-            "HYPREDRV_LinearSystemGetSolutionValues",
-        )
-        if src == NULL:
-            raise RuntimeError("hypredrive returned a NULL solution pointer")
         cdef Py_ssize_t n = out.shape[0]
-        if n < 0:
-            raise ValueError("output length must be nonnegative")
-        if <size_t>n > src_length:
-            raise ValueError(
-                f"output length {n} exceeds local solution length {src_length}"
-            )
-        cdef size_t scalar_size = _HYPREDRIVE_PYTHON_SOLUTION_ENTRY_SIZE
-        memcpy(cnp.PyArray_DATA(out), src,
-               <size_t>n * scalar_size)
+        cdef size_t local_length = 0
+        _check(_c.HYPREDRV_PythonGetSolutionLength(self._handle, &local_length),
+               "HYPREDRV_LinearSystemGetSolutionLength")
+        if <size_t>n > local_length:
+            raise ValueError(f"output length {n} exceeds local solution length {local_length}")
+        _check(
+            _c.HYPREDRV_PythonCopySolutionValues(
+                self._handle, cnp.PyArray_DATA(out), <size_t>n),
+            "HYPREDRV_LinearSystemCopySolutionValues",
+        )
 
     def solution_norm(self, str norm_type):
         self._require_open()

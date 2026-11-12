@@ -10,6 +10,7 @@
 #include "internal/linsys.h"
 #include "object.h"
 #include "test_helpers.h"
+#include "test_solution_helpers.h"
 
 static HYPREDRV_t
 create_object(MPI_Comm comm, const char *precon, int device)
@@ -88,7 +89,7 @@ test_changed_labels_invalidate_consumers(void)
          }
          ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
          HYPRE_Complex *solution = NULL;
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1.e-10);
          ASSERT_EQ_DOUBLE((double)solution[1], 2.0, 1.e-10);
          ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -286,7 +287,7 @@ test_distributed_label_changes_invalidate_every_consumer(void)
       ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
       HYPRE_Complex *data = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)data[0], 2.0, 1.e-10);
       ASSERT_EQ_DOUBLE((double)data[1], 2.0, 1.e-10);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

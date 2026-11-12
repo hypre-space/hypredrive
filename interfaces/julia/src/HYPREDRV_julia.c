@@ -474,38 +474,15 @@ HYPREDRV_JuliaGetSolutionNorm(HYPREDRV_t hypredrv, const char *norm_type, double
    return HYPREDRV_LinearSystemGetSolutionNorm(hypredrv, norm_type, norm);
 }
 
-/** @brief Return a borrowed solution pointer valid until the next solve/reset or destroy.
- */
+/** @brief Copy local solution values into a caller-owned host array. */
 uint32_t
-HYPREDRV_JuliaGetSolutionValues(HYPREDRV_t hypredrv, const void **sol_data,
-                                int64_t *sol_length)
+HYPREDRV_JuliaCopySolutionValues(HYPREDRV_t hypredrv, void *sol_data, int64_t sol_length)
 {
-   if (sol_data == NULL || sol_length == NULL)
-   {
-      return HYPREDRV_ErrorInvalidValue("solution output pointer is NULL");
-   }
-
-   HYPRE_BigInt length = 0;
-   uint32_t     code   = HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &length);
-   if (code != 0u)
-   {
-      return code;
-   }
-   if (length < 0)
-   {
-      return HYPREDRV_ErrorInvalidValue("solution length is negative");
-   }
-
-   HYPRE_Complex *values = NULL;
-   code                  = HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &values);
-   if (code != 0u)
-   {
-      return code;
-   }
-
-   *sol_data   = (const void *)values;
-   *sol_length = (int64_t)length;
-   return HYPREDRV_SUCCESS;
+   HYPRE_BigInt count;
+   uint32_t     code = HYPREDRV_JuliaBigIntFromI64(sol_length, "solution length", &count);
+   if (code) return code;
+   return HYPREDRV_LinearSystemCopySolutionValues(hypredrv, count,
+                                                  (HYPRE_Complex *)sol_data);
 }
 
 /** @brief Print the HYPREDRV error chain for a nonzero error code. */

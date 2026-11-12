@@ -25,12 +25,13 @@ program test_csr_mpi
 
    integer, parameter :: n = 8
    integer :: ierr, rank, nproc, i, local_n, pos
-   integer(c_int) :: iters, converged, stats_count, stats_entry, stats_solves, stats_iters
+   integer(c_int) :: memory_location, iters, converged, stats_count, stats_entry, stats_solves, stats_iters
    integer(c_int64_t) :: row_start, row_end, global_row, solution_len
    integer(c_int64_t), allocatable :: indptr(:), cols(:), empty_indptr(:)
    integer(c_int64_t), allocatable :: empty_cols(:), bad_indptr(:), bad_cols(:)
    integer(c_int), allocatable :: dofmap(:)
    real(c_double), allocatable :: data(:), rhs(:), empty_data(:), bad_data(:), overflow_rhs(:), near_null(:)
+   real(c_double), allocatable :: solution_copy(:)
    real(c_double) :: norm, final_res_norm, setup_time, solve_time, stats_setup_time, stats_solve_time
    type(c_ptr) :: drv, mat, rhs_vec, sol_vec, rhs_values, sol_values, state_values
    type(c_ptr) :: state_vecs(2)
@@ -121,8 +122,13 @@ program test_csr_mpi
    call HYPREDRV_Check(HYPREDRV_LinearSolverApply(drv))
    call HYPREDRV_Check(HYPREDRV_StateVectorApplyCorrection(drv, 0_c_int))
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolution(drv, sol_vec))
-   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionValues(drv, sol_values))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionValues(drv, sol_values, memory_location))
    if (.not. c_associated(sol_vec) .or. .not. c_associated(sol_values)) stop 'invalid solution accessor pointer'
+   if (memory_location /= HYPRE_MEMORY_HOST .and. memory_location /= HYPRE_MEMORY_DEVICE) stop 'invalid memory location'
+   allocate (solution_copy(local_n))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemCopySolutionValues(drv, int(local_n, c_int64_t), solution_copy))
+   if (maxval(abs(solution_copy)) <= 0.0_c_double) stop 'invalid solution copy'
+   deallocate (solution_copy)
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionNorm(drv, 'l2'//c_null_char, norm))
    if (norm <= 0.0_c_double) stop 'invalid solution norm'
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetNumIter(drv, iters))

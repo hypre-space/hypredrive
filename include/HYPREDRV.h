@@ -1528,38 +1528,45 @@ extern "C"
                                      int num_components, const HYPRE_Complex *values);
 
    /**
-    * @brief Retrieves the solution values from the linear system of a HYPREDRV object.
+    * @brief Borrow the native local solution pointer and its memory location.
     *
-    * This function provides access to the internal host pointer where the solution
-    * vector of the linear system associated with the given HYPREDRV_t object is stored.
-    * It does not make a separate caller-owned copy of the solution values; instead, it
-    * assigns the internal pointer to the user-provided pointer @p sol_data. In GPU
-    * builds, the solution vector is migrated/synchronized to host memory before the
-    * pointer is returned. The pointer is invalidated by operations that migrate,
-    * replace or destroy the solution. Obtain it again after solver setup or apply.
+    * No allocation, copy, synchronization or migration is performed. The pointer
+    * refers to this MPI rank's local entries in host or device memory, as reported
+    * by @p memory_location. Device pointers must not be dereferenced on the host.
+    * The caller is responsible for synchronizing any device access.
     *
-    * @param hypredrv A valid HYPREDRV_t object from which the internal solution pointer
-    * is to be retrieved.
-    * @param sol_data A pointer to a HYPRE_Complex pointer, which will be set to a host
-    * pointer to the internal solution data array. The user must not free or modify the
-    * internal array.
+    * No ownership is transferred. Do not free or modify the array. Operations that
+    * migrate, replace or destroy the solution may invalidate the pointer. Obtain it again
+    * after solver setup or apply. Use HYPREDRV_LinearSystemCopySolutionValues() to
+    * retrieve values in caller-owned host storage without changing residency.
     *
-    * @return Returns an error code, with 0 indicating success. If the @p hypredrv
-    * parameter is invalid (e.g., NULL or uninitialized), an error code is returned, and
-    * the error can be further described using HYPREDRV_ErrorCodeDescribe(error_code).
-    *
-    * Example Usage:
-    * @code
-    *    HYPREDRV_t *hypredrv;
-    *    HYPRE_Complex *sol_data = NULL;
-    *    // Ensure hypredrv is initialized and the system is solved
-    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
-    *    // Use sol_data but do not free or modify it.
-    * @endcode
+    * @param hypredrv A valid HYPREDRV object with an initialized solution.
+    * @param sol_data Non-NULL output pointer receiving the native data pointer.
+    * @param memory_location Non-NULL output receiving HYPRE_MEMORY_HOST or
+    *                        HYPRE_MEMORY_DEVICE. This is the vector's declared hypre
+    *                        memory location, including in unified-memory builds.
+    * @return Zero on success, otherwise a HYPREDRV error code.
     */
-
    HYPREDRV_EXPORT_SYMBOL uint32_t
-   HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data);
+   HYPREDRV_LinearSystemGetSolutionValues(HYPREDRV_t hypredrv, HYPRE_Complex **sol_data,
+                                          HYPRE_MemoryLocation *memory_location);
+
+   /**
+    * @brief Copy local solution entries into caller-owned host storage.
+    *
+    * Copies the first @p count local entries and synchronizes the device-to-host
+    * transfer before returning. The native solution pointer and memory location
+    * are preserved. No host staging allocation is made by hypredrive.
+    *
+    * @param hypredrv A valid HYPREDRV object with an initialized solution.
+    * @param count Number of entries to copy, between zero and the local length
+    *              reported by HYPREDRV_LinearSystemGetSolutionLength().
+    * @param values Caller-owned host array with room for @p count HYPRE_Complex
+    *               entries. May be NULL when @p count is zero.
+    * @return Zero on success, otherwise a HYPREDRV error code.
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSystemCopySolutionValues(
+      HYPREDRV_t hypredrv, HYPRE_BigInt count, HYPRE_Complex *values);
 
    /**
     * @brief Return the local solution-vector length.

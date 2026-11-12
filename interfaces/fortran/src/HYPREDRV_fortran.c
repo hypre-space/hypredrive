@@ -14,10 +14,16 @@
 #include "HYPREDRV.h"
 #include "internal/bridge_row_bounds.h"
 
+_Static_assert(HYPRE_MEMORY_UNDEFINED == -1 && HYPRE_MEMORY_HOST == 0 &&
+                  HYPRE_MEMORY_DEVICE == 1,
+               "Fortran memory-location constants must match hypre");
+
 _Static_assert(((HYPRE_BigInt)-1) < (HYPRE_BigInt)0,
                "HYPREDRV Fortran bridge requires signed HYPRE_BigInt");
 _Static_assert(sizeof(HYPRE_Real) == sizeof(double),
                "HYPREDRV Fortran bridge requires HYPRE_Real to use the C double ABI");
+_Static_assert(sizeof(HYPRE_Complex) == sizeof(double),
+               "HYPREDRV Fortran bridge requires real HYPRE_Complex storage");
 
 static uint32_t
 hypredrv_fortran_bigint_from_i64(int64_t value, const char *name, HYPRE_BigInt *out)
@@ -206,4 +212,15 @@ HYPREDRV_FortranLinearSystemGetSolutionLength(HYPREDRV_t hypredrv, int64_t *leng
    }
    *length_out = (int64_t)length;
    return HYPREDRV_SUCCESS;
+}
+
+/** Copy a local solution into Fortran-owned host storage using a portable count. */
+uint32_t
+HYPREDRV_FortranLinearSystemCopySolutionValues(HYPREDRV_t hypredrv, int64_t count_in,
+                                               HYPRE_Complex *values)
+{
+   HYPRE_BigInt count;
+   uint32_t code = hypredrv_fortran_bigint_from_i64(count_in, "solution length", &count);
+   if (code) return code;
+   return HYPREDRV_LinearSystemCopySolutionValues(hypredrv, count, values);
 }

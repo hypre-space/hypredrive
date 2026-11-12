@@ -57,6 +57,10 @@ mpirun -np 1 ./build/hypredrive-cli examples/ex2.yml
    HYPREDRV_LinearSolverCreate(hdrv);
    HYPREDRV_LinearSolverSetup(hdrv);
    HYPREDRV_LinearSolverApply(hdrv);
+   HYPRE_Complex *x = NULL;
+   HYPRE_MemoryLocation x_location;
+   HYPREDRV_LinearSystemGetSolutionValues(hdrv, &x, &x_location);
+   // Use x with code for x_location (host/device); hypre owns the array.
    HYPREDRV_LinearSolverDestroy(hdrv);
 
    // 4. Cleanup

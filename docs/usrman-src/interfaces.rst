@@ -18,7 +18,8 @@ Interfaces
 
 Language interfaces live under ``interfaces/`` in the source tree. Each language-specific
 page documents installation, build requirements, and the public API exposed by that
-binding.
+binding. Each page includes a minimal serial solve of the same two-row system,
+with solution ``[1, 1]``, followed by configuration and MPI usage where supported.
 
 .. toctree::
    :maxdepth: 2
