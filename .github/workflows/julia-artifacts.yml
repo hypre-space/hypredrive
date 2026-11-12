@@ -223,6 +223,10 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # Earlier serialized runs may already have refreshed the bindings.
+          # Bind this run's exact archives on top of the current branch tip.
+          ref: ${{ github.ref_name }}
 
       - name: Set up Julia
         uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
