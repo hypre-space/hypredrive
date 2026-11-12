@@ -63,46 +63,76 @@ reproducible smoke driver for the Fortran tests.
 Installed use
 -------------
 
-Installed Fortran consumers can use the exported CMake target:
+Save the minimal example below as ``minimal.f90`` and use this ``CMakeLists.txt``
+in the same directory to link an installed hypredrive:
 
 .. code-block:: cmake
 
+   cmake_minimum_required(VERSION 3.23)
+   project(minimal LANGUAGES C Fortran)
    find_package(MPI COMPONENTS Fortran REQUIRED)
-   find_package(HYPREDRV REQUIRED)
-   target_link_libraries(my_solver PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
+   find_package(HYPREDRV CONFIG REQUIRED)
+   add_executable(minimal minimal.f90)
+   target_link_libraries(minimal PRIVATE HYPREDRV::Fortran MPI::MPI_Fortran)
+
+Configure this application with ``-DCMAKE_PREFIX_PATH=/path/to/hypredrive/install``,
+then build and run ``minimal``.
 
 Fortran module files are compiler-specific. Use the same Fortran compiler family
 for hypredrive and downstream code. A different compiler can fail to read
 ``hypredrive.mod``. CMake installs this module as ``include/hypredrive.mod`` under
 the installation prefix.
 
-Installed executables use a relative runtime search path so prefix-local
-libraries in ``lib`` are found without setting ``LD_LIBRARY_PATH``.
+Installed hypredrive executables use relative runtime paths for prefix-local
+libraries. External HYPRE or MPI libraries must also be on the runtime search
+path (for example, ``LD_LIBRARY_PATH`` on Linux).
 
-Usage model
------------
+Minimal example
+---------------
 
-Applications use the ``hypredrive`` module and opaque ``type(c_ptr)`` handles:
+This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
+``b = [1, 1]``, giving ``x = [1, 1]``.
 
 .. code-block:: fortran
 
-   program driver
+   program minimal
       use, intrinsic :: iso_c_binding
       use hypredrive
       implicit none
       include 'mpif.h'
 
       integer :: ierr
-      type(c_ptr) :: drv
+      type(c_ptr) :: drv, solution
+      real(c_double), pointer :: x(:)
+      integer(c_int64_t) :: indptr(3) = [0_c_int64_t, 2_c_int64_t, 4_c_int64_t]
+      integer(c_int64_t) :: cols(4) = [0_c_int64_t, 1_c_int64_t, 0_c_int64_t, 1_c_int64_t]
+      real(c_double) :: values(4) = [2.0_c_double, -1.0_c_double, -1.0_c_double, 2.0_c_double]
+      real(c_double) :: rhs(2) = [1.0_c_double, 1.0_c_double]
 
       call MPI_Init(ierr)
       call HYPREDRV_Check(HYPREDRV_Initialize())
-      call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_WORLD, c_int), drv))
-      ! Install matrix/RHS and solve here.
+      call HYPREDRV_Check(HYPREDRV_Create(int(MPI_COMM_SELF, c_int), drv))
+      call HYPREDRV_Check(HYPREDRV_SetLibraryMode(drv))
+      call HYPREDRV_Check(HYPREDRV_InputArgsParseYaml(drv, &
+         'general: {statistics: 0}' // new_line('a') // &
+         'solver: pcg' // new_line('a') // 'preconditioner: amg' // new_line('a')))
+      call HYPREDRV_Check(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, &
+         0_c_int64_t, 1_c_int64_t, indptr, cols, values))
+      call HYPREDRV_Check(HYPREDRV_LinearSystemSetRHSFromArray(drv, 0_c_int64_t, 1_c_int64_t, rhs))
+      call HYPREDRV_Check(HYPREDRV_LinearSystemSetInitialGuess(drv, c_null_ptr))
+      call HYPREDRV_Check(HYPREDRV_LinearSolverCreate(drv))
+      call HYPREDRV_Check(HYPREDRV_LinearSolverSetup(drv))
+      call HYPREDRV_Check(HYPREDRV_LinearSolverApply(drv))
+      call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionValues(drv, solution))
+      call c_f_pointer(solution, x, [2])
+      print *, x
       call HYPREDRV_Check(HYPREDRV_Destroy(drv))
       call HYPREDRV_Check(HYPREDRV_Finalize())
       call MPI_Finalize(ierr)
-   end program driver
+   end program minimal
+
+The solution pointer is a view of driver-owned storage; use or copy it before
+destroying the driver. The CSR and RHS helpers copy the input arrays.
 
 The binding accepts MPI communicators as Fortran handles and converts them to C
 communicators. The examples use ``mpif.h`` instead of
@@ -177,8 +207,10 @@ annotations, and timing. The module also provides small Fortran helpers, such as
 ``HYPREDRV_Check`` and
 ``HYPREDRV_BigIntSize``.
 
-The Fortran interface preserves the C API ownership rules. Borrowed HYPRE objects remain
-under caller ownership unless a C function documents a transfer. Raw array accessors such
+The Fortran interface preserves the C API ownership rules. Call
+``HYPREDRV_SetLibraryMode`` before attaching borrowed HYPRE objects to
+retain caller ownership. Objects created by the CSR and array helpers remain
+driver-owned. Raw array accessors such
 as ``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers. Use
 ``c_f_pointer`` when you need a Fortran view. Do not free these pointers from Fortran.
 

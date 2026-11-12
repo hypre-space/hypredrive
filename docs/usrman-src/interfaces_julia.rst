@@ -93,20 +93,22 @@ Without these environment variables, the package first searches ``Artifacts.toml
 platform MPI linkage. Linux and macOS use ``MPItrampoline_jll``; Windows uses
 ``MicrosoftMPI_jll``.
 
-Example
--------
+Minimal example
+---------------
+
+This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
+``b = [1, 1]``, giving ``x = [1, 1]``.
 
 .. code-block:: julia
 
    using HypreDrive
    using SparseArrays
 
-   n = 64
-   A = spdiagm(-1 => fill(-1.0, n - 1), 0 => fill(2.0, n), 1 => fill(-1.0, n - 1))
-   b = ones(n)
-
+   A = sparse([2.0 -1.0; -1.0 2.0])
+   b = ones(2)
    x, info = hypredrive_solve(A, b)
-   println(info.iterations)
+   println(x)  # [1.0, 1.0]
+   println(info.converged)
 
 Use Julia keyword arguments to construct options instead of hand-written YAML:
 
