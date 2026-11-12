@@ -456,7 +456,6 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
    }
 
    HYPRE_BigInt   solution_length = 0;
-   HYPRE_Complex *solution        = NULL;
    int            iterations      = 0;
    int            converged       = 0;
    double         final_res_norm  = 0.0;
@@ -476,16 +475,13 @@ mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
       mexErrMsgIdAndTxt("hypredrive:SolutionSizeMismatch",
                         "solution length does not match size(A,1)");
    }
-   code = HYPREDRV_LinearSystemGetSolutionValues(drv, &solution);
+   plhs[0] = mxCreateDoubleMatrix(n, 1, mxREAL);
+   code = HYPREDRV_LinearSystemCopySolutionValues(drv, solution_length, mxGetPr(plhs[0]));
    if (code != HYPREDRV_SUCCESS)
    {
-      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemGetSolutionValues",
+      HYPREDRV_MatlabFailCodeWithCleanup(code, "HYPREDRV_LinearSystemCopySolutionValues",
                                          &drv, indptr, cols, data, yaml);
    }
-
-   plhs[0]     = mxCreateDoubleMatrix(n, 1, mxREAL);
-   double *out = mxGetPr(plhs[0]);
-   memcpy(out, solution, (size_t)n * sizeof(double));
 
    code = HYPREDRV_LinearSolverGetNumIter(drv, &iterations);
    if (code != HYPREDRV_SUCCESS)

@@ -178,9 +178,12 @@ annotations, and timing. The module also provides small Fortran helpers, such as
 ``HYPREDRV_BigIntSize``.
 
 The Fortran interface preserves the C API ownership rules. Borrowed HYPRE objects remain
-under caller ownership unless a C function documents a transfer. Raw array accessors such
-as ``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers. Use
-``c_f_pointer`` when you need a Fortran view. Do not free these pointers from Fortran.
+under caller ownership unless a C function documents a transfer. ``HYPREDRV_LinearSystemGetSolutionValues(drv, pointer, memory_location)`` returns
+borrowed native storage and its hypre memory location as ``integer(c_int)``
+(``HYPRE_MEMORY_HOST`` or ``HYPRE_MEMORY_DEVICE``). Use ``c_f_pointer`` only for
+host pointers; device pointers require device-aware code. Do not free the
+borrowed storage. Use ``HYPREDRV_LinearSystemCopySolutionValues`` to copy into a
+Fortran-owned host array without changing residency.
 
 .. list-table::
    :header-rows: 1
@@ -201,7 +204,7 @@ as ``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers. Use
    * - Dofmaps/nullspace
      - ``HYPREDRV_LinearSystemSetDofmap``, ``HYPREDRV_LinearSystemSetInterleavedDofmap``, ``HYPREDRV_LinearSystemSetContiguousDofmap``, ``HYPREDRV_LinearSystemReadDofmap``, ``HYPREDRV_LinearSystemPrintDofmap``, ``HYPREDRV_LinearSystemSetNearNullSpace``, ``HYPREDRV_LinearSystemSetNullSpace``
    * - Accessors
-     - ``HYPREDRV_LinearSystemGetSolution*``, ``HYPREDRV_LinearSystemGetRHS*``, ``HYPREDRV_LinearSystemGetMatrix``, ``HYPREDRV_LinearSystemGetSolutionNorm``
+     - ``HYPREDRV_LinearSystemGetSolution*``, ``HYPREDRV_LinearSystemGetRHS*``, ``HYPREDRV_LinearSystemGetMatrix``, ``HYPREDRV_LinearSystemGetSolutionNorm``, ``HYPREDRV_LinearSystemCopySolutionValues``
    * - State vectors
      - ``HYPREDRV_StateVectorSet``, ``HYPREDRV_StateVectorGetValues``, ``HYPREDRV_StateVectorCopy``, ``HYPREDRV_StateVectorUpdateAll``, ``HYPREDRV_StateVectorApplyCorrection``
    * - Solver/preconditioner

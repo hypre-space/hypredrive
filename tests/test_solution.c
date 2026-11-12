@@ -11,6 +11,7 @@
 #include "internal/linsys.h"
 #include "object.h"
 #include "test_helpers.h"
+#include "test_solution_helpers.h"
 
 /* Write the nonzero-origin rejection fixture directly. hypre 2.21 normalizes
  * ParVector partitions but its IJ printer asserts they are still absolute. */
@@ -142,7 +143,7 @@ test_previous_mode_preserves_borrowed_vectors(void)
       ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       HYPRE_Complex *data = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)data[0], 7.0, 0.0);
       ASSERT_EQ_DOUBLE((double)data[1], 7.0, 0.0);
       data = hypredrv_IJVectorData(guess, HYPRE_MEMORY_HOST);
@@ -188,7 +189,7 @@ test_alias_ownership_transfers(void)
       ASSERT_EQ(obj->vec_b.owned, !library);
       ASSERT_FALSE(obj->vec_x0.owned);
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)data[0], 2.0, 0.0);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
       if (library) ASSERT_EQ(HYPRE_IJVectorDestroy(rhs), 0);
@@ -265,7 +266,7 @@ test_generated_and_file_guesses(void)
       ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       HYPRE_Complex *data = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)data[0], 4.0, 0.0);
       ASSERT_EQ_DOUBLE((double)data[1], 4.0, 0.0);
       HYPRE_IJVector saved       = obj->vec_x0.handle;
@@ -298,7 +299,7 @@ test_supplied_guess_before_parsing(void)
    ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, (HYPRE_Vector)guess), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    HYPRE_Complex *data = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
    ASSERT_EQ_DOUBLE((double)data[0], 3.0, 0.0);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 }
@@ -596,7 +597,7 @@ test_distributed_solution_replacement(void)
       ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       HYPRE_Complex *data = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       if (count) ASSERT_EQ_DOUBLE((double)data[0], 7.0, 0.0);
       /* Local attachment must not require participation from the other ranks. */
       if (!rank)
@@ -729,10 +730,80 @@ test_distributed_solution_replacement(void)
       ASSERT_EQ(HYPREDRV_LinearSystemSetRHS(obj, (HYPRE_Vector)shifted), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemSetInitialGuess(obj, NULL), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       if (count) ASSERT_EQ_DOUBLE((double)data[0], 0.0, 0.0);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
       ASSERT_EQ(HYPRE_IJVectorDestroy(external), 0);
+   }
+}
+
+static void
+test_solution_values_preserve_storage(void)
+{
+   const int locations[] = {
+      0,
+#ifdef HYPRE_USING_GPU
+      1,
+#endif
+   };
+   const int counts[] = {2, 5, 1};
+   for (size_t p = 0; p < sizeof(locations) / sizeof(locations[0]); p++)
+   {
+      HYPREDRV_t     obj = create_object(MPI_COMM_SELF, locations[p], 0, 2, 1);
+      HYPRE_IJVector rhs = obj->vec_b.handle, solution = NULL;
+      for (size_t c = 0; c < sizeof(counts) / sizeof(counts[0]); c++)
+      {
+         HYPRE_IJVector previous = solution;
+         solution                = create_vector(MPI_COMM_SELF, 0, counts[c], 7.0);
+         ASSERT_EQ(HYPREDRV_LinearSystemSetSolution(obj, (HYPRE_Vector)solution),
+                   ERROR_NONE);
+         if (previous) ASSERT_EQ(HYPRE_IJVectorDestroy(previous), 0);
+         void *native = NULL;
+         ASSERT_EQ(HYPRE_IJVectorGetObject(solution, &native), 0);
+         hypre_ParVector     *par         = (hypre_ParVector *)native;
+         hypre_Vector        *local       = hypre_ParVectorLocalVector(par);
+         HYPRE_Complex       *native_data = hypre_VectorData(local);
+         HYPRE_MemoryLocation location    = hypre_VectorMemoryLocation(local);
+         for (int read = 0; read < 2; read++)
+         {
+            HYPRE_Complex       *data     = NULL;
+            HYPRE_MemoryLocation reported = HYPRE_MEMORY_UNDEFINED;
+            ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data, &reported),
+                      ERROR_NONE);
+            ASSERT_PTR_EQ(data, native_data);
+            ASSERT_EQ(reported, location);
+            HYPRE_Complex host[5];
+            ASSERT_EQ(HYPREDRV_LinearSystemCopySolutionValues(obj, counts[c], host),
+                      ERROR_NONE);
+            for (int i = 0; i < counts[c]; i++)
+               ASSERT_EQ_DOUBLE((double)host[i], read ? 11.0 : 7.0, 0.0);
+            ASSERT_PTR_EQ(hypre_ParVectorLocalVector(par), local);
+            ASSERT_PTR_EQ(hypre_VectorData(local), native_data);
+            ASSERT_EQ(hypre_ParVectorMemoryLocation(par), location);
+            if (!read)
+               ASSERT_EQ(HYPRE_ParVectorSetConstantValues((HYPRE_ParVector)par, 11.0), 0);
+         }
+         HYPRE_Complex host[6] = {0};
+         ASSERT_EQ(HYPREDRV_LinearSystemCopySolutionValues(obj, 0, NULL), ERROR_NONE);
+         ASSERT_EQ(HYPREDRV_LinearSystemCopySolutionValues(obj, 1, host), ERROR_NONE);
+         ASSERT_EQ_DOUBLE((double)host[0], 11.0, 0.0);
+         ASSERT_EQ_DOUBLE((double)host[1], 0.0, 0.0);
+         ASSERT_EQ_U32(HYPREDRV_LinearSystemCopySolutionValues(obj, counts[c] + 1, host),
+                       ERROR_INVALID_VAL);
+         ASSERT_EQ_U32(HYPREDRV_LinearSystemCopySolutionValues(obj, -1, host),
+                       ERROR_INVALID_VAL);
+         ASSERT_EQ_U32(HYPREDRV_LinearSystemCopySolutionValues(obj, 1, NULL),
+                       ERROR_INVALID_VAL);
+         HYPRE_Complex       *data = NULL;
+         HYPRE_MemoryLocation reported;
+         ASSERT_EQ_U32(HYPREDRV_LinearSystemGetSolutionValues(obj, &data, NULL),
+                       ERROR_INVALID_VAL);
+         ASSERT_EQ_U32(HYPREDRV_LinearSystemGetSolutionValues(obj, NULL, &reported),
+                       ERROR_INVALID_VAL);
+      }
+      ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+      ASSERT_EQ(HYPRE_IJVectorDestroy(solution), 0);
+      ASSERT_EQ(HYPRE_IJVectorDestroy(rhs), 0);
    }
 }
 
@@ -759,6 +830,7 @@ main(int argc, char **argv)
    RUN_TEST(test_rhs_and_reference_validate_input_once);
    RUN_TEST(test_configured_rhs_and_reference_storage);
    RUN_TEST(test_configured_vectors_require_arguments);
+   RUN_TEST(test_solution_values_preserve_storage);
    RUN_TEST(test_distributed_solution_replacement);
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
    MPI_Finalize();

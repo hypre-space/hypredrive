@@ -16,6 +16,7 @@
 #include "logging.h"
 #include "object.h"
 #include "test_helpers.h"
+#include "test_solution_helpers.h"
 #include "vector_tags.h"
 
 static HYPREDRV_t
@@ -143,7 +144,7 @@ test_configured_construction_errors_are_collective(void)
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
    HYPRE_Complex *solution = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE((double)solution[0], 0.5, 1e-12);
 
    /* A matrix missing on one rank is rejected before RHS generation on any rank. */
@@ -285,7 +286,7 @@ test_configured_matrix_ingress_is_collective(void)
          ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
          ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
          HYPRE_Complex *values = NULL;
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &values), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &values), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)values[0], 0.5, 1e-12);
       }
       /* Existing-handle attachment is local even on a distributed object. */
@@ -324,7 +325,7 @@ test_configured_matrix_ingress_is_collective(void)
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
       HYPRE_Complex *values = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &values), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &values), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)values[0], 0.5, 1e-12);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    }
@@ -499,7 +500,7 @@ test_solver_workflow_preflight_is_collective(void)
          ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
          ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
          HYPRE_Complex *values = NULL;
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &values), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &values), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)values[0], 0.5, 1e-12);
       }
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
@@ -567,7 +568,7 @@ test_default_solution_creation_preserves_configured_peers(void)
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
       HYPRE_Complex *solution = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)solution[0], 0.5, 1e-12);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    }
@@ -667,7 +668,7 @@ test_preconditioner_creation_recovers_rank_local_missing_handle(void)
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
       HYPRE_Complex *solution = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)solution[0], 0.5, 1e-12);
       if (rank == 1)
       {
@@ -683,7 +684,7 @@ test_preconditioner_creation_recovers_rank_local_missing_handle(void)
       ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)solution[0], 0.5, 1e-12);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    }
@@ -1031,7 +1032,7 @@ test_scaled_frelax_rejects_rank_local_solve_inputs(void)
       ASSERT_EQ(hypre_SolverSolve(base)(wrapper, NULL, (HYPRE_Vector)b, (HYPRE_Vector)x),
                 0);
       HYPRE_Complex *solution = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
       if (!empty || rank) ASSERT_EQ_DOUBLE(solution[0], 0.5, 1e-12);
       ASSERT_EQ(hypredrv_MGRFRelaxEquilWrapperDestroy(wrapper), 0);
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

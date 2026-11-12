@@ -11,6 +11,7 @@
 #include "internal/linsys.h"
 #include "object.h"
 #include "test_helpers.h"
+#include "test_solution_helpers.h"
 
 static HYPRE_IJVector
 create_state_vector(MPI_Comm comm, HYPRE_BigInt first, HYPRE_BigInt last, double value)
@@ -73,7 +74,7 @@ test_correction_uses_solution_storage(void)
       ASSERT_EQ_DOUBLE((double)data[0], 12.0, 1e-12);
 
       /* Exposing the solution can move it back to the host before the next update. */
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &data), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)data[0], 2.0, 1e-12);
       ASSERT_EQ(HYPREDRV_StateVectorApplyCorrection(obj, 0), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_StateVectorGetValues(obj, 0, &data), ERROR_NONE);
@@ -221,7 +222,9 @@ test_uninitialized_solution_is_rejected(void)
                  ERROR_INVALID_VAL);
    ASSERT_NULL(obj->vec_x.handle);
    HYPRE_Complex *data = NULL;
-   ASSERT_EQ_U32(HYPREDRV_LinearSystemGetSolutionValues(obj, &data), ERROR_INVALID_VAL);
+   ASSERT_EQ_U32(HYPREDRV_LinearSystemGetSolutionValues(
+                    obj, &data, &(HYPRE_MemoryLocation){HYPRE_MEMORY_UNDEFINED}),
+                 ERROR_INVALID_VAL);
    ASSERT_NULL(data);
    ASSERT_EQ_U32(HYPREDRV_StateVectorApplyCorrection(obj, 0), ERROR_INVALID_VAL);
    ASSERT_EQ(HYPREDRV_StateVectorGetValues(obj, 0, &data), ERROR_NONE);

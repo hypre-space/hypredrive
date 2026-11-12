@@ -609,17 +609,17 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemSetNullSpace(handle_, n, c, values));
    }
-   /// @brief Return the HYPREDRV-owned raw host solution buffer.
-   /// @note The returned pointer is owned by this driver and remains valid until the
-   /// next solve, linear-system rebuild, solution replacement, or driver destruction.
-   /// On GPU builds, this call migrates/synchronizes the solution to host memory before
-   /// returning the pointer.
+   /// @brief Borrow the native local solution pointer and report its memory location.
+   /// @note No copy, synchronization or migration is performed. Device pointers must
+   /// be accessed on the device. Do not free or modify the array. Migration,
+   /// replacement or destruction may invalidate it; obtain it again after setup or solve.
    /// @see HYPREDRV_LinearSystemGetSolutionValues
    complex *
-   get_solution_values_raw()
+   get_solution_values_raw(HYPRE_MemoryLocation &memory_location)
    {
       complex *p = nullptr;
-      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemGetSolutionValues(handle_, &p));
+      HYPREDRIVE_CXX_CHECK(
+         HYPREDRV_LinearSystemGetSolutionValues(handle_, &p, &memory_location));
       return p;
    }
    /// @brief C++ wrapper for HYPREDRV_LinearSystemGetSolutionLength.
@@ -631,17 +631,17 @@ class driver
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemGetSolutionLength(handle_, &n));
       return n;
    }
-   /// @brief Return a copied solution vector.
-   /// @note Allocates and copies the full solution from the HYPREDRV-owned host buffer.
-   /// Use get_solution_values_raw() and get_solution_length() to access that buffer in
-   /// place.
-   /// @see HYPREDRV_LinearSystemGetSolutionValues
+   /// @brief Copy the local solution into an owned host vector.
+   /// @note Device values are synchronized and copied without changing residency.
+   /// @see HYPREDRV_LinearSystemCopySolutionValues
    std::vector<complex>
    get_solution_values()
    {
-      const auto n      = static_cast<std::size_t>(get_solution_length());
-      const auto values = get_solution_values_raw();
-      return std::vector<complex>(values, values + n);
+      const auto           n = static_cast<std::size_t>(get_solution_length());
+      std::vector<complex> values(n);
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSystemCopySolutionValues(
+         handle_, static_cast<bigint>(n), values.data()));
+      return values;
    }
    /// @brief C++ wrapper for HYPREDRV_LinearSystemGetSolutionNorm.
    /// @see HYPREDRV_LinearSystemGetSolutionNorm

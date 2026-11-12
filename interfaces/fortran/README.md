@@ -199,10 +199,12 @@ The module exposes Fortran procedures for the public `HYPREDRV_` APIs in
 
 The Fortran procedures intentionally preserve C ownership semantics. Objects
 borrowed from HYPRE remain caller-owned unless the corresponding C API says
-otherwise. Raw array accessors such as
-`HYPREDRV_LinearSystemGetSolutionValues` return C-owned host pointers; convert
-them with `c_f_pointer` if you need a Fortran view, and do not free them from
-Fortran.
+otherwise. `HYPREDRV_LinearSystemGetSolutionValues(drv, pointer, memory_location)` returns
+borrowed native storage and its hypre memory location as `integer(c_int)`
+(`HYPRE_MEMORY_HOST` or `HYPRE_MEMORY_DEVICE`). Use `c_f_pointer` only for host
+pointers; device pointers require device-aware code. Do not free the borrowed
+storage. Use `HYPREDRV_LinearSystemCopySolutionValues` to copy into a
+Fortran-owned host array without changing residency.
 
 | C API group | Fortran module procedures |
 | --- | --- |
@@ -212,7 +214,7 @@ Fortran.
 | Presets | `HYPREDRV_SolverPresetRegister`, `HYPREDRV_PreconPresetRegister`, `HYPREDRV_InputArgsSetSolverPreset`, `HYPREDRV_InputArgsSetPreconPreset` |
 | Linear system | `HYPREDRV_LinearSystemBuild`, `HYPREDRV_LinearSystemReadMatrix`, `HYPREDRV_LinearSystemSetMatrix*`, `HYPREDRV_LinearSystemSetRHS*`, `HYPREDRV_LinearSystemSetInitialGuess`, `HYPREDRV_LinearSystemResetInitialGuess`, `HYPREDRV_LinearSystemSetSolution`, `HYPREDRV_LinearSystemSetReferenceSolution`, `HYPREDRV_LinearSystemSetPrecMatrix`, `HYPREDRV_LinearSystemPrint` |
 | Dofmaps/nullspace | `HYPREDRV_LinearSystemSetDofmap`, `HYPREDRV_LinearSystemSetInterleavedDofmap`, `HYPREDRV_LinearSystemSetContiguousDofmap`, `HYPREDRV_LinearSystemReadDofmap`, `HYPREDRV_LinearSystemPrintDofmap`, `HYPREDRV_LinearSystemSetNearNullSpace`, `HYPREDRV_LinearSystemSetNullSpace` |
-| Accessors | `HYPREDRV_LinearSystemGetSolution*`, `HYPREDRV_LinearSystemGetRHS*`, `HYPREDRV_LinearSystemGetMatrix`, `HYPREDRV_LinearSystemGetSolutionNorm` |
+| Accessors | `HYPREDRV_LinearSystemGetSolution*`, `HYPREDRV_LinearSystemGetRHS*`, `HYPREDRV_LinearSystemGetMatrix`, `HYPREDRV_LinearSystemGetSolutionNorm`, `HYPREDRV_LinearSystemCopySolutionValues` |
 | State vectors | `HYPREDRV_StateVectorSet`, `HYPREDRV_StateVectorGetValues`, `HYPREDRV_StateVectorCopy`, `HYPREDRV_StateVectorUpdateAll`, `HYPREDRV_StateVectorApplyCorrection` |
 | Solver/preconditioner | `HYPREDRV_PreconCreate`, `HYPREDRV_PreconSetup`, `HYPREDRV_PreconApply`, `HYPREDRV_PreconDestroy`, `HYPREDRV_LinearSolverCreate`, `HYPREDRV_LinearSolverSetup`, `HYPREDRV_LinearSolverApply`, `HYPREDRV_LinearSolverDestroy` |
 | Stats/timing | `HYPREDRV_StatsPrint`, `HYPREDRV_StatsLevelGetCount`, `HYPREDRV_StatsLevelGetEntry`, `HYPREDRV_StatsLevelPrint`, `HYPREDRV_LinearSolverGetNumIter`, `HYPREDRV_LinearSolverGetConverged`, `HYPREDRV_LinearSolverGetFinalRelativeResidualNorm`, `HYPREDRV_LinearSolverGetSetupTime`, `HYPREDRV_LinearSolverGetSolveTime` |

@@ -232,11 +232,13 @@ This example shows a minimal library program:
      HYPREDRV_LinearSolverApply(h);
      HYPREDRV_LinearSolverDestroy(h);
 
-     // (Optional) Query statistics early and retrieve host solution values
+     // (Optional) Query statistics early and borrow native solution values
      // (general.statistics also prints automatically on destroy in library mode)
      HYPREDRV_StatsPrint(h);
-     HYPRE_Real* xvals = NULL;
-     HYPREDRV_LinearSystemGetSolutionValues(h, &xvals);
+     HYPRE_Complex* xvals = NULL;
+     HYPRE_MemoryLocation x_location;
+     HYPREDRV_LinearSystemGetSolutionValues(h, &xvals, &x_location);
+     // Access xvals using code appropriate for x_location (host/device).
 
      // Cleanup
      HYPRE_IJMatrixDestroy(A);
@@ -2064,8 +2066,7 @@ in Example 1, and hands them to the driver:
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetup(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
 
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
-   memcpy(c, sol_data, (size_t) mesh->local_size * sizeof(HYPRE_Real));
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemCopySolutionValues(hypredrv, mesh->local_size, c));
 
 Two details are worth highlighting:
 

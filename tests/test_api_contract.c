@@ -9,6 +9,7 @@
 #include "internal/yaml.h"
 #include "object.h"
 #include "test_ij_helpers.h"
+#include "test_solution_helpers.h"
 #include "vector_tags.h"
 
 static uint32_t
@@ -193,7 +194,7 @@ test_configured_replacement_failure_and_recovery(void)
    ASSERT_FALSE(obj->vec_xref.owned);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
    HYPRE_Complex *solution = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
    ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
 
@@ -225,7 +226,7 @@ test_configured_replacement_failure_and_recovery(void)
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
 #ifdef HYPRE_USING_GPU
    /* Rebuild from the same inputs on the device, including M and the reference. */
@@ -273,7 +274,7 @@ test_configured_replacement_failure_and_recovery(void)
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
 #endif
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

@@ -14,6 +14,7 @@
 #include "internal/error.h"
 #include "object.h"
 #include "test_helpers.h"
+#include "test_solution_helpers.h"
 
 static void
 test_public_config_replacement_preserves_live_state(void)
@@ -103,7 +104,7 @@ test_public_config_replacement_preserves_live_state(void)
       ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
       ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
       HYPRE_Complex *solution = NULL;
-      ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+      ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
       ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
    }
    snprintf(yaml, sizeof(yaml),
@@ -123,7 +124,7 @@ test_public_config_replacement_preserves_live_state(void)
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
    HYPRE_Complex *solution = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
 }
@@ -169,7 +170,7 @@ test_preset_and_variant_changes_are_collective(void)
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(fresh), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(fresh), ERROR_NONE);
    HYPRE_Complex *solution = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(fresh, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(fresh, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE(solution[0], 0.5, 1e-12);
    ASSERT_EQ(HYPREDRV_Destroy(&fresh), ERROR_NONE);
 
@@ -298,7 +299,7 @@ test_preset_and_variant_changes_are_collective(void)
          ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
          ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
          HYPRE_Complex *solution = NULL;
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
       }
       ASSERT_EQ(HYPREDRV_InputArgsSetPreconVariant(obj, 0), ERROR_NONE);
@@ -327,19 +328,19 @@ test_preset_and_variant_changes_are_collective(void)
          ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
          ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
          HYPRE_Complex *solution = NULL;
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
          /* Reading values moves x to the host. Both an existing solver and
           * standalone preconditioner apply must restore the execution space. */
          ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
          ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
          ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
          ASSERT_EQ(HYPREDRV_PreconApply(obj, (HYPRE_Vector)obj->vec_b.handle,
                                         (HYPRE_Vector)obj->vec_x.handle),
                    ERROR_NONE);
-         ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+         ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
          ASSERT_EQ_DOUBLE((double)solution[0], 2.0, 1e-12);
       }
       ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

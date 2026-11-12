@@ -13,39 +13,111 @@
 #include "_hypre_utilities.h" // for hypre_TAlloc, hypre_TMemcpy, hypre_TFree
 #include "internal/linsys.h"
 #include "internal/utils.h"
+#include "object.h"
 
 enum
 {
    IJVECTOR_MAX_PART_NROWS = 200u * 1000u * 1000u,
 };
 
-HYPRE_Complex *
-hypredrv_IJVectorData(HYPRE_IJVector vec, HYPRE_MemoryLocation location)
+static int
+IJVectorCallSucceeded(HYPRE_Int code)
 {
-   void            *object = NULL;
-   HYPRE_Int        code   = HYPRE_IJVectorGetObject(vec, &object);
-   hypre_ParVector *par    = (hypre_ParVector *)object;
-   hypre_Vector    *local  = par ? hypre_ParVectorLocalVector(par) : NULL;
-   if (!code && (!local || (hypre_VectorSize(local) > 0 && !hypre_VectorData(local))))
-   {
-      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
-      hypredrv_ErrorMsgAdd("Cannot access an uninitialized vector");
-      return NULL;
-   }
-   if (!code && location != HYPRE_MEMORY_UNDEFINED)
-   {
-      code = hypre_ParVectorMigrate(par, location);
-   }
    if (code)
    {
       char message[HYPRE_MAX_MSG_LEN];
       HYPRE_DescribeError(code, message);
       hypredrv_ErrorCodeSet(ERROR_HYPRE_INTERNAL);
       hypredrv_ErrorMsgAdd("Cannot access vector data: %s", message);
+      return 0;
+   }
+   return 1;
+}
+
+static hypre_ParVector *
+IJVectorReadInput(HYPRE_IJVector vec)
+{
+   void            *object = NULL;
+   if (!IJVectorCallSucceeded(HYPRE_IJVectorGetObject(vec, &object))) return NULL;
+   hypre_ParVector *par    = (hypre_ParVector *)object;
+   hypre_Vector    *local  = par ? hypre_ParVectorLocalVector(par) : NULL;
+   if (!local || hypre_VectorSize(local) < 0 ||
+       (hypre_VectorSize(local) > 0 && !hypre_VectorData(local)))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Cannot access an uninitialized vector");
+      return NULL;
+   }
+   return par;
+}
+
+HYPRE_Complex *
+hypredrv_IJVectorData(HYPRE_IJVector vec, HYPRE_MemoryLocation location)
+{
+   hypre_ParVector *par = IJVectorReadInput(vec);
+   if (!par) return NULL;
+   if (location != HYPRE_MEMORY_UNDEFINED &&
+       !IJVectorCallSucceeded(hypre_ParVectorMigrate(par, location)))
+   {
       return NULL;
    }
    /* Migration replaces the local vector while preserving the ParVector. */
    return hypre_VectorData(hypre_ParVectorLocalVector(par));
+}
+
+uint32_t
+hypredrv_LinearSystemGetSolutionValues(hypredrv_t *hypredrv, HYPRE_Complex **values,
+                                       HYPRE_MemoryLocation *location)
+{
+   *values              = NULL;
+   *location            = HYPRE_MEMORY_UNDEFINED;
+   hypre_ParVector *par = IJVectorReadInput(hypredrv->vec_x.handle);
+   if (!par) return hypredrv_ErrorCodeGet();
+   hypre_Vector *local = hypre_ParVectorLocalVector(par);
+   *values             = hypre_VectorData(local);
+   *location           = hypre_VectorMemoryLocation(local);
+   return hypredrv_ErrorCodeGet();
+}
+
+uint32_t
+hypredrv_LinearSystemCopySolutionValues(hypredrv_t *hypredrv, HYPRE_BigInt count,
+                                        HYPRE_Complex *values)
+{
+   hypre_ParVector *par = IJVectorReadInput(hypredrv->vec_x.handle);
+   if (!par) return hypredrv_ErrorCodeGet();
+   hypre_Vector *local = hypre_ParVectorLocalVector(par);
+   if (count > hypre_VectorSize(local))
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("Copy count exceeds the local solution length");
+      return hypredrv_ErrorCodeGet();
+   }
+   if (count)
+   {
+#ifdef HYPRE_USING_GPU
+      if (hypre_GetActualMemLocation(hypre_VectorMemoryLocation(local)) !=
+          hypre_MEMORY_HOST)
+      {
+#if HYPRE_CHECK_MIN_VERSION(23300, 0)
+         if (!IJVectorCallSucceeded(hypre_ForceSyncComputeStream()))
+            return hypredrv_ErrorCodeGet();
+#elif HYPRE_CHECK_MIN_VERSION(22500, 0)
+         if (!IJVectorCallSucceeded(hypre_ForceSyncComputeStream(hypre_handle())))
+            return hypredrv_ErrorCodeGet();
+#elif HYPRE_CHECK_MIN_VERSION(22400, 0)
+         if (!IJVectorCallSucceeded(hypre_SyncComputeStream(hypre_handle())))
+            return hypredrv_ErrorCodeGet();
+#else
+         if (!IJVectorCallSucceeded(hypre_SyncCudaDevice(hypre_handle())))
+            return hypredrv_ErrorCodeGet();
+#endif
+      }
+#endif
+      hypre_TMemcpy(values, hypre_VectorData(local), HYPRE_Complex, count,
+                    HYPRE_MEMORY_HOST, hypre_VectorMemoryLocation(local));
+      IJVectorCallSucceeded(HYPRE_GetError());
+   }
+   return hypredrv_ErrorCodeGet();
 }
 
 static int
