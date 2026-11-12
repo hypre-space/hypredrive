@@ -165,8 +165,11 @@ identifiable throughout the process.
 
    The preparation workflow builds the five Julia archives, commits their
    ``Artifacts.toml`` bindings, and stages those exact archives on a draft
-   GitHub Release. It then builds and stages all 45 Python wheels and runs the
-   seven validation workflows against the binding commit. Its final check
+   GitHub Release. It then builds and stages all 45 Python wheels and waits for
+   the seven pull-request validation workflows on the binding commit. GitHub
+   requires a maintainer to review that bot commit and click **Approve workflows
+   to run** on the pull request. Manually dispatched checks do not appear as PR
+   checks, so preparation waits for these associated runs. Its final check
    verifies the draft's wheel set and Julia archive digests. It creates no tag
    and leaves publication to the release maintainer. Source changes while the
    label remains attached start preparation again; a concurrent source change

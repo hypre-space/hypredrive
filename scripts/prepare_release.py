@@ -58,7 +58,12 @@ def wait_for_runs(repo, run_ids, expected_sha, timeout=5400):
             if states.get(run_id) != state:
                 print(f"{run['html_url']}: {state}", flush=True)
                 states[run_id] = state
+                if run["conclusion"] == "action_required":
+                    print("Approve the bot-triggered PR workflows in GitHub to continue.",
+                          flush=True)
             if run["status"] == "completed":
+                if run["conclusion"] == "action_required":
+                    continue
                 if run["conclusion"] != "success":
                     raise RuntimeError(f"{run['html_url']}: {run['conclusion']}")
                 pending.remove(run_id)
@@ -66,6 +71,51 @@ def wait_for_runs(repo, run_ids, expected_sha, timeout=5400):
             if time.monotonic() >= deadline:
                 raise RuntimeError("Timed out waiting for release workflows")
             time.sleep(30)
+
+
+def pr_validation_runs(repo, branch, sha, pr_number, timeout=300):
+    workflows = ("ci.yml", "format.yml", "analysis.yml", "coverage.yml",
+                 "docs.yml", "portability.yml", "fuzz.yml")
+    runs = {}
+    deadline = time.monotonic() + timeout
+    while len(runs) != len(workflows):
+        for workflow in workflows:
+            if workflow in runs:
+                continue
+            result = api(repo, f"actions/workflows/{workflow}/runs?event=pull_request"
+                         f"&branch={branch}&head_sha={sha}&per_page=100")
+            candidates = [run for run in result["workflow_runs"]
+                          if run["head_sha"] == sha
+                          and any(pr["number"] == pr_number for pr in run["pull_requests"])]
+            if candidates:
+                run = candidates[0]
+                runs[workflow] = run["id"]
+                print(f"PR validation {workflow}: {run['html_url']}", flush=True)
+                if os.environ.get("GITHUB_STEP_SUMMARY"):
+                    with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                        summary.write(f"- [{workflow}]({run['html_url']})\n")
+        if len(runs) != len(workflows):
+            if time.monotonic() >= deadline:
+                raise RuntimeError("PR validation workflows were not created for the binding commit")
+            time.sleep(10)
+    return list(runs.values())
+
+
+def wait_for_previous_wheel_staging(repo, branch, timeout=5400):
+    # A canceled controller leaves its dispatched builders running. Wait for
+    # any earlier manual wheel run before starting another draft upload cycle.
+    deadline = time.monotonic() + timeout
+    while True:
+        result = api(repo, "actions/workflows/python-wheels.yml/runs"
+                     f"?event=workflow_dispatch&branch={branch}&per_page=100")
+        active = [run for run in result["workflow_runs"] if run["status"] != "completed"]
+        if not active:
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Timed out waiting for previous wheel staging")
+        print("Waiting for earlier wheel runs: " +
+              ", ".join(run["html_url"] for run in active), flush=True)
+        time.sleep(30)
 
 
 def branch_sha(repo, branch):
@@ -113,9 +163,15 @@ def main():
     parser.add_argument("--repo", required=True)
     parser.add_argument("--branch", required=True)
     parser.add_argument("--sha", required=True)
+    parser.add_argument("--pr", required=True, type=int)
     args = parser.parse_args()
     version = release_version(args.branch)
     tag = f"v{version}"
+    pr = api(args.repo, f"pulls/{args.pr}")
+    if pr["head"]["ref"] != args.branch or pr["head"]["sha"] != args.sha:
+        raise RuntimeError("Pull request does not match the requested candidate")
+    if "Run CI" not in {label["name"] for label in pr["labels"]}:
+        raise RuntimeError("Keep Run CI alongside Prepare Release to select PR validation")
     if command("git", "rev-parse", "HEAD") != args.sha:
         raise RuntimeError("Checkout does not match the requested candidate")
     if branch_sha(args.repo, args.branch) != args.sha:
@@ -127,17 +183,22 @@ def main():
                      {"release_tag": tag, "update_artifacts_toml": True})
     wait_for_runs(args.repo, [julia], args.sha)
 
-    # The binding workflow intentionally commits using GITHUB_TOKEN. Such a
-    # push does not trigger PR CI, so dispatch validation for that final SHA.
+    # Bot-updated PRs create approval-required workflow runs. Dispatching a
+    # workflow separately does not associate its checks with the pull request.
     final_sha = branch_sha(args.repo, args.branch)
     command("git", "fetch", "origin", args.branch)
     changed = command("git", "diff", "--name-only", args.sha, final_sha).splitlines()
     if set(changed) - {"interfaces/julia/Artifacts.toml"}:
         raise RuntimeError("Release source changed during the Julia build; rerun preparation")
     command("git", "checkout", "--detach", final_sha)
-    workflows = ("ci.yml", "format.yml", "analysis.yml", "coverage.yml",
-                 "docs.yml", "portability.yml", "fuzz.yml")
-    runs = [dispatch(args.repo, workflow, args.branch) for workflow in workflows]
+    runs = pr_validation_runs(args.repo, args.branch, final_sha, args.pr)
+    message = (f"Approve workflows to run on https://github.com/{args.repo}/pull/{args.pr} "
+               "after reviewing the Julia binding commit. GitHub requires this for bot updates.")
+    print(message, flush=True)
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+            summary.write(f"\n{message}\n")
+    wait_for_previous_wheel_staging(args.repo, args.branch)
     runs.append(dispatch(args.repo, "python-wheels.yml", args.branch, {"release_tag": tag}))
     wait_for_runs(args.repo, runs, final_sha)
     if branch_sha(args.repo, args.branch) != final_sha:
