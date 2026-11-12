@@ -981,8 +981,8 @@ hypredrv_ObjectApplyStateCorrection(hypredrv_t *hypredrv, int index)
       return hypredrv_ErrorCodeGet();
    }
 #ifdef HYPRE_USING_GPU
-   /* GetSolutionValues may have exposed the correction on the host. Match the
-    * state to its actual storage, leaving the correction and its pointers alone. */
+   /* Match the state to the correction's actual storage without moving the
+    * correction or invalidating its pointers. */
    if (!StateVectorCallSucceeded(
           hypredrv_IJVectorMigrate(hypredrv->vec_s[index],
                                    hypre_ParVectorMemoryLocation(correction)),

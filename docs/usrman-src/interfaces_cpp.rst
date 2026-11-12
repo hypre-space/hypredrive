@@ -226,7 +226,7 @@ to the generated API reference.
    * - ``hypredrive::driver::get_solution_length``
      - :cpp:func:`HYPREDRV_LinearSystemGetSolutionLength`
    * - ``hypredrive::driver::get_solution_values``
-     - :cpp:func:`HYPREDRV_LinearSystemGetSolutionValues`
+     - :cpp:func:`HYPREDRV_LinearSystemCopySolutionValues`
    * - ``hypredrive::driver::get_solution_norm``
      - :cpp:func:`HYPREDRV_LinearSystemGetSolutionNorm`
    * - ``hypredrive::driver::get_solution``
@@ -296,10 +296,11 @@ to the generated API reference.
 
 .. END CXX API TABLE
 
-``hypredrive::driver::get_solution_values_raw`` returns the same
-HYPREDRV-owned host pointer as ``HYPREDRV_LinearSystemGetSolutionValues``. On
-GPU builds, this method moves or synchronizes the solution to host memory before
-it returns the pointer.
+``hypredrive::driver::get_solution_values_raw(memory_location)`` returns a borrowed
+native pointer and fills a ``HYPRE_MemoryLocation`` variable. It performs no copy,
+synchronization or migration. Device pointers require device-aware code. Use
+``get_solution_values()`` for an owned host vector; it explicitly copies the values
+without changing the solution's residency.
 
 Installation
 ------------

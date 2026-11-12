@@ -96,15 +96,11 @@ extern "C"
    uint32_t HYPREDRV_PythonSetRHSFromArray(HYPREDRV_t hypredrv, int64_t row_start,
                                            int64_t row_end, const void *values);
 
-   /**
-    * @brief Return an opaque pointer to the current solution values.
-    *
-    * The returned pointer is owned by the HYPREDRV object and remains valid
-    * until the solution vector is replaced or the object is destroyed.
-    * @param sol_length Output local solution length in scalar entries.
-    */
-   uint32_t HYPREDRV_PythonGetSolutionValues(HYPREDRV_t hypredrv, const void **sol_data,
-                                             size_t *sol_length);
+   /** @brief Copy local solution entries into caller-owned host storage. */
+   uint32_t HYPREDRV_PythonCopySolutionValues(HYPREDRV_t hypredrv, void *sol_data,
+                                              size_t sol_length);
+
+   uint32_t HYPREDRV_PythonGetSolutionLength(HYPREDRV_t hypredrv, size_t *sol_length);
 
 #ifdef __cplusplus
 }

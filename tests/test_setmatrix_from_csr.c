@@ -26,6 +26,7 @@
 #include "object.h"
 #include "test_helpers.h"
 #include "test_ij_helpers.h"
+#include "test_solution_helpers.h"
 
 /* PCG + AMG with very low iteration counts; enough to demonstrate the API
  * round-trips through a real solve without depending on external data files. */
@@ -572,7 +573,7 @@ test_array_updates_preserve_installed_system_on_failure(void)
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
    HYPRE_Complex *solution = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE(solution[0], 0.5, 1e-10);
    ASSERT_EQ_DOUBLE(solution[1], 0.5, 1e-10);
    ASSERT_EQ(HYPREDRV_LinearSolverDestroy(obj), ERROR_NONE);
@@ -588,7 +589,7 @@ test_array_updates_preserve_installed_system_on_failure(void)
    ASSERT_EQ(HYPREDRV_LinearSolverCreate(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverSetup(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &solution), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &solution), ERROR_NONE);
    ASSERT_EQ_DOUBLE(solution[0], 0.5, 1e-10);
    ASSERT_EQ_DOUBLE(solution[1], 0.5, 1e-10);
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);

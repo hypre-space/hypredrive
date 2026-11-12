@@ -1197,9 +1197,14 @@ main(int argc, char *argv[])
    /* Discretization error: compare the computed edge DOFs to the exact
     * reference field (manufactured solution). */
    {
-      /* Borrowed pointer into the solution vector data; do not free. */
-      HYPRE_Complex *sol = NULL;
-      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol));
+      /* Copy into host storage for error reporting and visualization. */
+      HYPRE_BigInt sol_length = 0;
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &sol_length));
+      HYPRE_Complex *sol =
+         malloc((size_t)(sol_length > 0 ? sol_length : 1) * sizeof(*sol));
+      if (!sol) MPI_Abort(comm, 1);
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_LinearSystemCopySolutionValues(hypredrv, sol_length, sol));
 
       HYPRE_Real loc[2] = {0.0, 0.0}, glob[2] = {0.0, 0.0};
       for (HYPRE_Int i = 0; i < mesh->num_edges_local; i++)
@@ -1221,6 +1226,7 @@ main(int argc, char *argv[])
             printf("Wrote VTK solution to %s%s\n", params.vtk_file,
                    num_procs > 1 ? ".pvti" : ".vti");
       }
+      free(sol);
    }
 
    HYPRE_IJMatrixDestroy(A);

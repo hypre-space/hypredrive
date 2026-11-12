@@ -86,7 +86,9 @@ cdef extern from "HYPREDRV_python.h" nogil:
         int64_t row_end,
         const void *values)
 
-    uint32_t HYPREDRV_PythonGetSolutionValues(
+    uint32_t HYPREDRV_PythonCopySolutionValues(
         HYPREDRV_t hypredrv,
-        const void **sol_data,
-        size_t *sol_length)
+        void *sol_data,
+        size_t sol_length)
+
+    uint32_t HYPREDRV_PythonGetSolutionLength(HYPREDRV_t hypredrv, size_t *sol_length)

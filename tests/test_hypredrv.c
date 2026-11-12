@@ -20,6 +20,7 @@
 #include "object.h"
 #include "test_helpers.h"
 #include "test_ij_helpers.h"
+#include "test_solution_helpers.h"
 
 #ifndef HYPREDRIVE_SOURCE_DIR
 #define HYPREDRIVE_SOURCE_DIR "."
@@ -577,7 +578,8 @@ test_HYPREDRV_all_api_init_guard(void)
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
 
    HYPRE_Complex *ptr = NULL;
-   code              = HYPREDRV_LinearSystemGetSolutionValues(NULL, &ptr);
+   code               = HYPREDRV_LinearSystemGetSolutionValues(
+      NULL, &ptr, &(HYPRE_MemoryLocation){HYPRE_MEMORY_UNDEFINED});
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
    code = HYPREDRV_LinearSystemGetRHSValues(NULL, &ptr);
    ASSERT_HAS_FLAG(code, ERROR_HYPREDRV_NOT_INITIALIZED);
@@ -661,7 +663,8 @@ test_HYPREDRV_all_api_obj_guard(void)
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
 
    HYPRE_Complex *ptr = NULL;
-   code              = HYPREDRV_LinearSystemGetSolutionValues(NULL, &ptr);
+   code               = HYPREDRV_LinearSystemGetSolutionValues(
+      NULL, &ptr, &(HYPRE_MemoryLocation){HYPRE_MEMORY_UNDEFINED});
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
    code = HYPREDRV_LinearSystemGetRHSValues(NULL, &ptr);
    ASSERT_HAS_FLAG(code, ERROR_UNKNOWN_HYPREDRV_OBJ);
@@ -1482,7 +1485,7 @@ test_create_parse_and_destroy(void)
 
    HYPRE_Complex *sol_data = NULL;
    HYPRE_Complex *rhs_data = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol_data), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &sol_data), ERROR_NONE);
    ASSERT_NOT_NULL(sol_data);
    ASSERT_EQ(HYPREDRV_LinearSystemGetRHSValues(obj, &rhs_data), ERROR_NONE);
    ASSERT_NOT_NULL(rhs_data);
@@ -4385,7 +4388,7 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
 
    /* The computed solution must be orthogonal to both (non-orthonormalized) input modes */
    HYPRE_Complex *sol = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &sol), ERROR_NONE);
    double dot0 = 0.0, dot1 = 0.0;
    for (int i = 0; i < n; i++)
    {
@@ -4474,7 +4477,7 @@ test_HYPREDRV_LinearSystemSetNullSpace_projection(void)
 
    /* The computed solution must be orthogonal to the (non-normalized) input mode */
    HYPRE_Complex *sol = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &sol), ERROR_NONE);
    double dot0 = 0.0;
    for (int i = 0; i < n; i++)
    {
@@ -5364,7 +5367,7 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    /* Exercise solution/RHS getters and a successful solution norm path */
    HYPRE_Complex *sol_data = NULL;
-   ASSERT_EQ(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol_data), ERROR_NONE);
+   ASSERT_EQ(test_copy_solution_values(obj, &sol_data), ERROR_NONE);
    ASSERT_NOT_NULL(sol_data);
 
    HYPRE_Complex *rhs_data = NULL;
@@ -5372,7 +5375,9 @@ test_HYPREDRV_misc_0hit_branches(void)
    ASSERT_NOT_NULL(rhs_data);
    ASSERT_TRUE(rhs_data != sol_data);
 
-   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, NULL) & ERROR_INVALID_VAL);
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(
+                  obj, NULL, &(HYPRE_MemoryLocation){HYPRE_MEMORY_UNDEFINED}) &
+               ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
    ASSERT_TRUE(HYPREDRV_LinearSystemGetRHSValues(obj, NULL) & ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
@@ -5385,7 +5390,9 @@ test_HYPREDRV_misc_0hit_branches(void)
 
    HYPRE_IJVector saved_x = state->vec_x.handle;
    state->vec_x.handle           = NULL;
-   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(obj, &sol_data) & ERROR_INVALID_VAL);
+   ASSERT_TRUE(HYPREDRV_LinearSystemGetSolutionValues(
+                  obj, &sol_data, &(HYPRE_MemoryLocation){HYPRE_MEMORY_UNDEFINED}) &
+               ERROR_INVALID_VAL);
    hypredrv_ErrorCodeResetAll();
    state->vec_x.handle = saved_x;
 

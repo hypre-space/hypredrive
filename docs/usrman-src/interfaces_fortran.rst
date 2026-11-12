@@ -102,8 +102,8 @@ This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
       include 'mpif.h'
 
       integer :: ierr
-      type(c_ptr) :: drv, solution
-      real(c_double), pointer :: x(:)
+      type(c_ptr) :: drv
+      real(c_double) :: x(2)
       integer(c_int64_t) :: indptr(3) = [0_c_int64_t, 2_c_int64_t, 4_c_int64_t]
       integer(c_int64_t) :: cols(4) = [0_c_int64_t, 1_c_int64_t, 0_c_int64_t, 1_c_int64_t]
       real(c_double) :: values(4) = [2.0_c_double, -1.0_c_double, -1.0_c_double, 2.0_c_double]
@@ -123,16 +123,15 @@ This serial example solves ``A x = b`` for ``A = [[2, -1], [-1, 2]]`` and
       call HYPREDRV_Check(HYPREDRV_LinearSolverCreate(drv))
       call HYPREDRV_Check(HYPREDRV_LinearSolverSetup(drv))
       call HYPREDRV_Check(HYPREDRV_LinearSolverApply(drv))
-      call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionValues(drv, solution))
-      call c_f_pointer(solution, x, [2])
+      call HYPREDRV_Check(HYPREDRV_LinearSystemCopySolutionValues(drv, 2_c_int64_t, x))
       print *, x
       call HYPREDRV_Check(HYPREDRV_Destroy(drv))
       call HYPREDRV_Check(HYPREDRV_Finalize())
       call MPI_Finalize(ierr)
    end program minimal
 
-The solution pointer is a view of driver-owned storage; use or copy it before
-destroying the driver. The CSR and RHS helpers copy the input arrays.
+The solution is copied into the Fortran-owned array ``x``. The CSR and RHS
+helpers also copy the input arrays.
 
 The binding accepts MPI communicators as Fortran handles and converts them to C
 communicators. The examples use ``mpif.h`` instead of
@@ -210,9 +209,12 @@ annotations, and timing. The module also provides small Fortran helpers, such as
 The Fortran interface preserves the C API ownership rules. Call
 ``HYPREDRV_SetLibraryMode`` before attaching borrowed HYPRE objects to
 retain caller ownership. Objects created by the CSR and array helpers remain
-driver-owned. Raw array accessors such
-as ``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers. Use
-``c_f_pointer`` when you need a Fortran view. Do not free these pointers from Fortran.
+driver-owned. ``HYPREDRV_LinearSystemGetSolutionValues(drv, pointer, memory_location)`` returns
+borrowed native storage and its hypre memory location as ``integer(c_int)``
+(``HYPRE_MEMORY_HOST`` or ``HYPRE_MEMORY_DEVICE``). Use ``c_f_pointer`` only for
+host pointers; device pointers require device-aware code. Do not free the
+borrowed storage. Use ``HYPREDRV_LinearSystemCopySolutionValues`` to copy into a
+Fortran-owned host array without changing residency.
 
 .. list-table::
    :header-rows: 1
@@ -233,7 +235,7 @@ as ``HYPREDRV_LinearSystemGetSolutionValues`` return C-owned host pointers. Use
    * - Dofmaps/nullspace
      - ``HYPREDRV_LinearSystemSetDofmap``, ``HYPREDRV_LinearSystemSetInterleavedDofmap``, ``HYPREDRV_LinearSystemSetContiguousDofmap``, ``HYPREDRV_LinearSystemReadDofmap``, ``HYPREDRV_LinearSystemPrintDofmap``, ``HYPREDRV_LinearSystemSetNearNullSpace``, ``HYPREDRV_LinearSystemSetNullSpace``
    * - Accessors
-     - ``HYPREDRV_LinearSystemGetSolution*``, ``HYPREDRV_LinearSystemGetRHS*``, ``HYPREDRV_LinearSystemGetMatrix``, ``HYPREDRV_LinearSystemGetSolutionNorm``
+     - ``HYPREDRV_LinearSystemGetSolution*``, ``HYPREDRV_LinearSystemGetRHS*``, ``HYPREDRV_LinearSystemGetMatrix``, ``HYPREDRV_LinearSystemGetSolutionNorm``, ``HYPREDRV_LinearSystemCopySolutionValues``
    * - State vectors
      - ``HYPREDRV_StateVectorSet``, ``HYPREDRV_StateVectorGetValues``, ``HYPREDRV_StateVectorCopy``, ``HYPREDRV_StateVectorUpdateAll``, ``HYPREDRV_StateVectorApplyCorrection``
    * - Solver/preconditioner

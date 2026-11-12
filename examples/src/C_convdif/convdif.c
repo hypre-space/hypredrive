@@ -428,7 +428,6 @@ main(int argc, char *argv[])
    DistMesh      *mesh;
    HYPRE_IJMatrix A;
    HYPRE_IJVector b, x0;
-   HYPRE_Real    *sol_data;
    HYPRE_Real    *c;
    HYPRE_Real     time = 0.0, dt;
 
@@ -575,8 +574,8 @@ main(int argc, char *argv[])
       HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
 
       /* Update the concentration field with the new solution */
-      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
-      memcpy(c, sol_data, (size_t)mesh->local_size * sizeof(HYPRE_Real));
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_LinearSystemCopySolutionValues(hypredrv, mesh->local_size, c));
 
       /* Report time step information */
       if (params.verbose & 0x1)

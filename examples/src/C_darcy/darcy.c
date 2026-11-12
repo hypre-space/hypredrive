@@ -1993,8 +1993,13 @@ main(int argc, char **argv)
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverDestroy(hypredrv));
 
-   HYPRE_Real *sol_data = NULL;
-   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
+   HYPRE_BigInt sol_length = 0;
+   HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &sol_length));
+   HYPRE_Real *sol_data =
+      malloc((size_t)(sol_length > 0 ? sol_length : 1) * sizeof(*sol_data));
+   if (!sol_data) MPI_Abort(comm, 1);
+   HYPREDRV_SAFE_CALL(
+      HYPREDRV_LinearSystemCopySolutionValues(hypredrv, sol_length, sol_data));
    HYPRE_Real rel_err = 0.0;
    if (!mesh.Kinv_cells)
    {
@@ -2029,6 +2034,7 @@ main(int argc, char **argv)
       HYPREDRV_SAFE_CALL(HYPREDRV_StatsPrint(hypredrv));
    }
 
+   free(sol_data);
    free(dofmap);
    int success = mesh.Kinv_cells || rel_err < 1.0e-6;
    destroy_layout(&layout);

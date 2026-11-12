@@ -153,8 +153,8 @@ program minimal
    include 'mpif.h'
 
    integer :: ierr
-   type(c_ptr) :: drv, solution
-   real(c_double), pointer :: x(:)
+   type(c_ptr) :: drv
+   real(c_double) :: x(2)
    integer(c_int64_t) :: indptr(3) = [0_c_int64_t, 2_c_int64_t, 4_c_int64_t]
    integer(c_int64_t) :: cols(4) = [0_c_int64_t, 1_c_int64_t, 0_c_int64_t, 1_c_int64_t]
    real(c_double) :: values(4) = [2.0_c_double, -1.0_c_double, -1.0_c_double, 2.0_c_double]
@@ -174,8 +174,7 @@ program minimal
    call HYPREDRV_Check(HYPREDRV_LinearSolverCreate(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSolverSetup(drv))
    call HYPREDRV_Check(HYPREDRV_LinearSolverApply(drv))
-   call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionValues(drv, solution))
-   call c_f_pointer(solution, x, [2])
+   call HYPREDRV_Check(HYPREDRV_LinearSystemCopySolutionValues(drv, 2_c_int64_t, x))
    print *, x
    call HYPREDRV_Check(HYPREDRV_Destroy(drv))
    call HYPREDRV_Check(HYPREDRV_Finalize())
@@ -183,8 +182,8 @@ program minimal
 end program minimal
 ```
 
-The solution pointer is a view of driver-owned storage; use or copy it before
-destroying the driver. The CSR and RHS helpers copy the input arrays.
+The solution is copied into the Fortran-owned array `x`. The CSR and RHS
+helpers also copy the input arrays.
 
 ## Examples
 
@@ -219,10 +218,12 @@ The module exposes Fortran procedures for the public `HYPREDRV_` APIs in
 
 The Fortran procedures intentionally preserve C ownership semantics. Objects
 borrowed from HYPRE remain caller-owned unless the corresponding C API says
-otherwise. Raw array accessors such as
-`HYPREDRV_LinearSystemGetSolutionValues` return C-owned host pointers; convert
-them with `c_f_pointer` if you need a Fortran view, and do not free them from
-Fortran.
+otherwise. `HYPREDRV_LinearSystemGetSolutionValues(drv, pointer, memory_location)` returns
+borrowed native storage and its hypre memory location as `integer(c_int)`
+(`HYPRE_MEMORY_HOST` or `HYPRE_MEMORY_DEVICE`). Use `c_f_pointer` only for host
+pointers; device pointers require device-aware code. Do not free the borrowed
+storage. Use `HYPREDRV_LinearSystemCopySolutionValues` to copy into a
+Fortran-owned host array without changing residency.
 
 | C API group | Fortran module procedures |
 | --- | --- |
@@ -232,7 +233,7 @@ Fortran.
 | Presets | `HYPREDRV_SolverPresetRegister`, `HYPREDRV_PreconPresetRegister`, `HYPREDRV_InputArgsSetSolverPreset`, `HYPREDRV_InputArgsSetPreconPreset` |
 | Linear system | `HYPREDRV_LinearSystemBuild`, `HYPREDRV_LinearSystemReadMatrix`, `HYPREDRV_LinearSystemSetMatrix*`, `HYPREDRV_LinearSystemSetRHS*`, `HYPREDRV_LinearSystemSetInitialGuess`, `HYPREDRV_LinearSystemResetInitialGuess`, `HYPREDRV_LinearSystemSetSolution`, `HYPREDRV_LinearSystemSetReferenceSolution`, `HYPREDRV_LinearSystemSetPrecMatrix`, `HYPREDRV_LinearSystemPrint` |
 | Dofmaps/nullspace | `HYPREDRV_LinearSystemSetDofmap`, `HYPREDRV_LinearSystemSetInterleavedDofmap`, `HYPREDRV_LinearSystemSetContiguousDofmap`, `HYPREDRV_LinearSystemReadDofmap`, `HYPREDRV_LinearSystemPrintDofmap`, `HYPREDRV_LinearSystemSetNearNullSpace`, `HYPREDRV_LinearSystemSetNullSpace` |
-| Accessors | `HYPREDRV_LinearSystemGetSolution*`, `HYPREDRV_LinearSystemGetRHS*`, `HYPREDRV_LinearSystemGetMatrix`, `HYPREDRV_LinearSystemGetSolutionNorm` |
+| Accessors | `HYPREDRV_LinearSystemGetSolution*`, `HYPREDRV_LinearSystemGetRHS*`, `HYPREDRV_LinearSystemGetMatrix`, `HYPREDRV_LinearSystemGetSolutionNorm`, `HYPREDRV_LinearSystemCopySolutionValues` |
 | State vectors | `HYPREDRV_StateVectorSet`, `HYPREDRV_StateVectorGetValues`, `HYPREDRV_StateVectorCopy`, `HYPREDRV_StateVectorUpdateAll`, `HYPREDRV_StateVectorApplyCorrection` |
 | Solver/preconditioner | `HYPREDRV_PreconCreate`, `HYPREDRV_PreconSetup`, `HYPREDRV_PreconApply`, `HYPREDRV_PreconDestroy`, `HYPREDRV_LinearSolverCreate`, `HYPREDRV_LinearSolverSetup`, `HYPREDRV_LinearSolverApply`, `HYPREDRV_LinearSolverDestroy` |
 | Stats/timing | `HYPREDRV_StatsPrint`, `HYPREDRV_StatsLevelGetCount`, `HYPREDRV_StatsLevelGetEntry`, `HYPREDRV_StatsLevelPrint`, `HYPREDRV_LinearSolverGetNumIter`, `HYPREDRV_LinearSolverGetConverged`, `HYPREDRV_LinearSolverGetFinalRelativeResidualNorm`, `HYPREDRV_LinearSolverGetSetupTime`, `HYPREDRV_LinearSolverGetSolveTime` |
