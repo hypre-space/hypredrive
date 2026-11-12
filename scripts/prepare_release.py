@@ -195,6 +195,12 @@ def main():
         raise RuntimeError("Release branch changed before preparation started")
     if api(args.repo, f"git/ref/tags/{tag}", missing_ok=True) is not None:
         raise RuntimeError(f"{tag} already exists; prepare the release before tagging")
+    for release in api(args.repo, "releases?per_page=100"):
+        if release["tag_name"] == tag:
+            if not release["draft"]:
+                raise RuntimeError(f"{tag} is already published")
+            api(args.repo, f"releases/{release['id']}/assets?per_page=100")
+            print(f"Existing draft is accessible: {release['html_url']}", flush=True)
 
     julia = dispatch(args.repo, "julia-artifacts.yml", args.branch,
                      {"release_tag": tag, "update_artifacts_toml": True})

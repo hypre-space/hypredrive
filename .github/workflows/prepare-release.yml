@@ -6,8 +6,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
-  pull-requests: read
 
 jobs:
   prepare:
@@ -20,6 +18,11 @@ jobs:
           (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Prepare Release'))
         )
       }}
+    permissions:
+      # Draft release metadata/assets are only visible with push access.
+      contents: write
+      actions: write
+      pull-requests: read
     # Skipped label/bot runs must not cancel an active preparation job.
     # Dispatched Julia binding/staging runs keep their own non-canceling lock.
     concurrency:
