@@ -23,15 +23,32 @@ def api(repo, endpoint, payload=None, missing_ok=False):
     if payload is not None:
         args += ["--method", "POST", "--input", "-"]
     args.append(f"repos/{repo}/{endpoint}")
-    result = subprocess.run(
-        args, input=json.dumps(payload) if payload is not None else None,
-        text=True, capture_output=True, check=False,
-    )
-    if result.returncode:
-        if missing_ok and "HTTP 404" in result.stderr:
-            return None
-        raise RuntimeError(result.stderr.strip() or result.stdout.strip())
-    return json.loads(result.stdout)
+    for attempt in range(5):
+        result = subprocess.run(
+            args, input=json.dumps(payload) if payload is not None else None,
+            text=True, capture_output=True, check=False,
+        )
+        detail = result.stderr.strip() or result.stdout.strip()
+        if result.returncode:
+            if missing_ok and "HTTP 404" in detail:
+                return None
+            transient = any(message in detail for message in (
+                "unexpected end of JSON input", "EOF", "connection reset",
+                "HTTP 500", "HTTP 502", "HTTP 503", "HTTP 504",
+            )) or (endpoint.startswith("actions/runs/") and "HTTP 404" in detail)
+            if not transient:
+                raise RuntimeError(detail)
+        else:
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError as error:
+                detail = f"Malformed GitHub API response for {endpoint}: {error}"
+        # Only reads can be retried safely: a failed dispatch response may
+        # already have created a workflow run on the server.
+        if payload is not None or attempt == 4:
+            raise RuntimeError(detail)
+        print(f"Retrying GitHub API read for {endpoint}: {detail}", flush=True)
+        time.sleep(2 ** attempt)
 
 
 def dispatch(repo, workflow, branch, inputs=None):
