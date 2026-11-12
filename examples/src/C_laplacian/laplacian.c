@@ -517,8 +517,14 @@ main(int argc, char *argv[])
    /* Visualization phase */
    if (params.visualize)
    {
-      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &sol_data));
+      HYPRE_BigInt sol_length = 0;
+      HYPREDRV_SAFE_CALL(HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &sol_length));
+      sol_data = malloc((size_t)(sol_length > 0 ? sol_length : 1) * sizeof(*sol_data));
+      if (!sol_data) MPI_Abort(comm, 1);
+      HYPREDRV_SAFE_CALL(
+         HYPREDRV_LinearSystemCopySolutionValues(hypredrv, sol_length, sol_data));
       WriteVTKsolution(mesh, &params, sol_data);
+      free(sol_data);
    }
 
    /* Clean up */
