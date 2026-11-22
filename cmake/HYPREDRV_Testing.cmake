@@ -1471,6 +1471,28 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_coarse_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
 
+            # MGR setup statistics (print_level >= 1) combined with solver reuse
+            foreach(_stats_case IN ITEMS
+                "frelax_reuse|ex7-mgr-frelax-reuse.yml"
+                "coarse_reuse|ex7-mgr-coarse-reuse.yml"
+                "coarse_ilu_reuse|ex7-mgr-coarse-ilu-reuse.yml"
+            )
+                string(REPLACE "|" ";" _stats_parts "${_stats_case}")
+                list(GET _stats_parts 0 _stats_name)
+                list(GET _stats_parts 1 _stats_cfg)
+                add_hypredrive_cli_test(ex7_mgr_${_stats_name}_stats_cli 1 ${_stats_cfg}
+                    OVERRIDES
+                        --preconditioner:mgr:print_level 1
+                    REQUIRE_CONTAINS
+                        "MGR SETUP PARAMETERS"
+                        "Solving linear system #4"
+                )
+            endforeach()
+            unset(_stats_case)
+            unset(_stats_parts)
+            unset(_stats_name)
+            unset(_stats_cfg)
+
             add_test(NAME hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
                 COMMAND ${CMAKE_COMMAND}
                         -DLAUNCH_DIR=${CMAKE_SOURCE_DIR}
