@@ -1476,6 +1476,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 "frelax_reuse|ex7-mgr-frelax-reuse.yml"
                 "coarse_reuse|ex7-mgr-coarse-reuse.yml"
                 "coarse_ilu_reuse|ex7-mgr-coarse-ilu-reuse.yml"
+                "blk_jacobi_restriction|ex7-mgr-blk-jacobi-restriction.yml"
             )
                 string(REPLACE "|" ";" _stats_parts "${_stats_case}")
                 list(GET _stats_parts 0 _stats_name)
