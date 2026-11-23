@@ -480,6 +480,93 @@ test_hypredrv_SolverCreate_all_cases(void)
 }
 
 static void
+test_hypredrv_SolverGetConverged_warm_start(void)
+{
+   TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   HYPRE_IJMatrix A         = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector b         = create_test_ijvector_1x1(2.0);
+   const solver_t methods[] = {SOLVER_PCG, SOLVER_GMRES, SOLVER_FGMRES, SOLVER_BICGSTAB};
+   for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
+   {
+      solver_args args;
+      hypredrv_SolverArgsSetDefaultsForMethod(methods[i], &args);
+      hypredrv_Solver *solver = NULL;
+      hypredrv_SolverCreate(MPI_COMM_SELF, methods[i], &args, &solver);
+      ASSERT_NOT_NULL(solver);
+
+      /* The second solve starts at the exact solution. */
+      HYPRE_IJVector x = create_test_ijvector_1x1(0.0);
+      hypredrv_SolverSetupWithReuse(solver, NULL, A, b, x, NULL, NULL, 0);
+      /* Nothing has been solved yet, so nothing can be reported as converged. */
+      HYPRE_Int unsolved = 1;
+      hypredrv_SolverGetConverged(solver, &unsolved);
+      ASSERT_EQ(unsolved, 0);
+      for (int repetition = 0; repetition < 2; repetition++)
+      {
+         ASSERT_TRUE(hypredrv_SolverSolveOnly(solver, A, b, x, NULL) >= 0);
+         ASSERT_FALSE(hypredrv_ErrorCodeActive());
+         HYPRE_Int  converged = 0;
+         HYPRE_Real norm      = -1.0;
+         hypredrv_SolverGetConverged(solver, &converged);
+         hypredrv_SolverGetFinalRelativeResidualNorm(solver, &norm);
+         ASSERT_EQ(converged, 1);
+         ASSERT_EQ_DOUBLE(norm, 0.0, 1e-12);
+      }
+
+      hypredrv_SolverDestroy(&solver);
+      HYPRE_IJVectorDestroy(x);
+   }
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+
+   /* PCG breakdown on an indefinite matrix with print_level=0 leaves hypre's
+    * reported rel_residual_norm at 0.0; verify it is not reported as converged. */
+   {
+      HYPRE_IJMatrix A_neg = create_test_ijmatrix_1x1(-4.0);
+      HYPRE_IJVector b_neg = create_test_ijvector_1x1(2.0);
+      HYPRE_IJVector x_neg = create_test_ijvector_1x1(0.0);
+      solver_args    args;
+      hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_PCG, &args);
+      args.pcg.print_level    = 0;
+      hypredrv_Solver *solver = NULL;
+      hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+      ASSERT_NOT_NULL(solver);
+      hypredrv_SolverSetupWithReuse(solver, NULL, A_neg, b_neg, x_neg, NULL, NULL, 0);
+      ASSERT_TRUE(hypredrv_SolverSolveOnly(solver, A_neg, b_neg, x_neg, NULL) >= 0);
+      HYPRE_Int converged = 1;
+      hypredrv_SolverGetConverged(solver, &converged);
+      ASSERT_EQ(converged, 0);
+      hypredrv_SolverDestroy(&solver);
+      HYPRE_IJVectorDestroy(x_neg);
+      HYPRE_IJVectorDestroy(b_neg);
+      HYPRE_IJMatrixDestroy(A_neg);
+   }
+
+   /* A zero RHS with an exact zero initial guess converges cleanly. */
+   {
+      HYPRE_IJMatrix A_zero = create_test_ijmatrix_1x1(4.0);
+      HYPRE_IJVector b_zero = create_test_ijvector_1x1(0.0);
+      HYPRE_IJVector x_zero = create_test_ijvector_1x1(0.0);
+      solver_args    args;
+      hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_GMRES, &args);
+      hypredrv_Solver *solver = NULL;
+      hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_GMRES, &args, &solver);
+      ASSERT_NOT_NULL(solver);
+      hypredrv_SolverSetupWithReuse(solver, NULL, A_zero, b_zero, x_zero, NULL, NULL, 0);
+      ASSERT_TRUE(hypredrv_SolverSolveOnly(solver, A_zero, b_zero, x_zero, NULL) >= 0);
+      HYPRE_Int converged = 0;
+      hypredrv_SolverGetConverged(solver, &converged);
+      ASSERT_EQ(converged, 1);
+      hypredrv_SolverDestroy(&solver);
+      HYPRE_IJVectorDestroy(x_zero);
+      HYPRE_IJVectorDestroy(b_zero);
+      HYPRE_IJMatrixDestroy(A_zero);
+   }
+   TEST_HYPRE_FINALIZE();
+}
+
+static void
 test_hypredrv_SolverCreate_default_case(void)
 {
    TEST_HYPRE_INIT();
@@ -1041,6 +1128,7 @@ main(int argc, char **argv)
 
    /* Solver dispatch tests */
    RUN_TEST(test_hypredrv_SolverCreate_all_cases);
+   RUN_TEST(test_hypredrv_SolverGetConverged_warm_start);
    RUN_TEST(test_hypredrv_SolverCreate_default_case);
    RUN_TEST(test_hypredrv_SolverDestroy_all_cases);
    RUN_TEST(test_hypredrv_SolverDestroy_null_solver);

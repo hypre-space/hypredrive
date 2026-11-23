@@ -21,6 +21,14 @@ inputs:
     description: 'Enable mixed int mode (ON or OFF)'
     required: false
     default: 'OFF'
+  hypre_bigint:
+    description: 'Enable big int mode (ON or OFF)'
+    required: false
+    default: 'OFF'
+  hypre_single:
+    description: 'Enable single precision (ON or OFF)'
+    required: false
+    default: 'OFF'
   os:
     description: 'Operating system (ubuntu-latest or macos-latest)'
     required: false
@@ -74,7 +82,7 @@ runs:
       id: hypre-cache
       with:
         path: ${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}
-        key: hypre-v2-${{ steps.resolve-sha.outputs.install_suffix }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}
+        key: hypre-v2-${{ steps.resolve-sha.outputs.install_suffix }}-${{ inputs.os }}-${{ inputs.compiler }}-${{ inputs.build_type }}-${{ steps.cache-key.outputs.libtype }}-mixedint-${{ inputs.hypre_mixedint }}-${{ inputs.mpi_flavor }}${{ inputs.hypre_bigint == 'ON' && '-bigint' || '' }}${{ inputs.hypre_single == 'ON' && '-single' || '' }}
 
     - name: Build & install HYPRE
       id: build
@@ -133,9 +141,16 @@ runs:
             if [ "${{ inputs.hypre_mixedint }}" = "ON" ]; then
               MIXEDINT_FLAG="--enable-mixedint"
             fi
+            CONFIG_ARGS=(--prefix="$PREFIX" --disable-fortran "$SHARED_FLAG" "$MIXEDINT_FLAG")
+            if [ "${{ inputs.hypre_bigint }}" = "ON" ]; then
+              CONFIG_ARGS+=(--enable-bigint)
+            fi
+            if [ "${{ inputs.hypre_single }}" = "ON" ]; then
+              CONFIG_ARGS+=(--enable-single)
+            fi
             AR="ar -rc" \
             CC=mpicc \
-            ./configure --prefix="$PREFIX" --disable-fortran $SHARED_FLAG $MIXEDINT_FLAG
+            ./configure "${CONFIG_ARGS[@]}"
             make -j
             make install
             popd
@@ -152,6 +167,15 @@ runs:
               -DCMAKE_INSTALL_PREFIX="$PREFIX"
               -DCMAKE_C_COMPILER=mpicc
             )
+            if [ "${{ inputs.hypre_mixedint }}" = "ON" ]; then
+              CMAKE_ARGS+=(-DHYPRE_ENABLE_MIXEDINT=ON)
+            fi
+            if [ "${{ inputs.hypre_bigint }}" = "ON" ]; then
+              CMAKE_ARGS+=(-DHYPRE_BIGINT=ON -DHYPRE_ENABLE_BIGINT=ON)
+            fi
+            if [ "${{ inputs.hypre_single }}" = "ON" ]; then
+              CMAKE_ARGS+=(-DHYPRE_SINGLE=ON -DHYPRE_ENABLE_SINGLE=ON)
+            fi
             if [ "${{ inputs.os }}" = "ubuntu-latest" ]; then
               if [ "${{ inputs.mpi_flavor }}" = "openmpi" ]; then
                 CMAKE_ARGS+=(-DMPI_INCLUDE_DIR=/usr/lib/x86_64-linux-gnu/openmpi/include)

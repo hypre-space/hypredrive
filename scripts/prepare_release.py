@@ -147,8 +147,13 @@ def release_version(branch):
     version = match[1]
     python = tomllib.loads(Path("interfaces/python/pyproject.toml").read_text())
     julia = tomllib.loads(Path("interfaces/julia/Project.toml").read_text())
-    if python["project"]["version"] != version or julia["version"] != version:
-        raise RuntimeError("Core, Python and Julia package versions must match")
+    rust = tomllib.loads(Path("interfaces/rust/Cargo.toml").read_text())
+    rust_lock = tomllib.loads(Path("interfaces/rust/Cargo.lock").read_text())
+    rust_locked = [package["version"] for package in rust_lock["package"]
+                   if package["name"] == rust["package"]["name"]]
+    if (python["project"]["version"] != version or julia["version"] != version
+            or rust["package"]["version"] != version or rust_locked != [version]):
+        raise RuntimeError("Core, Python, Julia and Rust package versions must match")
     return version
 
 

@@ -433,6 +433,132 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
+  rust-interface:
+    if: >-
+      ${{
+        github.event_name != 'pull_request' ||
+        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
+        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
+      }}
+    name: Rust | ${{ matrix.mpi }} | ${{ matrix.hypre_mode }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mpi: openmpi
+            packages: libopenmpi-dev openmpi-bin
+            hypre_mode: default
+          - mpi: mpich
+            packages: libmpich-dev mpich
+            hypre_mode: mixedint
+          - mpi: openmpi
+            packages: libopenmpi-dev openmpi-bin
+            hypre_mode: bigint
+          - mpi: openmpi
+            packages: libopenmpi-dev openmpi-bin
+            hypre_mode: single
+    env:
+      OMP_NUM_THREADS: 1
+      OMPI_MCA_rmaps_base_oversubscribe: 1
+      RUSTUP_TOOLCHAIN: '1.82.0'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install native dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libclang-dev ${{ matrix.packages }}
+          sudo update-alternatives --set mpi /usr/bin/mpicc.${{ matrix.mpi }}
+          sudo update-alternatives --set mpirun /usr/bin/mpirun.${{ matrix.mpi }}
+
+      - name: Set up Rust
+        run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+
+      - name: Build HYPRE
+        id: build-hypre
+        uses: ./.github/actions/build-hypre
+        with:
+          hypre_version: v3.2.0
+          compiler: gcc
+          build_type: Release
+          mpi_flavor: ${{ matrix.mpi }}
+          hypre_mixedint: ${{ matrix.hypre_mode == 'mixedint' && 'ON' || 'OFF' }}
+          hypre_bigint: ${{ matrix.hypre_mode == 'bigint' && 'ON' || 'OFF' }}
+          hypre_single: ${{ matrix.hypre_mode == 'single' && 'ON' || 'OFF' }}
+
+      - name: Configure the Rust interface
+        if: matrix.hypre_mode != 'single'
+        run: |
+          set -euxo pipefail
+          rust_build="$(mktemp -d "$RUNNER_TEMP/hypredrive-rust-build-XXXXXXXX")"
+          rust_install="$(mktemp -d "$RUNNER_TEMP/hypredrive-rust-install-XXXXXXXX")"
+          echo "RUST_BUILD=$rust_build" >> "$GITHUB_ENV"
+          echo "RUST_INSTALL=$rust_install" >> "$GITHUB_ENV"
+          cmake -S . -B "$rust_build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DHYPREDRV_ENABLE_RUST=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON \
+            -DHYPREDRV_DATASETS= \
+            -DCMAKE_INSTALL_PREFIX="$rust_install" \
+            -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
+            -DCMAKE_C_COMPILER=mpicc
+
+      - name: Build and run Rust tests
+        if: matrix.hypre_mode != 'single'
+        run: cmake --build "$RUST_BUILD" --target rust-test --parallel
+
+      - name: Verify scalar configuration rejection
+        if: matrix.hypre_mode == 'single'
+        env:
+          HYPRE_INSTALL: ${{ steps.build-hypre.outputs.hypre_prefix }}
+        run: |
+          set -euxo pipefail
+          rust_build="$(mktemp -d "$RUNNER_TEMP/hypredrive-rust-single-XXXXXXXX")"
+          if { cmake -S . -B "$rust_build" -G Ninja \
+                 -DBUILD_SHARED_LIBS=ON \
+                 -DHYPREDRV_ENABLE_RUST=ON \
+                 -DCMAKE_PREFIX_PATH="$HYPRE_INSTALL" \
+                 -DCMAKE_C_COMPILER=mpicc &&
+               cmake --build "$rust_build" --target rust-build --parallel; } \
+                 > "$rust_build/rejection.log" 2>&1; then
+            echo "::error::Rust build unexpectedly accepted single-precision HYPRE"
+            exit 1
+          fi
+          cat "$rust_build/rejection.log"
+          grep -Fi 'requires real, double-precision HYPRE' "$rust_build/rejection.log"
+
+      - name: Run an external Cargo consumer against the installation
+        if: matrix.hypre_mode == 'default'
+        env:
+          HYPRE_INSTALL: ${{ steps.build-hypre.outputs.hypre_prefix }}
+        run: |
+          set -euxo pipefail
+          cmake --build "$RUST_BUILD" --target install --parallel
+          consumer="$(mktemp -d "$RUNNER_TEMP/hypredrive-rust-consumer-XXXXXXXX")"
+          mkdir "$consumer/src"
+          cp interfaces/rust/examples/minimal.rs "$consumer/src/main.rs"
+          # Reuse the crate's committed resolution so a new transitive release
+          # cannot break the consumer on a toolchain it does not support.
+          cp interfaces/rust/Cargo.lock "$consumer/Cargo.lock"
+          cat > "$consumer/Cargo.toml" <<EOF
+          [package]
+          name = "hypredrive-install-check"
+          version = "0.1.0"
+          edition = "2021"
+
+          [dependencies]
+          hypredrive = { path = "$PWD/interfaces/rust" }
+          mpi = { version = "0.8", default-features = false }
+          EOF
+          cd "$consumer"
+          export MPICC="$(command -v mpicc)"
+          export CMAKE_PREFIX_PATH="$RUST_INSTALL:$HYPRE_INSTALL"
+          export LD_LIBRARY_PATH="$RUST_INSTALL/lib:$HYPRE_INSTALL/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cargo run
+
   fortran-interface:
     if: >-
       ${{

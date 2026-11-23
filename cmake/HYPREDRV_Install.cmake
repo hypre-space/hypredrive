@@ -91,6 +91,47 @@ endif()
 
 # Create and install Config files
 include(CMakePackageConfigHelpers)
+include(${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_HypreABI.cmake)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_HypreABI.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_HypreABI.cmake" COPYONLY)
+hypredrv_get_mpi_abi(HYPREDRV_MPI_COMM_BYTES HYPREDRV_MPI_COMM_KIND HYPREDRV_MPI_FAMILY)
+
+# The installed package must describe the ABI that produced libHYPREDRV,
+# independently of the HYPRE package a later consumer discovers.
+if(HYPREDRV_HYPRE_AUTOTOOLS)
+    # Fetched Autotools HYPRE is configured at build time. Its index types are
+    # fixed by the configure options in HYPREDRV_Deps.cmake.
+    check_type_size("int" _hypredrv_sizeof_int LANGUAGE C)
+    check_type_size("long long" _hypredrv_sizeof_long_long LANGUAGE C)
+    check_type_size("double" _hypredrv_sizeof_double LANGUAGE C)
+    set(HYPREDRV_HYPRE_INT_BYTES "${_hypredrv_sizeof_int}")
+    set(HYPREDRV_HYPRE_BIGINT_BYTES "${_hypredrv_sizeof_int}")
+    set(HYPREDRV_HYPRE_REAL_BYTES "${_hypredrv_sizeof_double}")
+    set(HYPREDRV_HYPRE_COMPLEX_BYTES "${_hypredrv_sizeof_double}")
+    if(HYPRE_ENABLE_BIGINT)
+        set(HYPREDRV_HYPRE_INT_BYTES "${_hypredrv_sizeof_long_long}")
+        set(HYPREDRV_HYPRE_BIGINT_BYTES "${_hypredrv_sizeof_long_long}")
+    elseif(HYPRE_ENABLE_MIXEDINT AND HYPREDRV_HYPRE_RELEASE_NUMBER GREATER_EQUAL 22000)
+        set(HYPREDRV_HYPRE_BIGINT_BYTES "${_hypredrv_sizeof_long_long}")
+    endif()
+    set(_hypredrv_abi_check "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRV_hypre_abi_check.c")
+    # Negative array sizes are the C99 spelling of a static assertion. The file is
+    # only rewritten when its content changes, so a plain reconfigure does not
+    # recompile libHYPREDRV.
+    set(_hypredrv_abi_check_content "#include <HYPRE_utilities.h>\n")
+    foreach(_hypredrv_abi_type IN ITEMS Int BigInt Real Complex)
+        string(TOUPPER "${_hypredrv_abi_type}" _hypredrv_abi_upper)
+        string(APPEND _hypredrv_abi_check_content
+            "typedef char hypredrv_abi_hypre_${_hypredrv_abi_type}"
+            "[sizeof(HYPRE_${_hypredrv_abi_type}) == ${HYPREDRV_HYPRE_${_hypredrv_abi_upper}_BYTES} ? 1 : -1];\n")
+    endforeach()
+    file(CONFIGURE OUTPUT "${_hypredrv_abi_check}"
+        CONTENT "${_hypredrv_abi_check_content}" @ONLY NEWLINE_STYLE UNIX)
+    target_sources(HYPREDRV PRIVATE "${_hypredrv_abi_check}")
+else()
+    hypredrv_get_hypre_abi_sizes(HYPREDRV_HYPRE_INT_BYTES HYPREDRV_HYPRE_BIGINT_BYTES
+        HYPREDRV_HYPRE_REAL_BYTES HYPREDRV_HYPRE_COMPLEX_BYTES)
+endif()
 # Before 1.0, a minor release can change the public API and ABI.
 if(PROJECT_VERSION_MAJOR EQUAL 0)
     set(_hypredrv_version_compatibility SameMinorVersion)
@@ -230,6 +271,7 @@ install(EXPORT HYPREDRVTargets
 install(FILES
     "${_hypredrv_install_config_file}"
     "${CMAKE_CURRENT_BINARY_DIR}/HYPREDRVConfigVersion.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_HypreABI.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/HYPREDRV
 )
 

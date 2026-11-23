@@ -14,6 +14,7 @@ Each interface README solves the same two-row system with solution `[1, 1]`:
 - [Python](python/README.md#minimal-example)
 - [MATLAB/Octave](matlab-octave/README.md#minimal-example)
 - [Julia](julia/README.md#minimal-example)
+- [Rust](rust/README.md#minimal-example)
 
 ## C++
 
@@ -94,3 +95,25 @@ cmake --build build-julia --target julia-test --parallel
 
 See [`julia/README.md`](julia/README.md) for package development, library discovery,
 options, tests, and example details.
+
+## Rust
+
+The Rust interface is a Cargo crate in [`rust/`](rust/). It provides a safe wrapper
+over the public C API, generated bindings for the selected HYPRE configuration,
+rank-local CSR input, and MPI communicator interoperability through `mpi` (rsmpi).
+
+Enable it with a shared native build in a dedicated build directory.
+
+```bash
+rust_build_dir=$(mktemp -d /tmp/hypredrive-rust-build-XXXXXXXX)
+cmake -S . -B "$rust_build_dir" \
+  -DBUILD_SHARED_LIBS=ON \
+  -DHYPREDRV_ENABLE_RUST=ON \
+  -DHYPREDRV_ENABLE_TESTING=ON \
+  -DHYPREDRV_DATASETS= \
+  -DCMAKE_C_COMPILER=mpicc
+cmake --build "$rust_build_dir" --target rust-test --parallel
+```
+
+See [`rust/README.md`](rust/README.md) for the Rust API, MPI lifetime contract,
+installed-library consumption, and examples.

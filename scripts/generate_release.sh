@@ -67,11 +67,14 @@ JULIA_PROJECT_FILE="${REPO_ROOT}/interfaces/julia/Project.toml"
 JULIA_BINARY_FILE="${REPO_ROOT}/interfaces/julia/binary/build_tarballs.jl"
 PYTHON_PROJECT_FILE="${REPO_ROOT}/interfaces/python/pyproject.toml"
 PYTHON_INIT_FILE="${REPO_ROOT}/interfaces/python/src/hypredrive/__init__.py"
+RUST_MANIFEST_FILE="${REPO_ROOT}/interfaces/rust/Cargo.toml"
+RUST_LOCK_FILE="${REPO_ROOT}/interfaces/rust/Cargo.lock"
 CHANGELOG="${REPO_ROOT}/CHANGELOG"
 
 for f in "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" \
          "$JULIA_PROJECT_FILE" "$JULIA_BINARY_FILE" \
-         "$PYTHON_PROJECT_FILE" "$PYTHON_INIT_FILE" "$CHANGELOG"; do
+         "$PYTHON_PROJECT_FILE" "$PYTHON_INIT_FILE" \
+         "$RUST_MANIFEST_FILE" "$RUST_LOCK_FILE" "$CHANGELOG"; do
   [[ -f "$f" ]] || die "Expected file not found: $f"
 done
 
@@ -164,6 +167,22 @@ apply_sed "$PYTHON_INIT_FILE" \
   '^__version__ = "[^"]*"$' \
   "__version__ = \"${NEW_VERSION}\""
 
+# 6. Rust crate version and its own entry in the committed lockfile. Cargo's
+#    --locked builds fail when the two disagree. The crate also derives the
+#    CMake package version it requires from this manifest version.
+apply_sed "$RUST_MANIFEST_FILE" \
+  '^version = "[^"]*"$' \
+  "version = \"${NEW_VERSION}\""
+if ! grep -q '^name = "hypredrive"$' "$RUST_LOCK_FILE"; then
+  die "Could not find the hypredrive package in ${RUST_LOCK_FILE}"
+fi
+if [[ -n "$DRY_RUN" ]]; then
+  info "Cargo.lock: would set the hypredrive package version to ${NEW_VERSION}"
+else
+  sed -i "/^name = \"hypredrive\"\$/{n;s|^version = .*|version = \"${NEW_VERSION}\"|}" "$RUST_LOCK_FILE"
+  info "Cargo.lock: updated"
+fi
+
 echo
 
 # -- git tag -----------------------------------------------------------------
@@ -175,7 +194,8 @@ if [[ -n "$DO_TAG" ]]; then
     cd "$REPO_ROOT"
     git add "$CMAKE_FILE" "$CONFIGURE_AC" "$CONF_PY" \
            "$JULIA_PROJECT_FILE" "$JULIA_BINARY_FILE" \
-           "$PYTHON_PROJECT_FILE" "$PYTHON_INIT_FILE"
+           "$PYTHON_PROJECT_FILE" "$PYTHON_INIT_FILE" \
+           "$RUST_MANIFEST_FILE" "$RUST_LOCK_FILE"
     git commit -m "Bump version to ${NEW_VERSION}"
     git tag -a "v${NEW_VERSION}" -m "hypredrive ${NEW_VERSION}"
     echo "  Tagged v${NEW_VERSION}. Push with: git push origin v${NEW_VERSION}"

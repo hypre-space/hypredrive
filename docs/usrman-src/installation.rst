@@ -159,6 +159,9 @@ CMake options reference
 - ``-DHYPREDRV_BUILD_DSUPERLU=ON`` — Fetch and build SuperLU_DIST and
   enable it in the automatic HYPRE build. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_CPP=ON`` — Build the C++ interface. Default: ``OFF``.
+- ``-DHYPREDRV_ENABLE_RUST=ON`` — Build the Rust interface (a Cargo crate, with its
+  examples and tests). Requires ``-DBUILD_SHARED_LIBS=ON``, real double-precision HYPRE,
+  Cargo, and libclang. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_FORTRAN=ON`` — Build the Fortran interface. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_PYTHON=ON`` — Build the Python extension as part of the top-level CMake build. Default: ``OFF``.
 - ``-DHYPREDRV_ENABLE_MATLAB=ON`` — Build the MATLAB/Octave MEX interface. Default: ``OFF``.
