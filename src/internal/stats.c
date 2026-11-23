@@ -387,9 +387,14 @@ AnnotationBeginSolveEntry(Stats *stats)
 static uint32_t
 AnnotationBeginSolve(Stats *stats)
 {
+   if (stats->reps == 0)
+   {
+      stats->reps = 1; /* library caller that never calls reset_x0 */
+   }
    if (stats->reps == 1 && stats->counter == stats->matrix_counter)
    {
       stats->ls_counter++;
+      stats->matrix_counter = -1; /* count each system once */
    }
    /* GCOVR_EXCL_BR_START */
    if (stats->counter < 0) /* GCOVR_EXCL_BR_STOP */
