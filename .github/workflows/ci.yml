@@ -440,7 +440,7 @@ jobs:
         (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
         (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
       }}
-    name: Rust | ${{ matrix.mpi }} | ${{ matrix.hypre_mode }}
+    name: ubuntu-latest | Rust 1.82 | ${{ matrix.mpi }} | ${{ matrix.hypre_mode }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

@@ -1095,6 +1095,11 @@ if(NOT HYPRE_FOUND)
         endif()
 
         set(_hypre_autotools_configure_extra "")
+        if(CMAKE_C17_EXTENSION_COMPILE_OPTION MATCHES "^-std=")
+            # Legacy HYPRE uses pre-C23 declarations with unspecified parameters.
+            list(APPEND _hypre_autotools_configure_extra
+                "--with-extra-CFLAGS=${CMAKE_C17_EXTENSION_COMPILE_OPTION}")
+        endif()
         if(HYPRE_ENABLE_BIGINT)
             list(APPEND _hypre_autotools_configure_extra --enable-bigint)
         elseif(HYPRE_ENABLE_MIXEDINT)
