@@ -25,7 +25,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write
 
 env:
   PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
