@@ -24,8 +24,9 @@ cmake --build "$rust_build_dir" --target rust-test --parallel
 ## Minimal example
 
 [`minimal.rs`](examples/minimal.rs) solves a two-row system with solution
-`[1, 1]`. [`laplacian.rs`](examples/laplacian.rs) builds each rank's share of a
-distributed system and solves for two right-hand sides.
+`[1, 1]`. [`laplacian.rs`](examples/laplacian.rs) assembles a distributed 3D
+seven-point Laplacian on a `10 × 10 × 10` grid by default and solves for two
+right-hand sides.
 
 See the [Rust user manual](../../docs/usrman-src/interfaces_rust.rst) for
 running the examples, using an installed library from Cargo, and the API and

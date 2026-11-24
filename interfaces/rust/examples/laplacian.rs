@@ -6,45 +6,60 @@ use mpi::collective::SystemOperation;
 use mpi::traits::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let dimensions = std::env::args()
+        .skip(1)
+        .map(|arg| arg.parse::<usize>())
+        .collect::<Result<Vec<_>, _>>()?;
+    let [nx, ny, nz] = match dimensions.as_slice() {
+        [] => [10; 3],
+        [n] => [*n; 3],
+        [nx, ny, nz] => [*nx, *ny, *nz],
+        _ => return Err("usage: laplacian [n | nx ny nz]".into()),
+    };
+    if nx == 0 || ny == 0 || nz == 0 {
+        return Err("grid dimensions must be positive".into());
+    }
+    let plane = nx.checked_mul(ny).ok_or("grid dimensions overflow")?;
+    let global_rows = plane.checked_mul(nz).ok_or("grid dimensions overflow")?;
+    BigInt::try_from(global_rows)?;
+
     let universe = mpi::initialize().expect("MPI must be initialized once by this application");
     let comm = universe.world();
-    let runtime = Runtime::new(&universe)?;
-    let n: usize = std::env::args()
-        .nth(1)
-        .map(|arg| arg.parse())
-        .transpose()?
-        .unwrap_or(32);
     let size = usize::try_from(comm.size())?;
     let rank = usize::try_from(comm.rank())?;
-    if n < size {
+    if global_rows < size {
         return Err("the global row count must be at least the MPI process count".into());
     }
-    let _global_rows = BigInt::try_from(n)?;
-    let rows = n / size + usize::from(rank < n % size);
-    let first = rank * (n / size) + rank.min(n % size);
+    let runtime = Runtime::new(&universe)?;
+    let rows = global_rows / size + usize::from(rank < global_rows % size);
+    let first = rank * (global_rows / size) + rank.min(global_rows % size);
     let last = first + rows - 1;
 
-    // Assemble only this rank's rows. Column indices are global.
+    // Flatten the grid with x varying fastest. Assemble only this rank's rows.
     let mut indptr = vec![0];
     let mut columns = Vec::new();
     let mut values = Vec::new();
     let mut rhs = Vec::with_capacity(rows);
     for row in first..=last {
-        let mut value = 2.0;
-        if row > 0 {
-            columns.push(BigInt::try_from(row - 1)?);
-            values.push(-1.0);
-            value -= 1.0;
-        }
+        let (x, y, z) = (row % nx, (row / nx) % ny, row / plane);
         columns.push(BigInt::try_from(row)?);
-        values.push(2.0);
-        if row + 1 < n {
-            columns.push(BigInt::try_from(row + 1)?);
-            values.push(-1.0);
-            value -= 1.0;
+        values.push(6.0);
+        // Each missing neighbor contributes one to the RHS for the exact solution x = 1.
+        let mut row_sum = 6.0;
+        for (coordinate, extent, stride) in [(x, nx, 1), (y, ny, nx), (z, nz, plane)] {
+            if coordinate > 0 {
+                columns.push(BigInt::try_from(row - stride)?);
+                values.push(-1.0);
+                row_sum -= 1.0;
+            }
+            if coordinate + 1 < extent {
+                columns.push(BigInt::try_from(row + stride)?);
+                values.push(-1.0);
+                row_sum -= 1.0;
+            }
         }
         indptr.push(BigInt::try_from(columns.len())?);
-        rhs.push(value);
+        rhs.push(row_sum);
     }
 
     let mut driver = HypreDrive::from_yaml(
@@ -68,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     assert!(result.converged && error < 1.0e-8);
     if comm.rank() == 0 {
         println!(
-            "rows = {n}, ranks = {size}, iterations = {}",
+            "grid = {nx} x {ny} x {nz}, rows = {global_rows}, ranks = {size}, iterations = {}",
             result.iterations
         );
         println!("maximum solution error = {error:.3e}");

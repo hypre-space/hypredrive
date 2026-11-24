@@ -87,11 +87,12 @@ library directory and any separate HYPRE or MPI library directories in
    cmake --build "$rust_build_dir" --target rust-build --parallel
    export LD_LIBRARY_PATH="$rust_build_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
    "$rust_build_dir/interfaces/rust/cargo-target/debug/examples/minimal"
-   mpiexec -n 2 "$rust_build_dir/interfaces/rust/cargo-target/debug/examples/laplacian"
+   mpiexec -n 2 "$rust_build_dir/interfaces/rust/cargo-target/debug/examples/laplacian" 8 10 12
 
-The Laplacian example assembles only each rank's local slab. Its optional
-first argument sets the global row count, which defaults to 32. Drivers can
-use split communicators and can be reused with another RHS.
+The Laplacian example assembles each rank's contiguous range of rows for a
+3D seven-point stencil. The default grid is 10 × 10 × 10. Pass one side length
+for a cube or three lengths for a rectangular grid. The example reuses the
+matrix and driver for a second right-hand side.
 
 With Linux sanitizer builds, CTest preloads the native compiler's sanitizer
 runtimes into each Rust test process. For a direct launch, set ``LD_PRELOAD``
