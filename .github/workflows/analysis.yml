@@ -188,6 +188,14 @@ jobs:
         with:
           compiler: ${{ matrix.compiler }}
 
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          restore-keys: |
+            datasets-v2-
+
       - name: Build HYPRE
         id: build-hypre
         uses: ./.github/actions/build-hypre
