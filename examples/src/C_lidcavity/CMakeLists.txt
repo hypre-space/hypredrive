@@ -159,6 +159,13 @@ if(HYPREDRV_ENABLE_TESTING)
             add_executable_test(lidcavity_test_q2q1_mgr_4proc lidcavity 4
               ARGS -v 1 -disc q2q1 -n 12 12 -P 2 2 -dt 0.1 -tf 0.3
             )
+            if(HYPREDRV_HAVE_HYPRE_30100_DEV38)
+                # MGR setup statistics combined with solver setup reuse
+                add_executable_test(lidcavity_test_mgr_reuse_stats_4proc lidcavity 4
+                  ARGS -v 1 -n 12 12 -P 2 2 -dt 0.1 -tf 0.3
+                       -i ${CMAKE_CURRENT_SOURCE_DIR}/fgmres-mgr-reuse-stats.yml
+                )
+            endif()
         else()
             message(STATUS
                 "Skipping lidcavity_test_mgr_4proc for exact Hypre v3.1.0 "

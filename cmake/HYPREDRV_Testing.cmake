@@ -1049,6 +1049,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(30100 0)
     hypredrv_check_hypre_version(30200 0)
     hypredrv_check_hypre_version(30200 1)
+    hypredrv_check_hypre_version(30300 0)
     hypredrv_check_hypre_version(30100 5)
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
@@ -1470,6 +1471,41 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
             hypredrv_set_gpu_test_resources(hypredrive_test_ex7_mgr_coarse_reuse_1proc 1)
             hypredrv_append_test_environment(hypredrive_test_ex7_mgr_coarse_reuse_1proc
                 "HYPREDRV_LOG_LEVEL=4")
+
+            # MGR setup statistics (print_level >= 1) combined with solver reuse
+            foreach(_stats_case IN ITEMS
+                "frelax_reuse|ex7-mgr-frelax-reuse.yml"
+                "coarse_reuse|ex7-mgr-coarse-reuse.yml"
+                "coarse_ilu_reuse|ex7-mgr-coarse-ilu-reuse.yml"
+                "blk_jacobi_restriction|ex7-mgr-blk-jacobi-restriction.yml"
+                "blk_jacobi_level1|ex7-mgr-blk-jacobi-level1.yml"
+                "frelax_krylov_reuse|ex7-mgr-frelax-krylov-reuse.yml"
+                "frelax_schwarz|ex7-mgr-frelax-schwarz.yml"
+            )
+                string(REPLACE "|" ";" _stats_parts "${_stats_case}")
+                list(GET _stats_parts 0 _stats_name)
+                list(GET _stats_parts 1 _stats_cfg)
+                # HYPRE 3.2.0/3.2.1 can error or crash when printing MGR setup
+                # stats with reused components; its block-Jacobi MGR operators
+                # also have incompatible dimensions. These cases pass on
+                # development builds and HYPRE 3.3+.
+                if (NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER AND
+                    NOT HYPREDRV_HAVE_HYPRE_30300_DEV0 AND
+                    _stats_name MATCHES "^(frelax_reuse|coarse_reuse|coarse_ilu_reuse|blk_jacobi_restriction|blk_jacobi_level1|frelax_schwarz)$")
+                    continue()
+                endif()
+                add_hypredrive_cli_test(ex7_mgr_${_stats_name}_stats_cli 1 ${_stats_cfg}
+                    OVERRIDES
+                        --preconditioner:mgr:print_level 1
+                    REQUIRE_CONTAINS
+                        "MGR SETUP PARAMETERS"
+                        "Solving linear system #4"
+                )
+            endforeach()
+            unset(_stats_case)
+            unset(_stats_parts)
+            unset(_stats_name)
+            unset(_stats_cfg)
 
             add_test(NAME hypredrive_test_ex7_mgr_frelax_ilu_reuse_1proc
                 COMMAND ${CMAKE_COMMAND}

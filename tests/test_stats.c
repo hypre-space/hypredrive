@@ -211,6 +211,26 @@ test_Stats_reset_x0_and_solve_ls_counter_branches(void)
 }
 
 static void
+test_Stats_ls_id_without_reset_x0(void)
+{
+   Stats *s = hypredrv_StatsCreate();
+   ASSERT_NOT_NULL(s);
+
+   /* Library callers may skip reset_x0: each system must still advance the id */
+   for (int i = 0; i < 3; i++)
+   {
+      hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "system");
+      hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "system");
+      ASSERT_EQ(hypredrv_StatsGetLinearSystemID(s), i - 1);
+      hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
+      hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
+      ASSERT_EQ(hypredrv_StatsGetLinearSystemID(s), i);
+   }
+
+   hypredrv_StatsDestroy(&s);
+}
+
+static void
 test_Stats_initial_res_norm_and_setters(void)
 {
    Stats *s = hypredrv_StatsCreate();
@@ -619,6 +639,7 @@ main(int argc, char **argv)
    RUN_TEST(test_Stats_annotation_unknown_keys);
    RUN_TEST(test_Stats_rhs_dofmap_prec_counter_negative_branches);
    RUN_TEST(test_Stats_reset_x0_and_solve_ls_counter_branches);
+   RUN_TEST(test_Stats_ls_id_without_reset_x0);
    RUN_TEST(test_Stats_initial_res_norm_and_setters);
    RUN_TEST(test_Stats_level_begin_end_error_branches);
    RUN_TEST(test_Stats_level_get_count_checked);

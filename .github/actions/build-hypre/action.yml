@@ -133,6 +133,9 @@ runs:
             if [ "${{ inputs.hypre_mixedint }}" = "ON" ]; then
               MIXEDINT_FLAG="--enable-mixedint"
             fi
+            # HYPRE 2.x has old-style declarations that conflict with GCC 15's
+            # default C23 mode. Keep the autotools build on GNU C11.
+            CFLAGS="${CFLAGS:--O2} -std=gnu11" \
             AR="ar -rc" \
             CC=mpicc \
             ./configure --prefix="$PREFIX" --disable-fortran $SHARED_FLAG $MIXEDINT_FLAG
