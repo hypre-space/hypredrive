@@ -430,6 +430,29 @@ fn configuration(runtime: &Runtime<'_>, comm: &impl Communicator) -> TestResult 
     ));
     std::fs::write(&path, YAML)?;
     drop(HypreDrive::from_file(runtime, comm, &path)?);
+    drop(HypreDrive::from_file_with_overrides(
+        runtime,
+        comm,
+        &path,
+        &["--solver:pcg:max_iter", "20"],
+    )?);
+    if comm.size() > 1 {
+        let max_iter = if comm.rank() == 0 { "20" } else { "21" };
+        let result = HypreDrive::from_file_with_overrides(
+            runtime,
+            comm,
+            &path,
+            &["--solver:pcg:max_iter", max_iter],
+        );
+        check(
+            comm,
+            result
+                .as_ref()
+                .err()
+                .is_some_and(|error| error.status().is_none()),
+            "differing YAML overrides were accepted across MPI ranks",
+        )?;
+    }
     let selected_path = if comm.rank() == 0 {
         path.with_extension("missing.yml")
     } else {

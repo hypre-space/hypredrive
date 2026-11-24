@@ -134,8 +134,8 @@ if(_hypredrv_rust_standalone)
 endif()
 
 find_program(Cargo_EXECUTABLE NAMES cargo REQUIRED)
-# Rust executables have no CMake-generated RPATH. Keep the existing test helper's
-# paths and add MPI libraries hidden in a compiler wrapper's implicit link path.
+# Find MPI libraries hidden in a compiler wrapper's implicit link path for
+# the Cargo examples and CTest runtime environment.
 set(_hypredrv_rust_mpi_runtime_dirs "")
 foreach(_hypredrv_rust_link_dir IN LISTS CMAKE_C_IMPLICIT_LINK_DIRECTORIES)
     if(EXISTS "${_hypredrv_rust_link_dir}/libmpi.so" OR
@@ -210,6 +210,10 @@ set(_hypredrv_rust_env
     "MPICC=${MPI_C_COMPILER}")
 if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
     list(APPEND _hypredrv_rust_env "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
+endif()
+if(UNIX AND NOT CMAKE_SKIP_RPATH AND NOT CMAKE_SKIP_BUILD_RPATH)
+    list(APPEND _hypredrv_rust_env
+        "HYPREDRV_RUST_EXAMPLE_RPATH=${_hypredrv_rust_mpi_runtime_path}")
 endif()
 set(_hypredrv_rust_executable_env "")
 if(HYPREDRV_SANITIZER_ENABLED AND CMAKE_SYSTEM_NAME STREQUAL "Linux")

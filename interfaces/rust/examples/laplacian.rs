@@ -6,15 +6,48 @@ use mpi::collective::SystemOperation;
 use mpi::traits::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let dimensions = std::env::args()
-        .skip(1)
-        .map(|arg| arg.parse::<usize>())
-        .collect::<Result<Vec<_>, _>>()?;
+    const USAGE: &str = "Usage: laplacian [n | nx ny nz] [-i FILE] [-a KEY VALUE ...]";
+    let mut args = std::env::args().skip(1);
+    let mut dimensions = Vec::new();
+    let mut input = None;
+    let mut overrides = Vec::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "-h" | "--help" => {
+                println!(
+                    "{USAGE}\n\
+                     Solve a 3D seven-point Laplacian. The default grid is 10 x 10 x 10.\n\n\
+                     -i, --input FILE        YAML file for solver settings\n\
+                     -a, --args KEY VALUE    YAML overrides (requires -i and must come last)\n\
+                                             Example: -a --solver:pcg:max_iter 100\n\
+                     -h, --help              Show this help"
+                );
+                return Ok(());
+            }
+            "-i" | "--input" => {
+                input = Some(args.next().ok_or("-i/--input requires a YAML file")?);
+            }
+            "-a" | "--args" => {
+                if input.is_none() {
+                    return Err("-a/--args requires a YAML configuration file (-i)".into());
+                }
+                overrides.extend(args);
+                if overrides.is_empty() {
+                    return Err("-a/--args requires at least one YAML override".into());
+                }
+                break;
+            }
+            _ => dimensions.push(
+                arg.parse::<usize>()
+                    .map_err(|_| format!("invalid grid dimension or option '{arg}'\n{USAGE}"))?,
+            ),
+        }
+    }
     let [nx, ny, nz] = match dimensions.as_slice() {
         [] => [10; 3],
         [n] => [*n; 3],
         [nx, ny, nz] => [*nx, *ny, *nz],
-        _ => return Err("usage: laplacian [n | nx ny nz]".into()),
+        _ => return Err(USAGE.into()),
     };
     if nx == 0 || ny == 0 || nz == 0 {
         return Err("grid dimensions must be positive".into());
@@ -31,6 +64,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("the global row count must be at least the MPI process count".into());
     }
     let runtime = Runtime::new(&universe)?;
+    let mut driver = if let Some(path) = &input {
+        let overrides: Vec<_> = overrides.iter().map(String::as_str).collect();
+        HypreDrive::from_file_with_overrides(&runtime, &comm, path, &overrides)?
+    } else {
+        HypreDrive::from_yaml(
+            &runtime,
+            &comm,
+            "general:\n  statistics: off\nsolver:\n  pcg:\n    max_iter: 100\n    relative_tol: 1.0e-12\npreconditioner: amg\n",
+        )?
+    };
+
+    if rank == 0 {
+        println!("\n=====================================================");
+        println!("              Laplacian Problem Setup");
+        println!("=====================================================");
+        println!("Grid dimensions:      {nx} x {ny} x {nz}");
+        println!("MPI ranks:            {size}");
+        println!("Global rows:          {global_rows}");
+        println!("Diffusion coeffs:     (1.00e+00, 1.00e+00, 1.00e+00)");
+        println!("Discretization:       7-point stencil");
+        println!("Number of solves:     2");
+        println!("=====================================================\n");
+    }
+
     let rows = global_rows / size + usize::from(rank < global_rows % size);
     let first = rank * (global_rows / size) + rank.min(global_rows % size);
     let last = first + rows - 1;
@@ -62,11 +119,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rhs.push(row_sum);
     }
 
-    let mut driver = HypreDrive::from_yaml(
-        &runtime,
-        &comm,
-        "general:\n  statistics: off\nsolver:\n  pcg:\n    max_iter: 100\n    relative_tol: 1.0e-12\npreconditioner: amg\n",
-    )?;
     driver.set_matrix_csr(
         BigInt::try_from(first)?,
         BigInt::try_from(last)?,
@@ -80,12 +132,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let local_error = result.x.iter().map(|x| (x - 1.0).abs()).fold(0.0, f64::max);
     let mut error = 0.0_f64;
     comm.all_reduce_into(&local_error, &mut error, SystemOperation::max());
-    assert!(result.converged && error < 1.0e-8);
-    if comm.rank() == 0 {
-        println!(
-            "grid = {nx} x {ny} x {nz}, rows = {global_rows}, ranks = {size}, iterations = {}",
-            result.iterations
-        );
+    if !result.converged || (input.is_none() && error >= 1.0e-8) {
+        return Err(format!(
+            "first solve did not reach the requested accuracy (error {error:.3e})"
+        )
+        .into());
+    }
+    if rank == 0 {
+        println!("iterations = {}", result.iterations);
         println!("maximum solution error = {error:.3e}");
     }
 
@@ -96,6 +150,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let second = driver.solve()?;
     let local_error = second.x.iter().map(|x| (x - 2.0).abs()).fold(0.0, f64::max);
     comm.all_reduce_into(&local_error, &mut error, SystemOperation::max());
-    assert!(second.converged && error < 1.0e-8);
+    if !second.converged || (input.is_none() && error >= 1.0e-8) {
+        return Err(format!(
+            "second solve did not reach the requested accuracy (error {error:.3e})"
+        )
+        .into());
+    }
     Ok(())
 }

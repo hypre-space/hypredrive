@@ -225,7 +225,12 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         let configuration = CString::new(format!("{yaml}\n"))
             .map_err(|_| Error::invalid("from_yaml", "YAML contains an embedded NUL"));
         let configuration = agree_validation(communicator, "from_yaml", configuration)?;
-        require_identical_yaml(communicator, configuration.as_bytes())?;
+        require_identical_input(
+            communicator,
+            "from_yaml",
+            "YAML text",
+            configuration.as_bytes(),
+        )?;
         Self::configured(runtime, communicator, vec![configuration])
     }
 
@@ -240,8 +245,21 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         communicator: &'a C,
         path: impl AsRef<Path>,
     ) -> Result<Self, Error> {
+        Self::from_file_with_overrides(runtime, communicator, path, &[])
+    }
+
+    /// Read a YAML file and apply native `--path:to:key value` overrides.
+    ///
+    /// Pass alternating keys and values, with identical tokens on every rank.
+    /// File handling is the same as in [`Self::from_file`].
+    pub fn from_file_with_overrides(
+        runtime: &'a Runtime<'a>,
+        communicator: &'a C,
+        path: impl AsRef<Path>,
+        overrides: &[&str],
+    ) -> Result<Self, Error> {
         require_intracommunicator(communicator, "from_file")?;
-        let configuration = (|| {
+        let arguments = (|| {
             let path = path.as_ref();
             let name = path
                 .to_str()
@@ -259,17 +277,46 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
                     "the native parser requires a configuration path without spaces",
                 ));
             }
-            CString::new(name)
-                .map_err(|_| Error::invalid("from_file", "path contains an embedded NUL"))
+            let configuration = CString::new(name)
+                .map_err(|_| Error::invalid("from_file", "path contains an embedded NUL"))?;
+            if overrides.len() % 2 != 0
+                || overrides.chunks_exact(2).any(|pair| {
+                    let key = pair[0];
+                    !key.starts_with("--") && !key.contains(':')
+                })
+            {
+                return Err(Error::invalid(
+                    "from_file",
+                    "expected pairs of '--path:to:key value'",
+                ));
+            }
+            if i32::try_from(overrides.len() + 3).is_err() {
+                return Err(Error::invalid("from_file", "too many YAML overrides"));
+            }
+            let overrides = overrides
+                .iter()
+                .map(|arg| {
+                    CString::new(*arg).map_err(|_| {
+                        Error::invalid("from_file", "YAML override contains an embedded NUL")
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok((configuration, overrides))
         })();
-        let configuration = agree_validation(communicator, "from_file", configuration)?;
+        let (configuration, overrides) = agree_validation(communicator, "from_file", arguments)?;
+        let override_bytes: Vec<_> = overrides
+            .iter()
+            .flat_map(|arg| arg.as_bytes_with_nul().iter().copied())
+            .collect();
+        require_identical_input(communicator, "from_file", "YAML overrides", &override_bytes)?;
         // A separate argv[0] keeps unusual filename characters out of the
         // native parser's inline-YAML detection.
-        Self::configured(
-            runtime,
-            communicator,
-            vec![CString::new("hypredrive-rust").unwrap(), configuration],
-        )
+        let mut arguments = vec![c"hypredrive-rust".to_owned(), configuration];
+        if !overrides.is_empty() {
+            arguments.push(c"-a".to_owned());
+            arguments.extend(overrides);
+        }
+        Self::configured(runtime, communicator, arguments)
     }
 
     fn configured(
@@ -569,12 +616,23 @@ fn require_intracommunicator<C: Communicator>(
     Ok(())
 }
 
-fn require_identical_yaml<C: Communicator>(communicator: &C, bytes: &[u8]) -> Result<(), Error> {
+fn require_identical_input<C: Communicator>(
+    communicator: &C,
+    operation: &'static str,
+    input: &str,
+    bytes: &[u8],
+) -> Result<(), Error> {
+    let mismatch = || {
+        Error::invalid(
+            operation,
+            format!("{input} must be identical on every MPI rank"),
+        )
+    };
     let length = agree_validation(
         communicator,
-        "from_yaml",
+        operation,
         u64::try_from(bytes.len())
-            .map_err(|_| Error::invalid("from_yaml", "YAML length exceeds u64 range")),
+            .map_err(|_| Error::invalid(operation, format!("{input} length exceeds u64 range"))),
     )?;
     let mut root_length = length;
     let root = communicator.process_at_rank(0);
@@ -582,15 +640,12 @@ fn require_identical_yaml<C: Communicator>(communicator: &C, bytes: &[u8]) -> Re
     let length_validation = if root_length == length {
         Ok(())
     } else {
-        Err(Error::invalid(
-            "from_yaml",
-            "YAML text must be identical on every MPI rank",
-        ))
+        Err(mismatch())
     };
-    agree_validation(communicator, "from_yaml", length_validation)?;
+    agree_validation(communicator, operation, length_validation)?;
 
     // Exact, bounded-size comparisons avoid hash collisions and MPI count
-    // overflow for configurations larger than an MPI int-sized buffer.
+    // overflow for inputs larger than an MPI int-sized buffer.
     let mut block = [0_u8; 4096];
     let mut identical = true;
     for local in bytes.chunks(block.len()) {
@@ -601,15 +656,8 @@ fn require_identical_yaml<C: Communicator>(communicator: &C, bytes: &[u8]) -> Re
         root.broadcast_into(received);
         identical &= received == local;
     }
-    let validation = if identical {
-        Ok(())
-    } else {
-        Err(Error::invalid(
-            "from_yaml",
-            "YAML text must be identical on every MPI rank",
-        ))
-    };
-    agree_validation(communicator, "from_yaml", validation)
+    let validation = if identical { Ok(()) } else { Err(mismatch()) };
+    agree_validation(communicator, operation, validation)
 }
 
 fn agree_validation<C: Communicator, T>(

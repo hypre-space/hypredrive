@@ -75,24 +75,30 @@ Rust runtime may be active per process, including across threads. The runtime
 requires exclusive ownership of HYPREDRV's process-global state relative to
 other native callers.
 
-Run the built examples with the matching MPI installation. Direct launches
-need the loader environment in the current shell. The environment CMake sets
-for tests applies only to those test processes. On Linux, include the build's
-library directory and any separate HYPRE or MPI library directories in
-``LD_LIBRARY_PATH``. On macOS, use the corresponding loader paths or
-``DYLD_LIBRARY_PATH``.
+Run the built examples with the matching MPI installation. By default, on Linux
+and macOS, CMake-built Rust examples embed search paths for the build-tree
+hypredrive and MPI libraries. Add any additional native dependency directories
+to ``LD_LIBRARY_PATH`` on Linux or ``DYLD_LIBRARY_PATH`` on macOS if needed.
 
 .. code-block:: bash
 
    cmake --build "$rust_build_dir" --target rust-build --parallel
-   export LD_LIBRARY_PATH="$rust_build_dir/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
    "$rust_build_dir/interfaces/rust/cargo-target/debug/examples/minimal"
    mpiexec -n 2 "$rust_build_dir/interfaces/rust/cargo-target/debug/examples/laplacian" 8 10 12
 
 The Laplacian example assembles each rank's contiguous range of rows for a
 3D seven-point stencil. The default grid is 10 × 10 × 10. Pass one side length
-for a cube or three lengths for a rectangular grid. The example reuses the
-matrix and driver for a second right-hand side.
+for a cube or three lengths for a rectangular grid. Use ``--help`` to see the
+usage. The example reuses the matrix and driver for a second right-hand side.
+
+Use ``-i`` or ``--input`` to read a solver YAML file. To override its settings,
+put ``-a`` or ``--args`` last, followed by ``--path:to:key value`` pairs.
+
+.. code-block:: bash
+
+   mpiexec -n 2 "$rust_build_dir/interfaces/rust/cargo-target/debug/examples/laplacian" 8 10 12 \
+     -i interfaces/fortran/examples/laplacian/solver.yml \
+     -a --solver:pcg:max_iter 50 --solver:pcg:relative_tol 1e-10
 
 With Linux sanitizer builds, CTest preloads the native compiler's sanitizer
 runtimes into each Rust test process. For a direct launch, set ``LD_PRELOAD``
@@ -178,6 +184,10 @@ reads the file through the native parser and broadcasts
 its contents. Relative paths in YAML retain their configuration-directory
 semantics. Embedded NUL bytes are rejected. Drivers require an MPI
 intracommunicator, including split communicators.
+
+``HypreDrive::from_file_with_overrides(&runtime, &comm, path, overrides)``
+applies native YAML overrides from alternating key and value strings. Supply
+identical override tokens on every rank.
 
 ``set_matrix_csr(row_start, row_end, indptr, columns, values)`` accepts inclusive
 global row bounds, global column indices, and host values. Every rank must own

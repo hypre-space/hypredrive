@@ -109,6 +109,7 @@ fn executable_path(command: &Path) -> PathBuf {
 fn main() {
     for name in [
         "HYPREDRV_RUST_METADATA",
+        "HYPREDRV_RUST_EXAMPLE_RPATH",
         "HYPREDRV_DIR",
         "HYPRE_DIR",
         "HYPRE_ROOT",
@@ -168,6 +169,11 @@ fn main() {
         native.link_dir.display()
     );
     println!("cargo:rustc-link-lib=dylib=HYPREDRV");
+    if let Some(runtime_path) = env::var_os("HYPREDRV_RUST_EXAMPLE_RPATH") {
+        for dir in env::split_paths(&runtime_path) {
+            println!("cargo:rustc-link-arg-examples=-Wl,-rpath,{}", dir.display());
+        }
+    }
 
     let functions = [
         "Initialize",
