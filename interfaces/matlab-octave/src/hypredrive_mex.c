@@ -1229,15 +1229,20 @@ static void
 HYPREDRV_MatlabCmdCreate(int nlhs, mxArray *plhs[], int na, const mxArray *a[])
 {
    (void)nlhs;
+   /* Validate and convert the options before allocating the driver: a bad
+    * argument raises a MEX error that does not return, so anything allocated
+    * before it would leak. Empty text selects the quiet default options. */
+   char *yaml = (na > 0) ? HYPREDRV_MatlabGetYaml(a[0]) : NULL;
    HYPREDRV_t drv = NULL;
    HD_CHECK(HYPREDRV_Create(MPI_COMM_SELF, &drv));
    uint32_t code = HYPREDRV_SetLibraryMode(drv);
-   if (code == HYPREDRV_SUCCESS && na > 0)
+   if (code == HYPREDRV_SUCCESS && yaml)
    {
-      /* Empty text selects the interface's quiet default options. */
-      char *yaml = HYPREDRV_MatlabGetYaml(a[0]);
       char *argv[2] = {yaml, NULL};
       code          = HYPREDRV_InputArgsParse(1, argv, drv);
+   }
+   if (yaml)
+   {
       mxFree(yaml);
    }
    if (code != HYPREDRV_SUCCESS)
