@@ -2059,8 +2059,8 @@ extern "C"
     *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
     * @endcode
     */
-   HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv,
-                                                                       double     tol);
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol);
 
    /**
     * @brief Apply the preconditioner associated with a HYPREDRV_t object to an input
