@@ -16,7 +16,10 @@ on:
 permissions: {}
 
 concurrency:
-  group: cache-cleanup-${{ github.event.pull_request.number || 'sweep' }}
+  # Serialize PR-close cleanups separately from sweep so a burst of closed PRs
+  # cannot contend for repository runner slots or evict a queued sweep; any PR
+  # cleanup dropped when the 1-deep queue is full is caught by the weekly sweep.
+  group: cache-cleanup-${{ github.event_name == 'pull_request_target' && 'pr' || 'sweep' }}
   cancel-in-progress: false
 
 env:
@@ -37,18 +40,34 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
+          delete_cache() {
+            local id=$1 err
+            if [[ -z "$id" ]]; then
+              return 0
+            fi
+            if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+              echo "::warning::Skipping unexpected cache id: $id"
+              return 0
+            fi
+            if err=$(gh cache delete "$id" 2>&1); then
+              [[ -n "$err" ]] && printf '%s\n' "$err"
+              return 0
+            fi
+            if printf '%s\n' "$err" | grep -Eiq 'HTTP 404|not found'; then
+              echo "Cache $id already absent; skipping"
+              return 0
+            fi
+            echo "::error::Failed to delete cache $id: $err" >&2
+            return 1
+          }
+
           if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "::error::Invalid pull request number: $PR_NUMBER"
             exit 1
           fi
           ids=$(gh cache list --ref "refs/pull/${PR_NUMBER}/merge" --limit 1000 --json id --jq '.[].id')
           while IFS= read -r id; do
-            [[ -z "$id" ]] && continue
-            if [[ ! "$id" =~ ^[0-9]+$ ]]; then
-              echo "::warning::Skipping unexpected cache id: $id"
-              continue
-            fi
-            gh cache delete "$id" || echo "::warning::Failed to delete cache $id"
+            delete_cache "$id"
           done <<< "$ids"
 
   sweep:
@@ -63,6 +82,27 @@ jobs:
       - name: Delete caches of pull requests that are not open
         run: |
           set -euo pipefail
+          delete_cache() {
+            local id=$1 err
+            if [[ -z "$id" ]]; then
+              return 0
+            fi
+            if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+              echo "::warning::Skipping unexpected cache id: $id"
+              return 0
+            fi
+            if err=$(gh cache delete "$id" 2>&1); then
+              [[ -n "$err" ]] && printf '%s\n' "$err"
+              return 0
+            fi
+            if printf '%s\n' "$err" | grep -Eiq 'HTTP 404|not found'; then
+              echo "Cache $id already absent; skipping"
+              return 0
+            fi
+            echo "::error::Failed to delete cache $id: $err" >&2
+            return 1
+          }
+
           all_refs=$(gh cache list --limit 1000 --json ref --jq '.[].ref')
           refs=$(printf '%s\n' "$all_refs" | sort -u | grep -E '^refs/pull/[0-9]+/merge$' || true)
           while IFS= read -r ref; do
@@ -79,12 +119,7 @@ jobs:
             echo "Deleting caches of $state pull request #$number"
             ids=$(gh cache list --ref "$ref" --limit 1000 --json id --jq '.[].id')
             while IFS= read -r id; do
-              [[ -z "$id" ]] && continue
-              if [[ ! "$id" =~ ^[0-9]+$ ]]; then
-                echo "::warning::Skipping unexpected cache id: $id"
-                continue
-              fi
-              gh cache delete "$id" || echo "::warning::Failed to delete cache $id"
+              delete_cache "$id"
             done <<< "$ids"
           done <<< "$refs"
 
@@ -95,15 +130,31 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
+          delete_cache() {
+            local id=$1 err
+            if [[ -z "$id" ]]; then
+              return 0
+            fi
+            if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+              echo "::warning::Skipping unexpected cache id: $id"
+              return 0
+            fi
+            if err=$(gh cache delete "$id" 2>&1); then
+              [[ -n "$err" ]] && printf '%s\n' "$err"
+              return 0
+            fi
+            if printf '%s\n' "$err" | grep -Eiq 'HTTP 404|not found'; then
+              echo "Cache $id already absent; skipping"
+              return 0
+            fi
+            echo "::error::Failed to delete cache $id: $err" >&2
+            return 1
+          }
+
           for key in fuzz-corpus ccache-20 datasets-v2; do
             echo "Deleting caches with key prefix $key"
             ids=$(gh cache list --key "$key" --limit 1000 --json id --jq '.[].id')
             while IFS= read -r id; do
-              [[ -z "$id" ]] && continue
-              if [[ ! "$id" =~ ^[0-9]+$ ]]; then
-                echo "::warning::Skipping unexpected cache id: $id"
-                continue
-              fi
-              gh cache delete "$id" || echo "::warning::Failed to delete cache $id"
+              delete_cache "$id"
             done <<< "$ids"
           done
