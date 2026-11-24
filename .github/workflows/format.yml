@@ -13,6 +13,8 @@ on:
       - 'scripts/check_private_prefix.sh'
       - 'scripts/check_symbol_prefix.sh'
       - 'scripts/list_public_apis.sh'
+      - 'scripts/check_interface_coverage.sh'
+      - 'interfaces/**'
       - '.clang-format'
   push:
     branches: [ master ]
@@ -26,6 +28,8 @@ on:
       - 'scripts/check_private_prefix.sh'
       - 'scripts/check_symbol_prefix.sh'
       - 'scripts/list_public_apis.sh'
+      - 'scripts/check_interface_coverage.sh'
+      - 'interfaces/**'
       - '.clang-format'
   workflow_dispatch:    # Allow manual triggering
 
@@ -139,3 +143,6 @@ jobs:
 
       - name: public API prefix check
         run: bash scripts/list_public_apis.sh --check
+
+      - name: interface coverage check
+        run: bash scripts/check_interface_coverage.sh

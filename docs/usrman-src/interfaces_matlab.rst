@@ -156,6 +156,44 @@ the matching elasticity AMG preset. A test or script can call
 ``build_laplacian.m`` or ``build_elasticity.m`` when it needs only the matrix and
 right-hand side.
 
+Handle-based API
+----------------
+
+Besides the one-shot solve, ``hypredrive_mex('command', ...)`` exposes every public
+``HYPREDRV_`` function; the one-shot form ``hypredrive_mex(A, b, yaml)`` is
+unchanged. Drivers, IJ matrices, and IJ vectors are opaque scalar ``uint64``
+handles that are validated on every call: stale, destroyed, forged, or wrong-kind
+handles raise ``hypredrive:InvalidHandle``. ``hypredrive_mex('commands')`` lists
+the available commands.
+
+.. code-block:: matlab
+
+   drv = hypredrive_mex('create', hypredrive_options('solver', 'pcg', ...
+                        'preconditioner', 'amg', 'amg', struct('print_level', 0)));
+   hypredrive_mex('set_matrix_csr', drv, A);
+   hypredrive_mex('set_rhs_array', drv, b);
+   hypredrive_mex('solver_create', drv);
+   hypredrive_mex('solver_setup', drv);
+   hypredrive_mex('solver_apply', drv);
+   x    = hypredrive_mex('copy_solution_values', drv);
+   info = hypredrive_mex('solver_info', drv);
+   hypredrive_mex('destroy', drv);
+
+Lifetime rules: ``destroy`` on a driver also invalidates borrowed handles issued
+from it (``get_matrix``, ``get_rhs``, ``get_solution``). Destroying an owned
+matrix or vector that is still attached to a live driver raises
+``hypredrive:ObjectInUse``. ``destroy_all`` and the ``mexAtExit`` hook release
+every handle, drivers first.
+
+The full command-to-C-function table is in ``interfaces/matlab-octave/README.md``.
+Commands cover input arguments and presets, linear-system setters and getters
+(sparse matrices and dense vectors in MATLAB-native form, or raw IJ handles for
+the ``HYPRE_Matrix``/``HYPRE_Vector`` APIs), dof maps, null spaces, state vectors,
+preconditioner and solver control, solver status queries, statistics, and
+annotations. Only real-double, host-memory, serial use is supported. The
+interface was syntax-checked but not run on MATLAB or Octave when it was added;
+run ``matlab-test`` to validate it.
+
 Information struct
 ------------------
 

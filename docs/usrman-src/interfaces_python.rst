@@ -288,6 +288,32 @@ For the ``options`` argument, pass one of these values:
 The Python interface and CLI accept the same YAML keys and solver options. See
 :ref:`InputFileStructure`.
 
+Additional API coverage
+-----------------------
+
+Every public ``HYPREDRV_*`` function is reachable from Python. The
+``HypreDrive`` methods mirror the C names in snake case: input queries
+(``warmup``, ``num_repetitions``, ``num_linear_systems``,
+``num_precon_variants``, ``set_precon_variant``, ``set_solver_preset``,
+``set_precon_preset``), dofmaps (``set_interleaved_dofmap``,
+``set_contiguous_dofmap``, ``read_dofmap``, ``print_dofmap``),
+``set_near_null_space``/``set_null_space``, state vectors
+(``set_state_vectors``, ``state_vector_values``, ``state_vector_copy``,
+``state_vector_update_all``, ``state_vector_apply_correction``), the standalone
+preconditioner (``precon_create/setup/apply/destroy``), and leveled statistics
+(``annotate_level_begin/end``, ``stats_level_count/entry``, ``print_stats``,
+``print_stats_level``). Module-level functions cover global APIs:
+``register_solver_preset``, ``register_precon_preset``, ``print_lib_info``,
+``print_system_info``, ``print_exit_info``, ``clear_error`` and
+``invalid_value_error``.
+
+Raw ``HYPRE_Matrix``/``HYPRE_Vector`` handles (``set_matrix_handle``,
+``set_rhs_handle``, ``set_discrete_gradient_handle``, ``get_matrix_handle``,
+...) are passed and returned as integer addresses of the underlying
+``HYPRE_IJMatrix``/``HYPRE_IJVector`` (``None`` means ``NULL``). The driver runs
+in library mode, so supplied handles are borrowed: keep them alive until the
+driver is closed. Handles returned by the getters are borrowed from the driver.
+
 Testing
 -------
 

@@ -13,7 +13,24 @@ export hypredrive_error, SolveInfo, hypredrive_initialize, hypredrive_library_pa
        hypredrive_options, hypredrive_shutdown, hypredrive_solve,
        hypredrive_solve_mpi, hypredrive_solve_mpi_csr,
        HypreDriveSession, set_matrix_csr!, update_matrix_csr!, set_rhs!, setup!, solve!, set_relative_tol!,
-       info
+       info,
+       hypredrive_error_clear, print_lib_info, print_system_info, print_exit_info,
+       register_solver_preset, register_precon_preset, set_object_name!,
+       input_warmup, input_num_repetitions, input_num_linear_systems,
+       input_num_precon_variants, set_precon_variant!, set_precon_preset!,
+       set_solver_preset!, linear_system_build!, linear_system_read_matrix!,
+       set_matrix_handle!, set_prec_matrix_handle!, set_discrete_gradient_handle!,
+       set_discrete_curl_handle!, set_coordinates_handles!, set_coarse_schur_handle!,
+       set_rhs_handle!, set_solution_handle!, set_reference_solution_handle!,
+       set_interleaved_dofmap!, set_contiguous_dofmap!, read_dofmap!, print_dofmap,
+       print_linear_system, compute_eigenspectrum!, set_near_null_space!, set_null_space!,
+       get_solution_values, get_solution_length, get_solution_handle, get_rhs_values,
+       get_rhs_handle, get_matrix_handle,
+       set_state_vectors!, get_state_vector_values, copy_state_vector!,
+       update_state_vectors!, apply_state_correction!,
+       precon_create!, precon_setup!, precon_apply!, precon_destroy!,
+       print_stats, annotate_level_begin, annotate_level_end,
+       stats_level_count, stats_level_entry, print_stats_level
 
 struct hypredrive_error <: Exception
     code::UInt32
@@ -1039,6 +1056,592 @@ function hypredrive_solve_mpi_csr(indptr, col_indices, data, rhs, row_start::Int
     return _solve_csr_impl(indptr_t, cols_t, data64, rhs64, row_start, row_end, yaml;
                            comm=comm, nsolve=nsolve, dofmap=dofmap_cint,
                            input_args=input_args)
+end
+
+# ---------------------------------------------------------------------------
+# Additional public API coverage. Functions taking opaque `Ptr{Cvoid}` handles
+# (HYPRE_Matrix, HYPRE_Vector, HYPRE_IJVector) are low-level: the caller owns
+# the HYPRE objects, which must outlive the session (sessions use library mode,
+# so HYPREDRV only borrows them).
+# ---------------------------------------------------------------------------
+
+function _comm_flag(comm::Symbol)
+    comm === :world && return Cint(1)
+    comm === :self && return Cint(0)
+    throw(ArgumentError("comm must be :world or :self"))
+end
+
+function _checked_cint(value::Integer, name::AbstractString)
+    typemin(Cint) <= value <= typemax(Cint) ||
+        throw(ArgumentError("$name exceeds Cint range"))
+    return Cint(value)
+end
+
+function _local_rows(session::HypreDriveSession)
+    session.matrix_set || throw(ArgumentError("matrix has not been set"))
+    return session.row_end - session.row_start + 1
+end
+
+"""
+    hypredrive_error_clear()
+
+Clear the process-global HYPREDRV error state.
+"""
+function hypredrive_error_clear()
+    hypredrive_initialize()
+    ccall((:HYPREDRV_JuliaErrorCodeClear, _lib()), Cvoid, ())
+    return nothing
+end
+
+"""
+    print_lib_info(comm=:world; print_datetime=true)
+
+Print HYPREDRV library information.
+"""
+function print_lib_info(comm::Symbol=:world; print_datetime::Bool=true)
+    hypredrive_initialize()
+    _check(ccall((:HYPREDRV_JuliaPrintLibInfo, _lib()), UInt32, (Cint, Cint),
+                 _comm_flag(comm), Cint(print_datetime)), "print library info")
+    return nothing
+end
+
+"""
+    print_system_info(comm=:world)
+
+Print system information.
+"""
+function print_system_info(comm::Symbol=:world)
+    hypredrive_initialize()
+    _check(ccall((:HYPREDRV_JuliaPrintSystemInfo, _lib()), UInt32, (Cint,),
+                 _comm_flag(comm)), "print system info")
+    return nothing
+end
+
+"""
+    print_exit_info(argv0::AbstractString, comm=:world)
+
+Print exit information.
+"""
+function print_exit_info(argv0::AbstractString, comm::Symbol=:world)
+    hypredrive_initialize()
+    _check(ccall((:HYPREDRV_JuliaPrintExitInfo, _lib()), UInt32, (Cint, Cstring),
+                 _comm_flag(comm), String(argv0)), "print exit info")
+    return nothing
+end
+
+"""
+    register_solver_preset(name, yaml_text, help)
+
+Register a named solver preset usable with `set_solver_preset!`.
+"""
+function register_solver_preset(name::AbstractString, yaml_text::AbstractString,
+                                help::AbstractString="")
+    hypredrive_initialize()
+    _check(ccall((:HYPREDRV_JuliaSolverPresetRegister, _lib()), UInt32,
+                 (Cstring, Cstring, Cstring), String(name), String(yaml_text),
+                 String(help)), "register solver preset")
+    return nothing
+end
+
+"""
+    register_precon_preset(name, yaml_text, help)
+
+Register a named preconditioner preset usable with `set_precon_preset!`.
+"""
+function register_precon_preset(name::AbstractString, yaml_text::AbstractString,
+                                help::AbstractString="")
+    hypredrive_initialize()
+    _check(ccall((:HYPREDRV_JuliaPreconPresetRegister, _lib()), UInt32,
+                 (Cstring, Cstring, Cstring), String(name), String(yaml_text),
+                 String(help)), "register preconditioner preset")
+    return nothing
+end
+
+"""
+    set_object_name!(session, name)
+
+Set the display name of the session's HYPREDRV object (`nothing` clears it).
+"""
+function set_object_name!(session::HypreDriveSession, name::Union{Nothing,AbstractString})
+    drv = _require_open(session)
+    if name === nothing
+        _check(ccall((:HYPREDRV_JuliaObjectSetName, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ptr{Cchar}), drv, Ptr{Cchar}(C_NULL)),
+               "set object name")
+    else
+        _check(ccall((:HYPREDRV_JuliaObjectSetName, _lib()), UInt32,
+                     (Ptr{Cvoid}, Cstring), drv, String(name)), "set object name")
+    end
+    return session
+end
+
+function _get_input_int(session::HypreDriveSession, which::Symbol)
+    drv = _require_open(session)
+    out = Ref{Cint}(0)
+    if which === :warmup
+        _check(ccall((:HYPREDRV_JuliaInputArgsGetWarmup, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Cint}), drv, out), "get warmup")
+    elseif which === :reps
+        _check(ccall((:HYPREDRV_JuliaInputArgsGetNumRepetitions, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Cint}), drv, out), "get number of repetitions")
+    elseif which === :systems
+        _check(ccall((:HYPREDRV_JuliaInputArgsGetNumLinearSystems, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Cint}), drv, out), "get number of linear systems")
+    else
+        _check(ccall((:HYPREDRV_JuliaInputArgsGetNumPreconVariants, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Cint}), drv, out),
+               "get number of preconditioner variants")
+    end
+    return Int(out[])
+end
+
+"Return the warmup count from the parsed options."
+input_warmup(session::HypreDriveSession) = _get_input_int(session, :warmup)
+"Return the number of repetitions from the parsed options."
+input_num_repetitions(session::HypreDriveSession) = _get_input_int(session, :reps)
+"Return the number of linear systems from the parsed options."
+input_num_linear_systems(session::HypreDriveSession) = _get_input_int(session, :systems)
+"Return the number of preconditioner variants from the parsed options."
+input_num_precon_variants(session::HypreDriveSession) = _get_input_int(session, :variants)
+
+"""
+    set_precon_variant!(session, variant_idx)
+
+Select the active preconditioner variant (zero-based index).
+"""
+function set_precon_variant!(session::HypreDriveSession, variant_idx::Integer)
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaInputArgsSetPreconVariant, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint), drv, _checked_cint(variant_idx, "variant_idx")),
+           "set preconditioner variant")
+    return session
+end
+
+"Select a registered preconditioner preset by name."
+function set_precon_preset!(session::HypreDriveSession, preset::AbstractString)
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaInputArgsSetPreconPreset, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cstring), drv, String(preset)), "set preconditioner preset")
+    return session
+end
+
+"Select a registered solver preset by name."
+function set_solver_preset!(session::HypreDriveSession, preset::AbstractString)
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaInputArgsSetSolverPreset, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cstring), drv, String(preset)), "set solver preset")
+    return session
+end
+
+"Build the linear system from the parsed options."
+function linear_system_build!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemBuild, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "build linear system")
+    session.matrix_revision += 1
+    return session
+end
+
+"Read the matrix from the parsed options."
+function linear_system_read_matrix!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemReadMatrix, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "read matrix")
+    session.matrix_revision += 1
+    return session
+end
+
+"""
+    set_matrix_handle!(session, mat::Ptr{Cvoid})
+
+Attach an externally owned HYPRE_Matrix. The object must outlive the session.
+"""
+function set_matrix_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetMatrix, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set matrix handle")
+    session.matrix_revision += 1
+    return session
+end
+
+"Attach an externally owned HYPRE_Matrix as the preconditioner matrix."
+function set_prec_matrix_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
+    drv = _require_open(session)
+    _destroy_solver!(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetPrecMatrix, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set preconditioner matrix handle")
+    return session
+end
+
+"Attach an externally owned discrete gradient HYPRE_Matrix."
+function set_discrete_gradient_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetDiscreteGradient, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set discrete gradient handle")
+    return session
+end
+
+"Attach an externally owned discrete curl HYPRE_Matrix."
+function set_discrete_curl_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetDiscreteCurl, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set discrete curl handle")
+    return session
+end
+
+"Attach externally owned coordinate HYPRE_Vectors (`y` and `z` may be `C_NULL`)."
+function set_coordinates_handles!(session::HypreDriveSession, x::Ptr{Cvoid},
+                                  y::Ptr{Cvoid}=C_NULL, z::Ptr{Cvoid}=C_NULL)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetCoordinates, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), drv, x, y, z),
+           "set coordinates handles")
+    return session
+end
+
+"Attach an externally owned coarse Schur complement HYPRE_Matrix at `level`."
+function set_coarse_schur_handle!(session::HypreDriveSession, level::Integer,
+                                  mat::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetCoarseSchur, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Ptr{Cvoid}), drv, _checked_cint(level, "level"), mat),
+           "set coarse Schur handle")
+    return session
+end
+
+"Attach an externally owned HYPRE_Vector as the right-hand side."
+function set_rhs_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetRHS, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set rhs handle")
+    return session
+end
+
+"Attach an externally owned HYPRE_Vector as the solution vector."
+function set_solution_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetSolution, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set solution handle")
+    return session
+end
+
+"Attach an externally owned HYPRE_Vector as the reference solution."
+function set_reference_solution_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetReferenceSolution, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set reference solution handle")
+    return session
+end
+
+"Set an interleaved dofmap with `num_dof_types` types over `num_local_blocks` blocks."
+function set_interleaved_dofmap!(session::HypreDriveSession, num_local_blocks::Integer,
+                                 num_dof_types::Integer)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetInterleavedDofmap, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Cint), drv,
+                 _checked_cint(num_local_blocks, "num_local_blocks"),
+                 _checked_cint(num_dof_types, "num_dof_types")),
+           "set interleaved dofmap")
+    return session
+end
+
+"Set a contiguous dofmap with `num_dof_types` types over `num_local_blocks` blocks."
+function set_contiguous_dofmap!(session::HypreDriveSession, num_local_blocks::Integer,
+                                num_dof_types::Integer)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemSetContiguousDofmap, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Cint), drv,
+                 _checked_cint(num_local_blocks, "num_local_blocks"),
+                 _checked_cint(num_dof_types, "num_dof_types")),
+           "set contiguous dofmap")
+    return session
+end
+
+"Read the dofmap from the parsed options."
+function read_dofmap!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemReadDofmap, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "read dofmap")
+    return session
+end
+
+"Print the dofmap to `filename`."
+function print_dofmap(session::HypreDriveSession, filename::AbstractString)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemPrintDofmap, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cstring), drv, String(filename)), "print dofmap")
+    return nothing
+end
+
+"Print the linear system."
+function print_linear_system(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemPrint, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "print linear system")
+    return nothing
+end
+
+"Compute the eigenspectrum of the linear system."
+function compute_eigenspectrum!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemComputeEigenspectrum, _lib()), UInt32,
+                 (Ptr{Cvoid},), drv), "compute eigenspectrum")
+    return nothing
+end
+
+"""
+    set_near_null_space!(session, modes::AbstractMatrix)
+
+Set near-nullspace modes. `modes` is `num_entries x num_components` (one column per
+mode); Julia's column-major layout matches HYPREDRV's component-major layout.
+The data is copied.
+"""
+function set_near_null_space!(session::HypreDriveSession, modes::AbstractMatrix{<:Real})
+    drv = _require_open(session)
+    vals = Matrix{Float64}(modes)
+    GC.@preserve vals begin
+        _check(ccall((:HYPREDRV_JuliaLinearSystemSetNearNullSpace, _lib()), UInt32,
+                     (Ptr{Cvoid}, Cint, Cint, Ptr{Float64}), drv,
+                     _checked_cint(size(vals, 1), "num_entries"),
+                     _checked_cint(size(vals, 2), "num_components"), pointer(vals)),
+               "set near null space")
+    end
+    return session
+end
+
+"Set nullspace modes (`num_entries x num_components`, one column per mode). Data is copied."
+function set_null_space!(session::HypreDriveSession, modes::AbstractMatrix{<:Real})
+    drv = _require_open(session)
+    vals = Matrix{Float64}(modes)
+    GC.@preserve vals begin
+        _check(ccall((:HYPREDRV_JuliaLinearSystemSetNullSpace, _lib()), UInt32,
+                     (Ptr{Cvoid}, Cint, Cint, Ptr{Float64}), drv,
+                     _checked_cint(size(vals, 1), "num_entries"),
+                     _checked_cint(size(vals, 2), "num_components"), pointer(vals)),
+               "set null space")
+    end
+    return session
+end
+
+"Return the local solution length."
+function get_solution_length(session::HypreDriveSession)
+    drv = _require_open(session)
+    out = Ref{Int64}(0)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemGetSolutionLength, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Int64}), drv, out), "get solution length")
+    return Int(out[])
+end
+
+"Return a copy of the local solution values as a `Vector{Float64}`."
+function get_solution_values(session::HypreDriveSession)
+    drv = _require_open(session)
+    n = get_solution_length(session)
+    ptr = Ref{Ptr{Cdouble}}(C_NULL)
+    is_host = Ref{Cint}(0)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemGetSolutionValues, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Ptr{Cdouble}}, Ref{Cint}), drv, ptr, is_host),
+           "get solution values")
+    is_host[] != 0 || throw(ArgumentError("solution values are in device memory"))
+    n == 0 && return Float64[]
+    ptr[] != C_NULL || throw(ArgumentError("solution values are unavailable"))
+    return copy(unsafe_wrap(Array, ptr[], n))
+end
+
+"Return a copy of the local right-hand side values as a `Vector{Float64}`."
+function get_rhs_values(session::HypreDriveSession)
+    drv = _require_open(session)
+    n = _local_rows(session)
+    ptr = Ref{Ptr{Cdouble}}(C_NULL)
+    _check(ccall((:HYPREDRV_JuliaLinearSystemGetRHSValues, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ref{Ptr{Cdouble}}), drv, ptr), "get rhs values")
+    ptr[] != C_NULL || throw(ArgumentError("rhs values are unavailable"))
+    return copy(unsafe_wrap(Array, ptr[], n))
+end
+
+function _get_handle(session::HypreDriveSession, which::Symbol)
+    drv = _require_open(session)
+    out = Ref{Ptr{Cvoid}}(C_NULL)
+    if which === :solution
+        _check(ccall((:HYPREDRV_JuliaLinearSystemGetSolution, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), drv, out), "get solution handle")
+    elseif which === :rhs
+        _check(ccall((:HYPREDRV_JuliaLinearSystemGetRHS, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), drv, out), "get rhs handle")
+    else
+        _check(ccall((:HYPREDRV_JuliaLinearSystemGetMatrix, _lib()), UInt32,
+                     (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), drv, out), "get matrix handle")
+    end
+    return out[]
+end
+
+"Return the borrowed opaque solution HYPRE_Vector handle."
+get_solution_handle(session::HypreDriveSession) = _get_handle(session, :solution)
+"Return the borrowed opaque right-hand side HYPRE_Vector handle."
+get_rhs_handle(session::HypreDriveSession) = _get_handle(session, :rhs)
+"Return the borrowed opaque HYPRE_Matrix handle."
+get_matrix_handle(session::HypreDriveSession) = _get_handle(session, :matrix)
+
+"""
+    set_state_vectors!(session, vecs::Vector{Ptr{Cvoid}})
+
+Register externally owned HYPRE_IJVector state vectors. The handles are copied by
+HYPREDRV; the vectors must be destroyed by the caller after the session is closed.
+"""
+function set_state_vectors!(session::HypreDriveSession, vecs::Vector{Ptr{Cvoid}})
+    drv = _require_open(session)
+    n = _checked_cint(length(vecs), "number of state vectors")
+    GC.@preserve vecs begin
+        _check(ccall((:HYPREDRV_JuliaStateVectorSet, _lib()), UInt32,
+                     (Ptr{Cvoid}, Cint, Ptr{Ptr{Cvoid}}), drv, n, pointer(vecs)),
+               "set state vectors")
+    end
+    return session
+end
+
+"Return a copy of the local values of state vector `index` (zero-based)."
+function get_state_vector_values(session::HypreDriveSession, index::Integer)
+    drv = _require_open(session)
+    n = _local_rows(session)
+    ptr = Ref{Ptr{Cdouble}}(C_NULL)
+    _check(ccall((:HYPREDRV_JuliaStateVectorGetValues, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Ref{Ptr{Cdouble}}), drv,
+                 _checked_cint(index, "index"), ptr), "get state vector values")
+    ptr[] != C_NULL || throw(ArgumentError("state vector values are unavailable"))
+    return copy(unsafe_wrap(Array, ptr[], n))
+end
+
+"Copy state vector `index_in` into `index_out` (zero-based)."
+function copy_state_vector!(session::HypreDriveSession, index_in::Integer, index_out::Integer)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaStateVectorCopy, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Cint), drv, _checked_cint(index_in, "index_in"),
+                 _checked_cint(index_out, "index_out")), "copy state vector")
+    return session
+end
+
+"Cycle all state vectors."
+function update_state_vectors!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaStateVectorUpdateAll, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "update state vectors")
+    return session
+end
+
+"Apply the solution correction to state vector `state_idx` (zero-based)."
+function apply_state_correction!(session::HypreDriveSession, state_idx::Integer)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaStateVectorApplyCorrection, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint), drv, _checked_cint(state_idx, "state_idx")),
+           "apply state correction")
+    return session
+end
+
+"Create the standalone preconditioner."
+function precon_create!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaPreconCreate, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "create preconditioner")
+    return session
+end
+
+"Set up the standalone preconditioner."
+function precon_setup!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaPreconSetup, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "setup preconditioner")
+    return session
+end
+
+"Apply the preconditioner to externally owned HYPRE_Vector handles (`x = M^-1 b`)."
+function precon_apply!(session::HypreDriveSession, vec_b::Ptr{Cvoid}, vec_x::Ptr{Cvoid})
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaPreconApply, _lib()), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), drv, vec_b, vec_x),
+           "apply preconditioner")
+    return session
+end
+
+"Destroy the standalone preconditioner."
+function precon_destroy!(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaPreconDestroy, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "destroy preconditioner")
+    return session
+end
+
+"Print the statistics summary."
+function print_stats(session::HypreDriveSession)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaStatsPrint, _lib()), UInt32, (Ptr{Cvoid},), drv),
+           "print stats")
+    return nothing
+end
+
+"Begin a hierarchical annotation at `level` (`id` defaults to -1 for none)."
+function annotate_level_begin(session::HypreDriveSession, level::Integer,
+                              name::AbstractString, id::Integer=-1)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaAnnotateLevelBegin, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Cstring, Cint), drv, _checked_cint(level, "level"),
+                 String(name), _checked_cint(id, "id")), "annotate level begin")
+    return session
+end
+
+"End a hierarchical annotation at `level`."
+function annotate_level_end(session::HypreDriveSession, level::Integer,
+                            name::AbstractString, id::Integer=-1)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaAnnotateLevelEnd, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Cstring, Cint), drv, _checked_cint(level, "level"),
+                 String(name), _checked_cint(id, "id")), "annotate level end")
+    return session
+end
+
+"Return the number of stats entries recorded at `level`."
+function stats_level_count(session::HypreDriveSession, level::Integer)
+    drv = _require_open(session)
+    out = Ref{Cint}(0)
+    _check(ccall((:HYPREDRV_JuliaStatsLevelGetCount, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Ref{Cint}), drv, _checked_cint(level, "level"), out),
+           "get stats level count")
+    return Int(out[])
+end
+
+"""
+    stats_level_entry(session, level, index)
+
+Return a `NamedTuple` `(entry_id, num_solves, linear_iters, setup_time, solve_time)`
+for the zero-based entry `index` at `level`.
+"""
+function stats_level_entry(session::HypreDriveSession, level::Integer, index::Integer)
+    drv = _require_open(session)
+    entry_id = Ref{Cint}(0)
+    num_solves = Ref{Cint}(0)
+    linear_iters = Ref{Cint}(0)
+    setup_time = Ref{Cdouble}(0)
+    solve_time = Ref{Cdouble}(0)
+    _check(ccall((:HYPREDRV_JuliaStatsLevelGetEntry, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cint, Cint, Ref{Cint}, Ref{Cint}, Ref{Cint}, Ref{Cdouble},
+                  Ref{Cdouble}), drv, _checked_cint(level, "level"),
+                 _checked_cint(index, "index"), entry_id, num_solves, linear_iters,
+                 setup_time, solve_time), "get stats level entry")
+    return (entry_id=Int(entry_id[]), num_solves=Int(num_solves[]),
+            linear_iters=Int(linear_iters[]), setup_time=setup_time[],
+            solve_time=solve_time[])
+end
+
+"Print the statistics summary for `level`."
+function print_stats_level(session::HypreDriveSession, level::Integer)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaStatsLevelPrint, _lib()), UInt32, (Ptr{Cvoid}, Cint),
+                 drv, _checked_cint(level, "level")), "print stats level")
+    return nothing
 end
 
 # Qualified convenience aliases. They are intentionally not exported.

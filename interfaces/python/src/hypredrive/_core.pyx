@@ -20,7 +20,7 @@ The binding follows three principles:
   compile-time depend on a particular mpi4py version.
 """
 
-from libc.stdint cimport int64_t, uint32_t, intptr_t
+from libc.stdint cimport int64_t, uint32_t, intptr_t, uintptr_t
 from libc.stdlib cimport malloc, free
 
 cimport cython
@@ -137,6 +137,99 @@ cdef uint32_t _create_driver(object comm, _c.HYPREDRV_t *handle) except? 1:
     return _c.HYPREDRV_PythonCreateFromFortranComm(fortran_handle, handle)
 
 
+
+# ---------------------------------------------------------------------------
+# Opaque-handle helpers and global (driver-independent) entry points
+# ---------------------------------------------------------------------------
+
+cdef void *_as_ptr(object handle, str name) except? NULL:
+    """Convert ``None`` or an integer address into an opaque ``void *``.
+
+    HYPRE_Matrix / HYPRE_Vector arguments are raw HYPRE handles (e.g. the
+    address of a ``HYPRE_IJMatrix``/``HYPRE_IJVector``). Python callers pass
+    them as integers (``ctypes.c_void_p.value``, a C extension's pointer,
+    ...); ``None`` maps to ``NULL``. The caller owns the lifetime rules
+    documented for the corresponding HYPREDRV_ function.
+    """
+    cdef uintptr_t addr
+    if handle is None:
+        return NULL
+    if hasattr(handle, "value") and not isinstance(handle, int):
+        handle = handle.value  # ctypes.c_void_p and friends
+        if handle is None:
+            return NULL
+    try:
+        addr = <uintptr_t>int(handle)
+    except (TypeError, ValueError, OverflowError):
+        raise TypeError(
+            f"{name} must be None or an integer pointer address; "
+            f"got {type(handle).__name__}"
+        ) from None
+    return <void *>addr
+
+
+cdef int _fortran_comm(object comm) except -2:
+    """Fortran handle of ``comm``; -1 selects ``MPI_COMM_SELF``."""
+    cdef int fortran_handle = -1
+    if comm is not None:
+        if not hasattr(comm, "py2f"):
+            raise TypeError(
+                "comm must be an mpi4py.MPI.Comm (or None for MPI_COMM_SELF); "
+                f"got {type(comm).__name__}"
+            )
+        fortran_handle = int(comm.py2f())
+        if fortran_handle < 0:
+            raise ValueError("invalid communicator handle")
+    return fortran_handle
+
+
+def _error_code_clear():
+    """Call ``HYPREDRV_ErrorCodeClear``."""
+    _c.HYPREDRV_ErrorCodeClear()
+
+
+def _error_invalid_value(str message):
+    """Call ``HYPREDRV_ErrorInvalidValue``; return the resulting error code."""
+    cdef bytes raw = message.encode("utf-8")
+    return int(_c.HYPREDRV_ErrorInvalidValue(<const char *>raw))
+
+
+def _print_lib_info(object comm=None, bint print_datetime=False):
+    cdef int c = _fortran_comm(comm)
+    _check(_c.HYPREDRV_PythonPrintLibInfo(c, 1 if print_datetime else 0),
+           "HYPREDRV_PrintLibInfo")
+
+
+def _print_system_info(object comm=None):
+    cdef int c = _fortran_comm(comm)
+    _check(_c.HYPREDRV_PythonPrintSystemInfo(c), "HYPREDRV_PrintSystemInfo")
+
+
+def _print_exit_info(object comm=None, str argv0="hypredrive"):
+    cdef int c = _fortran_comm(comm)
+    cdef bytes raw = argv0.encode("utf-8")
+    _check(_c.HYPREDRV_PythonPrintExitInfo(c, <const char *>raw),
+           "HYPREDRV_PrintExitInfo")
+
+
+def _solver_preset_register(str name, str yaml_text, str help_text=""):
+    cdef bytes n = name.encode("utf-8")
+    cdef bytes y = yaml_text.encode("utf-8")
+    cdef bytes h = help_text.encode("utf-8")
+    _check(_c.HYPREDRV_SolverPresetRegister(
+               <const char *>n, <const char *>y, <const char *>h),
+           "HYPREDRV_SolverPresetRegister")
+
+
+def _precon_preset_register(str name, str yaml_text, str help_text=""):
+    cdef bytes n = name.encode("utf-8")
+    cdef bytes y = yaml_text.encode("utf-8")
+    cdef bytes h = help_text.encode("utf-8")
+    _check(_c.HYPREDRV_PreconPresetRegister(
+               <const char *>n, <const char *>y, <const char *>h),
+           "HYPREDRV_PreconPresetRegister")
+
+
 # ---------------------------------------------------------------------------
 # HypreDriveCore: thin wrapper around HYPREDRV_t
 # ---------------------------------------------------------------------------
@@ -151,11 +244,13 @@ cdef class HypreDriveCore:
 
     cdef _c.HYPREDRV_t _handle
     cdef bint _solver_created
+    cdef bint _precon_created
     cdef object __weakref__
 
     def __cinit__(self, object comm=None, bint library_mode=True):
         self._handle = NULL
         self._solver_created = False
+        self._precon_created = False
 
         _check(_create_driver(comm, &self._handle), "HYPREDRV_Create")
         _live_cores.add(self)
@@ -172,8 +267,13 @@ cdef class HypreDriveCore:
         cdef uint32_t code = 0
         if self._handle == NULL:
             return 0
+        if self._precon_created:
+            first_code = _c.HYPREDRV_PreconDestroy(self._handle)
+            self._precon_created = False
         if self._solver_created:
-            first_code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
+            code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
+            if first_code == 0:
+                first_code = code
             self._solver_created = False
         code = _c.HYPREDRV_Destroy(&self._handle)
         self._handle = NULL
@@ -460,3 +560,370 @@ cdef class HypreDriveCore:
             "HYPREDRV_LinearSystemGetSolutionNorm",
         )
         return float(value)
+
+    # ------------------------------------------------------------------
+    # Remaining HYPREDRV_ entry points
+    # ------------------------------------------------------------------
+
+    cdef bytes _enc(self, str s):
+        return s.encode("utf-8")
+
+    def object_set_name(self, str name):
+        self._require_open()
+        cdef bytes raw = self._enc(name)
+        _check(_c.HYPREDRV_ObjectSetName(self._handle, <const char *>raw),
+               "HYPREDRV_ObjectSetName")
+
+    def get_warmup(self):
+        self._require_open()
+        cdef int v = 0
+        _check(_c.HYPREDRV_InputArgsGetWarmup(self._handle, &v),
+               "HYPREDRV_InputArgsGetWarmup")
+        return int(v)
+
+    def get_num_repetitions(self):
+        self._require_open()
+        cdef int v = 0
+        _check(_c.HYPREDRV_InputArgsGetNumRepetitions(self._handle, &v),
+               "HYPREDRV_InputArgsGetNumRepetitions")
+        return int(v)
+
+    def get_num_linear_systems(self):
+        self._require_open()
+        cdef int v = 0
+        _check(_c.HYPREDRV_InputArgsGetNumLinearSystems(self._handle, &v),
+               "HYPREDRV_InputArgsGetNumLinearSystems")
+        return int(v)
+
+    def get_num_precon_variants(self):
+        self._require_open()
+        cdef int v = 0
+        _check(_c.HYPREDRV_InputArgsGetNumPreconVariants(self._handle, &v),
+               "HYPREDRV_InputArgsGetNumPreconVariants")
+        return int(v)
+
+    def set_precon_variant(self, int variant_idx):
+        self._require_open()
+        _check(_c.HYPREDRV_InputArgsSetPreconVariant(self._handle, variant_idx),
+               "HYPREDRV_InputArgsSetPreconVariant")
+
+    def set_precon_preset(self, str preset):
+        self._require_open()
+        cdef bytes raw = self._enc(preset)
+        _check(_c.HYPREDRV_InputArgsSetPreconPreset(self._handle,
+                                                    <const char *>raw),
+               "HYPREDRV_InputArgsSetPreconPreset")
+
+    def set_solver_preset(self, str preset):
+        self._require_open()
+        cdef bytes raw = self._enc(preset)
+        _check(_c.HYPREDRV_InputArgsSetSolverPreset(self._handle,
+                                                    <const char *>raw),
+               "HYPREDRV_InputArgsSetSolverPreset")
+
+    # -- linear system (file / handle based) ---------------------------
+
+    def linear_system_build(self):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemBuild(self._handle),
+               "HYPREDRV_LinearSystemBuild")
+
+    def read_matrix(self):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemReadMatrix(self._handle),
+               "HYPREDRV_LinearSystemReadMatrix")
+
+    def set_matrix_handle(self, object mat):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetMatrix(
+                   self._handle, <_c.HYPRE_Matrix>_as_ptr(mat, "mat")),
+               "HYPREDRV_LinearSystemSetMatrix")
+
+    def set_prec_matrix_handle(self, object mat):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetPrecMatrix(
+                   self._handle, <_c.HYPRE_Matrix>_as_ptr(mat, "mat")),
+               "HYPREDRV_LinearSystemSetPrecMatrix")
+
+    def set_discrete_gradient_handle(self, object mat):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetDiscreteGradient(
+                   self._handle, <_c.HYPRE_Matrix>_as_ptr(mat, "G")),
+               "HYPREDRV_LinearSystemSetDiscreteGradient")
+
+    def set_discrete_curl_handle(self, object mat):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetDiscreteCurl(
+                   self._handle, <_c.HYPRE_Matrix>_as_ptr(mat, "C")),
+               "HYPREDRV_LinearSystemSetDiscreteCurl")
+
+    def set_coarse_schur_handle(self, int level, object mat):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetCoarseSchur(
+                   self._handle, level, <_c.HYPRE_Matrix>_as_ptr(mat, "mat_S")),
+               "HYPREDRV_LinearSystemSetCoarseSchur")
+
+    def set_coordinates_handle(self, object x, object y, object z):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetCoordinates(
+                   self._handle,
+                   <_c.HYPRE_Vector>_as_ptr(x, "x"),
+                   <_c.HYPRE_Vector>_as_ptr(y, "y"),
+                   <_c.HYPRE_Vector>_as_ptr(z, "z")),
+               "HYPREDRV_LinearSystemSetCoordinates")
+
+    def set_rhs_handle(self, object vec):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetRHS(
+                   self._handle, <_c.HYPRE_Vector>_as_ptr(vec, "vec")),
+               "HYPREDRV_LinearSystemSetRHS")
+
+    def set_solution_handle(self, object vec):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetSolution(
+                   self._handle, <_c.HYPRE_Vector>_as_ptr(vec, "vec")),
+               "HYPREDRV_LinearSystemSetSolution")
+
+    def set_reference_solution_handle(self, object vec):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetReferenceSolution(
+                   self._handle, <_c.HYPRE_Vector>_as_ptr(vec, "vec")),
+               "HYPREDRV_LinearSystemSetReferenceSolution")
+
+    def get_matrix_handle(self):
+        self._require_open()
+        cdef _c.HYPRE_Matrix mat = NULL
+        _check(_c.HYPREDRV_LinearSystemGetMatrix(self._handle, &mat),
+               "HYPREDRV_LinearSystemGetMatrix")
+        return <uintptr_t>mat
+
+    def get_rhs_handle(self):
+        self._require_open()
+        cdef _c.HYPRE_Vector vec = NULL
+        _check(_c.HYPREDRV_LinearSystemGetRHS(self._handle, &vec),
+               "HYPREDRV_LinearSystemGetRHS")
+        return <uintptr_t>vec
+
+    def get_solution_handle(self):
+        self._require_open()
+        cdef _c.HYPRE_Vector vec = NULL
+        _check(_c.HYPREDRV_LinearSystemGetSolution(self._handle, &vec),
+               "HYPREDRV_LinearSystemGetSolution")
+        return <uintptr_t>vec
+
+    def set_interleaved_dofmap(self, int num_local_blocks, int num_dof_types):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetInterleavedDofmap(
+                   self._handle, num_local_blocks, num_dof_types),
+               "HYPREDRV_LinearSystemSetInterleavedDofmap")
+
+    def set_contiguous_dofmap(self, int num_local_blocks, int num_dof_types):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemSetContiguousDofmap(
+                   self._handle, num_local_blocks, num_dof_types),
+               "HYPREDRV_LinearSystemSetContiguousDofmap")
+
+    def read_dofmap(self):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemReadDofmap(self._handle),
+               "HYPREDRV_LinearSystemReadDofmap")
+
+    def print_dofmap(self, str filename):
+        self._require_open()
+        cdef bytes raw = self._enc(filename)
+        _check(_c.HYPREDRV_LinearSystemPrintDofmap(self._handle,
+                                                   <const char *>raw),
+               "HYPREDRV_LinearSystemPrintDofmap")
+
+    def print_linear_system(self):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemPrint(self._handle),
+               "HYPREDRV_LinearSystemPrint")
+
+    def compute_eigenspectrum(self):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSystemComputeEigenspectrum(self._handle),
+               "HYPREDRV_LinearSystemComputeEigenspectrum")
+
+    def set_near_null_space(self, int num_entries, int num_components,
+                            object values):
+        """``values``: C-contiguous HYPRE_Real array of length
+        ``num_entries * num_components`` (copied by HYPREDRV), or ``None``."""
+        self._require_open()
+        return self._set_space(num_entries, num_components, values, True)
+
+    def set_null_space(self, int num_entries, int num_components,
+                       object values):
+        self._require_open()
+        return self._set_space(num_entries, num_components, values, False)
+
+    cdef _set_space(self, int num_entries, int num_components, object values,
+                    bint near):
+        cdef const _c.HYPRE_Complex *ptr = NULL
+        cdef cnp.ndarray arr
+        if num_entries < 0 or num_components <= 0:
+            raise ValueError("num_entries must be >= 0 and num_components > 0")
+        if values is not None:
+            arr = values
+            real_dtype = np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_REAL_SIZE}")
+            validate_native_array(arr, "values", real_dtype)
+            if arr.ndim != 1 or arr.shape[0] != <Py_ssize_t>num_entries * num_components:
+                raise ValueError(
+                    "values must be 1-D with num_entries * num_components entries"
+                )
+            ptr = <const _c.HYPRE_Complex *>cnp.PyArray_DATA(arr)
+        if near:
+            _check(_c.HYPREDRV_LinearSystemSetNearNullSpace(
+                       self._handle, num_entries, num_components, ptr),
+                   "HYPREDRV_LinearSystemSetNearNullSpace")
+        else:
+            _check(_c.HYPREDRV_LinearSystemSetNullSpace(
+                       self._handle, num_entries, num_components, ptr),
+                   "HYPREDRV_LinearSystemSetNullSpace")
+
+    # -- native value access (copies; never aliases HYPRE memory) -------
+
+    cdef Py_ssize_t _local_length(self) except -1:
+        cdef size_t n = 0
+        _check(_c.HYPREDRV_PythonGetSolutionLength(self._handle, &n),
+               "HYPREDRV_LinearSystemGetSolutionLength")
+        return <Py_ssize_t>n
+
+    cdef object _copy_host(self, const _c.HYPRE_Complex *p, Py_ssize_t n):
+        cdef cnp.ndarray out = np.empty(
+            n, dtype=np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_REAL_SIZE}"))
+        cdef Py_ssize_t i
+        cdef double *dst = <double *>cnp.PyArray_DATA(out)
+        for i in range(n):
+            dst[i] = p[i]
+        return out
+
+    def get_solution_values(self):
+        """Copy of the native local solution (host memory only)."""
+        self._require_open()
+        cdef _c.HYPRE_Complex *p = NULL
+        cdef _c.HYPRE_MemoryLocation loc = 0
+        _check(_c.HYPREDRV_LinearSystemGetSolutionValues(self._handle, &p, &loc),
+               "HYPREDRV_LinearSystemGetSolutionValues")
+        if loc != _c.HYPRE_MEMORY_HOST:
+            raise RuntimeError(
+                "native solution lives in device memory; use copy_solution()"
+            )
+        return self._copy_host(p, self._local_length())
+
+    def get_rhs_values(self, Py_ssize_t n):
+        """Copy of the native local RHS (host memory only)."""
+        self._require_open()
+        cdef _c.HYPRE_Complex *p = NULL
+        _check(_c.HYPREDRV_LinearSystemGetRHSValues(self._handle, &p),
+               "HYPREDRV_LinearSystemGetRHSValues")
+        if p == NULL:
+            raise RuntimeError("RHS values are not available")
+        return self._copy_host(p, n)
+
+    # -- state vectors ----------------------------------------------------
+
+    def state_vector_set(self, list handles):
+        self._require_open()
+        cdef Py_ssize_t i, n = len(handles)
+        cdef _c.HYPRE_IJVector *vecs = NULL
+        if n == 0 or n > 0x7fffffff:
+            raise ValueError("handles must hold between 1 and INT_MAX handles")
+        vecs = <_c.HYPRE_IJVector *>malloc(<size_t>n * sizeof(_c.HYPRE_IJVector))
+        if vecs == NULL:
+            raise MemoryError("failed to allocate state vector array")
+        try:
+            for i in range(n):
+                vecs[i] = <_c.HYPRE_IJVector>_as_ptr(handles[i], "handles[%d]" % i)
+            _check(_c.HYPREDRV_StateVectorSet(self._handle, <int>n, vecs),
+                   "HYPREDRV_StateVectorSet")
+        finally:
+            free(vecs)
+
+    def state_vector_get_values(self, int index, Py_ssize_t n):
+        """Copy of the local data of state vector ``index`` (host memory)."""
+        self._require_open()
+        cdef _c.HYPRE_Complex *p = NULL
+        _check(_c.HYPREDRV_StateVectorGetValues(self._handle, index, &p),
+               "HYPREDRV_StateVectorGetValues")
+        if p == NULL:
+            raise RuntimeError("state vector data is not available")
+        return self._copy_host(p, n)
+
+    def state_vector_copy(self, int index_in, int index_out):
+        self._require_open()
+        _check(_c.HYPREDRV_StateVectorCopy(self._handle, index_in, index_out),
+               "HYPREDRV_StateVectorCopy")
+
+    def state_vector_update_all(self):
+        self._require_open()
+        _check(_c.HYPREDRV_StateVectorUpdateAll(self._handle),
+               "HYPREDRV_StateVectorUpdateAll")
+
+    def state_vector_apply_correction(self, int state_idx):
+        self._require_open()
+        _check(_c.HYPREDRV_StateVectorApplyCorrection(self._handle, state_idx),
+               "HYPREDRV_StateVectorApplyCorrection")
+
+    # -- standalone preconditioner ---------------------------------------
+
+    def precon_create(self):
+        self._require_open()
+        _check(_c.HYPREDRV_PreconCreate(self._handle), "HYPREDRV_PreconCreate")
+        self._precon_created = True
+
+    def precon_setup(self):
+        self._require_open()
+        _check(_c.HYPREDRV_PreconSetup(self._handle), "HYPREDRV_PreconSetup")
+
+    def precon_apply(self, object vec_b, object vec_x):
+        self._require_open()
+        _check(_c.HYPREDRV_PreconApply(
+                   self._handle,
+                   <_c.HYPRE_Vector>_as_ptr(vec_b, "vec_b"),
+                   <_c.HYPRE_Vector>_as_ptr(vec_x, "vec_x")),
+               "HYPREDRV_PreconApply")
+
+    def precon_destroy(self):
+        self._require_open()
+        _check(_c.HYPREDRV_PreconDestroy(self._handle), "HYPREDRV_PreconDestroy")
+        self._precon_created = False
+
+    # -- stats -------------------------------------------------------------
+
+    def stats_print(self):
+        self._require_open()
+        _check(_c.HYPREDRV_StatsPrint(self._handle), "HYPREDRV_StatsPrint")
+
+    def annotate_level_begin(self, int level, bytes name, int id=-1):
+        self._require_open()
+        _check(_c.HYPREDRV_AnnotateLevelBegin(
+                   self._handle, level, <const char *>name, id),
+               "HYPREDRV_AnnotateLevelBegin")
+
+    def annotate_level_end(self, int level, bytes name, int id=-1):
+        self._require_open()
+        _check(_c.HYPREDRV_AnnotateLevelEnd(
+                   self._handle, level, <const char *>name, id),
+               "HYPREDRV_AnnotateLevelEnd")
+
+    def stats_level_count(self, int level):
+        self._require_open()
+        cdef int count = 0
+        _check(_c.HYPREDRV_StatsLevelGetCount(self._handle, level, &count),
+               "HYPREDRV_StatsLevelGetCount")
+        return int(count)
+
+    def stats_level_entry(self, int level, int index):
+        self._require_open()
+        cdef int eid = 0, ns = 0, it = 0
+        cdef double st = 0.0, sv = 0.0
+        _check(_c.HYPREDRV_StatsLevelGetEntry(
+                   self._handle, level, index, &eid, &ns, &it, &st, &sv),
+               "HYPREDRV_StatsLevelGetEntry")
+        return (int(eid), int(ns), int(it), float(st), float(sv))
+
+    def stats_level_print(self, int level):
+        self._require_open()
+        _check(_c.HYPREDRV_StatsLevelPrint(self._handle, level),
+               "HYPREDRV_StatsLevelPrint")

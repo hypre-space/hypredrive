@@ -292,7 +292,7 @@ if(HYPREDRV_ENABLE_TESTING)
     if(Matlab_FOUND)
         add_test(NAME matlab_laplacian_serial
                  COMMAND ${Matlab_MAIN_PROGRAM} -batch
-                         "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
+                         "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex; test_hypredrive_api")
         set_tests_properties(matlab_laplacian_serial PROPERTIES
             LABELS "matlab;interface"
             RUN_SERIAL TRUE)
@@ -321,7 +321,7 @@ if(HYPREDRV_ENABLE_TESTING)
     if(OCTAVE_EXECUTABLE AND OCTAVE_MKOCTFILE_EXECUTABLE)
         add_test(NAME octave_laplacian_serial
                  COMMAND ${OCTAVE_EXECUTABLE} --quiet --eval
-                         "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex")
+                         "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex; test_hypredrive_api")
         set_tests_properties(octave_laplacian_serial PROPERTIES
             LABELS "octave;matlab;interface"
             RUN_SERIAL TRUE)

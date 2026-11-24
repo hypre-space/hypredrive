@@ -225,7 +225,7 @@ Fortran-owned host array without changing residency.
    * - Lifecycle/info
      - ``HYPREDRV_Initialize``, ``HYPREDRV_Finalize``, ``HYPREDRV_Create``, ``HYPREDRV_Destroy``, ``HYPREDRV_PrintLibInfo``, ``HYPREDRV_PrintSystemInfo``, ``HYPREDRV_PrintExitInfo``
    * - Errors/helpers
-     - ``HYPREDRV_ErrorCodeDescribe``, ``HYPREDRV_ErrorInvalidValue``, ``HYPREDRV_BigIntSize``, ``HYPREDRV_Check``, ``HYPREDRV_ToCString``
+     - ``HYPREDRV_ErrorCodeDescribe``, ``HYPREDRV_ErrorCodeClear``, ``HYPREDRV_ErrorInvalidValue``, ``HYPREDRV_BigIntSize``, ``HYPREDRV_Check``, ``HYPREDRV_ToCString``
    * - Object/input/options
      - ``HYPREDRV_SetLibraryMode``, ``HYPREDRV_ObjectSetName``, ``HYPREDRV_InputArgsParse``, ``HYPREDRV_InputArgsParseYaml``, ``HYPREDRV_InputArgsParseYamlArgs``, ``HYPREDRV_InputArgsGet*``, ``HYPREDRV_InputArgsSet*``
    * - Presets
@@ -233,7 +233,7 @@ Fortran-owned host array without changing residency.
    * - Linear system
      - ``HYPREDRV_LinearSystemBuild``, ``HYPREDRV_LinearSystemReadMatrix``, ``HYPREDRV_LinearSystemSetMatrix*``, ``HYPREDRV_LinearSystemSetRHS*``, ``HYPREDRV_LinearSystemSetInitialGuess``, ``HYPREDRV_LinearSystemResetInitialGuess``, ``HYPREDRV_LinearSystemSetSolution``, ``HYPREDRV_LinearSystemSetReferenceSolution``, ``HYPREDRV_LinearSystemSetPrecMatrix``, ``HYPREDRV_LinearSystemPrint``
    * - Dofmaps/nullspace
-     - ``HYPREDRV_LinearSystemSetDofmap``, ``HYPREDRV_LinearSystemSetInterleavedDofmap``, ``HYPREDRV_LinearSystemSetContiguousDofmap``, ``HYPREDRV_LinearSystemReadDofmap``, ``HYPREDRV_LinearSystemPrintDofmap``, ``HYPREDRV_LinearSystemSetNearNullSpace``, ``HYPREDRV_LinearSystemSetNullSpace``
+     - ``HYPREDRV_LinearSystemSetDofmap``, ``HYPREDRV_LinearSystemSetInterleavedDofmap``, ``HYPREDRV_LinearSystemSetContiguousDofmap``, ``HYPREDRV_LinearSystemReadDofmap``, ``HYPREDRV_LinearSystemPrintDofmap``, ``HYPREDRV_LinearSystemSetNearNullSpace``, ``HYPREDRV_LinearSystemSetNullSpace``, ``HYPREDRV_LinearSystemSetCoarseSchur``, ``HYPREDRV_LinearSystemSetCoordinates``, ``HYPREDRV_LinearSystemSetDiscreteCurl``, ``HYPREDRV_LinearSystemSetDiscreteGradient``
    * - Accessors
      - ``HYPREDRV_LinearSystemGetSolution*``, ``HYPREDRV_LinearSystemGetRHS*``, ``HYPREDRV_LinearSystemGetMatrix``, ``HYPREDRV_LinearSystemGetSolutionNorm``, ``HYPREDRV_LinearSystemCopySolutionValues``
    * - State vectors

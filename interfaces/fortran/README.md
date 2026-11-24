@@ -228,11 +228,11 @@ Fortran-owned host array without changing residency.
 | C API group | Fortran module procedures |
 | --- | --- |
 | Lifecycle/info | `HYPREDRV_Initialize`, `HYPREDRV_Finalize`, `HYPREDRV_Create`, `HYPREDRV_Destroy`, `HYPREDRV_PrintLibInfo`, `HYPREDRV_PrintSystemInfo`, `HYPREDRV_PrintExitInfo` |
-| Errors/helpers | `HYPREDRV_ErrorCodeDescribe`, `HYPREDRV_ErrorInvalidValue`, `HYPREDRV_BigIntSize`, `HYPREDRV_Check`, `HYPREDRV_ToCString` |
+| Errors/helpers | `HYPREDRV_ErrorCodeDescribe`, `HYPREDRV_ErrorCodeClear`, `HYPREDRV_ErrorInvalidValue`, `HYPREDRV_BigIntSize`, `HYPREDRV_Check`, `HYPREDRV_ToCString` |
 | Object/input/options | `HYPREDRV_SetLibraryMode`, `HYPREDRV_ObjectSetName`, `HYPREDRV_InputArgsParse`, `HYPREDRV_InputArgsParseYaml`, `HYPREDRV_InputArgsGet*`, `HYPREDRV_InputArgsSet*` |
 | Presets | `HYPREDRV_SolverPresetRegister`, `HYPREDRV_PreconPresetRegister`, `HYPREDRV_InputArgsSetSolverPreset`, `HYPREDRV_InputArgsSetPreconPreset` |
 | Linear system | `HYPREDRV_LinearSystemBuild`, `HYPREDRV_LinearSystemReadMatrix`, `HYPREDRV_LinearSystemSetMatrix*`, `HYPREDRV_LinearSystemSetRHS*`, `HYPREDRV_LinearSystemSetInitialGuess`, `HYPREDRV_LinearSystemResetInitialGuess`, `HYPREDRV_LinearSystemSetSolution`, `HYPREDRV_LinearSystemSetReferenceSolution`, `HYPREDRV_LinearSystemSetPrecMatrix`, `HYPREDRV_LinearSystemPrint` |
-| Dofmaps/nullspace | `HYPREDRV_LinearSystemSetDofmap`, `HYPREDRV_LinearSystemSetInterleavedDofmap`, `HYPREDRV_LinearSystemSetContiguousDofmap`, `HYPREDRV_LinearSystemReadDofmap`, `HYPREDRV_LinearSystemPrintDofmap`, `HYPREDRV_LinearSystemSetNearNullSpace`, `HYPREDRV_LinearSystemSetNullSpace` |
+| Dofmaps/nullspace | `HYPREDRV_LinearSystemSetDofmap`, `HYPREDRV_LinearSystemSetInterleavedDofmap`, `HYPREDRV_LinearSystemSetContiguousDofmap`, `HYPREDRV_LinearSystemReadDofmap`, `HYPREDRV_LinearSystemPrintDofmap`, `HYPREDRV_LinearSystemSetNearNullSpace`, `HYPREDRV_LinearSystemSetNullSpace`, `HYPREDRV_LinearSystemSetCoarseSchur`, `HYPREDRV_LinearSystemSetCoordinates`, `HYPREDRV_LinearSystemSetDiscreteCurl`, `HYPREDRV_LinearSystemSetDiscreteGradient` |
 | Accessors | `HYPREDRV_LinearSystemGetSolution*`, `HYPREDRV_LinearSystemGetRHS*`, `HYPREDRV_LinearSystemGetMatrix`, `HYPREDRV_LinearSystemGetSolutionNorm`, `HYPREDRV_LinearSystemCopySolutionValues` |
 | State vectors | `HYPREDRV_StateVectorSet`, `HYPREDRV_StateVectorGetValues`, `HYPREDRV_StateVectorCopy`, `HYPREDRV_StateVectorUpdateAll`, `HYPREDRV_StateVectorApplyCorrection` |
 | Solver/preconditioner | `HYPREDRV_PreconCreate`, `HYPREDRV_PreconSetup`, `HYPREDRV_PreconApply`, `HYPREDRV_PreconDestroy`, `HYPREDRV_LinearSolverCreate`, `HYPREDRV_LinearSolverSetup`, `HYPREDRV_LinearSolverApply`, `HYPREDRV_LinearSolverSetRelativeTol`, `HYPREDRV_LinearSolverDestroy` |

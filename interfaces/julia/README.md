@@ -173,6 +173,30 @@ command-line overrides after `-a`/`--args`, for example
 `-a --solver:gmres:max_iter 100`. The `-P` topology controls the Cartesian MPI
 rank grid and must multiply to the number of MPI ranks.
 
+## Extended API
+
+`HypreDriveSession` also wraps the rest of the public `HYPREDRV_` C API. Every
+function below takes the session as its first argument unless noted:
+
+| Area | Julia functions |
+| --- | --- |
+| Library info / errors (no session) | `print_lib_info`, `print_system_info`, `print_exit_info`, `hypredrive_error_clear` |
+| Presets (no session) | `register_solver_preset`, `register_precon_preset` |
+| Options | `set_object_name!`, `input_warmup`, `input_num_repetitions`, `input_num_linear_systems`, `input_num_precon_variants`, `set_precon_variant!`, `set_precon_preset!`, `set_solver_preset!` |
+| Linear system | `linear_system_build!`, `linear_system_read_matrix!`, `print_linear_system`, `compute_eigenspectrum!` |
+| Dofmaps | `set_interleaved_dofmap!`, `set_contiguous_dofmap!`, `read_dofmap!`, `print_dofmap` |
+| Null spaces | `set_near_null_space!`, `set_null_space!` (`num_entries x num_components` matrices, copied) |
+| Data access | `get_solution_values`, `get_solution_length`, `get_rhs_values` (copies as `Vector{Float64}`), `get_matrix_handle`, `get_rhs_handle`, `get_solution_handle` |
+| Opaque HYPRE handles | `set_matrix_handle!`, `set_prec_matrix_handle!`, `set_discrete_gradient_handle!`, `set_discrete_curl_handle!`, `set_coordinates_handles!`, `set_coarse_schur_handle!`, `set_rhs_handle!`, `set_solution_handle!`, `set_reference_solution_handle!` |
+| State vectors | `set_state_vectors!`, `get_state_vector_values`, `copy_state_vector!`, `update_state_vectors!`, `apply_state_correction!` |
+| Preconditioner | `precon_create!`, `precon_setup!`, `precon_apply!`, `precon_destroy!` |
+| Statistics | `print_stats`, `print_stats_level`, `stats_level_count`, `stats_level_entry`, `annotate_level_begin`, `annotate_level_end` |
+
+Functions taking `Ptr{Cvoid}` work with opaque `HYPRE_Matrix`, `HYPRE_Vector`, and
+`HYPRE_IJVector` handles owned by the caller. Sessions use library mode, so
+HYPREDRV only borrows them and they must outlive the session. Indices passed to
+the state-vector and statistics functions are zero-based, as in the C API.
+
 ## Scope
 
 The package is ready to be registered from this monorepo subdirectory; a separate

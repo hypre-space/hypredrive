@@ -28,7 +28,9 @@ from ._buffers import validate_csr, validate_rhs
 from .options import OptionsLike, normalize_options
 from .result import SolveResult
 
-__all__ = ["HypreDrive", "solve", "BIGINT_DTYPE", "REAL_DTYPE"]
+__all__ = ["HypreDrive", "solve", "register_solver_preset",
+           "register_precon_preset", "print_lib_info", "print_system_info",
+           "print_exit_info", "clear_error", "invalid_value_error", "BIGINT_DTYPE", "REAL_DTYPE"]
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +141,7 @@ class HypreDrive:
         self._row_start: Optional[int] = None
         self._row_end: Optional[int] = None
         self._rhs_set: bool = False
+        self._native_system: bool = False
         self._last_iterations: Optional[int] = None
         self._last_converged: Optional[bool] = None
         self._last_final_res_norm: Optional[float] = None
@@ -393,9 +396,9 @@ class HypreDrive:
     def solve(self) -> None:
         """Run setup + apply on the configured solver/preconditioner."""
         self._require_open()
-        if self._row_start is None:
+        if self._row_start is None and not self._native_system:
             raise RuntimeError("solve(): no matrix set; call set_matrix_from_csr")
-        if not self._rhs_set:
+        if not self._rhs_set and not self._native_system:
             raise RuntimeError("solve(): no RHS set; call set_rhs")
 
         # Reset before we start so the last_* properties never report stale
@@ -491,6 +494,8 @@ class HypreDrive:
         """Return the local-rank solution slab as a NumPy array."""
         self._require_open()
         if self._row_start is None or self._row_end is None:
+            if self._native_system:
+                return self._core.get_solution_values()
             raise RuntimeError("get_solution(): solve() has not been run yet")
         nrows = self._row_end - self._row_start + 1
         out = np.empty(nrows, dtype=REAL_DTYPE)
@@ -505,8 +510,334 @@ class HypreDrive:
         return self._core.solution_norm(kind)
 
     # ------------------------------------------------------------------
+    # Object naming and parsed-input queries
+    # ------------------------------------------------------------------
+
+    def set_name(self, name: str) -> None:
+        """Name this object (``HYPREDRV_ObjectSetName``) for stats/log output."""
+        self._require_open()
+        self._core.object_set_name(str(name))
+
+    @property
+    def warmup(self) -> int:
+        """Number of warmup runs from the parsed input."""
+        self._require_open()
+        return self._core.get_warmup()
+
+    @property
+    def num_repetitions(self) -> int:
+        """Number of repetitions from the parsed input."""
+        self._require_open()
+        return self._core.get_num_repetitions()
+
+    @property
+    def num_linear_systems(self) -> int:
+        """Number of linear systems described by the parsed input."""
+        self._require_open()
+        return self._core.get_num_linear_systems()
+
+    @property
+    def num_precon_variants(self) -> int:
+        """Number of preconditioner variants in the parsed input."""
+        self._require_open()
+        return self._core.get_num_precon_variants()
+
+    def set_precon_variant(self, variant_idx: int) -> None:
+        """Select the active preconditioner variant (0-based)."""
+        self._require_open()
+        self._core.set_precon_variant(int(variant_idx))
+
+    def set_precon_preset(self, preset: str) -> None:
+        """Select a registered/built-in preconditioner preset by name."""
+        self._require_open()
+        self._core.set_precon_preset(str(preset))
+
+    def set_solver_preset(self, preset: str) -> None:
+        """Select a registered/built-in solver preset by name."""
+        self._require_open()
+        self._core.set_solver_preset(str(preset))
+
+    # ------------------------------------------------------------------
+    # Linear system: file-based build/read/print
+    # ------------------------------------------------------------------
+
+    def build_linear_system(self) -> None:
+        """Build matrix/RHS/solution from the parsed ``linear_system`` input."""
+        self._require_open()
+        self._core.linear_system_build()
+        self._mark_native_system()
+
+    def read_matrix(self) -> None:
+        """Read the matrix from files named in the parsed input."""
+        self._require_open()
+        self._core.read_matrix()
+        self._mark_native_system()
+
+    def read_dofmap(self) -> None:
+        """Read the DOF map from the file named in the parsed input."""
+        self._require_open()
+        self._core.read_dofmap()
+
+    def print_dofmap(self, filename: str) -> None:
+        """Write the DOF map to ``filename`` (``filename.NNNNN`` on MPI)."""
+        self._require_open()
+        self._core.print_dofmap(str(filename))
+
+    def print_linear_system(self) -> None:
+        """Dump matrix, RHS and DOF map to ASCII files."""
+        self._require_open()
+        self._core.print_linear_system()
+
+    def compute_eigenspectrum(self) -> None:
+        """Compute the eigenspectrum of the system (``HYPREDRV_LinearSystemComputeEigenspectrum``)."""
+        self._require_open()
+        self._core.compute_eigenspectrum()
+
+    def _mark_native_system(self) -> None:
+        # Systems created natively have no Python-side row range; leave
+        # solve() preconditions to the C layer by marking them satisfied.
+        self._native_system = True
+
+    # ------------------------------------------------------------------
+    # DOF maps by block structure, null spaces
+    # ------------------------------------------------------------------
+
+    def set_interleaved_dofmap(self, num_local_blocks: int, num_dof_types: int) -> None:
+        """Set a dofmap ``[0..t-1, 0..t-1, ...]`` (types interleaved per block)."""
+        self._require_open()
+        self._core.set_interleaved_dofmap(int(num_local_blocks), int(num_dof_types))
+
+    def set_contiguous_dofmap(self, num_local_blocks: int, num_dof_types: int) -> None:
+        """Set a dofmap with each DOF type stored contiguously."""
+        self._require_open()
+        self._core.set_contiguous_dofmap(int(num_local_blocks), int(num_dof_types))
+
+    def _set_space(self, which: str, values: Any, num_components: Optional[int]) -> None:
+        arr = np.asarray(values)
+        if arr.ndim == 2:
+            # (num_components, num_entries): modes stored back-to-back.
+            num_components = arr.shape[0] if num_components is None else num_components
+            num_entries = arr.shape[1]
+            arr = arr.reshape(-1)
+        else:
+            if num_components is None:
+                raise TypeError("num_components is required for 1-D values")
+            if int(num_components) <= 0 or arr.size % int(num_components):
+                raise ValueError("values length must be a multiple of num_components")
+            num_entries = arr.size // int(num_components)
+        arr = _as_real_array(arr, "values")
+        getattr(self._core, which)(int(num_entries), int(num_components), arr)
+
+    def set_near_null_space(self, values: Any, num_components: Optional[int] = None) -> None:
+        """Provide near-null-space modes (e.g. rigid-body modes).
+
+        ``values`` is either a 2-D ``(num_components, num_entries)`` array or a
+        1-D array of ``num_components`` modes stored back-to-back. Data is
+        copied; the matrix must be set first.
+        """
+        self._require_open()
+        self._set_space("set_near_null_space", values, num_components)
+
+    def set_null_space(self, values: Any, num_components: Optional[int] = None) -> None:
+        """Provide exact null-space modes (same layout as :meth:`set_near_null_space`)."""
+        self._require_open()
+        self._set_space("set_null_space", values, num_components)
+
+    # ------------------------------------------------------------------
+    # Raw HYPRE handles
+    #
+    # HYPRE_Matrix / HYPRE_Vector arguments are opaque pointers passed as
+    # Python ints (the address of a HYPRE_IJMatrix / HYPRE_IJVector, e.g.
+    # ``ctypes.c_void_p.value``); ``None`` means NULL. Lifetime follows the
+    # HYPREDRV.h docs: the driver always runs in library mode, so
+    # externally supplied handles are *borrowed* and must outlive their use
+    # (destroy them after closing the driver). Handles returned by the
+    # ``*_handle`` getters are borrowed from the driver: never free them,
+    # and do not use them after the driver is closed.
+    # ------------------------------------------------------------------
+
+    def set_matrix_handle(self, mat: Any) -> None:
+        """Attach an assembled ``HYPRE_IJMatrix`` address as the system matrix."""
+        self._require_open()
+        self._core.set_matrix_handle(mat)
+        self._native_system = True
+
+    def set_prec_matrix_handle(self, mat: Any) -> None:
+        """Attach a separate preconditioning matrix (``None`` clears it)."""
+        self._require_open()
+        self._core.set_prec_matrix_handle(mat)
+
+    def set_discrete_gradient_handle(self, G: Any) -> None:
+        """Attach the discrete gradient matrix for AMS/ADS."""
+        self._require_open()
+        self._core.set_discrete_gradient_handle(G)
+
+    def set_discrete_curl_handle(self, C: Any) -> None:
+        """Attach the discrete curl matrix for ADS."""
+        self._require_open()
+        self._core.set_discrete_curl_handle(C)
+
+    def set_coarse_schur_handle(self, level: int, mat: Any) -> None:
+        """Attach a user coarse Schur operator for an MGR level (``None`` clears)."""
+        self._require_open()
+        self._core.set_coarse_schur_handle(int(level), mat)
+
+    def set_coordinates_handle(self, x: Any, y: Any, z: Any) -> None:
+        """Attach vertex coordinate vectors (``HYPRE_IJVector`` addresses) for AMS/ADS."""
+        self._require_open()
+        self._core.set_coordinates_handle(x, y, z)
+
+    def set_rhs_handle(self, vec: Any) -> None:
+        """Attach a ``HYPRE_IJVector`` address as the RHS."""
+        self._require_open()
+        self._core.set_rhs_handle(vec)
+        self._rhs_set = True
+
+    def set_solution_handle(self, vec: Any) -> None:
+        """Attach a ``HYPRE_IJVector`` address as the solution vector."""
+        self._require_open()
+        self._core.set_solution_handle(vec)
+
+    def set_reference_solution_handle(self, vec: Any) -> None:
+        """Attach a reference solution vector (``None`` clears)."""
+        self._require_open()
+        self._core.set_reference_solution_handle(vec)
+
+    def get_matrix_handle(self) -> int:
+        """Return the borrowed system-matrix handle as an integer address."""
+        self._require_open()
+        return self._core.get_matrix_handle()
+
+    def get_rhs_handle(self) -> int:
+        """Return the borrowed RHS handle as an integer address."""
+        self._require_open()
+        return self._core.get_rhs_handle()
+
+    def get_solution_handle(self) -> int:
+        """Return the borrowed solution handle as an integer address."""
+        self._require_open()
+        return self._core.get_solution_handle()
+
+    def get_solution_values(self) -> np.ndarray:
+        """Return a copy of the native local solution (host memory only)."""
+        self._require_open()
+        return self._core.get_solution_values()
+
+    def get_rhs_values(self) -> np.ndarray:
+        """Return a copy of the native local RHS (host memory only).
+
+        Requires the local row range, i.e. :meth:`set_matrix_from_csr`.
+        """
+        self._require_open()
+        return self._core.get_rhs_values(self._local_rows())
+
+    # ------------------------------------------------------------------
+    # State vectors (time stepping / Newton)
+    # ------------------------------------------------------------------
+
+    def set_state_vectors(self, handles: Sequence[Any]) -> None:
+        """Register ``HYPRE_IJVector`` addresses as state vectors.
+
+        The caller keeps ownership; destroy them after closing the driver.
+        """
+        self._require_open()
+        self._core.state_vector_set(list(handles))
+
+    def state_vector_values(self, index: int) -> np.ndarray:
+        """Return a copy of the local data of state vector ``index``."""
+        self._require_open()
+        return self._core.state_vector_get_values(int(index), self._local_rows())
+
+    def state_vector_copy(self, index_in: int, index_out: int) -> None:
+        """Copy state vector ``index_in`` into ``index_out``."""
+        self._require_open()
+        self._core.state_vector_copy(int(index_in), int(index_out))
+
+    def state_vector_update_all(self) -> None:
+        """Cycle the logical state indices (new current state at index 0)."""
+        self._require_open()
+        self._core.state_vector_update_all()
+
+    def state_vector_apply_correction(self, state_idx: int = 0) -> None:
+        """Add the last linear-solver solution to state vector ``state_idx``."""
+        self._require_open()
+        self._core.state_vector_apply_correction(int(state_idx))
+
+    # ------------------------------------------------------------------
+    # Standalone preconditioner
+    # ------------------------------------------------------------------
+
+    def precon_create(self) -> None:
+        """Create the preconditioner (destroyed automatically on close)."""
+        self._require_open()
+        self._core.precon_create()
+
+    def precon_setup(self) -> None:
+        """Set up the standalone preconditioner."""
+        self._require_open()
+        self._core.precon_setup()
+
+    def precon_apply(self, vec_b: Any, vec_x: Any) -> None:
+        """Apply the preconditioner: ``vec_x = M^{-1} vec_b`` (HYPRE_Vector addresses)."""
+        self._require_open()
+        self._core.precon_apply(vec_b, vec_x)
+
+    def precon_destroy(self) -> None:
+        """Destroy the standalone preconditioner."""
+        self._require_open()
+        self._core.precon_destroy()
+
+    # ------------------------------------------------------------------
+    # Statistics by level
+    # ------------------------------------------------------------------
+
+    def print_stats(self) -> None:
+        """Print the statistics summary."""
+        self._require_open()
+        self._core.stats_print()
+
+    def annotate_level_begin(self, level: int, name: str, id: int = -1) -> None:
+        """Begin a leveled annotation (feeds :meth:`stats_level_entry`)."""
+        self._require_open()
+        self._core.annotate_level_begin(int(level), name.encode("utf-8"), int(id))
+
+    def annotate_level_end(self, level: int, name: str, id: int = -1) -> None:
+        """End a leveled annotation."""
+        self._require_open()
+        self._core.annotate_level_end(int(level), name.encode("utf-8"), int(id))
+
+    def stats_level_count(self, level: int) -> int:
+        """Number of entries recorded at ``level``."""
+        self._require_open()
+        return self._core.stats_level_count(int(level))
+
+    def stats_level_entry(self, level: int, index: int) -> dict:
+        """Return ``{entry_id, num_solves, linear_iters, setup_time, solve_time}``."""
+        self._require_open()
+        eid, ns, it, st, sv = self._core.stats_level_entry(int(level), int(index))
+        return {
+            "entry_id": eid,
+            "num_solves": ns,
+            "linear_iters": it,
+            "setup_time": st,
+            "solve_time": sv,
+        }
+
+    def print_stats_level(self, level: int) -> None:
+        """Print the statistics table for ``level``."""
+        self._require_open()
+        self._core.stats_level_print(int(level))
+
+    # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _local_rows(self) -> int:
+        if self._row_start is None or self._row_end is None:
+            raise RuntimeError(
+                "local row count unknown; call set_matrix_from_csr first"
+            )
+        return self._row_end - self._row_start + 1
 
     def _require_open(self) -> None:
         if self._core is None:
@@ -571,3 +902,47 @@ def solve(
             setup_time=drv.last_setup_time,
             solve_time=drv.last_solve_time,
         )
+
+
+# ---------------------------------------------------------------------------
+# Module-level (driver-independent) entry points
+# ---------------------------------------------------------------------------
+
+def register_solver_preset(name: str, yaml_text: str, help: str = "") -> None:
+    """Register a named solver preset (``HYPREDRV_SolverPresetRegister``)."""
+    session.initialize()
+    _core._solver_preset_register(name, yaml_text, help)
+
+
+def register_precon_preset(name: str, yaml_text: str, help: str = "") -> None:
+    """Register a named preconditioner preset (``HYPREDRV_PreconPresetRegister``)."""
+    session.initialize()
+    _core._precon_preset_register(name, yaml_text, help)
+
+
+def print_lib_info(comm: Any = None, print_datetime: bool = False) -> None:
+    """Print library version/build info (``HYPREDRV_PrintLibInfo``)."""
+    session.initialize()
+    _core._print_lib_info(comm, bool(print_datetime))
+
+
+def print_system_info(comm: Any = None) -> None:
+    """Print host/system info (``HYPREDRV_PrintSystemInfo``)."""
+    session.initialize()
+    _core._print_system_info(comm)
+
+
+def print_exit_info(comm: Any = None, argv0: str = "hypredrive") -> None:
+    """Print the exit banner (``HYPREDRV_PrintExitInfo``)."""
+    session.initialize()
+    _core._print_exit_info(comm, argv0)
+
+
+def clear_error() -> None:
+    """Clear the recorded HYPREDRV error chain (``HYPREDRV_ErrorCodeClear``)."""
+    _core._error_code_clear()
+
+
+def invalid_value_error(message: str) -> int:
+    """Record an invalid-value error and return its code (``HYPREDRV_ErrorInvalidValue``)."""
+    return _core._error_invalid_value(message)

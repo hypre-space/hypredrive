@@ -164,6 +164,35 @@ HYPREDRV_PythonCreateFromFortranComm(int fortran_comm, HYPREDRV_t *hypredrv_ptr)
    return HYPREDRV_Create(MPI_Comm_f2c((MPI_Fint)fortran_comm), hypredrv_ptr);
 }
 
+/* A negative Fortran handle selects MPI_COMM_SELF. MPI_Comm is never exposed to
+ * Cython: its representation (int, pointer, ...) depends on the MPI implementation. */
+static MPI_Comm
+HYPREDRV_PythonComm(int fortran_comm)
+{
+   return (fortran_comm < 0) ? MPI_COMM_SELF : MPI_Comm_f2c((MPI_Fint)fortran_comm);
+}
+
+/** @brief HYPREDRV_PrintLibInfo on a communicator given by its Fortran handle. */
+uint32_t
+HYPREDRV_PythonPrintLibInfo(int fortran_comm, int print_datetime)
+{
+   return HYPREDRV_PrintLibInfo(HYPREDRV_PythonComm(fortran_comm), print_datetime);
+}
+
+/** @brief HYPREDRV_PrintSystemInfo on a communicator given by its Fortran handle. */
+uint32_t
+HYPREDRV_PythonPrintSystemInfo(int fortran_comm)
+{
+   return HYPREDRV_PrintSystemInfo(HYPREDRV_PythonComm(fortran_comm));
+}
+
+/** @brief HYPREDRV_PrintExitInfo on a communicator given by its Fortran handle. */
+uint32_t
+HYPREDRV_PythonPrintExitInfo(int fortran_comm, const char *argv0)
+{
+   return HYPREDRV_PrintExitInfo(HYPREDRV_PythonComm(fortran_comm), argv0);
+}
+
 /**
  * @brief Install a CSR matrix from Python-owned opaque buffers.
  */

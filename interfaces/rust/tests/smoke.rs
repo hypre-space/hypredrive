@@ -564,6 +564,7 @@ fn run(universe: &Universe, world: &impl Communicator, threading: Threading) -> 
         serial_minimal(&runtime)?;
         initial_guess_and_statistics(&runtime)?;
         configuration(&runtime, world)?;
+        extended_api(&runtime)?;
         validation(&runtime, world)?;
         solve_on_comm(&runtime, world)?;
         nonconvergence(&runtime, world)?;
@@ -576,6 +577,71 @@ fn run(universe: &Universe, world: &impl Communicator, threading: Threading) -> 
     // The previous runtime released the process-wide ownership guard.
     let runtime = Runtime::new(universe)?;
     serial_minimal(&runtime)
+}
+
+fn extended_api(runtime: &Runtime<'_>) -> TestResult {
+    let comm = SimpleCommunicator::self_comm();
+    runtime.clear_error_codes();
+    check(
+        &comm,
+        runtime.error_invalid_value("rust smoke check")? != 0,
+        "the invalid-value status must be nonzero",
+    )?;
+    runtime.clear_error_codes();
+    check(
+        &comm,
+        runtime.error_invalid_value("bad\0text").is_err(),
+        "an embedded NUL in an error message was accepted",
+    )?;
+    runtime.register_solver_preset("rust-smoke-solver", "pcg:\n  max_iter: 50\n  relative_tol: 1.0e-12", Some("smoke"))?;
+    runtime.register_precon_preset("rust-smoke-precon", "amg:\n  max_iter: 1", None)?;
+    check(
+        &comm,
+        runtime.register_solver_preset("rust\0bad", "pcg:", None).is_err(),
+        "an embedded NUL in a preset name was accepted",
+    )?;
+
+    let mut driver = HypreDrive::from_yaml(runtime, &comm, YAML)?;
+    driver.set_object_name(Some("rust-smoke"))?;
+    driver.set_solver_preset("rust-smoke-solver")?;
+    driver.set_precon_preset("rust-smoke-precon")?;
+    check(
+        &comm,
+        driver.num_repetitions()? >= 1 && driver.warmup()? >= 0,
+        "invalid repetition or warmup counts",
+    )?;
+    check(
+        &comm,
+        driver.num_linear_systems()? >= 1 && driver.num_precon_variants()? >= 1,
+        "invalid system or variant counts",
+    )?;
+    check(
+        &comm,
+        driver.set_null_space(2, 1, &[1.0]).is_err(),
+        "mismatched null-space validation failed",
+    )?;
+    driver.set_matrix_csr(0, 1, &[0, 2, 4], &[0, 1, 0, 1], &[2.0, -1.0, -1.0, 2.0])?;
+    driver.set_rhs(&[1.0, 1.0])?;
+    driver.annotate_level_begin(0, "timestep", 0)?;
+    let result = driver.solve()?;
+    driver.annotate_level_end(0, "timestep", 0)?;
+    check_solution(&comm, &result, 2, 1.0)?;
+    let norm = driver.solution_norm("inf")?;
+    check(&comm, (norm - 1.0).abs() < 1.0e-8, "solution norm is wrong")?;
+    check(
+        &comm,
+        driver.solution_norm("bad\0norm").is_err(),
+        "an embedded NUL in a norm name was accepted",
+    )?;
+    check(
+        &comm,
+        driver.stats_level_count(0)? >= 0,
+        "invalid statistics level count",
+    )?;
+    // Raw handles are owned by the driver and only inspected, never freed.
+    let (matrix, rhs) = unsafe { (driver.matrix()?, driver.rhs_vector()?) };
+    check(&comm, !matrix.is_null() && !rhs.is_null(), "null native handles")?;
+    Ok(())
 }
 
 fn main() {

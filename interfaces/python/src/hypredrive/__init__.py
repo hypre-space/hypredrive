@@ -48,7 +48,11 @@ from .errors import HypreDriveError
 from .options import OptionsLike, configure, normalize_options, options_to_yaml
 from .result import SolveResult
 
-_DRIVER_EXPORTS = {"BIGINT_DTYPE", "HypreDrive", "REAL_DTYPE", "solve"}
+_DRIVER_EXPORTS = {
+    "BIGINT_DTYPE", "HypreDrive", "REAL_DTYPE", "solve",
+    "clear_error", "invalid_value_error", "print_exit_info", "print_lib_info",
+    "print_system_info", "register_precon_preset", "register_solver_preset",
+}
 
 __all__ = [
     "BIGINT_DTYPE",
@@ -61,12 +65,19 @@ __all__ = [
     "OptionsLike",
     "REAL_DTYPE",
     "SolveResult",
+    "clear_error",
     "configure",
     "finalize",
     "initialize",
     "is_initialized",
+    "invalid_value_error",
     "normalize_options",
     "options_to_yaml",
+    "print_exit_info",
+    "print_lib_info",
+    "print_system_info",
+    "register_precon_preset",
+    "register_solver_preset",
     "solve",
 ]
 

@@ -28,6 +28,12 @@ cmake --build "$rust_build_dir" --target rust-test --parallel
 seven-point Laplacian on a `10 × 10 × 10` grid by default and solves for two
 right-hand sides.
 
+Every public `HYPREDRV_` function is bound: process-global calls live on
+`Runtime`, the rest on `HypreDrive`. Raw HYPRE handle APIs (`set_matrix`,
+`set_discrete_gradient`, `set_coordinates`, `matrix`, `rhs_vector`,
+`set_state_vectors`, `precon_apply`, ...) are `unsafe fn` with documented
+safety contracts. See the user manual for the full API table.
+
 See the [Rust user manual](../../docs/usrman-src/interfaces_rust.rst) for
 running the examples, using an installed library from Cargo, and the API and
 MPI contracts.

@@ -71,6 +71,17 @@ extern "C"
                                                  HYPREDRV_t *hypredrv_ptr);
 
    /**
+    * @brief Print library/system/exit information on the communicator given by
+    * its Fortran handle; a negative handle selects MPI_COMM_SELF.
+    *
+    * MPI_Comm is deliberately not exposed to Cython: its representation depends
+    * on the MPI implementation.
+    */
+   uint32_t HYPREDRV_PythonPrintLibInfo(int fortran_comm, int print_datetime);
+   uint32_t HYPREDRV_PythonPrintSystemInfo(int fortran_comm);
+   uint32_t HYPREDRV_PythonPrintExitInfo(int fortran_comm, const char *argv0);
+
+   /**
     * @brief Install a CSR matrix from Python-owned opaque buffers.
     *
     * @param hypredrv    HYPREDRV object.

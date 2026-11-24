@@ -52,6 +52,12 @@ program test_lifecycle
    call HYPREDRV_Check(HYPREDRV_AnnotateEnd(drv, 'initialize'//c_null_char, -1_c_int))
    call HYPREDRV_Check(HYPREDRV_AnnotateLevelBegin(drv, 0_c_int, 'initialize-level'//c_null_char, -1_c_int))
    call HYPREDRV_Check(HYPREDRV_AnnotateLevelEnd(drv, 0_c_int, 'initialize-level'//c_null_char, -1_c_int))
+   call HYPREDRV_ErrorCodeClear()
+   ! NULL operands clear the corresponding registrations.
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetCoarseSchur(drv, 0_c_int, c_null_ptr))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetDiscreteGradient(drv, c_null_ptr))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetDiscreteCurl(drv, c_null_ptr))
+   call HYPREDRV_Check(HYPREDRV_LinearSystemSetCoordinates(drv, c_null_ptr, c_null_ptr, c_null_ptr))
    call HYPREDRV_Check(HYPREDRV_Destroy(drv))
    if (c_associated(drv)) stop 'HYPREDRV_Destroy did not clear handle'
    call HYPREDRV_Check(HYPREDRV_Finalize())

@@ -237,6 +237,50 @@ Nonconvergence returns ``converged=false``. A nonzero native API status returns
 original ``u32`` status through ``status()``. Rust validation errors have no
 native status. Scope cleanup also releases partially constructed drivers.
 
+Extended API coverage
+---------------------
+
+Every public ``HYPREDRV_`` function is bound. Safe methods copy their inputs
+and agree on Rust-side validation across ranks. Methods that take or return
+raw HYPRE handles are ``unsafe fn`` with a ``# Safety`` section describing
+validity, ownership and lifetime. Handles are borrowed (library mode) and
+must outlive the driver.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Area
+     - Rust API
+   * - Process-global (on ``Runtime``)
+     - ``clear_error_codes``, ``error_invalid_value``, ``print_lib_info``,
+       ``print_system_info``, ``print_exit_info``,
+       ``register_solver_preset``, ``register_precon_preset``
+   * - Input arguments
+     - ``set_object_name``, ``warmup``, ``num_repetitions``,
+       ``num_linear_systems``, ``num_precon_variants``,
+       ``set_precon_variant``, ``set_precon_preset``, ``set_solver_preset``
+   * - Linear system (safe)
+     - ``build_linear_system``, ``read_matrix``, ``solution_norm``,
+       ``set_dofmap``, ``set_interleaved_dofmap``, ``set_contiguous_dofmap``,
+       ``read_dofmap``, ``print_dofmap``, ``print_linear_system``,
+       ``set_near_null_space``, ``set_null_space``, ``compute_eigenspectrum``
+   * - Linear system (``unsafe``, raw handles)
+     - ``set_matrix``, ``set_precon_matrix``, ``set_discrete_gradient``,
+       ``set_discrete_curl``, ``set_coordinates``, ``set_coarse_schur``,
+       ``set_rhs_vector``, ``set_solution_vector``,
+       ``set_reference_solution``, ``matrix``, ``rhs_vector``,
+       ``solution_vector``, ``rhs_values_ptr``, ``solution_values_ptr``
+   * - State vectors
+     - ``set_state_vectors`` (``unsafe``), ``state_vector_values_ptr``
+       (``unsafe``), ``state_vector_copy``, ``state_vector_update_all``,
+       ``state_vector_apply_correction``
+   * - Preconditioner
+     - ``precon_create``, ``precon_setup``, ``precon_apply`` (``unsafe``),
+       ``precon_destroy``
+   * - Statistics and annotation
+     - ``print_stats``, ``annotate_level_begin``, ``annotate_level_end``,
+       ``stats_level_count``, ``stats_level_entry``, ``print_stats_level``
+
 MPI call contract
 -----------------
 
