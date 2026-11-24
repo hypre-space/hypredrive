@@ -125,6 +125,7 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH -Value ([Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine'))
 
       - name: Restore ccache
+        id: restore-ccache
         uses: actions/cache/restore@v5
         with:
           path: ${{ runner.temp }}/ccache
@@ -206,7 +207,7 @@ jobs:
           fi
 
       - name: Save ccache
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' && steps.restore-ccache.outputs.cache-hit != 'true'
         continue-on-error: true
         uses: actions/cache/save@v5
         with:
@@ -1120,7 +1121,7 @@ jobs:
           autoreconf -iv
           ./configure --with-hypre-dir="${HYPRE_DIR}" \
                       --prefix="$(pwd)/install-autotools"
-          make -j
+          make -j"$(getconf _NPROCESSORS_ONLN)"
           OMPI_ALLOW_RUN_AS_ROOT=1 \
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
           OMPI_MCA_btl_vader_single_copy_mechanism=none \

@@ -16,7 +16,10 @@ endforeach()
 # exponential backoff: 2, 5, 15, 30 and 60 seconds between six attempts.
 set(_backoff_seconds 2 5 15 30 60)
 foreach(_attempt RANGE 1 6)
-    file(DOWNLOAD "${URL}" "${TARBALL}" STATUS _status)
+    file(DOWNLOAD "${URL}" "${TARBALL}"
+        TLS_VERIFY ON
+        INACTIVITY_TIMEOUT 60
+        STATUS _status)
     list(GET _status 0 _code)
     if(_code EQUAL 0)
         break()
@@ -34,7 +37,7 @@ if(NOT _code EQUAL 0)
 endif()
 
 file(SHA256 "${TARBALL}" _actual)
-if(NOT _actual STREQUAL SHA256)
+if(NOT "${_actual}" STREQUAL "${SHA256}")
     file(REMOVE "${TARBALL}")
     message(FATAL_ERROR "Checksum mismatch for ${TARBALL}: ${_actual} != ${SHA256}")
 endif()

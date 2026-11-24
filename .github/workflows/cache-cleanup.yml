@@ -13,12 +13,10 @@ on:
     - cron: '0 5 * * 1' # Runs at 05:00 UTC every Monday
   workflow_dispatch:
 
-permissions:
-  actions: write
-  pull-requests: read
+permissions: {}
 
 concurrency:
-  group: cache-cleanup
+  group: cache-cleanup-${{ github.event.pull_request.number || 'sweep' }}
   cancel-in-progress: false
 
 env:
@@ -31,40 +29,64 @@ jobs:
     name: Delete caches of the closed pull request
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      actions: write
     steps:
       - name: Delete caches
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -euo pipefail
-          gh cache list --ref "refs/pull/${PR_NUMBER}/merge" --limit 1000 --json id --jq '.[].id' |
-            while read -r id; do
-              gh cache delete "$id"
-            done
+          if [[ ! "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
+            echo "::error::Invalid pull request number: $PR_NUMBER"
+            exit 1
+          fi
+          ids=$(gh cache list --ref "refs/pull/${PR_NUMBER}/merge" --limit 1000 --json id --jq '.[].id')
+          while IFS= read -r id; do
+            [[ -z "$id" ]] && continue
+            if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+              echo "::warning::Skipping unexpected cache id: $id"
+              continue
+            fi
+            gh cache delete "$id" || echo "::warning::Failed to delete cache $id"
+          done <<< "$ids"
 
   sweep:
     if: github.event_name != 'pull_request_target'
     name: Delete caches that can no longer be restored
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      actions: write
+      pull-requests: read
     steps:
       - name: Delete caches of pull requests that are not open
         run: |
           set -euo pipefail
-          refs=$(gh cache list --limit 1000 --json ref --jq '.[].ref' | sort -u | grep -E '^refs/pull/[0-9]+/merge$' || true)
-          for ref in $refs; do
+          all_refs=$(gh cache list --limit 1000 --json ref --jq '.[].ref')
+          refs=$(printf '%s\n' "$all_refs" | sort -u | grep -E '^refs/pull/[0-9]+/merge$' || true)
+          while IFS= read -r ref; do
+            [[ -z "$ref" ]] && continue
             number=${ref#refs/pull/}
             number=${number%/merge}
-            state=$(gh pr view "$number" --json state --jq .state)
-            if [ "$state" = "OPEN" ]; then
+            if ! state=$(gh pr view "$number" --json state --jq .state); then
+              echo "::warning::Failed to query state of pull request #$number; skipping"
+              continue
+            fi
+            if [[ "$state" == "OPEN" ]]; then
               continue
             fi
             echo "Deleting caches of $state pull request #$number"
-            gh cache list --ref "$ref" --limit 1000 --json id --jq '.[].id' |
-              while read -r id; do
-                gh cache delete "$id"
-              done
-          done
+            ids=$(gh cache list --ref "$ref" --limit 1000 --json id --jq '.[].id')
+            while IFS= read -r id; do
+              [[ -z "$id" ]] && continue
+              if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+                echo "::warning::Skipping unexpected cache id: $id"
+                continue
+              fi
+              gh cache delete "$id" || echo "::warning::Failed to delete cache $id"
+            done <<< "$ids"
+          done <<< "$refs"
 
       - name: Delete caches under retired keys
         # No workflow produces these keys anymore: the fuzz corpus cache was
@@ -75,8 +97,13 @@ jobs:
           set -euo pipefail
           for key in fuzz-corpus ccache-20 datasets-v2; do
             echo "Deleting caches with key prefix $key"
-            gh cache list --key "$key" --limit 1000 --json id --jq '.[].id' |
-              while read -r id; do
-                gh cache delete "$id"
-              done
+            ids=$(gh cache list --key "$key" --limit 1000 --json id --jq '.[].id')
+            while IFS= read -r id; do
+              [[ -z "$id" ]] && continue
+              if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+                echo "::warning::Skipping unexpected cache id: $id"
+                continue
+              fi
+              gh cache delete "$id" || echo "::warning::Failed to delete cache $id"
+            done <<< "$ids"
           done
