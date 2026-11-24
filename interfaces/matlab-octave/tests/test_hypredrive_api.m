@@ -131,6 +131,31 @@ if h0 ~= 0
 end
 
 fprintf('hypredrive MATLAB/Octave API test passed\n');
+
+% A borrowed handle must not outlive the object it points to: replacing the
+% driver's RHS or matrix invalidates handles borrowed before the replacement.
+drv = hypredrive_mex('create', yaml);
+hypredrive_mex('set_matrix_csr', drv, A);
+hypredrive_mex('set_rhs_array', drv, b);
+hv = hypredrive_mex('get_rhs', drv);
+hm = hypredrive_mex('get_matrix', drv);
+if ~hypredrive_mex('is_valid', hv) || ~hypredrive_mex('is_valid', hm)
+    error('hypredrive:test', 'fresh borrowed handles should be valid');
+end
+hypredrive_mex('set_rhs_array', drv, 2 * b);
+if hypredrive_mex('is_valid', hv)
+    error('hypredrive:test', 'borrowed RHS handle survived the RHS being replaced');
+end
+expect_error(@() hypredrive_mex('vector_get_values', hv), 'hypredrive:InvalidHandle');
+hv2 = hypredrive_mex('get_rhs', drv);
+if norm(hypredrive_mex('vector_get_values', hv2) - 2 * b) > 0
+    error('hypredrive:test', 'a fresh borrowed handle should see the new RHS');
+end
+hypredrive_mex('set_matrix_csr', drv, A);
+if hypredrive_mex('is_valid', hm)
+    error('hypredrive:test', 'borrowed matrix handle survived the matrix being replaced');
+end
+hypredrive_mex('destroy', drv);
 end
 
 function expect_error(fn, id)

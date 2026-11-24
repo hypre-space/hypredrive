@@ -593,6 +593,11 @@ typedef struct
    uint64_t owner;    /* driver id for borrowed objects, else 0 */
    int      owned;    /* 1 if this table must destroy ptr */
    uint64_t attached; /* last driver this matrix/vector was attached to */
+   /* Borrowed objects only: the driver getter that produced ptr. The driver may
+    * replace the object (set_matrix, set_rhs, build, ...) and free the old one,
+    * so the pointer is re-read on every lookup and the handle dies if it changed. */
+   uint32_t (*borrow_matrix)(HYPREDRV_t, HYPRE_Matrix *);
+   uint32_t (*borrow_vector)(HYPREDRV_t, HYPRE_Vector *);
 } HYPREDRV_MatlabEntry;
 
 static HYPREDRV_MatlabEntry *HYPREDRV_matlab_table     = NULL;
@@ -622,6 +627,43 @@ HYPREDRV_MatlabCheck(uint32_t code, const char *what)
    }
 }
 
+static void HYPREDRV_MatlabRemoveEntry(uint64_t id);
+
+/* True while a borrowed entry still points at the driver's current object. */
+static int
+HYPREDRV_MatlabBorrowedIsCurrent(const HYPREDRV_MatlabEntry *e)
+{
+   if (!e->borrow_matrix && !e->borrow_vector)
+   {
+      return 1;
+   }
+   for (size_t i = 0; i < HYPREDRV_matlab_count; i++)
+   {
+      if (HYPREDRV_matlab_table[i].id == e->owner &&
+          HYPREDRV_matlab_table[i].kind == HYPREDRV_MATLAB_KIND_DRIVER)
+      {
+         HYPREDRV_t drv     = (HYPREDRV_t)HYPREDRV_matlab_table[i].ptr;
+         void      *current = NULL;
+         uint32_t   code    = HYPREDRV_SUCCESS;
+         if (e->borrow_matrix)
+         {
+            code = e->borrow_matrix(drv, (HYPRE_Matrix *)&current);
+         }
+         else
+         {
+            code = e->borrow_vector(drv, (HYPRE_Vector *)&current);
+         }
+         if (code != HYPREDRV_SUCCESS)
+         {
+            HYPREDRV_ErrorCodeClear();
+            return 0;
+         }
+         return current == e->ptr;
+      }
+   }
+   return 0;
+}
+
 static HYPREDRV_MatlabEntry *
 HYPREDRV_MatlabFindEntry(uint64_t id)
 {
@@ -629,6 +671,11 @@ HYPREDRV_MatlabFindEntry(uint64_t id)
    {
       if (HYPREDRV_matlab_table[i].id == id)
       {
+         if (!HYPREDRV_MatlabBorrowedIsCurrent(&HYPREDRV_matlab_table[i]))
+         {
+            HYPREDRV_MatlabRemoveEntry(id);
+            return NULL;
+         }
          return &HYPREDRV_matlab_table[i];
       }
    }
@@ -657,6 +704,8 @@ HYPREDRV_MatlabRegister(int kind, void *ptr, uint64_t owner, int owned)
    e->owner                = owner;
    e->owned                = owned;
    e->attached             = 0;
+   e->borrow_matrix        = NULL;
+   e->borrow_vector        = NULL;
    return e->id;
 }
 
@@ -907,7 +956,9 @@ HYPREDRV_MatlabColumnFromHost(const HYPRE_Complex *data, HYPRE_BigInt n)
 
 /* Returns a handle to a borrowed IJ object, reusing an existing registration. */
 static mxArray *
-HYPREDRV_MatlabBorrowed(int kind, void *ptr, const mxArray *drv_arg)
+HYPREDRV_MatlabBorrowed(int kind, void *ptr, const mxArray *drv_arg,
+                        uint32_t (*get_matrix)(HYPREDRV_t, HYPRE_Matrix *),
+                        uint32_t (*get_vector)(HYPREDRV_t, HYPRE_Vector *))
 {
    uint64_t owner = HYPREDRV_MatlabHandleId(drv_arg);
    if (!ptr)
@@ -917,12 +968,16 @@ HYPREDRV_MatlabBorrowed(int kind, void *ptr, const mxArray *drv_arg)
    for (size_t i = 0; i < HYPREDRV_matlab_count; i++)
    {
       HYPREDRV_MatlabEntry *e = &HYPREDRV_matlab_table[i];
-      if (e->kind == kind && e->ptr == ptr)
+      if (e->kind == kind && e->ptr == ptr && e->owner == owner &&
+          e->borrow_matrix == get_matrix && e->borrow_vector == get_vector)
       {
          return HYPREDRV_MatlabMakeHandle(e->id);
       }
    }
-   return HYPREDRV_MatlabMakeHandle(HYPREDRV_MatlabRegister(kind, ptr, owner, 0));
+   uint64_t id = HYPREDRV_MatlabRegister(kind, ptr, owner, 0);
+   HYPREDRV_matlab_table[HYPREDRV_matlab_count - 1].borrow_matrix = get_matrix;
+   HYPREDRV_matlab_table[HYPREDRV_matlab_count - 1].borrow_vector = get_vector;
+   return HYPREDRV_MatlabMakeHandle(id);
 }
 
 /*--- command macros --------------------------------------------------------*/
@@ -1006,7 +1061,7 @@ HYPREDRV_MatlabBorrowed(int kind, void *ptr, const mxArray *drv_arg)
       HYPREDRV_t   drv = HYPREDRV_MatlabArgDriver(a[0]);                          \
       HYPRE_Matrix m   = NULL;                                                    \
       HD_CHECK(api(drv, &m));                                                     \
-      plhs[0] = HYPREDRV_MatlabBorrowed(HYPREDRV_MATLAB_KIND_MATRIX, (void *)m, a[0]); \
+      plhs[0] = HYPREDRV_MatlabBorrowed(HYPREDRV_MATLAB_KIND_MATRIX, (void *)m, a[0], api, NULL); \
    }
 
 #define HD_DEF_DRV_GETVECTOR(cname, api)                                          \
@@ -1017,7 +1072,7 @@ HYPREDRV_MatlabBorrowed(int kind, void *ptr, const mxArray *drv_arg)
       HYPREDRV_t   drv = HYPREDRV_MatlabArgDriver(a[0]);                          \
       HYPRE_Vector v   = NULL;                                                    \
       HD_CHECK(api(drv, &v));                                                     \
-      plhs[0] = HYPREDRV_MatlabBorrowed(HYPREDRV_MATLAB_KIND_VECTOR, (void *)v, a[0]); \
+      plhs[0] = HYPREDRV_MatlabBorrowed(HYPREDRV_MATLAB_KIND_VECTOR, (void *)v, a[0], NULL, api); \
    }
 
 /*--- global / error / print commands ---------------------------------------*/
