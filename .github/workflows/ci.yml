@@ -876,6 +876,9 @@ jobs:
         if: startsWith(runner.os, 'Linux')
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
+          # PR runs restore master's cache but do not add per-run entries to the
+          # repository cache quota.
+          save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.compiler }}-
@@ -997,10 +1000,6 @@ jobs:
               bash scripts/compare_output.sh ${{ env.BUILD_DIR }}/test_ex1_output.txt examples/refOutput/ex1.txt || true
             fi
           fi
-
-      - name: Cache ccache (Ubuntu)
-        if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
 
       - name: Upload logs on failure
         if: failure()
@@ -1152,6 +1151,9 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
+          # PR runs restore master's cache but do not add per-run entries to the
+          # repository cache quota.
+          save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-${{ matrix.dependency.cache_key }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.dependency.cache_key }}-
@@ -1208,9 +1210,6 @@ jobs:
           fi
           ctest "${CTEST_ARGS[@]}"
 
-      - name: Cache ccache
-        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
-
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v6
@@ -1253,6 +1252,9 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
+          # PR runs restore master's cache but do not add per-run entries to the
+          # repository cache quota.
+          save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-mixedint-
