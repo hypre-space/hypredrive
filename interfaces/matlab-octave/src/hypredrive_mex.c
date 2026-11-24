@@ -1412,13 +1412,11 @@ HYPREDRV_MatlabCmdVectorFromArray(int nlhs, mxArray *plhs[], int na, const mxArr
       HYPREDRV_MatlabRegister(HYPREDRV_MATLAB_KIND_VECTOR, (void *)vec, 0, 1));
 }
 
-static void
-HYPREDRV_MatlabCmdVectorGetValues(int nlhs, mxArray *plhs[], int na, const mxArray *a[])
+/* Copies the local entries of an IJ vector into a new MATLAB column through the
+ * HYPRE IJ API, which handles host and device placement. */
+static mxArray *
+HYPREDRV_MatlabReadIJVector(HYPRE_IJVector vec)
 {
-   (void)nlhs;
-   (void)na;
-   HYPRE_IJVector vec =
-      (HYPRE_IJVector)HYPREDRV_MatlabArgObject(a[0], HYPREDRV_MATLAB_KIND_VECTOR, NULL, 0);
    HYPRE_BigInt lo = 0, hi = 0;
    if (HYPRE_IJVectorGetLocalRange(vec, &lo, &hi))
    {
@@ -1430,11 +1428,22 @@ HYPREDRV_MatlabCmdVectorGetValues(int nlhs, mxArray *plhs[], int na, const mxArr
    {
       idx[i] = lo + (HYPRE_BigInt)i;
    }
-   plhs[0] = mxCreateDoubleMatrix(n, 1, mxREAL);
-   if (n > 0 && HYPRE_IJVectorGetValues(vec, (HYPRE_Int)n, idx, mxGetPr(plhs[0])))
+   mxArray *out = mxCreateDoubleMatrix(n, 1, mxREAL);
+   if (n > 0 && HYPRE_IJVectorGetValues(vec, (HYPRE_Int)n, idx, mxGetPr(out)))
    {
       HYPREDRV_MatlabFail("hypredrive:HypreError", "failed to read vector values");
    }
+   return out;
+}
+
+static void
+HYPREDRV_MatlabCmdVectorGetValues(int nlhs, mxArray *plhs[], int na, const mxArray *a[])
+{
+   (void)nlhs;
+   (void)na;
+   HYPRE_IJVector vec =
+      (HYPRE_IJVector)HYPREDRV_MatlabArgObject(a[0], HYPREDRV_MATLAB_KIND_VECTOR, NULL, 0);
+   plhs[0] = HYPREDRV_MatlabReadIJVector(vec);
 }
 
 static void
@@ -1675,12 +1684,13 @@ HYPREDRV_MatlabCmdGetRhsValues(int nlhs, mxArray *plhs[], int na, const mxArray 
 {
    (void)nlhs;
    (void)na;
-   HYPREDRV_t     drv  = HYPREDRV_MatlabArgDriver(a[0]);
-   HYPRE_Complex *data = NULL;
-   /* The RHS has the same local length as the solution. */
-   HYPRE_BigInt n = HYPREDRV_MatlabSolutionLength(drv);
-   HD_CHECK(HYPREDRV_LinearSystemGetRHSValues(drv, &data));
-   plhs[0] = HYPREDRV_MatlabColumnFromHost(data, n);
+   HYPREDRV_t   drv = HYPREDRV_MatlabArgDriver(a[0]);
+   HYPRE_Vector rhs = NULL;
+   /* HYPREDRV_LinearSystemGetRHSValues returns a raw pointer with no memory
+    * location, which is unsafe to read on a device build. Read the RHS vector
+    * through the IJ API instead, which copies to the host. */
+   HD_CHECK(HYPREDRV_LinearSystemGetRHS(drv, &rhs));
+   plhs[0] = HYPREDRV_MatlabReadIJVector((HYPRE_IJVector)rhs);
 }
 
 static void

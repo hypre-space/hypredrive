@@ -65,6 +65,10 @@ hv = hypredrive_mex('get_rhs', drv);
 if ~hypredrive_mex('is_valid', hm) || norm(hypredrive_mex('vector_get_values', hv) - b) > 0
     error('hypredrive:test', 'borrowed handles are not usable');
 end
+% The convenience getter must agree with reading the RHS handle directly.
+if norm(hypredrive_mex('get_rhs_values', drv) - hypredrive_mex('vector_get_values', hv)) > 0
+    error('hypredrive:test', 'get_rhs_values disagrees with the RHS vector');
+end
 hypredrive_mex('destroy', drv);
 if hypredrive_mex('is_valid', drv) || hypredrive_mex('is_valid', hm)
     error('hypredrive:test', 'handles survived driver destruction');
