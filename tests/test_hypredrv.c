@@ -1170,6 +1170,17 @@ test_HYPREDRV_LinearSolverSetRelativeTol(void)
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
    ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+
+   /* Before any input arguments exist: an error, not a NULL dereference */
+   HYPREDRV_t bare = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(bare), ERROR_NONE);
+   ASSERT_NE(HYPREDRV_LinearSolverSetRelativeTol(bare, 1e-3), ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   /* ... and a NULL handle */
+   ASSERT_NE(HYPREDRV_LinearSolverSetRelativeTol(NULL, 1e-3), ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ(HYPREDRV_Destroy(&bare), ERROR_NONE);
+
    ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
 }
 
