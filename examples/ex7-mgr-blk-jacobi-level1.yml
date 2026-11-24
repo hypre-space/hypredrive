@@ -1,0 +1,48 @@
+# Block-Jacobi restriction/prolongation at MGR level 1 (two F-DOFs).
+general:
+  use_millisec: on
+  num_repetitions: 1
+  statistics: 2
+
+linear_system:
+  dirname: data/poromech2k/np1/ls
+  init_suffix: 0
+  last_suffix: 4
+  rhs_filename: IJ.out.b
+  matrix_filename: IJ.out.A
+  dofmap_filename: dofmap.out
+
+solver:
+  fgmres:
+    max_iter: 100
+    krylov_dim: 30
+    print_level: 1
+    relative_tol: 1.0e-6
+
+preconditioner:
+  mgr:
+    max_iter: 1
+    tolerance: 0.0
+    print_level: 0
+    coarse_th: 1e-20
+    level:
+      0:
+        f_dofs: [0, 1]          # Eliminate part of the displacement DOFs
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: injection
+        prolongation_type: injection
+        coarse_level_type: rap
+
+      1:
+        f_dofs: [3, 4]          # Eliminate two DOFs with block-Jacobi operators
+        f_relaxation: jacobi
+        g_relaxation: none
+        restriction_type: blk-jacobi
+        prolongation_type: blk-jacobi
+        coarse_level_type: rap
+
+    coarsest_level:
+      amg:
+        max_iter: 1
+        tolerance: 0.0

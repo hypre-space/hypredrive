@@ -137,7 +137,7 @@ jobs:
             -DCMAKE_C_COMPILER=gcc \
             -DCMAKE_CXX_COMPILER=g++ \
             -DBUILD_SHARED_LIBS=ON \
-            -DHYPRE_VERSION=v3.2.0 \
+            -DHYPRE_VERSION=v3.2.1 \
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=OFF \
             -DHYPRE_ENABLE_MPI=ON \
@@ -173,7 +173,18 @@ jobs:
             export PATH="$dir:$PATH"
           done < <(find "$PWD/build" -type f -name '*.dll' -printf '%h\n' | sort -u)
           export TMPDIR="$(cygpath -m "$RUNNER_TEMP")"
-          ctest --test-dir build --output-on-failure --no-tests=error --timeout 60
+          if ctest --test-dir build --output-on-failure --no-tests=error --timeout 60; then
+            exit 0
+          else
+            ctest_status=$?
+            failed_log="$PWD/build/Testing/Temporary/LastTestsFailed.log"
+            if [[ -f "$failed_log" ]]; then
+              while IFS=: read -r _ test_name; do
+                echo "::error title=CTest failure::$test_name"
+              done < "$failed_log"
+            fi
+            exit "$ctest_status"
+          fi
 
   windows-native-build:
     if: >-
@@ -214,7 +225,7 @@ jobs:
             "-DCMAKE_C_FLAGS=/std:c11 /utf-8 /DWIN32" `
             "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-${{ matrix.compiler }}-install" `
             -DBUILD_SHARED_LIBS=ON `
-            "-DHYPRE_VERSION=v3.2.0" `
+            "-DHYPRE_VERSION=v3.2.1" `
             -DHYPREDRV_ENABLE_TESTING=ON `
             -DHYPREDRV_ENABLE_EXAMPLES=OFF `
             -DHYPRE_ENABLE_MPI=ON `
@@ -239,6 +250,17 @@ jobs:
           $env:PATH = ($dllDirs -join ';') + ";$env:PATH"
           $env:TMPDIR = $env:RUNNER_TEMP
           ctest --test-dir "$env:BUILD_DIR" -C Release --output-on-failure --no-tests=error --timeout 60
+          $ctestStatus = $LASTEXITCODE
+          if ($ctestStatus -ne 0) {
+            $failedLog = Join-Path $env:BUILD_DIR 'Testing/Temporary/LastTestsFailed.log'
+            if (Test-Path $failedLog) {
+              foreach ($line in Get-Content $failedLog) {
+                $testName = $line -replace '^\d+:', ''
+                Write-Output "::error title=CTest failure::$testName"
+              }
+            }
+            exit $ctestStatus
+          }
 
   python-interface:
     if: >-
@@ -275,7 +297,7 @@ jobs:
           cache-dependency-path: interfaces/python/pyproject.toml
 
       - name: Install system dependencies (Ubuntu)
-        timeout-minutes: 3
+        timeout-minutes: 5
         if: startsWith(runner.os, 'Linux')
         run: |
           sudo apt-get update
@@ -391,7 +413,7 @@ jobs:
           cache-dependency-path: interfaces/python/pyproject.toml
 
       - name: Install system dependencies
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++
@@ -576,7 +598,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install system dependencies
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++ gfortran
@@ -644,7 +666,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install system dependencies
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++ octave octave-dev
@@ -709,7 +731,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install system dependencies
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++
@@ -775,7 +797,8 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         build_type: [Debug]
         compiler: [gcc, clang]
-        hypre_version: [master, v3.2.0, v2.20.0]
+        # Pin the latest release explicitly and retain older-release coverage.
+        hypre_version: [master, v3.2.1, v2.20.0]
         exclude:
           - os: macos-latest
             compiler: gcc
@@ -798,7 +821,7 @@ jobs:
           echo "::notice::Building with ${{ matrix.compiler }} version $VERSION"
 
       - name: Install dependencies (Ubuntu)
-        timeout-minutes: 3
+        timeout-minutes: 5
         if: startsWith(runner.os, 'Linux')
         run: |
           sudo apt-get update
@@ -933,7 +956,19 @@ jobs:
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
           OMP_NUM_THREADS: 1
-        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 60 # 60 seconds per test
+        run: |
+          if ctest --test-dir "$BUILD_DIR" --output-on-failure --timeout 60; then
+            exit 0
+          else
+            ctest_status=$?
+            failed_log="$BUILD_DIR/Testing/Temporary/LastTestsFailed.log"
+            if [[ -f "$failed_log" ]]; then
+              while IFS=: read -r _ test_name; do
+                echo "::error title=CTest failure::$test_name"
+              done < "$failed_log"
+            fi
+            exit "$ctest_status"
+          fi
 
       - name: Verify example outputs (optional)
         continue-on-error: true
@@ -992,7 +1027,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies (Ubuntu)
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf automake libtool m4 make \
@@ -1084,7 +1119,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake libopenmpi-dev openmpi-bin ccache gcc g++ make \
@@ -1185,7 +1220,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies (Ubuntu)
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache gcc g++ clang-format

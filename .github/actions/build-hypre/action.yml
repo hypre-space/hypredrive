@@ -144,7 +144,7 @@ runs:
             CONFIG_ARGS=(--prefix="$PREFIX" --disable-fortran "$SHARED_FLAG" "$MIXEDINT_FLAG")
             # Legacy HYPRE declarations use () for unspecified parameters.
             # Keep that meaning even with compilers that default to C23.
-            CONFIG_ARGS+=(--with-extra-CFLAGS=-std=gnu17)
+            CONFIG_ARGS+=(--with-extra-CFLAGS=-std=gnu11)
             if [ "${{ inputs.hypre_bigint }}" = "ON" ]; then
               CONFIG_ARGS+=(--enable-bigint)
             fi
