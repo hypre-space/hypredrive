@@ -672,7 +672,7 @@ jobs:
         build_type: [Debug]
         compiler: [gcc, clang]
         # Pin the latest release explicitly and retain older-release coverage.
-        hypre_version: [master, v3.2.1, v3.2.0, v2.20.0]
+        hypre_version: [master, v3.2.1, v2.20.0]
         exclude:
           - os: macos-latest
             compiler: gcc

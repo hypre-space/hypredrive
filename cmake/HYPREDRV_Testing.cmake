@@ -1485,13 +1485,13 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 string(REPLACE "|" ";" _stats_parts "${_stats_case}")
                 list(GET _stats_parts 0 _stats_name)
                 list(GET _stats_parts 1 _stats_cfg)
-                # HYPRE 3.2.0/3.2.1 release builds can error or crash on MGR
-                # diagnostics with reused AMG or Schwarz solvers; block-Jacobi
-                # operators also have incompatible dimensions. These cases
-                # pass on development builds and HYPRE 3.3+.
+                # HYPRE 3.2.0/3.2.1 can error or crash when printing MGR setup
+                # stats with reused components; its block-Jacobi MGR operators
+                # also have incompatible dimensions. These cases pass on
+                # development builds and HYPRE 3.3+.
                 if (NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER AND
                     NOT HYPREDRV_HAVE_HYPRE_30300_DEV0 AND
-                    _stats_name MATCHES "^(frelax_reuse|coarse_reuse|blk_jacobi_restriction|blk_jacobi_level1|frelax_schwarz)$")
+                    _stats_name MATCHES "^(frelax_reuse|coarse_reuse|coarse_ilu_reuse|blk_jacobi_restriction|blk_jacobi_level1|frelax_schwarz)$")
                     continue()
                 endif()
                 add_hypredrive_cli_test(ex7_mgr_${_stats_name}_stats_cli 1 ${_stats_cfg}
