@@ -23,7 +23,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write
 
 env:
   HYPRE_VERSION: master
@@ -44,12 +43,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Cache datasets
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
@@ -101,12 +98,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Cache datasets
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
@@ -154,12 +149,10 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Cache datasets
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
@@ -189,13 +182,6 @@ jobs:
       - name: Build target
         run: cmake --build build-fuzz --target hypredrv-fuzz-${{ matrix.mode }} --parallel
 
-      - name: Restore evolved corpus
-        uses: actions/cache@v5
-        with:
-          path: build-fuzz/fuzz-run
-          key: fuzz-corpus-${{ matrix.mode }}-${{ github.run_id }}
-          restore-keys: fuzz-corpus-${{ matrix.mode }}-
-
       - name: Run nightly campaign
         env:
           ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
@@ -206,7 +192,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: fuzz-${{ matrix.mode }}-${{ github.run_id }}
+          # The evolved corpus is not reused (fuzzing.sh seeds a fresh run
+          # directory every time), so keep it out of the uploaded findings.
           path: |
             build-fuzz/fuzz-run
+            !build-fuzz/fuzz-run/*/corpus
             fuzz-${{ matrix.mode }}.log
           retention-days: 14

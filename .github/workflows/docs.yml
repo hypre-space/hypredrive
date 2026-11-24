@@ -19,7 +19,6 @@ on:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   sphinx:
@@ -32,6 +31,7 @@ jobs:
     name: Sphinx Documentation
     needs: doxygen
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -39,6 +39,8 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          cache: pip
+          cache-dependency-path: docs/usrman-src/requirements.txt
 
       - name: Install Python dependencies
         run: |
@@ -65,6 +67,7 @@ jobs:
       }}
     name: Doxygen Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       BUILD_DIR: build-docs
     steps:

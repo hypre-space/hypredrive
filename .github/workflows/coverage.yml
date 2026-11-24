@@ -27,7 +27,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write
 
 jobs:
   coverage:
@@ -64,12 +63,10 @@ jobs:
         run: pip3 install 'gcovr==8.6'
 
       - name: Cache datasets
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Build HYPRE
         id: build-hypre

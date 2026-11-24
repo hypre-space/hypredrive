@@ -126,6 +126,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     needs: julia-artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: read
@@ -214,6 +215,7 @@ jobs:
       }}
     needs: julia-artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: read

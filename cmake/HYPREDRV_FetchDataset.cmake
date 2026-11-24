@@ -12,25 +12,42 @@ foreach(_var URL TARBALL DEST SHA256)
     endif()
 endforeach()
 
-# Retry transient gateway/server errors (for example Zenodo 504s).
-foreach(_attempt RANGE 1 5)
-    file(DOWNLOAD "${URL}" "${TARBALL}" STATUS _status)
+# Retry transient gateway/server errors (for example Zenodo 429/5xx) with
+# exponential backoff: 2, 5, 15, 30 and 60 seconds between six attempts.
+set(_backoff_seconds 2 5 15 30 60)
+set(_verified FALSE)
+foreach(_attempt RANGE 1 6)
+    file(REMOVE "${TARBALL}")
+    file(DOWNLOAD "${URL}" "${TARBALL}"
+        TLS_VERIFY ON
+        INACTIVITY_TIMEOUT 60
+        STATUS _status)
     list(GET _status 0 _code)
     if(_code EQUAL 0)
-        break()
+        file(SHA256 "${TARBALL}" _actual)
+        if("${_actual}" STREQUAL "${SHA256}")
+            set(_verified TRUE)
+            break()
+        endif()
+        message(STATUS
+            "Download attempt ${_attempt} of ${URL} had checksum mismatch: "
+            "${_actual} != ${SHA256}")
+    else()
+        message(STATUS "Download attempt ${_attempt} of ${URL} failed: ${_status}")
     endif()
-    message(STATUS "Download attempt ${_attempt} of ${URL} failed: ${_status}")
-    execute_process(COMMAND ${CMAKE_COMMAND} -E sleep 3)
+    if(_attempt LESS 6)
+        math(EXPR _idx "${_attempt} - 1")
+        list(GET _backoff_seconds ${_idx} _delay)
+        execute_process(COMMAND ${CMAKE_COMMAND} -E sleep ${_delay})
+    endif()
 endforeach()
-if(NOT _code EQUAL 0)
+if(NOT _verified)
     file(REMOVE "${TARBALL}")
-    message(FATAL_ERROR "Failed to download ${URL}: ${_status}")
-endif()
-
-file(SHA256 "${TARBALL}" _actual)
-if(NOT _actual STREQUAL SHA256)
-    file(REMOVE "${TARBALL}")
-    message(FATAL_ERROR "Checksum mismatch for ${TARBALL}: ${_actual} != ${SHA256}")
+    if(NOT _code EQUAL 0)
+        message(FATAL_ERROR "Failed to download ${URL}: ${_status}")
+    else()
+        message(FATAL_ERROR "Checksum mismatch for ${TARBALL}: ${_actual} != ${SHA256}")
+    endif()
 endif()
 
 file(ARCHIVE_EXTRACT INPUT "${TARBALL}" DESTINATION "${DEST}")

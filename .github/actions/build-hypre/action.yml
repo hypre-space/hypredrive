@@ -78,7 +78,7 @@ runs:
         fi
 
     - name: Cache HYPRE install
-      uses: actions/cache@v5
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
       id: hypre-cache
       with:
         path: ${{ runner.tool_cache }}/hypre/${{ steps.resolve-sha.outputs.install_suffix }}
@@ -154,7 +154,7 @@ runs:
             AR="ar -rc" \
             CC=mpicc \
             ./configure "${CONFIG_ARGS[@]}"
-            make -j
+            make -j"$(getconf _NPROCESSORS_ONLN)"
             make install
             popd
           else

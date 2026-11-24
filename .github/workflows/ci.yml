@@ -25,7 +25,6 @@ concurrency:
 
 permissions:
   contents: read
-  actions: write
 
 env:
   PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
@@ -66,6 +65,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Cache datasets
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: data
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+
       - name: Set up MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -73,6 +78,7 @@ jobs:
           update: true
           install: >-
             git
+            mingw-w64-x86_64-ccache
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
@@ -118,8 +124,20 @@ jobs:
           }
           Add-Content -Path $env:GITHUB_PATH -Value ([Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine'))
 
+      - name: Restore ccache
+        id: restore-ccache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-windows-mingw-${{ github.sha }}
+          restore-keys: |
+            ccache-windows-mingw-
+
       - name: Configure and build hypredrive
         shell: msys2 {0}
+        env:
+          CCACHE_DIR: ${{ runner.temp }}\ccache
+          CCACHE_MAXSIZE: 300M
         run: |
           set -euxo pipefail
           mpi_inc="$(cygpath -m "${MSMPI_INC}")"
@@ -136,6 +154,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=gcc \
             -DCMAKE_CXX_COMPILER=g++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DBUILD_SHARED_LIBS=ON \
             -DHYPRE_VERSION=v3.2.1 \
             -DHYPREDRV_ENABLE_TESTING=ON \
@@ -163,6 +182,7 @@ jobs:
             -DMPI_C_VERSION=3.0 \
             -DMPI_CXX_VERSION=3.0
           cmake --build build --parallel
+          ccache --show-stats
 
       - name: Run CTest suite
         timeout-minutes: 15
@@ -185,6 +205,14 @@ jobs:
             fi
             exit "$ctest_status"
           fi
+
+      - name: Save ccache
+        if: github.ref == 'refs/heads/master' && steps.restore-ccache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-windows-mingw-${{ github.sha }}
 
   windows-native-build:
     if: >-
@@ -212,6 +240,12 @@ jobs:
             toolset: ClangCL
     steps:
       - uses: actions/checkout@v6
+
+      - name: Cache datasets
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: data
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - *install-msmpi
 
@@ -331,6 +365,12 @@ jobs:
           hypre_shared_libs: 'ON'
           os: ${{ matrix.os }}
           mpi_flavor: ${{ matrix.mpi_flavor }}
+
+      - name: Cache datasets
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: data
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Configure hypredrive with Python interface
         run: |
@@ -497,6 +537,20 @@ jobs:
 
       - name: Set up Rust
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+
+      # The single-precision job only runs the rejection check and finishes first;
+      # it must not save a partial registry under the shared key.
+      - name: Cache Cargo registry
+        if: matrix.hypre_mode != 'single'
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ hashFiles('interfaces/rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
 
       - name: Build HYPRE
         id: build-hypre
@@ -858,6 +912,9 @@ jobs:
         if: startsWith(runner.os, 'Linux')
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
+          # PR runs restore master's cache but do not add per-run entries to the
+          # repository cache quota.
+          save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.compiler }}-
@@ -885,12 +942,10 @@ jobs:
           echo "MPICH_CXX=clang++" >> $GITHUB_ENV
 
       - name: Cache datasets
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Build HYPRE
         id: build-hypre
@@ -982,10 +1037,6 @@ jobs:
             fi
           fi
 
-      - name: Cache ccache (Ubuntu)
-        if: startsWith(runner.os, 'Linux')
-        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
-
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v6
@@ -1033,13 +1084,14 @@ jobs:
           sudo apt-get install -y autoconf automake libtool m4 make \
             libopenmpi-dev openmpi-bin gcc g++
 
-      - name: Cache datasets
-        uses: actions/cache@v5
+      # This job fetches only a subset of the datasets.  Restore the complete
+      # set saved by the full-set jobs, but never save: actions/cache entries are
+      # immutable, so a subset-only entry would shadow the complete one.
+      - name: Restore datasets (subset job; never saves)
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Build HYPRE
         id: build-hypre
@@ -1069,7 +1121,7 @@ jobs:
           autoreconf -iv
           ./configure --with-hypre-dir="${HYPRE_DIR}" \
                       --prefix="$(pwd)/install-autotools"
-          make -j
+          make -j"$(getconf _NPROCESSORS_ONLN)"
           OMPI_ALLOW_RUN_AS_ROOT=1 \
           OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1 \
           OMPI_MCA_btl_vader_single_copy_mechanism=none \
@@ -1135,17 +1187,21 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
+          # PR runs restore master's cache but do not add per-run entries to the
+          # repository cache quota.
+          save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-${{ matrix.dependency.cache_key }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.dependency.cache_key }}-
 
-      - name: Cache datasets
-        uses: actions/cache@v5
+      # This job fetches only a subset of the datasets.  Restore the complete
+      # set saved by the full-set jobs, but never save: actions/cache entries are
+      # immutable, so a subset-only entry would shadow the complete one.
+      - name: Restore datasets (subset job; never saves)
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Configure hypredrive with ${{ matrix.dependency.name }}
         run: |
@@ -1190,9 +1246,6 @@ jobs:
           fi
           ctest "${CTEST_ARGS[@]}"
 
-      - name: Cache ccache
-        uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
-
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v6
@@ -1212,7 +1265,7 @@ jobs:
       }}
     name: ubuntu-latest | gcc | mixedint
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     env:
       HYPRE_VERSION: master
       BUILD_DIR: build-mixedint
@@ -1235,17 +1288,18 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@d62db5f07c26379fc4b4e0916f098a92573c3b03 # v1.2.23
         with:
+          # PR runs restore master's cache but do not add per-run entries to the
+          # repository cache quota.
+          save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-mixedint-
 
       - name: Cache datasets
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v2-
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
       - name: Build HYPRE (mixedint)
         id: build-hypre
