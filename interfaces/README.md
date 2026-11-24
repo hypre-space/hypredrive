@@ -14,6 +14,7 @@ Each interface README solves the same two-row system with solution `[1, 1]`:
 - [Python](python/README.md#minimal-example)
 - [MATLAB/Octave](matlab-octave/README.md#minimal-example)
 - [Julia](julia/README.md#minimal-example)
+- [Rust](rust/README.md#minimal-example)
 
 ## C++
 
@@ -38,8 +39,8 @@ the public `HYPREDRV_` C API, MPI examples, and CTest smoke tests.
 Enable it with:
 
 ```bash
-cmake -S . -B build-fortran -DHYPREDRV_ENABLE_FORTRAN=ON
-cmake --build build-fortran --parallel
+cmake -S . -B build-fortran -DHYPREDRV_ENABLE_FORTRAN=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-fortran --target fortran-test --parallel
 ```
 
 See [`fortran/README.md`](fortran/README.md) for API, build, test, and example
@@ -51,12 +52,12 @@ The Python interface is in [`python/`](python/). It provides NumPy/SciPy input
 support, optional MPI usage through `mpi4py`, developer benchmarks, and
 MPI wheel artifacts for Linux, macOS, and Windows.
 
-For source builds against an installed hypredrive:
+Build and test the Python extension in-tree.
 
 ```bash
-python -m pip install ./interfaces/python \
-  --config-settings=cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=OFF \
-  --config-settings=cmake.define.CMAKE_PREFIX_PATH=$HOME/opt/hypredrive
+cmake -S . -B build-python -DBUILD_SHARED_LIBS=ON \
+  -DHYPREDRV_ENABLE_PYTHON=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-python --target python-test --parallel
 ```
 
 See [`python/README.md`](python/README.md) for wheel, source-build, in-tree
@@ -71,8 +72,8 @@ matrices, converts them to hypredrive CSR, and solves on `MPI_COMM_SELF`.
 Enable it with:
 
 ```bash
-cmake -S . -B build-matlab -DHYPREDRV_ENABLE_MATLAB=ON
-cmake --build build-matlab --parallel
+cmake -S . -B build-matlab -DHYPREDRV_ENABLE_MATLAB=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-matlab --target matlab-test --parallel
 ```
 
 See [`matlab-octave/README.md`](matlab-octave/README.md) for build, usage,
@@ -88,9 +89,27 @@ C entry points directly.
 Enable it with:
 
 ```bash
-cmake -S . -B build-julia -DHYPREDRV_ENABLE_JULIA=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake -S . -B build-julia -DHYPREDRV_ENABLE_JULIA=ON \
+  -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_DATASETS=
 cmake --build build-julia --target julia-test --parallel
 ```
 
 See [`julia/README.md`](julia/README.md) for package development, library discovery,
 options, tests, and example details.
+
+## Rust
+
+The Rust interface is a Cargo crate in [`rust/`](rust/). It provides a safe wrapper
+over the public C API, generated bindings for the selected HYPRE configuration,
+rank-local CSR input, and MPI communicator interoperability through `mpi` (rsmpi).
+
+Enable it with a shared native build in a dedicated build directory.
+
+```bash
+cmake -S . -B build-rust -DBUILD_SHARED_LIBS=ON \
+  -DHYPREDRV_ENABLE_RUST=ON -DHYPREDRV_ENABLE_TESTING=ON
+cmake --build build-rust --target rust-test --parallel
+```
+
+See [`rust/README.md`](rust/README.md) for build and test instructions, the Rust
+API, MPI lifetime contract, installed-library consumption, and examples.

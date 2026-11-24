@@ -56,6 +56,7 @@ endif()
 set(HYPREDRV_SYCL_DEVICE_SELECTOR "" CACHE STRING
     "ONEAPI_DEVICE_SELECTOR value propagated to SYCL CTest and smoke tests")
 option(HYPREDRV_ENABLE_CPP          "Enable the hypredrive C++ interface" OFF)
+option(HYPREDRV_ENABLE_RUST         "Enable the hypredrive Rust interface" OFF)
 option(HYPREDRV_ENABLE_FORTRAN      "Enable the hypredrive Fortran interface" OFF)
 option(HYPREDRV_ENABLE_PYTHON       "Enable the hypredrive Python interface" OFF)
 option(HYPREDRV_ENABLE_MATLAB       "Enable the hypredrive MATLAB/Octave MEX interface" OFF)
@@ -528,6 +529,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/HYPREDRV_Docs.cmake)
 if(HYPREDRV_ENABLE_CPP)
     enable_language(CXX)
     add_subdirectory(interfaces/cpp)
+endif()
+
+# Rust consumes the existing shared target and testing runtime environment.
+if(HYPREDRV_ENABLE_RUST)
+    add_subdirectory(interfaces/rust)
 endif()
 
 # Add examples

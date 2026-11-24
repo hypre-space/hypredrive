@@ -29,3 +29,4 @@ with solution ``[1, 1]``, followed by configuration and MPI usage where supporte
    interfaces_python
    interfaces_matlab
    interfaces_julia
+   interfaces_rust

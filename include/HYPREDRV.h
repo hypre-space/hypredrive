@@ -2351,7 +2351,12 @@ extern "C"
     * The flag is read from the live Krylov solver object, so this function must be
     * called after HYPREDRV_LinearSolverApply and before the solver is destroyed.
     * A zero value means the solver stopped without reaching its tolerance (e.g.,
-    * it hit the maximum number of iterations).
+    * it hit the maximum number of iterations). A solve that starts at the
+    * solution is also reported as converged when its final relative residual
+    * meets the configured relative tolerance, even if the Krylov solver exited
+    * before completing an iteration. Solvers configured with minimum-iteration,
+    * non-L2-norm, relative-change, residual, or convergence-factor criteria
+    * report the solver's own flag.
     *
     * @param hypredrv  The HYPREDRV_t object.
     * @param converged Pointer to store the convergence flag (1 = converged).

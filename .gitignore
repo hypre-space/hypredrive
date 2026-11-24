@@ -29,6 +29,11 @@ _build/
 perf-out/
 
 #############
+# Interfaces
+#############
+interfaces/rust/target/
+
+#############
 # Executables
 #############
 /hypredrive*

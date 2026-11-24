@@ -1079,10 +1079,11 @@ if(NOT HYPRE_FOUND)
         else()
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -O3 -DNDEBUG")
         endif()
-        if((HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR HYPREDRV_ENABLE_FORTRAN OR HYPREDRV_ENABLE_JULIA) AND
+        if((BUILD_SHARED_LIBS OR HYPREDRV_ENABLE_PYTHON OR HYPREDRV_ENABLE_MATLAB OR
+            HYPREDRV_ENABLE_FORTRAN OR HYPREDRV_ENABLE_JULIA) AND
            NOT _hypre_autotools_cflags MATCHES "(^| )-fPIC($| )")
             set(_hypre_autotools_cflags "${_hypre_autotools_cflags} -fPIC")
-            message(STATUS "Language interface enabled: building auto-fetched HYPRE autotools static library with -fPIC")
+            message(STATUS "Building auto-fetched HYPRE autotools static library with -fPIC for shared consumers")
         endif()
         if(HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS)
             string(JOIN " " _hypre_instrumentation_cflags ${HYPREDRV_INSTRUMENTATION_COMPILE_FLAGS})
@@ -1094,6 +1095,11 @@ if(NOT HYPRE_FOUND)
         endif()
 
         set(_hypre_autotools_configure_extra "")
+        if(CMAKE_C17_EXTENSION_COMPILE_OPTION MATCHES "^-std=")
+            # Legacy HYPRE uses pre-C23 declarations with unspecified parameters.
+            list(APPEND _hypre_autotools_configure_extra
+                "--with-extra-CFLAGS=${CMAKE_C17_EXTENSION_COMPILE_OPTION}")
+        endif()
         if(HYPRE_ENABLE_BIGINT)
             list(APPEND _hypre_autotools_configure_extra --enable-bigint)
         elseif(HYPRE_ENABLE_MIXEDINT)

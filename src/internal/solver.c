@@ -65,7 +65,46 @@ struct hypredrv_Solver_struct
    HYPRE_Solver     native;
    MPI_Comm         comm;
    solver_t         method;
+   /* Relative tolerance of the configured stopping rule, or a negative value
+    * when stricter criteria (min_iter, non-L2 norm, relative change, residual,
+    * or convergence-factor tolerances) make the L2 residual alone an
+    * insufficient convergence test. */
+   HYPRE_Real convergence_tol;
+   /* Set by SolverSolve when the Krylov flag stays zero (e.g. exact start) but
+    * the verified L2 relative residual meets convergence_tol without error. */
+   bool converged_by_residual;
 };
+
+/* The Krylov flag stays zero when a solve ends without a converging iteration,
+ * e.g. from an exact initial guess. Record the tolerance that defines
+ * convergence so SolverSolve can verify that case against the true residual.
+ * Non-default criteria keep the Krylov solver's own flag. */
+static HYPRE_Real
+SolverConvergenceTolerance(solver_t method, const solver_args *args)
+{
+   switch (method)
+   {
+      case SOLVER_PCG:
+         return (!args->pcg.two_norm || args->pcg.stop_crit || args->pcg.rel_change ||
+                 args->pcg.residual_tol > 0.0 || args->pcg.conv_fac_tol > 0.0)
+                   ? -1.0
+                   : args->pcg.relative_tol;
+      case SOLVER_GMRES:
+         return (args->gmres.min_iter > 0 || args->gmres.stop_crit ||
+                 args->gmres.rel_change || args->gmres.conv_fac_tol > 0.0)
+                   ? -1.0
+                   : args->gmres.relative_tol;
+      case SOLVER_FGMRES:
+         return (args->fgmres.min_iter > 0) ? -1.0 : args->fgmres.relative_tol;
+      case SOLVER_BICGSTAB:
+         return (args->bicgstab.min_iter > 0 || args->bicgstab.stop_crit ||
+                 args->bicgstab.conv_fac_tol > 0.0)
+                   ? -1.0
+                   : args->bicgstab.relative_tol;
+      default:
+         return -1.0;
+   }
+}
 
 typedef struct NestedKrylovRuntime_struct
 {
@@ -624,9 +663,10 @@ hypredrv_SolverCreate(MPI_Comm comm, solver_t method, const solver_args *args,
    }
    hypredrv_Solver *solver = hypredrv_Calloc(1, sizeof(*solver), "solver runtime");
    if (!solver) return;
-   solver->ops    = ops;
-   solver->comm   = comm;
-   solver->method = method;
+   solver->ops             = ops;
+   solver->comm            = comm;
+   solver->method          = method;
+   solver->convergence_tol = SolverConvergenceTolerance(method, args);
    ops->create(comm, args, &solver->native);
    hypredrv_HypreConsumeErrors(comm);
    if (hypredrv_ErrorCodeActive() || !solver->native)
@@ -720,12 +760,52 @@ SolverSolve(hypredrv_Solver *solver, HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_I
    HYPRE_IJMatrixGetObject(A, &matrix);
    HYPRE_IJVectorGetObject(b, &rhs);
    HYPRE_IJVectorGetObject(x, &solution);
+   solver->converged_by_residual = false;
    SolverSetReference(solver, reference);
    solver->ops->solve(solver->native, (HYPRE_ParCSRMatrix)matrix, (HYPRE_ParVector)rhs,
                       (HYPRE_ParVector)solution);
-   HYPRE_Int iters = 0;
+   HYPRE_Int hypre_err = HYPRE_GetError();
+   HYPRE_Int iters     = 0;
    solver->ops->get_num_iterations(solver->native, &iters);
    hypredrv_HypreConsumeErrors(solver->comm);
+   if (solver->convergence_tol >= 0.0)
+   {
+      HYPRE_Int  native_converged = 0;
+      HYPRE_Real norm             = 0.0;
+      solver->ops->get_converged(solver->native, &native_converged);
+      solver->ops->get_final_rel_res_norm(solver->native, &norm);
+      int local_flags[2] = {
+         ((hypre_err & ~HYPRE_ERROR_CONV) != 0) || hypredrv_ErrorCodeActive(),
+         !native_converged &&
+            (iters == 0 || (norm >= 0.0 && norm <= solver->convergence_tol)),
+      };
+      int global_flags[2] = {0, 0};
+      MPI_Allreduce(local_flags, global_flags, 2, MPI_INT, MPI_LOR, solver->comm);
+      if (!global_flags[0] && global_flags[1])
+      {
+         /* Verify against the true L2 residual so early exits without a valid
+          * native residual (e.g. PCG breakdown on iteration 1 with print_level=0)
+          * cannot be mistaken for convergence. */
+         double         b_norm = NAN, r_norm = NAN;
+         HYPRE_IJVector vec_r = NULL;
+         hypredrv_LinearSystemComputeVectorNorm(b, "L2", &b_norm);
+         hypredrv_LinearSystemComputeResidualNormWork(A, b, x, "L2", &vec_r, &r_norm);
+         if (vec_r) HYPRE_IJVectorDestroy(vec_r);
+         if (!hypredrv_ErrorCodeActive() && r_norm >= 0.0)
+         {
+            if (b_norm > 0.0)
+            {
+               double rel_r = r_norm / b_norm;
+               if (rel_r <= (double)solver->convergence_tol)
+                  solver->converged_by_residual = true;
+            }
+            else if (b_norm == 0.0 && r_norm == 0.0)
+            {
+               solver->converged_by_residual = true;
+            }
+         }
+      }
+   }
    return iters;
 }
 
@@ -850,6 +930,10 @@ hypredrv_SolverGetConverged(hypredrv_Solver *solver, HYPRE_Int *converged)
       return;
    }
    solver->ops->get_converged(solver->native, converged);
+   if (!*converged && solver->converged_by_residual)
+   {
+      *converged = 1;
+   }
 }
 
 void
