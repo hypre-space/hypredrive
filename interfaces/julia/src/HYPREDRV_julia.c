@@ -498,3 +498,493 @@ HYPREDRV_JuliaErrorCodeDescribe(uint32_t error_code)
 {
    HYPREDRV_ErrorCodeDescribe(error_code);
 }
+
+/* ---------------------------------------------------------------------------
+ * Additional shims covering the remaining public HYPREDRV API.
+ *
+ * Opaque HYPRE objects (HYPRE_Matrix, HYPRE_Vector, HYPRE_IJVector) cross the
+ * ABI as void pointers. MPI_Comm arguments are selected with use_world:
+ * nonzero maps to MPI_COMM_WORLD, zero to MPI_COMM_SELF.
+ * ------------------------------------------------------------------------- */
+
+static MPI_Comm
+HYPREDRV_JuliaComm(int use_world)
+{
+   return use_world ? MPI_COMM_WORLD : MPI_COMM_SELF;
+}
+
+/** @brief Clear the process-global HYPREDRV error state. */
+void
+HYPREDRV_JuliaErrorCodeClear(void)
+{
+   HYPREDRV_ErrorCodeClear();
+}
+
+/** @brief Print library information. */
+uint32_t
+HYPREDRV_JuliaPrintLibInfo(int use_world, int print_datetime)
+{
+   return HYPREDRV_PrintLibInfo(HYPREDRV_JuliaComm(use_world), print_datetime);
+}
+
+/** @brief Print system information. */
+uint32_t
+HYPREDRV_JuliaPrintSystemInfo(int use_world)
+{
+   return HYPREDRV_PrintSystemInfo(HYPREDRV_JuliaComm(use_world));
+}
+
+/** @brief Print exit information. */
+uint32_t
+HYPREDRV_JuliaPrintExitInfo(int use_world, const char *argv0)
+{
+   return HYPREDRV_PrintExitInfo(HYPREDRV_JuliaComm(use_world), argv0);
+}
+
+/** @brief Set (or clear with NULL) the display name of a HYPREDRV object. */
+uint32_t
+HYPREDRV_JuliaObjectSetName(HYPREDRV_t hypredrv, const char *name)
+{
+   return HYPREDRV_ObjectSetName(hypredrv, name);
+}
+
+/** @brief Return the warmup count from the parsed input. */
+uint32_t
+HYPREDRV_JuliaInputArgsGetWarmup(HYPREDRV_t hypredrv, int *warmup)
+{
+   return HYPREDRV_InputArgsGetWarmup(hypredrv, warmup);
+}
+
+/** @brief Return the number of repetitions from the parsed input. */
+uint32_t
+HYPREDRV_JuliaInputArgsGetNumRepetitions(HYPREDRV_t hypredrv, int *num_reps)
+{
+   return HYPREDRV_InputArgsGetNumRepetitions(hypredrv, num_reps);
+}
+
+/** @brief Return the number of linear systems from the parsed input. */
+uint32_t
+HYPREDRV_JuliaInputArgsGetNumLinearSystems(HYPREDRV_t hypredrv, int *num_ls)
+{
+   return HYPREDRV_InputArgsGetNumLinearSystems(hypredrv, num_ls);
+}
+
+/** @brief Return the number of preconditioner variants from the parsed input. */
+uint32_t
+HYPREDRV_JuliaInputArgsGetNumPreconVariants(HYPREDRV_t hypredrv, int *num_variants)
+{
+   return HYPREDRV_InputArgsGetNumPreconVariants(hypredrv, num_variants);
+}
+
+/** @brief Select the active preconditioner variant. */
+uint32_t
+HYPREDRV_JuliaInputArgsSetPreconVariant(HYPREDRV_t hypredrv, int variant_idx)
+{
+   return HYPREDRV_InputArgsSetPreconVariant(hypredrv, variant_idx);
+}
+
+/** @brief Select a registered preconditioner preset. */
+uint32_t
+HYPREDRV_JuliaInputArgsSetPreconPreset(HYPREDRV_t hypredrv, const char *preset)
+{
+   return HYPREDRV_InputArgsSetPreconPreset(hypredrv, preset);
+}
+
+/** @brief Select a registered solver preset. */
+uint32_t
+HYPREDRV_JuliaInputArgsSetSolverPreset(HYPREDRV_t hypredrv, const char *preset)
+{
+   return HYPREDRV_InputArgsSetSolverPreset(hypredrv, preset);
+}
+
+/** @brief Register a named solver preset. */
+uint32_t
+HYPREDRV_JuliaSolverPresetRegister(const char *name, const char *yaml_text,
+                                   const char *help)
+{
+   return HYPREDRV_SolverPresetRegister(name, yaml_text, help);
+}
+
+/** @brief Register a named preconditioner preset. */
+uint32_t
+HYPREDRV_JuliaPreconPresetRegister(const char *name, const char *yaml_text,
+                                   const char *help)
+{
+   return HYPREDRV_PreconPresetRegister(name, yaml_text, help);
+}
+
+/** @brief Build the linear system from the parsed input. */
+uint32_t
+HYPREDRV_JuliaLinearSystemBuild(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_LinearSystemBuild(hypredrv);
+}
+
+/** @brief Read the matrix from the parsed input. */
+uint32_t
+HYPREDRV_JuliaLinearSystemReadMatrix(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_LinearSystemReadMatrix(hypredrv);
+}
+
+/** @brief Attach an opaque HYPRE_Matrix handle. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetMatrix(HYPREDRV_t hypredrv, void *mat)
+{
+   return HYPREDRV_LinearSystemSetMatrix(hypredrv, (HYPRE_Matrix)mat);
+}
+
+/** @brief Attach an opaque HYPRE_Matrix as the preconditioner matrix. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetPrecMatrix(HYPREDRV_t hypredrv, void *mat)
+{
+   return HYPREDRV_LinearSystemSetPrecMatrix(hypredrv, (HYPRE_Matrix)mat);
+}
+
+/** @brief Attach an opaque discrete gradient matrix. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetDiscreteGradient(HYPREDRV_t hypredrv, void *mat)
+{
+   return HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, (HYPRE_Matrix)mat);
+}
+
+/** @brief Attach an opaque discrete curl matrix. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetDiscreteCurl(HYPREDRV_t hypredrv, void *mat)
+{
+   return HYPREDRV_LinearSystemSetDiscreteCurl(hypredrv, (HYPRE_Matrix)mat);
+}
+
+/** @brief Attach opaque coordinate vectors (y and z may be NULL). */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetCoordinates(HYPREDRV_t hypredrv, void *x, void *y, void *z)
+{
+   return HYPREDRV_LinearSystemSetCoordinates(hypredrv, (HYPRE_Vector)x, (HYPRE_Vector)y,
+                                              (HYPRE_Vector)z);
+}
+
+/** @brief Attach an opaque coarse Schur complement matrix at a level. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetCoarseSchur(HYPREDRV_t hypredrv, int level, void *mat)
+{
+   return HYPREDRV_LinearSystemSetCoarseSchur(hypredrv, level, (HYPRE_Matrix)mat);
+}
+
+/** @brief Attach an opaque HYPRE_Vector as the right-hand side. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetRHS(HYPREDRV_t hypredrv, void *vec)
+{
+   return HYPREDRV_LinearSystemSetRHS(hypredrv, (HYPRE_Vector)vec);
+}
+
+/** @brief Attach an opaque HYPRE_Vector as the solution vector. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetSolution(HYPREDRV_t hypredrv, void *vec)
+{
+   return HYPREDRV_LinearSystemSetSolution(hypredrv, (HYPRE_Vector)vec);
+}
+
+/** @brief Attach an opaque HYPRE_Vector as the reference solution. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetReferenceSolution(HYPREDRV_t hypredrv, void *vec)
+{
+   return HYPREDRV_LinearSystemSetReferenceSolution(hypredrv, (HYPRE_Vector)vec);
+}
+
+/** @brief Set an interleaved dofmap. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetInterleavedDofmap(HYPREDRV_t hypredrv, int num_local_blocks,
+                                               int num_dof_types)
+{
+   return HYPREDRV_LinearSystemSetInterleavedDofmap(hypredrv, num_local_blocks,
+                                                    num_dof_types);
+}
+
+/** @brief Set a contiguous dofmap. */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetContiguousDofmap(HYPREDRV_t hypredrv, int num_local_blocks,
+                                              int num_dof_types)
+{
+   return HYPREDRV_LinearSystemSetContiguousDofmap(hypredrv, num_local_blocks,
+                                                   num_dof_types);
+}
+
+/** @brief Read the dofmap from the parsed input. */
+uint32_t
+HYPREDRV_JuliaLinearSystemReadDofmap(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_LinearSystemReadDofmap(hypredrv);
+}
+
+/** @brief Print the dofmap to a file. */
+uint32_t
+HYPREDRV_JuliaLinearSystemPrintDofmap(HYPREDRV_t hypredrv, const char *filename)
+{
+   return HYPREDRV_LinearSystemPrintDofmap(hypredrv, filename);
+}
+
+/** @brief Print the linear system. */
+uint32_t
+HYPREDRV_JuliaLinearSystemPrint(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_LinearSystemPrint(hypredrv);
+}
+
+/** @brief Compute the eigenspectrum of the linear system. */
+uint32_t
+HYPREDRV_JuliaLinearSystemComputeEigenspectrum(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_LinearSystemComputeEigenspectrum(hypredrv);
+}
+
+/** @brief Set near-nullspace modes (component-major, copied by HYPREDRV). */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetNearNullSpace(HYPREDRV_t hypredrv, int num_entries,
+                                           int num_components, const double *values)
+{
+   return HYPREDRV_LinearSystemSetNearNullSpace(hypredrv, num_entries, num_components,
+                                                (const HYPRE_Complex *)values);
+}
+
+/** @brief Set nullspace modes (component-major, copied by HYPREDRV). */
+uint32_t
+HYPREDRV_JuliaLinearSystemSetNullSpace(HYPREDRV_t hypredrv, int num_entries,
+                                       int num_components, const double *values)
+{
+   return HYPREDRV_LinearSystemSetNullSpace(hypredrv, num_entries, num_components,
+                                            (const HYPRE_Complex *)values);
+}
+
+/** @brief Borrow the native local solution pointer; is_host reports its location. */
+uint32_t
+HYPREDRV_JuliaLinearSystemGetSolutionValues(HYPREDRV_t hypredrv, double **data,
+                                            int *is_host)
+{
+   if (data == NULL || is_host == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("solution values output pointer is NULL");
+   }
+   HYPRE_Complex       *ptr = NULL;
+   HYPRE_MemoryLocation loc = HYPRE_MEMORY_HOST;
+   uint32_t code = HYPREDRV_LinearSystemGetSolutionValues(hypredrv, &ptr, &loc);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *data    = (double *)ptr;
+   *is_host = (loc == HYPRE_MEMORY_HOST);
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Return the local solution length. */
+uint32_t
+HYPREDRV_JuliaLinearSystemGetSolutionLength(HYPREDRV_t hypredrv, int64_t *length)
+{
+   if (length == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("solution length output pointer is NULL");
+   }
+   HYPRE_BigInt n    = 0;
+   uint32_t     code = HYPREDRV_LinearSystemGetSolutionLength(hypredrv, &n);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *length = (int64_t)n;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Borrow the opaque solution HYPRE_Vector. */
+uint32_t
+HYPREDRV_JuliaLinearSystemGetSolution(HYPREDRV_t hypredrv, void **vec)
+{
+   if (vec == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("solution vector output pointer is NULL");
+   }
+   HYPRE_Vector v    = NULL;
+   uint32_t     code = HYPREDRV_LinearSystemGetSolution(hypredrv, &v);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *vec = (void *)v;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Borrow the native local RHS pointer (host memory). */
+uint32_t
+HYPREDRV_JuliaLinearSystemGetRHSValues(HYPREDRV_t hypredrv, double **data)
+{
+   if (data == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("RHS values output pointer is NULL");
+   }
+   HYPRE_Complex *ptr  = NULL;
+   uint32_t       code = HYPREDRV_LinearSystemGetRHSValues(hypredrv, &ptr);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *data = (double *)ptr;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Borrow the opaque RHS HYPRE_Vector. */
+uint32_t
+HYPREDRV_JuliaLinearSystemGetRHS(HYPREDRV_t hypredrv, void **vec)
+{
+   if (vec == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("RHS vector output pointer is NULL");
+   }
+   HYPRE_Vector v    = NULL;
+   uint32_t     code = HYPREDRV_LinearSystemGetRHS(hypredrv, &v);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *vec = (void *)v;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Borrow the opaque HYPRE_Matrix. */
+uint32_t
+HYPREDRV_JuliaLinearSystemGetMatrix(HYPREDRV_t hypredrv, void **mat)
+{
+   if (mat == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("matrix output pointer is NULL");
+   }
+   HYPRE_Matrix m    = NULL;
+   uint32_t     code = HYPREDRV_LinearSystemGetMatrix(hypredrv, &m);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *mat = (void *)m;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Register nstates opaque HYPRE_IJVector state vectors. */
+uint32_t
+HYPREDRV_JuliaStateVectorSet(HYPREDRV_t hypredrv, int nstates, void **vecs)
+{
+   if (nstates < 0 || (nstates > 0 && vecs == NULL))
+   {
+      return HYPREDRV_ErrorInvalidValue("invalid state vector array");
+   }
+   return HYPREDRV_StateVectorSet(hypredrv, nstates, (HYPRE_IJVector *)vecs);
+}
+
+/** @brief Borrow the local host values of a state vector. */
+uint32_t
+HYPREDRV_JuliaStateVectorGetValues(HYPREDRV_t hypredrv, int index, double **data)
+{
+   if (data == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("state vector values output pointer is NULL");
+   }
+   HYPRE_Complex *ptr  = NULL;
+   uint32_t       code = HYPREDRV_StateVectorGetValues(hypredrv, index, &ptr);
+   if (code != 0u)
+   {
+      return code;
+   }
+   *data = (double *)ptr;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Copy one state vector into another. */
+uint32_t
+HYPREDRV_JuliaStateVectorCopy(HYPREDRV_t hypredrv, int index_in, int index_out)
+{
+   return HYPREDRV_StateVectorCopy(hypredrv, index_in, index_out);
+}
+
+/** @brief Cycle all state vectors. */
+uint32_t
+HYPREDRV_JuliaStateVectorUpdateAll(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_StateVectorUpdateAll(hypredrv);
+}
+
+/** @brief Apply the solution correction to a state vector. */
+uint32_t
+HYPREDRV_JuliaStateVectorApplyCorrection(HYPREDRV_t hypredrv, int state_idx)
+{
+   return HYPREDRV_StateVectorApplyCorrection(hypredrv, state_idx);
+}
+
+/** @brief Create the preconditioner. */
+uint32_t
+HYPREDRV_JuliaPreconCreate(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_PreconCreate(hypredrv);
+}
+
+/** @brief Set up the preconditioner. */
+uint32_t
+HYPREDRV_JuliaPreconSetup(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_PreconSetup(hypredrv);
+}
+
+/** @brief Apply the preconditioner to opaque HYPRE_Vector handles. */
+uint32_t
+HYPREDRV_JuliaPreconApply(HYPREDRV_t hypredrv, void *vec_b, void *vec_x)
+{
+   return HYPREDRV_PreconApply(hypredrv, (HYPRE_Vector)vec_b, (HYPRE_Vector)vec_x);
+}
+
+/** @brief Destroy the preconditioner. */
+uint32_t
+HYPREDRV_JuliaPreconDestroy(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_PreconDestroy(hypredrv);
+}
+
+/** @brief Print the statistics summary. */
+uint32_t
+HYPREDRV_JuliaStatsPrint(HYPREDRV_t hypredrv)
+{
+   return HYPREDRV_StatsPrint(hypredrv);
+}
+
+/** @brief Begin a hierarchical annotation level. */
+uint32_t
+HYPREDRV_JuliaAnnotateLevelBegin(HYPREDRV_t hypredrv, int level, const char *name, int id)
+{
+   return HYPREDRV_AnnotateLevelBegin(hypredrv, level, name, id);
+}
+
+/** @brief End a hierarchical annotation level. */
+uint32_t
+HYPREDRV_JuliaAnnotateLevelEnd(HYPREDRV_t hypredrv, int level, const char *name, int id)
+{
+   return HYPREDRV_AnnotateLevelEnd(hypredrv, level, name, id);
+}
+
+/** @brief Return the number of stats entries at a level. */
+uint32_t
+HYPREDRV_JuliaStatsLevelGetCount(HYPREDRV_t hypredrv, int level, int *count)
+{
+   return HYPREDRV_StatsLevelGetCount(hypredrv, level, count);
+}
+
+/** @brief Return one stats entry at a level. */
+uint32_t
+HYPREDRV_JuliaStatsLevelGetEntry(HYPREDRV_t hypredrv, int level, int index, int *entry_id,
+                                 int *num_solves, int *linear_iters, double *setup_time,
+                                 double *solve_time)
+{
+   return HYPREDRV_StatsLevelGetEntry(hypredrv, level, index, entry_id, num_solves,
+                                      linear_iters, setup_time, solve_time);
+}
+
+/** @brief Print the stats summary for a level. */
+uint32_t
+HYPREDRV_JuliaStatsLevelPrint(HYPREDRV_t hypredrv, int level)
+{
+   return HYPREDRV_StatsLevelPrint(hypredrv, level);
+}

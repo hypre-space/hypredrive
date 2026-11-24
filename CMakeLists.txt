@@ -475,6 +475,11 @@ hypredrv_hide_static_archive_symbols(HYPREDRV)
 if(HYPREDRV_ENABLE_TESTING)
     enable_testing()
     hypredrv_add_dynamic_export_test(HYPREDRV CORE)
+    # Every public HYPREDRV_ API must be bound in every language interface.
+    add_test(NAME interface_api_coverage
+             COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check_interface_coverage.sh
+                     --root ${CMAKE_SOURCE_DIR})
+    set_tests_properties(interface_api_coverage PROPERTIES LABELS "interface")
 endif()
 
 hypredrv_compute_build_tree_export_available(_hypredrv_build_tree_export_available)

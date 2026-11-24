@@ -77,6 +77,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Use `BigInt::try_from(index)` to convert application indices without truncation.
 pub type BigInt = ffi::HYPRE_BigInt;
 
+/// A raw HYPRE matrix handle (`HYPRE_Matrix`, an assembled ParCSR `HYPRE_IJMatrix`).
+pub type Matrix = ffi::HYPRE_Matrix;
+
+/// A raw HYPRE vector handle (`HYPRE_Vector`, an initialized ParCSR `HYPRE_IJVector`).
+pub type Vector = ffi::HYPRE_Vector;
+
+/// A raw `HYPRE_IJVector` handle, as registered by [`HypreDrive::set_state_vectors`].
+pub type IJVector = ffi::HYPRE_IJVector;
+
 static RUNTIME_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// An input, runtime, or native API failure.
@@ -176,6 +185,129 @@ impl<'mpi> Runtime<'mpi> {
     }
 }
 
+impl Runtime<'_> {
+    /// Clear the process-wide native error state recorded by earlier failures.
+    pub fn clear_error_codes(&self) {
+        unsafe { ffi::HYPREDRV_ErrorCodeClear() };
+    }
+
+    /// Build the native "invalid value" status carrying `message` and return it.
+    ///
+    /// The returned `u32` can be passed to application error reporting. A
+    /// message containing an embedded NUL is rejected.
+    pub fn error_invalid_value(&self, message: &str) -> Result<u32, Error> {
+        let message = CString::new(message)
+            .map_err(|_| Error::invalid("error_invalid_value", "message contains an embedded NUL"))?;
+        Ok(unsafe { ffi::HYPREDRV_ErrorInvalidValue(message.as_ptr()) })
+    }
+
+    /// Print hypredrive and HYPRE version information on `comm`.
+    ///
+    /// Collective on `comm`; `print_datetime` adds a date/time header.
+    pub fn print_lib_info<C: Communicator>(
+        &self,
+        comm: &C,
+        print_datetime: bool,
+    ) -> Result<(), Error> {
+        require_intracommunicator(comm, "print_lib_info")?;
+        let status =
+            unsafe { ffi::HYPREDRV_PrintLibInfo(comm.as_raw(), i32::from(print_datetime)) };
+        check_status(comm, "HYPREDRV_PrintLibInfo", status)
+    }
+
+    /// Print information about the host system on `comm`. Collective on `comm`.
+    pub fn print_system_info<C: Communicator>(&self, comm: &C) -> Result<(), Error> {
+        require_intracommunicator(comm, "print_system_info")?;
+        let status = unsafe { ffi::HYPREDRV_PrintSystemInfo(comm.as_raw()) };
+        check_status(comm, "HYPREDRV_PrintSystemInfo", status)
+    }
+
+    /// Print the closing banner naming the application `argv0`. Collective on `comm`.
+    pub fn print_exit_info<C: Communicator>(&self, comm: &C, argv0: &str) -> Result<(), Error> {
+        require_intracommunicator(comm, "print_exit_info")?;
+        let name = CString::new(argv0)
+            .map_err(|_| Error::invalid("print_exit_info", "name contains an embedded NUL"));
+        let name = agree_validation(comm, "print_exit_info", name)?;
+        let status = unsafe { ffi::HYPREDRV_PrintExitInfo(comm.as_raw(), name.as_ptr()) };
+        check_status(comm, "HYPREDRV_PrintExitInfo", status)
+    }
+
+    /// Register a named solver preset from a YAML snippet expanding under `solver:`.
+    ///
+    /// The registry is process-global and the native call copies its strings.
+    /// Register the same presets on every rank before selecting them with
+    /// [`HypreDrive::set_solver_preset`]. `help` is an optional description.
+    pub fn register_solver_preset(
+        &self,
+        name: &str,
+        yaml_text: &str,
+        help: Option<&str>,
+    ) -> Result<(), Error> {
+        register_preset("register_solver_preset", name, yaml_text, help, false)
+    }
+
+    /// Register a named preconditioner preset from a YAML snippet expanding
+    /// under `preconditioner:`. See [`Self::register_solver_preset`].
+    pub fn register_precon_preset(
+        &self,
+        name: &str,
+        yaml_text: &str,
+        help: Option<&str>,
+    ) -> Result<(), Error> {
+        register_preset("register_precon_preset", name, yaml_text, help, true)
+    }
+}
+
+fn register_preset(
+    operation: &'static str,
+    name: &str,
+    yaml_text: &str,
+    help: Option<&str>,
+    precon: bool,
+) -> Result<(), Error> {
+    let nul = |_| Error::invalid(operation, "argument contains an embedded NUL");
+    let name = CString::new(name).map_err(nul)?;
+    let yaml_text = CString::new(yaml_text).map_err(nul)?;
+    let help = help.map(CString::new).transpose().map_err(nul)?;
+    let help_ptr = help.as_ref().map_or(ptr::null(), |text| text.as_ptr());
+    let (label, status) = if precon {
+        (
+            "HYPREDRV_PreconPresetRegister",
+            unsafe {
+                ffi::HYPREDRV_PreconPresetRegister(name.as_ptr(), yaml_text.as_ptr(), help_ptr)
+            },
+        )
+    } else {
+        (
+            "HYPREDRV_SolverPresetRegister",
+            unsafe {
+                ffi::HYPREDRV_SolverPresetRegister(name.as_ptr(), yaml_text.as_ptr(), help_ptr)
+            },
+        )
+    };
+    describe_error(status);
+    if status == 0 {
+        Ok(())
+    } else {
+        Err(Error::native(label, status))
+    }
+}
+
+/// Statistics recorded for one hierarchical annotation entry.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StatsEntry {
+    /// One-based entry identifier.
+    pub entry_id: i32,
+    /// Number of solves in the entry.
+    pub num_solves: i32,
+    /// Total linear iterations.
+    pub linear_iters: i32,
+    /// Total setup time in the configured statistics units.
+    pub setup_time: f64,
+    /// Total solve time in the configured statistics units.
+    pub solve_time: f64,
+}
+
 impl Drop for Runtime<'_> {
     fn drop(&mut self) {
         // Drivers borrow this runtime and have already been dropped.
@@ -209,6 +341,8 @@ pub struct HypreDrive<'a, C: Communicator> {
     rhs_ready: bool,
     guess_ready: bool,
     reset_pending: bool,
+    external_matrix: bool,
+    external_rhs: bool,
 }
 
 impl<'a, C: Communicator> HypreDrive<'a, C> {
@@ -337,6 +471,8 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
             rhs_ready: false,
             guess_ready: false,
             reset_pending: false,
+            external_matrix: false,
+            external_rhs: false,
         };
         // The communicator remains borrowed until after the native handle dies.
         let status = unsafe {
@@ -386,6 +522,8 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         };
         self.check("HYPREDRV_LinearSystemSetMatrixFromCSR", status)?;
         self.rows = Some((row_start, row_end, rows));
+        self.external_matrix = false;
+        self.external_rhs = false;
         self.rhs_ready = false;
         self.guess_ready = false;
         self.reset_pending = false;
@@ -558,8 +696,587 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         }
     }
 
+
+    /// Set or clear (`None`) the display name used in statistics banners.
+    pub fn set_object_name(&mut self, name: Option<&str>) -> Result<(), Error> {
+        let name = match name {
+            Some(text) => Some(self.agreed_cstring("set_object_name", text)?),
+            None => None,
+        };
+        let name_ptr = name.as_ref().map_or(ptr::null(), |text| text.as_ptr());
+        let status = unsafe { ffi::HYPREDRV_ObjectSetName(self.handle, name_ptr) };
+        self.check("HYPREDRV_ObjectSetName", status)
+    }
+
+    /// The configured number of warmup runs.
+    pub fn warmup(&self) -> Result<i32, Error> {
+        let mut value = 0;
+        let status = unsafe { ffi::HYPREDRV_InputArgsGetWarmup(self.handle, &mut value) };
+        self.check("HYPREDRV_InputArgsGetWarmup", status)?;
+        Ok(value)
+    }
+
+    /// The configured number of solve repetitions.
+    pub fn num_repetitions(&self) -> Result<i32, Error> {
+        let mut value = 0;
+        let status = unsafe { ffi::HYPREDRV_InputArgsGetNumRepetitions(self.handle, &mut value) };
+        self.check("HYPREDRV_InputArgsGetNumRepetitions", status)?;
+        Ok(value)
+    }
+
+    /// The configured number of linear systems.
+    pub fn num_linear_systems(&self) -> Result<i32, Error> {
+        let mut value = 0;
+        let status = unsafe { ffi::HYPREDRV_InputArgsGetNumLinearSystems(self.handle, &mut value) };
+        self.check("HYPREDRV_InputArgsGetNumLinearSystems", status)?;
+        Ok(value)
+    }
+
+    /// The number of configured preconditioner variants.
+    pub fn num_precon_variants(&self) -> Result<i32, Error> {
+        let mut value = 0;
+        let status =
+            unsafe { ffi::HYPREDRV_InputArgsGetNumPreconVariants(self.handle, &mut value) };
+        self.check("HYPREDRV_InputArgsGetNumPreconVariants", status)?;
+        Ok(value)
+    }
+
+    /// Activate the zero-based preconditioner variant `variant`.
+    pub fn set_precon_variant(&mut self, variant: i32) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_InputArgsSetPreconVariant(self.handle, variant) };
+        self.check("HYPREDRV_InputArgsSetPreconVariant", status)
+    }
+
+    /// Select a built-in or registered preconditioner preset for the active variant.
+    ///
+    /// A successful change releases the native solver and preconditioner;
+    /// [`Self::solve`] recreates them.
+    pub fn set_precon_preset(&mut self, preset: &str) -> Result<(), Error> {
+        let preset = self.agreed_cstring("set_precon_preset", preset)?;
+        let status =
+            unsafe { ffi::HYPREDRV_InputArgsSetPreconPreset(self.handle, preset.as_ptr()) };
+        self.check("HYPREDRV_InputArgsSetPreconPreset", status)
+    }
+
+    /// Select a built-in (for example `"pcg"`) or registered solver preset.
+    ///
+    /// A successful change releases the native solver; [`Self::solve`] recreates it.
+    pub fn set_solver_preset(&mut self, preset: &str) -> Result<(), Error> {
+        let preset = self.agreed_cstring("set_solver_preset", preset)?;
+        let status =
+            unsafe { ffi::HYPREDRV_InputArgsSetSolverPreset(self.handle, preset.as_ptr()) };
+        self.check("HYPREDRV_InputArgsSetSolverPreset", status)
+    }
+
+    /// Build the matrix, RHS and guess from the YAML `linear_system` section.
+    ///
+    /// The system is then usable by [`Self::solve`] without the CSR setters.
+    pub fn build_linear_system(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemBuild(self.handle) };
+        self.check("HYPREDRV_LinearSystemBuild", status)?;
+        self.rows = None;
+        self.external_matrix = true;
+        self.external_rhs = true;
+        self.guess_ready = false;
+        self.reset_pending = false;
+        self.annotate(c"matrix")
+    }
+
+    /// Read only the matrix from the files configured in YAML.
+    ///
+    /// Installs a matrix for [`Self::solve`]. Afterwards call
+    /// [`Self::set_rhs_vector`] with a null handle to construct the RHS from the YAML input.
+    pub fn read_matrix(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemReadMatrix(self.handle) };
+        self.check("HYPREDRV_LinearSystemReadMatrix", status)?;
+        self.rows = None;
+        self.external_matrix = true;
+        self.rhs_ready = false;
+        self.external_rhs = false;
+        self.guess_ready = false;
+        self.reset_pending = false;
+        self.annotate(c"matrix")
+    }
+
+    /// Attach a raw assembled ParCSR matrix as the system (and default preconditioning) matrix.
+    ///
+    /// A null handle clears both attachments. The matrix is borrowed: the
+    /// driver runs in library mode and never destroys it.
+    ///
+    /// # Safety
+    ///
+    /// A non-null `matrix` must be a valid, assembled `HYPRE_IJMatrix` of
+    /// ParCSR type, created on a communicator congruent with this driver's,
+    /// and it must outlive this driver or be replaced/cleared before it is
+    /// destroyed. Call collectively with consistent matrices on all ranks.
+    pub unsafe fn set_matrix(&mut self, matrix: Matrix) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetMatrix(self.handle, matrix) };
+        self.check("HYPREDRV_LinearSystemSetMatrix", status)?;
+        self.rows = None;
+        self.external_matrix = !matrix.is_null();
+        self.guess_ready = false;
+        self.reset_pending = false;
+        self.annotate(c"matrix")
+    }
+
+    /// Set the matrix used to build the preconditioner.
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as [`Self::set_matrix`] for the handle's validity and lifetime.
+    pub unsafe fn set_precon_matrix(&mut self, matrix: Matrix) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetPrecMatrix(self.handle, matrix) };
+        self.check("HYPREDRV_LinearSystemSetPrecMatrix", status)
+    }
+
+    /// Set the discrete gradient for AMS/ADS preconditioners (null clears it).
+    ///
+    /// # Safety
+    ///
+    /// A non-null handle must be an assembled ParCSR `HYPRE_IJMatrix` that
+    /// outlives this driver (borrowed in library mode). Call collectively.
+    pub unsafe fn set_discrete_gradient(&mut self, gradient: Matrix) -> Result<(), Error> {
+        let status =
+            unsafe { ffi::HYPREDRV_LinearSystemSetDiscreteGradient(self.handle, gradient) };
+        self.check("HYPREDRV_LinearSystemSetDiscreteGradient", status)
+    }
+
+    /// Set the discrete curl for the ADS preconditioner (null clears it).
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as [`Self::set_discrete_gradient`].
+    pub unsafe fn set_discrete_curl(&mut self, curl: Matrix) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetDiscreteCurl(self.handle, curl) };
+        self.check("HYPREDRV_LinearSystemSetDiscreteCurl", status)
+    }
+
+    /// Set the vertex coordinate vectors for AMS/ADS (null clears one).
+    ///
+    /// # Safety
+    ///
+    /// Non-null handles must be initialized, single-component ParCSR
+    /// `HYPRE_IJVector`s with matching row distributions that outlive this
+    /// driver (borrowed in library mode). Call collectively.
+    pub unsafe fn set_coordinates(&mut self, x: Vector, y: Vector, z: Vector) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetCoordinates(self.handle, x, y, z) };
+        self.check("HYPREDRV_LinearSystemSetCoordinates", status)
+    }
+
+    /// Provide a user coarse Schur-complement matrix for MGR level `level` (null clears it).
+    ///
+    /// # Safety
+    ///
+    /// A non-null handle must be an assembled ParCSR `HYPRE_IJMatrix` sized
+    /// for that level's coarse DOF set and must outlive this driver. All ranks
+    /// must register the same level.
+    pub unsafe fn set_coarse_schur(&mut self, level: i32, matrix: Matrix) -> Result<(), Error> {
+        let status =
+            unsafe { ffi::HYPREDRV_LinearSystemSetCoarseSchur(self.handle, level, matrix) };
+        self.check("HYPREDRV_LinearSystemSetCoarseSchur", status)
+    }
+
+    /// Attach a raw RHS vector (null constructs one from the YAML input).
+    ///
+    /// # Safety
+    ///
+    /// A non-null handle must be an initialized, single-component ParCSR
+    /// `HYPRE_IJVector` matching the matrix rows that outlives this driver.
+    pub unsafe fn set_rhs_vector(&mut self, rhs: Vector) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetRHS(self.handle, rhs) };
+        self.check("HYPREDRV_LinearSystemSetRHS", status)?;
+        self.external_rhs = true;
+        Ok(())
+    }
+
+    /// Attach a raw solution vector (null lets the driver allocate one from the RHS).
+    ///
+    /// # Safety
+    ///
+    /// A non-null handle must be an initialized ParCSR `HYPRE_IJVector` with the
+    /// matrix's row distribution that outlives this driver.
+    pub unsafe fn set_solution_vector(&mut self, solution: Vector) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetSolution(self.handle, solution) };
+        self.check("HYPREDRV_LinearSystemSetSolution", status)
+    }
+
+    /// Attach a raw reference solution used for error reporting (null clears it).
+    ///
+    /// # Safety
+    ///
+    /// Same requirements as [`Self::set_solution_vector`].
+    pub unsafe fn set_reference_solution(&mut self, reference: Vector) -> Result<(), Error> {
+        let status =
+            unsafe { ffi::HYPREDRV_LinearSystemSetReferenceSolution(self.handle, reference) };
+        self.check("HYPREDRV_LinearSystemSetReferenceSolution", status)
+    }
+
+    /// Borrow the driver's system matrix handle.
+    ///
+    /// # Safety
+    ///
+    /// The returned handle is owned by the driver. Do not destroy it. It is
+    /// invalidated by operations that replace the matrix and by dropping the driver.
+    pub unsafe fn matrix(&self) -> Result<Matrix, Error> {
+        let mut matrix: Matrix = ptr::null_mut();
+        let status = unsafe { ffi::HYPREDRV_LinearSystemGetMatrix(self.handle, &mut matrix) };
+        self.check("HYPREDRV_LinearSystemGetMatrix", status)?;
+        Ok(matrix)
+    }
+
+    /// Borrow the driver's RHS vector handle.
+    ///
+    /// # Safety
+    ///
+    /// The handle is owned by the driver; do not destroy it, and do not use it
+    /// after the RHS is replaced or the driver is dropped.
+    pub unsafe fn rhs_vector(&self) -> Result<Vector, Error> {
+        let mut vector: Vector = ptr::null_mut();
+        let status = unsafe { ffi::HYPREDRV_LinearSystemGetRHS(self.handle, &mut vector) };
+        self.check("HYPREDRV_LinearSystemGetRHS", status)?;
+        Ok(vector)
+    }
+
+    /// Borrow the driver's solution vector handle.
+    ///
+    /// # Safety
+    ///
+    /// The handle is owned by the driver (unless supplied through
+    /// [`Self::set_solution_vector`]); do not destroy it, and do not use it
+    /// after the solution is replaced or the driver is dropped.
+    pub unsafe fn solution_vector(&self) -> Result<Vector, Error> {
+        let mut vector: Vector = ptr::null_mut();
+        let status = unsafe { ffi::HYPREDRV_LinearSystemGetSolution(self.handle, &mut vector) };
+        self.check("HYPREDRV_LinearSystemGetSolution", status)?;
+        Ok(vector)
+    }
+
+    /// Borrow the native local RHS data pointer.
+    ///
+    /// # Safety
+    ///
+    /// The pointer addresses this rank's local entries, possibly in device
+    /// memory. It is owned by the driver and must not be freed. It is
+    /// invalidated by replacing the RHS or dropping the driver.
+    pub unsafe fn rhs_values_ptr(&self) -> Result<*mut f64, Error> {
+        let mut data: *mut f64 = ptr::null_mut();
+        let status = unsafe { ffi::HYPREDRV_LinearSystemGetRHSValues(self.handle, &mut data) };
+        self.check("HYPREDRV_LinearSystemGetRHSValues", status)?;
+        Ok(data)
+    }
+
+    /// Borrow the native local solution data pointer and whether it is device memory.
+    ///
+    /// # Safety
+    ///
+    /// The pointer is owned by the driver, must not be freed, and is
+    /// invalidated by solver setup/apply or replacing the solution. A pointer
+    /// reported as device memory must not be dereferenced on the host. Use
+    /// [`Self::solve`] results for host copies.
+    pub unsafe fn solution_values_ptr(&self) -> Result<(*mut f64, bool), Error> {
+        let mut data: *mut f64 = ptr::null_mut();
+        // HYPRE_MEMORY_HOST is zero in every bindgen enum representation.
+        let mut location: ffi::HYPRE_MemoryLocation = unsafe { std::mem::zeroed() };
+        let status = unsafe {
+            ffi::HYPREDRV_LinearSystemGetSolutionValues(self.handle, &mut data, &mut location)
+        };
+        self.check("HYPREDRV_LinearSystemGetSolutionValues", status)?;
+        // HYPRE_MEMORY_DEVICE is 1; HOST is 0 and UNDEFINED is -1.
+        Ok((data, (location as i32) == 1))
+    }
+
+    /// Compute the `"L1"`, `"L2"` or `"inf"` norm of the current solution.
+    pub fn solution_norm(&self, norm_type: &str) -> Result<f64, Error> {
+        let norm_type = self.agreed_cstring("solution_norm", norm_type)?;
+        let mut norm = 0.0;
+        let status = unsafe {
+            ffi::HYPREDRV_LinearSystemGetSolutionNorm(self.handle, norm_type.as_ptr(), &mut norm)
+        };
+        self.check("HYPREDRV_LinearSystemGetSolutionNorm", status)?;
+        Ok(norm)
+    }
+
+    /// Install a local DOF map; entries label each local row's DOF type.
+    ///
+    /// The array is copied. An empty slice is allowed on ranks without rows.
+    pub fn set_dofmap(&mut self, dofmap: &[i32]) -> Result<(), Error> {
+        let size = self.agreed_int("set_dofmap", dofmap.len())?;
+        let data = if dofmap.is_empty() { ptr::null() } else { dofmap.as_ptr() };
+        let status = unsafe { ffi::HYPREDRV_LinearSystemSetDofmap(self.handle, size, data) };
+        self.check("HYPREDRV_LinearSystemSetDofmap", status)
+    }
+
+    /// Install an interleaved DOF map (`u0 v0 p0 u1 v1 p1 ...`).
+    pub fn set_interleaved_dofmap(
+        &mut self,
+        num_local_blocks: i32,
+        num_dof_types: i32,
+    ) -> Result<(), Error> {
+        let status = unsafe {
+            ffi::HYPREDRV_LinearSystemSetInterleavedDofmap(
+                self.handle,
+                num_local_blocks,
+                num_dof_types,
+            )
+        };
+        self.check("HYPREDRV_LinearSystemSetInterleavedDofmap", status)
+    }
+
+    /// Install a contiguous DOF map (all `u`, then all `v`, then all `p`).
+    pub fn set_contiguous_dofmap(
+        &mut self,
+        num_local_blocks: i32,
+        num_dof_types: i32,
+    ) -> Result<(), Error> {
+        let status = unsafe {
+            ffi::HYPREDRV_LinearSystemSetContiguousDofmap(
+                self.handle,
+                num_local_blocks,
+                num_dof_types,
+            )
+        };
+        self.check("HYPREDRV_LinearSystemSetContiguousDofmap", status)
+    }
+
+    /// Read the DOF map from the source configured in YAML.
+    pub fn read_dofmap(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemReadDofmap(self.handle) };
+        self.check("HYPREDRV_LinearSystemReadDofmap", status)
+    }
+
+    /// Write the local DOF map to `filename` (suffixed with the rank when run on several ranks).
+    pub fn print_dofmap(&self, filename: &str) -> Result<(), Error> {
+        let filename = self.agreed_cstring("print_dofmap", filename)?;
+        let status =
+            unsafe { ffi::HYPREDRV_LinearSystemPrintDofmap(self.handle, filename.as_ptr()) };
+        self.check("HYPREDRV_LinearSystemPrintDofmap", status)
+    }
+
+    /// Write the matrix, RHS and DOF map (when present) to ASCII files.
+    pub fn print_linear_system(&self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemPrint(self.handle) };
+        self.check("HYPREDRV_LinearSystemPrint", status)
+    }
+
+    /// Install near-null-space modes (for example rigid-body modes).
+    ///
+    /// `values` holds `num_components` contiguous blocks of `num_entries`
+    /// values (component-major) and is copied. `num_entries` must match the
+    /// local matrix column range and `num_components` must agree on all ranks.
+    pub fn set_near_null_space(
+        &mut self,
+        num_entries: usize,
+        num_components: usize,
+        values: &[f64],
+    ) -> Result<(), Error> {
+        let (entries, components, data) =
+            self.agreed_modes("set_near_null_space", num_entries, num_components, values)?;
+        let status = unsafe {
+            ffi::HYPREDRV_LinearSystemSetNearNullSpace(self.handle, entries, components, data)
+        };
+        self.check("HYPREDRV_LinearSystemSetNearNullSpace", status)
+    }
+
+    /// Install exact null-space modes projected out of every solution.
+    ///
+    /// Layout and validation match [`Self::set_near_null_space`]. Passing
+    /// `num_components == 0` with empty `values` clears the modes.
+    pub fn set_null_space(
+        &mut self,
+        num_entries: usize,
+        num_components: usize,
+        values: &[f64],
+    ) -> Result<(), Error> {
+        let (entries, components, data) =
+            self.agreed_modes("set_null_space", num_entries, num_components, values)?;
+        let status = unsafe {
+            ffi::HYPREDRV_LinearSystemSetNullSpace(self.handle, entries, components, data)
+        };
+        self.check("HYPREDRV_LinearSystemSetNullSpace", status)
+    }
+
+    fn agreed_modes(
+        &self,
+        operation: &'static str,
+        num_entries: usize,
+        num_components: usize,
+        values: &[f64],
+    ) -> Result<(i32, i32, *const f64), Error> {
+        let checked = (|| {
+            let entries = i32::try_from(num_entries)
+                .map_err(|_| Error::invalid(operation, "entry count exceeds the native int range"))?;
+            let components = i32::try_from(num_components).map_err(|_| {
+                Error::invalid(operation, "component count exceeds the native int range")
+            })?;
+            let expected = num_entries
+                .checked_mul(num_components)
+                .ok_or_else(|| Error::invalid(operation, "mode size overflows usize"))?;
+            if values.len() != expected {
+                return Err(Error::invalid(
+                    operation,
+                    "values length must equal num_entries * num_components",
+                ));
+            }
+            Ok((entries, components))
+        })();
+        let (entries, components) = self.agreed(operation, checked)?;
+        let data = if values.is_empty() { ptr::null() } else { values.as_ptr() };
+        Ok((entries, components, data))
+    }
+
+    /// Register the state vectors managed by the `state_vector_*` methods.
+    ///
+    /// The handle array is copied. HYPREDRV never destroys the vectors.
+    ///
+    /// # Safety
+    ///
+    /// Every handle must be an initialized `HYPRE_IJVector` with the linear
+    /// system's row range, valid until after this driver is dropped.
+    pub unsafe fn set_state_vectors(&mut self, vectors: &[IJVector]) -> Result<(), Error> {
+        let count = self.agreed_int("set_state_vectors", vectors.len())?;
+        let status = unsafe {
+            ffi::HYPREDRV_StateVectorSet(self.handle, count, vectors.as_ptr().cast_mut())
+        };
+        self.check("HYPREDRV_StateVectorSet", status)
+    }
+
+    /// Borrow the local data pointer of the state vector at logical `index`.
+    ///
+    /// # Safety
+    ///
+    /// The pointer is owned by the vector, addresses this rank's local entries
+    /// (possibly device memory), and is invalidated by operations that
+    /// reallocate the vector or by destroying it.
+    pub unsafe fn state_vector_values_ptr(&self, index: i32) -> Result<*mut f64, Error> {
+        let mut data: *mut f64 = ptr::null_mut();
+        let status = unsafe { ffi::HYPREDRV_StateVectorGetValues(self.handle, index, &mut data) };
+        self.check("HYPREDRV_StateVectorGetValues", status)?;
+        Ok(data)
+    }
+
+    /// Copy state vector `index_in` into `index_out`.
+    pub fn state_vector_copy(&mut self, index_in: i32, index_out: i32) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_StateVectorCopy(self.handle, index_in, index_out) };
+        self.check("HYPREDRV_StateVectorCopy", status)
+    }
+
+    /// Rotate the logical state indices by one position without copying data.
+    pub fn state_vector_update_all(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_StateVectorUpdateAll(self.handle) };
+        self.check("HYPREDRV_StateVectorUpdateAll", status)
+    }
+
+    /// Add the last linear solver solution to the state vector at `state_idx`.
+    pub fn state_vector_apply_correction(&mut self, state_idx: i32) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_StateVectorApplyCorrection(self.handle, state_idx) };
+        self.check("HYPREDRV_StateVectorApplyCorrection", status)
+    }
+
+    /// Create the preconditioner without creating the Krylov solver.
+    pub fn precon_create(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_PreconCreate(self.handle) };
+        self.check("HYPREDRV_PreconCreate", status)
+    }
+
+    /// Set up only the preconditioner, for standalone use with [`Self::precon_apply`].
+    pub fn precon_setup(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_PreconSetup(self.handle) };
+        self.check("HYPREDRV_PreconSetup", status)
+    }
+
+    /// Apply the preconditioner to `b`, writing the result to `x`.
+    ///
+    /// # Safety
+    ///
+    /// Both handles must be initialized ParCSR `HYPRE_IJVector`s compatible
+    /// with the matrix. Wrap standalone applications in a `"solve"` annotation
+    /// when statistics are enabled.
+    pub unsafe fn precon_apply(&mut self, b: Vector, x: Vector) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_PreconApply(self.handle, b, x) };
+        self.check("HYPREDRV_PreconApply", status)
+    }
+
+    /// Destroy the preconditioner (the solver also destroys it).
+    pub fn precon_destroy(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_PreconDestroy(self.handle) };
+        self.check("HYPREDRV_PreconDestroy", status)
+    }
+
+    /// Print the native statistics summary.
+    pub fn print_stats(&self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_StatsPrint(self.handle) };
+        self.check("HYPREDRV_StatsPrint", status)
+    }
+
+    /// Begin a hierarchical annotation region at `level` (0 to 9).
+    ///
+    /// A nonnegative `id` is appended to the name; a negative one is ignored.
+    /// End it with [`Self::annotate_level_end`] using the same arguments.
+    pub fn annotate_level_begin(&mut self, level: i32, name: &str, id: i32) -> Result<(), Error> {
+        let name = self.agreed_cstring("annotate_level_begin", name)?;
+        let status = unsafe {
+            ffi::HYPREDRV_AnnotateLevelBegin(self.handle, level, name.as_ptr(), id)
+        };
+        self.check("HYPREDRV_AnnotateLevelBegin", status)
+    }
+
+    /// End the hierarchical annotation region begun with the same arguments.
+    pub fn annotate_level_end(&mut self, level: i32, name: &str, id: i32) -> Result<(), Error> {
+        let name = self.agreed_cstring("annotate_level_end", name)?;
+        let status =
+            unsafe { ffi::HYPREDRV_AnnotateLevelEnd(self.handle, level, name.as_ptr(), id) };
+        self.check("HYPREDRV_AnnotateLevelEnd", status)
+    }
+
+    /// Compute the eigenspectrum of the system (single rank; no-op without native support).
+    pub fn compute_eigenspectrum(&mut self) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSystemComputeEigenspectrum(self.handle) };
+        self.check("HYPREDRV_LinearSystemComputeEigenspectrum", status)
+    }
+
+    /// Number of entries recorded at annotation `level`.
+    pub fn stats_level_count(&self, level: i32) -> Result<i32, Error> {
+        let mut count = 0;
+        let status = unsafe { ffi::HYPREDRV_StatsLevelGetCount(self.handle, level, &mut count) };
+        self.check("HYPREDRV_StatsLevelGetCount", status)?;
+        Ok(count)
+    }
+
+    /// Statistics of the zero-based entry `index` at annotation `level`.
+    pub fn stats_level_entry(&self, level: i32, index: i32) -> Result<StatsEntry, Error> {
+        let mut entry = StatsEntry {
+            entry_id: 0,
+            num_solves: 0,
+            linear_iters: 0,
+            setup_time: 0.0,
+            solve_time: 0.0,
+        };
+        let status = unsafe {
+            ffi::HYPREDRV_StatsLevelGetEntry(
+                self.handle,
+                level,
+                index,
+                &mut entry.entry_id,
+                &mut entry.num_solves,
+                &mut entry.linear_iters,
+                &mut entry.setup_time,
+                &mut entry.solve_time,
+            )
+        };
+        self.check("HYPREDRV_StatsLevelGetEntry", status)?;
+        Ok(entry)
+    }
+
+    /// Print the statistics table for annotation `level`.
+    pub fn print_stats_level(&self, level: i32) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_StatsLevelPrint(self.handle, level) };
+        self.check("HYPREDRV_StatsLevelPrint", status)
+    }
+
     fn require_system(&self, operation: &'static str) -> Result<(), Error> {
-        let validation = if self.rows.is_some() && self.rhs_ready {
+        let validation = if (self.rows.is_some() || self.external_matrix)
+            && (self.rhs_ready || self.external_rhs)
+        {
             Ok(())
         } else {
             Err(Error::invalid(operation, "set the matrix and RHS first"))
@@ -575,23 +1292,26 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
     }
 
     fn check(&self, operation: &'static str, status: u32) -> Result<(), Error> {
-        // Preserve diagnostics before any later HYPREDRV call resets its scope.
-        describe_error(status);
-        let mut collective_status = 0;
-        self.communicator
-            .all_reduce_into(&status, &mut collective_status, SystemOperation::max());
-        if collective_status == 0 {
-            Ok(())
-        } else {
-            Err(Error::native(
-                operation,
-                if status != 0 {
-                    status
-                } else {
-                    collective_status
-                },
-            ))
-        }
+        check_status(self.communicator, operation, status)
+    }
+
+    /// Agree on a locally computed validation result across the communicator.
+    fn agreed<T>(&self, operation: &'static str, validation: Result<T, Error>) -> Result<T, Error> {
+        agree_validation(self.communicator, operation, validation)
+    }
+
+    /// Convert text to a `CString`, agreeing on NUL failures across ranks.
+    fn agreed_cstring(&self, operation: &'static str, text: &str) -> Result<CString, Error> {
+        let text = CString::new(text)
+            .map_err(|_| Error::invalid(operation, "text contains an embedded NUL"));
+        self.agreed(operation, text)
+    }
+
+    /// Convert a length or count to the native `int`, agreeing across ranks.
+    fn agreed_int(&self, operation: &'static str, value: usize) -> Result<i32, Error> {
+        let value = i32::try_from(value)
+            .map_err(|_| Error::invalid(operation, "count exceeds the native int range"));
+        self.agreed(operation, value)
     }
 }
 
@@ -601,6 +1321,29 @@ impl<C: Communicator> Drop for HypreDrive<'_, C> {
             // Destruction is local and valid during partial construction.
             describe_error(unsafe { ffi::HYPREDRV_Destroy(&mut self.handle) });
         }
+    }
+}
+
+fn check_status<C: Communicator>(
+    communicator: &C,
+    operation: &'static str,
+    status: u32,
+) -> Result<(), Error> {
+    // Preserve diagnostics before any later HYPREDRV call resets its scope.
+    describe_error(status);
+    let mut collective_status = 0;
+    communicator.all_reduce_into(&status, &mut collective_status, SystemOperation::max());
+    if collective_status == 0 {
+        Ok(())
+    } else {
+        Err(Error::native(
+            operation,
+            if status != 0 {
+                status
+            } else {
+                collective_status
+            },
+        ))
     }
 }
 

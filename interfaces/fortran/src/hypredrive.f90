@@ -36,6 +36,9 @@ module hypredrive
    public :: HYPREDRV_LinearSystemSetContiguousDofmap, HYPREDRV_LinearSystemReadDofmap
    public :: HYPREDRV_LinearSystemPrintDofmap, HYPREDRV_LinearSystemPrint
    public :: HYPREDRV_LinearSystemSetNearNullSpace, HYPREDRV_LinearSystemSetNullSpace
+   public :: HYPREDRV_ErrorCodeClear, HYPREDRV_LinearSystemSetCoarseSchur
+   public :: HYPREDRV_LinearSystemSetCoordinates, HYPREDRV_LinearSystemSetDiscreteCurl
+   public :: HYPREDRV_LinearSystemSetDiscreteGradient
    public :: HYPREDRV_LinearSystemGetSolutionValues, HYPREDRV_LinearSystemCopySolutionValues
    public :: HYPREDRV_LinearSystemGetSolutionLength, HYPREDRV_LinearSystemGetSolutionNorm
    public :: HYPREDRV_LinearSystemGetSolution, HYPREDRV_LinearSystemGetRHSValues
@@ -77,6 +80,38 @@ module hypredrive
          import :: c_int32_t
          integer(c_int32_t), value :: error_code
       end subroutine
+
+      subroutine HYPREDRV_ErrorCodeClear() bind(C, name="HYPREDRV_ErrorCodeClear")
+      end subroutine
+
+      function HYPREDRV_LinearSystemSetCoarseSchur(hypredrv, level, mat_S) &
+         bind(C, name="HYPREDRV_LinearSystemSetCoarseSchur") result(ierr)
+         import :: c_int, c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv, mat_S
+         integer(c_int), value :: level
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSystemSetCoordinates(hypredrv, x, y, z) &
+         bind(C, name="HYPREDRV_LinearSystemSetCoordinates") result(ierr)
+         import :: c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv, x, y, z
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSystemSetDiscreteCurl(hypredrv, C) &
+         bind(C, name="HYPREDRV_LinearSystemSetDiscreteCurl") result(ierr)
+         import :: c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv, C
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSystemSetDiscreteGradient(hypredrv, G) &
+         bind(C, name="HYPREDRV_LinearSystemSetDiscreteGradient") result(ierr)
+         import :: c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv, G
+         integer(c_int32_t) :: ierr
+      end function
 
       function HYPREDRV_ErrorInvalidValue(message) bind(C, name="HYPREDRV_ErrorInvalidValue") result(ierr)
          import :: c_char, c_int32_t

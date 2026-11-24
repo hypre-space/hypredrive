@@ -125,3 +125,40 @@ end
         HypreDrive.close(session)
     end
 end
+
+@testset "extended session API" begin
+    hypredrive_error_clear()
+    @test_throws ArgumentError print_lib_info(:bogus)
+
+    opts = hypredrive_options(solver=:pcg,
+                              preconditioner=:amg,
+                              pcg=(max_iter=30, relative_tol=1.0e-12),
+                              amg=(print_level=0,))
+    session = HypreDriveSession(options=opts)
+    try
+        set_object_name!(session, "julia-test")
+        set_object_name!(session, nothing)
+
+        @test input_warmup(session) >= 0
+        @test input_num_repetitions(session) >= 0
+        @test input_num_linear_systems(session) >= 0
+        @test input_num_precon_variants(session) >= 0
+
+        set_matrix_csr!(session, [0, 1, 2], [0, 1], [2.0, 3.0], 0)
+        set_rhs!(session, [4.0, 9.0])
+        @test get_rhs_values(session) ≈ [4.0, 9.0]
+        @test get_matrix_handle(session) != C_NULL
+        @test get_rhs_handle(session) != C_NULL
+
+        x = zeros(2)
+        solve!(x, session)
+        @test x ≈ [2.0, 3.0]
+        @test get_solution_length(session) == 2
+        @test get_solution_values(session) ≈ [2.0, 3.0]
+        @test get_solution_handle(session) != C_NULL
+
+    finally
+        HypreDrive.close(session)
+    end
+    @test_throws ArgumentError set_object_name!(session, "closed")
+end

@@ -18,3 +18,6 @@ create PRs.
 7. Be explicit when opening issues and reporting bugs. What behavior are you expecting?
    What is your justification or use case for the new feature/enhancement? How can the bug
    be recreated? What are any environment variables to consider?
+8. A new public `HYPREDRV_` API must be exposed in every language interface (C++, Fortran,
+   Python, Rust, Julia and MATLAB/Octave) in the same PR. `scripts/check_interface_coverage.sh`
+   (also run by `ctest -R interface_api_coverage` and in CI) fails until it is.
