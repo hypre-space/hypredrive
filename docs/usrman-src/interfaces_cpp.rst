@@ -257,6 +257,8 @@ to the generated API reference.
      - :cpp:func:`HYPREDRV_LinearSolverSetup`
    * - ``hypredrive::driver::apply_linear_solver``
      - :cpp:func:`HYPREDRV_LinearSolverApply`
+   * - ``hypredrive::driver::set_linear_solver_relative_tol``
+     - :cpp:func:`HYPREDRV_LinearSolverSetRelativeTol`
    * - ``hypredrive::driver::solve``
      - :cpp:func:`HYPREDRV_LinearSolverCreate`, :cpp:func:`HYPREDRV_LinearSolverSetup`, :cpp:func:`HYPREDRV_LinearSolverApply`
    * - ``hypredrive::driver::apply_precon``

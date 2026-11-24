@@ -128,6 +128,10 @@ void hypredrv_SolverApply(hypredrv_Solver *, HYPRE_IJMatrix, HYPRE_IJVector,
 HYPRE_Int hypredrv_SolverSolveOnly(hypredrv_Solver *, HYPRE_IJMatrix, HYPRE_IJVector,
                                    HYPRE_IJVector, HYPRE_IJVector);
 void      hypredrv_SolverDestroy(hypredrv_Solver **);
+/* Change the relative tolerance of a live solver; tol must be finite and in [0, 1). */
+void hypredrv_SolverSetRelativeTol(hypredrv_Solver *, HYPRE_Real);
+/* Change the relative tolerance stored in the arguments used to (re)create solvers. */
+void hypredrv_SolverArgsSetRelativeTol(solver_t, solver_args *, HYPRE_Real);
 
 /* Native MGR component callback prefix. Newer hypre also reads readiness
  * immediately after the three callbacks; older releases ignore that field. */

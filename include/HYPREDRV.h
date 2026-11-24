@@ -2038,6 +2038,31 @@ extern "C"
    HYPREDRV_EXPORT_SYMBOL uint32_t HYPREDRV_LinearSolverApply(HYPREDRV_t hypredrv);
 
    /**
+    * @brief Change the relative convergence tolerance of the Krylov solver.
+    *
+    * Takes effect on the next HYPREDRV_LinearSolverApply, for the live solver
+    * (if any) and for solvers created afterwards, overriding the value given in
+    * the input. Intended for adaptive schemes (e.g. Eisenstat-Walker forcing
+    * terms in inexact Newton) where the tolerance changes every solve while the
+    * solver and preconditioner are reused. Solvers using non-default stopping
+    * criteria (minimum iterations, non-L2 norm, relative change, residual or
+    * convergence-factor tolerances) keep those criteria.
+    *
+    * @param hypredrv The HYPREDRV_t object.
+    * @param tol      New relative tolerance, in [0, 1).
+    *
+    * @return Returns an error code with 0 indicating success.
+    *
+    * Example Usage:
+    * @code
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverSetRelativeTol(hypredrv, 1e-3));
+    *    HYPREDRV_SAFE_CALL(HYPREDRV_LinearSolverApply(hypredrv));
+    * @endcode
+    */
+   HYPREDRV_EXPORT_SYMBOL uint32_t
+   HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol);
+
+   /**
     * @brief Apply the preconditioner associated with a HYPREDRV_t object to an input
     * vector.
     *

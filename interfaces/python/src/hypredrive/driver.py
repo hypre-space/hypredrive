@@ -382,6 +382,14 @@ class HypreDrive:
     # Solve cycle
     # ------------------------------------------------------------------
 
+    def set_relative_tol(self, tol: float) -> None:
+        """Set the Krylov relative tolerance used by subsequent :meth:`solve` calls.
+
+        Overrides the tolerance from the options. ``tol`` must be in ``[0, 1)``.
+        """
+        self._require_open()
+        self._core.solver_set_relative_tol(float(tol))
+
     def solve(self) -> None:
         """Run setup + apply on the configured solver/preconditioner."""
         self._require_open()

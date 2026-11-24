@@ -12,7 +12,7 @@ export hypredrive_error, SolveInfo, hypredrive_initialize, hypredrive_library_pa
        hypredrive_mpi_world_rank, hypredrive_mpi_world_size, hypredrive_mpi_world_sum,
        hypredrive_options, hypredrive_shutdown, hypredrive_solve,
        hypredrive_solve_mpi, hypredrive_solve_mpi_csr,
-       HypreDriveSession, set_matrix_csr!, update_matrix_csr!, set_rhs!, setup!, solve!,
+       HypreDriveSession, set_matrix_csr!, update_matrix_csr!, set_rhs!, setup!, solve!, set_relative_tol!,
        info
 
 struct hypredrive_error <: Exception
@@ -830,6 +830,19 @@ function _get_info(session::HypreDriveSession)
            "get solution norm")
     return SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[],
                      converged[] != 0, final_res_norm[])
+end
+
+"""
+    set_relative_tol!(session, tol)
+
+Set the Krylov relative tolerance (in `[0, 1)`) used by subsequent `solve!` calls,
+overriding the tolerance from the options. The solver and preconditioner are reused.
+"""
+function set_relative_tol!(session::HypreDriveSession, tol::Real)
+    drv = _require_open(session)
+    _check(ccall((:HYPREDRV_JuliaLinearSolverSetRelativeTol, _lib()), UInt32,
+                 (Ptr{Cvoid}, Cdouble), drv, Float64(tol)), "set relative tolerance")
+    return session
 end
 
 function solve!(x::AbstractVector{Float64}, session::HypreDriveSession)

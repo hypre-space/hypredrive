@@ -376,6 +376,11 @@ cdef class HypreDriveCore:
         _check(_c.HYPREDRV_LinearSolverApply(self._handle),
                "HYPREDRV_LinearSolverApply")
 
+    def solver_set_relative_tol(self, double tol):
+        self._require_open()
+        _check(_c.HYPREDRV_LinearSolverSetRelativeTol(self._handle, tol),
+               "HYPREDRV_LinearSolverSetRelativeTol")
+
     def solver_iterations(self):
         self._require_open()
         cdef int iters = 0

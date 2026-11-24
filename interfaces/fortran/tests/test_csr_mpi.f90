@@ -131,6 +131,7 @@ program test_csr_mpi
    deallocate (solution_copy)
    call HYPREDRV_Check(HYPREDRV_LinearSystemGetSolutionNorm(drv, 'l2'//c_null_char, norm))
    if (norm <= 0.0_c_double) stop 'invalid solution norm'
+   if (HYPREDRV_LinearSolverSetRelativeTol(drv, 1.0e-8_c_double) /= 0) stop 'set relative tolerance failed'
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetNumIter(drv, iters))
    if (iters <= 0) stop 'invalid iteration count'
    call HYPREDRV_Check(HYPREDRV_LinearSolverGetConverged(drv, converged))

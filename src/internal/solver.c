@@ -635,6 +635,59 @@ hypredrv_SolverArgsFromPreset(const char *name, solver_t *method, solver_args *a
 }
 
 /*-----------------------------------------------------------------------------
+ * Relative tolerance updates
+ *-----------------------------------------------------------------------------*/
+
+void
+hypredrv_SolverArgsSetRelativeTol(solver_t method, solver_args *args, HYPRE_Real tol)
+{
+   if (!args) return;
+   switch (method)
+   {
+      case SOLVER_PCG:
+         args->pcg.relative_tol = tol;
+         break;
+      case SOLVER_GMRES:
+         args->gmres.relative_tol = tol;
+         break;
+      case SOLVER_FGMRES:
+         args->fgmres.relative_tol = tol;
+         break;
+      case SOLVER_BICGSTAB:
+         args->bicgstab.relative_tol = tol;
+         break;
+      default:
+         break;
+   }
+}
+
+void
+hypredrv_SolverSetRelativeTol(hypredrv_Solver *solver, HYPRE_Real tol)
+{
+   if (!solver || !solver->native) return;
+   switch (solver->method)
+   {
+      case SOLVER_PCG:
+         HYPRE_PCGSetTol(solver->native, tol);
+         break;
+      case SOLVER_GMRES:
+         HYPRE_GMRESSetTol(solver->native, tol);
+         break;
+      case SOLVER_FGMRES:
+         HYPRE_FlexGMRESSetTol(solver->native, tol);
+         break;
+      case SOLVER_BICGSTAB:
+         HYPRE_BiCGSTABSetTol(solver->native, tol);
+         break;
+      default:
+         return;
+   }
+   /* Keep the "other criteria active" sentinel (negative) untouched. */
+   if (solver->convergence_tol >= 0.0) solver->convergence_tol = tol;
+   hypredrv_HypreConsumeErrors(solver->comm);
+}
+
+/*-----------------------------------------------------------------------------
  * SolverCreate
  *-----------------------------------------------------------------------------*/
 

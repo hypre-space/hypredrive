@@ -768,6 +768,13 @@ class driver
    {
       HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSolverApply(handle_));
    }
+   /// @brief C++ wrapper for HYPREDRV_LinearSolverSetRelativeTol.
+   /// @see HYPREDRV_LinearSolverSetRelativeTol
+   void
+   set_linear_solver_relative_tol(double tol)
+   {
+      HYPREDRIVE_CXX_CHECK(HYPREDRV_LinearSolverSetRelativeTol(handle_, tol));
+   }
    /// @brief Convenience wrapper for create/setup/apply solve sequence.
    /// @see HYPREDRV_LinearSolverCreate
    /// @see HYPREDRV_LinearSolverSetup

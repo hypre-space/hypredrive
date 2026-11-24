@@ -159,6 +159,7 @@ Solver and Preconditioner
 - :cpp:func:`HYPREDRV_PreconSetup` - Set up the preconditioner for standalone application.
 - :cpp:func:`HYPREDRV_LinearSolverSetup` - Set up the solver and its associated preconditioner.
 - :cpp:func:`HYPREDRV_LinearSolverApply` - Run the configured solver on the current linear system.
+- :cpp:func:`HYPREDRV_LinearSolverSetRelativeTol` - Change the Krylov relative tolerance between solves.
 - :cpp:func:`HYPREDRV_PreconApply` - Apply the configured preconditioner as an operator.
 - :cpp:func:`HYPREDRV_PreconDestroy` - Destroy the current preconditioner object.
 - :cpp:func:`HYPREDRV_LinearSolverDestroy` - Destroy the current solver and its associated preconditioner.

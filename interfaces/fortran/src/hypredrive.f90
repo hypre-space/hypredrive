@@ -45,6 +45,7 @@ module hypredrive
    public :: HYPREDRV_StateVectorApplyCorrection, HYPREDRV_PreconCreate
    public :: HYPREDRV_LinearSolverCreate, HYPREDRV_PreconSetup
    public :: HYPREDRV_LinearSolverSetup, HYPREDRV_LinearSolverApply
+   public :: HYPREDRV_LinearSolverSetRelativeTol
    public :: HYPREDRV_PreconApply, HYPREDRV_PreconDestroy, HYPREDRV_LinearSolverDestroy
    public :: HYPREDRV_StatsPrint, HYPREDRV_AnnotateBegin, HYPREDRV_AnnotateEnd
    public :: HYPREDRV_AnnotateLevelBegin, HYPREDRV_AnnotateLevelEnd
@@ -476,6 +477,14 @@ module hypredrive
       function HYPREDRV_LinearSolverApply(hypredrv) bind(C, name="HYPREDRV_LinearSolverApply") result(ierr)
          import :: c_int32_t, c_ptr
          type(c_ptr), value :: hypredrv
+         integer(c_int32_t) :: ierr
+      end function
+
+      function HYPREDRV_LinearSolverSetRelativeTol(hypredrv, tol) &
+         bind(C, name="HYPREDRV_LinearSolverSetRelativeTol") result(ierr)
+         import :: c_double, c_int32_t, c_ptr
+         type(c_ptr), value :: hypredrv
+         real(c_double), value :: tol
          integer(c_int32_t) :: ierr
       end function
 

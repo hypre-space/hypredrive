@@ -7,6 +7,10 @@
 # This file chronicles user-level changes, beginning with the most recent.
 #=============================================================================
 
+Unreleased
+
+- Add HYPREDRV_LinearSolverSetRelativeTol to update the Krylov tolerance between solves
+
 Version 0.4.0 released 2026/11/11
 
 - Return native solution pointers and memory locations, and add explicit host copies (#262)

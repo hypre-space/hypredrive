@@ -111,6 +111,11 @@ end
         solve!(x, session)
         @test x ≈ [4.0, 4.0]
 
+        set_relative_tol!(session, 1.0e-10)
+        solve!(x, session)
+        @test x ≈ [4.0, 4.0]
+        @test_throws Exception set_relative_tol!(session, -1.0)
+
         set_matrix_csr!(session, indptr, cols, [4.0, 6.0], 0)
         set_rhs!(session, [8.0, 12.0])
         solve!(x, session)

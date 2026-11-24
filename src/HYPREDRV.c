@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1023,6 +1024,32 @@ HYPREDRV_LinearSolverCreate(HYPREDRV_t hypredrv)
 {
    HYPREDRV_API_ENTER();
    return hypredrv_ObjectLinearSolverCreate(hypredrv);
+}
+
+/*-----------------------------------------------------------------------------
+ * Change the relative tolerance of the Krylov solver
+ *-----------------------------------------------------------------------------*/
+
+uint32_t
+HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol)
+{
+   HYPREDRV_API_ENTER();
+   HYPREDRV_CHECK_ARGS();
+
+   if (!isfinite(tol) || tol < 0.0 || tol >= 1.0)
+   {
+      hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
+      hypredrv_ErrorMsgAdd("relative tolerance must be in [0, 1)");
+      return hypredrv_ErrorCodeGet();
+   }
+
+   /* Persist in the arguments so solvers created later use it too. */
+   hypredrv_SolverArgsSetRelativeTol(hypredrv->iargs->solver_method,
+                                     &hypredrv->iargs->solver, tol);
+   /* Update the live solver, if any (it stays valid across reuse cycles). */
+   hypredrv_SolverSetRelativeTol(hypredrv->solver, tol);
+
+   return hypredrv_ErrorCodeGet();
 }
 
 /*-----------------------------------------------------------------------------
