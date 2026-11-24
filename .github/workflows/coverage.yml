@@ -68,8 +68,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Build HYPRE
         id: build-hypre

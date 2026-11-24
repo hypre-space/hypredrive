@@ -71,8 +71,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Set up MinGW-w64
         uses: msys2/setup-msys2@v2
@@ -226,8 +224,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - *install-msmpi
 
@@ -353,8 +349,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Configure hypredrive with Python interface
         run: |
@@ -913,8 +907,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Build HYPRE
         id: build-hypre
@@ -1065,8 +1057,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Build HYPRE
         id: build-hypre
@@ -1174,8 +1164,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Configure hypredrive with ${{ matrix.dependency.name }}
         run: |
@@ -1274,8 +1262,6 @@ jobs:
         with:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
-          restore-keys: |
-            datasets-v3-full-
 
       - name: Build HYPRE (mixedint)
         id: build-hypre
