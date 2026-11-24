@@ -106,6 +106,20 @@ def test_driver_lifecycle(laplacian_1d, base_options):
     np.testing.assert_allclose(x1, x2, rtol=1e-9, atol=1e-12)
 
 
+def test_set_relative_tol(laplacian_1d, base_options):
+    indptr, cols, data, rhs, n = laplacian_1d
+    with hd.HypreDrive(options=base_options) as drv:
+        drv.set_matrix_from_csr(indptr, cols, data, row_start=0, row_end=n - 1)
+        drv.set_rhs(rhs)
+        drv.set_relative_tol(1e-12)
+        drv.solve()
+        assert drv.last_converged is True
+        assert drv.last_final_res_norm <= 1e-12 * 10
+        for bad in (-1.0, 1.0, float("nan")):
+            with pytest.raises(Exception):
+                drv.set_relative_tol(bad)
+
+
 def test_input_args_override(laplacian_1d, base_options):
     indptr, cols, data, rhs, n = laplacian_1d
 

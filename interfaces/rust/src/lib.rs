@@ -451,6 +451,14 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         Ok(())
     }
 
+    /// Set the Krylov relative tolerance used by subsequent solves.
+    ///
+    /// Overrides the tolerance from the YAML configuration. `tol` must be in `[0, 1)`.
+    pub fn set_relative_tol(&mut self, tol: f64) -> Result<(), Error> {
+        let status = unsafe { ffi::HYPREDRV_LinearSolverSetRelativeTol(self.handle, tol) };
+        self.check("HYPREDRV_LinearSolverSetRelativeTol", status)
+    }
+
     /// Create, set up and apply the configured solver, returning owned host data.
     ///
     /// A missing initial guess is constructed according to the YAML settings.

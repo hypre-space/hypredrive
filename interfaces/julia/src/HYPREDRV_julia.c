@@ -425,6 +425,13 @@ HYPREDRV_JuliaLinearSolverApply(HYPREDRV_t hypredrv)
    return HYPREDRV_LinearSolverApply(hypredrv);
 }
 
+/** @brief Set the Krylov relative tolerance for the next solve. */
+uint32_t
+HYPREDRV_JuliaLinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol)
+{
+   return HYPREDRV_LinearSolverSetRelativeTol(hypredrv, tol);
+}
+
 /** @brief Destroy the configured linear solver. */
 uint32_t
 HYPREDRV_JuliaLinearSolverDestroy(HYPREDRV_t hypredrv)

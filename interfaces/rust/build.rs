@@ -192,6 +192,7 @@ fn main() {
         "LinearSolverCreate",
         "LinearSolverSetup",
         "LinearSolverApply",
+        "LinearSolverSetRelativeTol",
         "LinearSolverDestroy",
         "LinearSystemGetSolutionLength",
         "LinearSystemCopySolutionValues",

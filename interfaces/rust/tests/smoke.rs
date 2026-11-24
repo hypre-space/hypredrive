@@ -106,6 +106,12 @@ fn serial_minimal(runtime: &Runtime<'_>) -> TestResult {
     driver.set_matrix_csr(0, 1, &[0, 2, 4], &[0, 1, 0, 1], &[2.0, -1.0, -1.0, 2.0])?;
     driver.set_rhs(&[1.0, 1.0])?;
     driver.set_initial_guess()?;
+    driver.set_relative_tol(1.0e-12)?;
+    check(
+        &comm,
+        driver.set_relative_tol(-1.0).is_err(),
+        "a negative relative tolerance must be rejected",
+    )?;
     let result = driver.solve()?;
     check_solution(&comm, &result, 2, 1.0)?;
     let residual =

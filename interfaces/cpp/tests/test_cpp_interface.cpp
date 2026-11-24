@@ -97,6 +97,23 @@ solve_on_comm(MPI_Comm comm)
    drv.set_rhs_from_array(first, last, rhs.data());
    drv.set_zero_initial_guess();
    drv.solve();
+   drv.set_linear_solver_relative_tol(1e-3);
+   drv.solve();
+   {
+      bool threw = false;
+      try
+      {
+         drv.set_linear_solver_relative_tol(-1.0);
+      }
+      catch (const hd::error &)
+      {
+         threw = true;
+      }
+      if (!threw)
+      {
+         throw std::runtime_error("expected an invalid relative tolerance to throw");
+      }
+   }
    const double norm = drv.get_solution_norm("l2");
    if (!(norm > 0.0))
    {
