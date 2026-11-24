@@ -154,7 +154,7 @@ runs:
             AR="ar -rc" \
             CC=mpicc \
             ./configure "${CONFIG_ARGS[@]}"
-            make -j
+            make -j"$(getconf _NPROCESSORS_ONLN)"
             make install
             popd
           else
