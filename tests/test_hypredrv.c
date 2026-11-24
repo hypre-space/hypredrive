@@ -1135,6 +1135,45 @@ test_HYPREDRV_preset_only_configuration_solves(void)
 }
 
 static void
+test_HYPREDRV_LinearSolverSetRelativeTol(void)
+{
+   reset_state();
+   HYPREDRV_t obj = create_initialized_obj();
+   ASSERT_EQ(HYPREDRV_SetLibraryMode(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetSolverPreset(obj, "pcg"), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_InputArgsSetPreconPreset(obj, "poisson"), ERROR_NONE);
+   HYPRE_IJMatrix A = create_test_ijmatrix_1x1(4.0);
+   HYPRE_IJVector b = create_test_ijvector_1x1(2.0);
+   attach_library_scalar_system(obj, A, b);
+
+   /* Before any solver exists: stored for the solver created next */
+   ASSERT_EQ(HYPREDRV_LinearSolverSetRelativeTol(obj, 1e-3), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, 1e-3, 0.0);
+   run_library_linear_solve(obj, NULL);
+
+   /* With a live solver: applied without recreating it, then persisted */
+   ASSERT_EQ(HYPREDRV_LinearSolverSetRelativeTol(obj, 1e-9), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, 1e-9, 0.0);
+   ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
+   ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
+   ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
+
+   /* Invalid values are rejected and leave the tolerance untouched */
+   ASSERT_NE(HYPREDRV_LinearSolverSetRelativeTol(obj, -1.0), ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_NE(HYPREDRV_LinearSolverSetRelativeTol(obj, 1.0), ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_NE(HYPREDRV_LinearSolverSetRelativeTol(obj, NAN), ERROR_NONE);
+   hypredrv_ErrorCodeResetAll();
+   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, 1e-9, 0.0);
+
+   ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
+   ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
+   ASSERT_EQ(HYPRE_IJMatrixDestroy(A), 0);
+   ASSERT_EQ(HYPREDRV_Finalize(), ERROR_NONE);
+}
+
+static void
 run_preset_only_configuration_for_capture(void *context)
 {
    (void)context;
@@ -6148,6 +6187,7 @@ int
 main(int argc, char **argv)
 {
    MPI_Init(&argc, &argv);
+   RUN_TEST(test_HYPREDRV_LinearSolverSetRelativeTol);
    RUN_TEST(test_failed_native_precon_setup_is_rebuilt);
    RUN_TEST(test_solver_teardown_uses_creation_configuration);
    RUN_TEST(test_solver_queries_use_bound_runtime);
