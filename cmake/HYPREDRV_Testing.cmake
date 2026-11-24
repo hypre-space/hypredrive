@@ -1484,6 +1484,14 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 string(REPLACE "|" ";" _stats_parts "${_stats_case}")
                 list(GET _stats_parts 0 _stats_name)
                 list(GET _stats_parts 1 _stats_cfg)
+                # HYPRE v3.2.0 fails these setups: F-relaxation reuse with
+                # diagnostics sets an internal error, and block-Jacobi MGR
+                # operators have incompatible dimensions. These cases pass on
+                # post-v3.2.0 development builds.
+                if (NOT HYPREDRV_HAVE_HYPRE_30200_DEV1 AND
+                    _stats_name MATCHES "^(frelax_reuse|blk_jacobi_restriction|blk_jacobi_level1)$")
+                    continue()
+                endif()
                 add_hypredrive_cli_test(ex7_mgr_${_stats_name}_stats_cli 1 ${_stats_cfg}
                     OVERRIDES
                         --preconditioner:mgr:print_level 1
