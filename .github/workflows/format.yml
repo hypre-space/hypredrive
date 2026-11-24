@@ -43,6 +43,7 @@ jobs:
       }}
     name: code format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -74,6 +75,7 @@ jobs:
       }}
     name: private prefix
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
@@ -89,6 +91,7 @@ jobs:
       }}
     name: symbol prefix
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       HYPRE_VERSION: master
       BUILD_DIR: build-symbol-check
@@ -134,6 +137,7 @@ jobs:
       }}
     name: public APIs
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 

@@ -39,6 +39,7 @@ jobs:
       }}
     name: cppcheck
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       HYPRE_VERSION: master
       BUILD_DIR: build-analysis
@@ -97,6 +98,7 @@ jobs:
       }}
     name: clang-tidy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       HYPRE_VERSION: master
       BUILD_DIR: build-analysis
@@ -252,6 +254,7 @@ jobs:
       }}
     name: cyclomatic complexity
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     env:
       # Pinned so a lizard release cannot silently change the metric or the gate.
       LIZARD_VERSION: 1.24.0

@@ -34,6 +34,7 @@ jobs:
     # "Code Portability / Linux" and "Code Portability / MacOS".
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
