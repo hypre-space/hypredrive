@@ -592,7 +592,6 @@ typedef struct
    void    *ptr;
    uint64_t owner;    /* driver id for borrowed objects, else 0 */
    int      owned;    /* 1 if this table must destroy ptr */
-   uint64_t attached; /* last driver this matrix/vector was attached to */
    /* Borrowed objects only: the driver getter that produced ptr. The driver may
     * replace the object (set_matrix, set_rhs, build, ...) and free the old one,
     * so the pointer is re-read on every lookup and the handle dies if it changed. */
@@ -604,6 +603,19 @@ static HYPREDRV_MatlabEntry *HYPREDRV_matlab_table     = NULL;
 static size_t                HYPREDRV_matlab_count     = 0;
 static size_t                HYPREDRV_matlab_capacity  = 0;
 static uint64_t              HYPREDRV_matlab_next_id   = 1;
+
+/* (object, driver) pairs: every driver a matrix/vector has been given to. An
+ * object may be attached to several drivers, so a single "last driver" field is
+ * not enough to know when it is safe to destroy. */
+typedef struct
+{
+   uint64_t object;
+   uint64_t driver;
+} HYPREDRV_MatlabAttachment;
+
+static HYPREDRV_MatlabAttachment *HYPREDRV_matlab_attach          = NULL;
+static size_t                     HYPREDRV_matlab_attach_count    = 0;
+static size_t                     HYPREDRV_matlab_attach_capacity = 0;
 
 typedef void (*HYPREDRV_MatlabCommandFn)(int nlhs, mxArray *plhs[], int na,
                                          const mxArray *a[]);
@@ -703,7 +715,6 @@ HYPREDRV_MatlabRegister(int kind, void *ptr, uint64_t owner, int owned)
    e->ptr                  = ptr;
    e->owner                = owner;
    e->owned                = owned;
-   e->attached             = 0;
    e->borrow_matrix        = NULL;
    e->borrow_vector        = NULL;
    return e->id;
@@ -720,6 +731,67 @@ HYPREDRV_MatlabRemoveEntry(uint64_t id)
          return;
       }
    }
+}
+
+static void
+HYPREDRV_MatlabAttach(uint64_t object, uint64_t driver)
+{
+   for (size_t i = 0; i < HYPREDRV_matlab_attach_count; i++)
+   {
+      if (HYPREDRV_matlab_attach[i].object == object &&
+          HYPREDRV_matlab_attach[i].driver == driver)
+      {
+         return;
+      }
+   }
+   if (HYPREDRV_matlab_attach_count == HYPREDRV_matlab_attach_capacity)
+   {
+      size_t new_cap = HYPREDRV_matlab_attach_capacity ? 2 * HYPREDRV_matlab_attach_capacity : 16;
+      HYPREDRV_MatlabAttachment *grown = (HYPREDRV_MatlabAttachment *)realloc(
+         HYPREDRV_matlab_attach, new_cap * sizeof(HYPREDRV_MatlabAttachment));
+      if (!grown)
+      {
+         HYPREDRV_MatlabFail("hypredrive:OutOfMemory", "failed to grow the attachment table");
+      }
+      HYPREDRV_matlab_attach          = grown;
+      HYPREDRV_matlab_attach_capacity = new_cap;
+   }
+   HYPREDRV_matlab_attach[HYPREDRV_matlab_attach_count].object = object;
+   HYPREDRV_matlab_attach[HYPREDRV_matlab_attach_count].driver = driver;
+   HYPREDRV_matlab_attach_count++;
+}
+
+/* Drops every attachment that involves `id` (an object being destroyed or a
+ * driver that no longer exists). */
+static void
+HYPREDRV_MatlabDetach(uint64_t id)
+{
+   for (size_t i = 0; i < HYPREDRV_matlab_attach_count;)
+   {
+      if (HYPREDRV_matlab_attach[i].object == id || HYPREDRV_matlab_attach[i].driver == id)
+      {
+         HYPREDRV_matlab_attach[i] = HYPREDRV_matlab_attach[--HYPREDRV_matlab_attach_count];
+      }
+      else
+      {
+         i++;
+      }
+   }
+}
+
+/* True if some live driver still holds `object`. */
+static int
+HYPREDRV_MatlabIsAttachedToLiveDriver(uint64_t object)
+{
+   for (size_t i = 0; i < HYPREDRV_matlab_attach_count; i++)
+   {
+      if (HYPREDRV_matlab_attach[i].object == object &&
+          HYPREDRV_MatlabFindEntry(HYPREDRV_matlab_attach[i].driver))
+      {
+         return 1;
+      }
+   }
+   return 0;
 }
 
 static void
@@ -747,6 +819,7 @@ HYPREDRV_MatlabDestroyDriverEntry(uint64_t id)
    }
    HYPREDRV_t drv = (HYPREDRV_t)e->ptr;
    HYPREDRV_MatlabRemoveEntry(id);
+   HYPREDRV_MatlabDetach(id);
    for (size_t i = 0; i < HYPREDRV_matlab_count;)
    {
       if (HYPREDRV_matlab_table[i].owner == id)
@@ -786,6 +859,10 @@ HYPREDRV_MatlabDestroyAllHandles(void)
       HYPREDRV_MatlabReleaseObject(&HYPREDRV_matlab_table[i]);
    }
    HYPREDRV_matlab_count = 0;
+   free(HYPREDRV_matlab_attach);
+   HYPREDRV_matlab_attach          = NULL;
+   HYPREDRV_matlab_attach_count    = 0;
+   HYPREDRV_matlab_attach_capacity = 0;
    free(HYPREDRV_matlab_table);
    HYPREDRV_matlab_table    = NULL;
    HYPREDRV_matlab_capacity = 0;
@@ -844,7 +921,15 @@ HYPREDRV_MatlabArgObject(const mxArray *arg, int kind, const mxArray *drv_arg,
    HYPREDRV_MatlabEntry *e = HYPREDRV_MatlabArgEntry(arg, kind);
    if (drv_arg)
    {
-      e->attached = HYPREDRV_MatlabHandleId(drv_arg);
+      uint64_t did = HYPREDRV_MatlabHandleId(drv_arg);
+      /* A borrowed object belongs to the driver it came from and dies with it,
+       * so another driver cannot keep a pointer to it. */
+      if (!e->owned && e->owner != did)
+      {
+         HYPREDRV_MatlabFail("hypredrive:InvalidHandle",
+                             "a handle borrowed from one driver cannot be given to another");
+      }
+      HYPREDRV_MatlabAttach(e->id, did);
    }
    return e->ptr;
 }
@@ -1197,12 +1282,13 @@ HYPREDRV_MatlabCmdDestroy(int nlhs, mxArray *plhs[], int na, const mxArray *a[])
       HYPREDRV_MatlabFail("hypredrive:InvalidHandle",
                           "borrowed handles are released with their driver");
    }
-   if (e->attached && HYPREDRV_MatlabFindEntry(e->attached))
+   if (HYPREDRV_MatlabIsAttachedToLiveDriver(e->id))
    {
       HYPREDRV_MatlabFail("hypredrive:ObjectInUse",
                           "object is attached to a live driver; destroy the driver first");
    }
    HYPREDRV_MatlabReleaseObject(e);
+   HYPREDRV_MatlabDetach(e->id);
    HYPREDRV_MatlabRemoveEntry(e->id);
 }
 
@@ -1648,8 +1734,13 @@ HYPREDRV_MatlabCmdStateVectorSet(int nlhs, mxArray *plhs[], int na, const mxArra
          HYPREDRV_MatlabFail("hypredrive:InvalidHandle",
                              "state vector handle is stale or not a vector");
       }
-      vecs[i]     = (HYPRE_IJVector)e->ptr;
-      e->attached = did;
+      if (!e->owned && e->owner != did)
+      {
+         HYPREDRV_MatlabFail("hypredrive:InvalidHandle",
+                             "a handle borrowed from one driver cannot be given to another");
+      }
+      vecs[i] = (HYPRE_IJVector)e->ptr;
+      HYPREDRV_MatlabAttach(e->id, did);
    }
    HD_CHECK(HYPREDRV_StateVectorSet(drv, n, vecs));
 }

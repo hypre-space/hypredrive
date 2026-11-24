@@ -156,6 +156,30 @@ if hypredrive_mex('is_valid', hm)
     error('hypredrive:test', 'borrowed matrix handle survived the matrix being replaced');
 end
 hypredrive_mex('destroy', drv);
+
+% An owned matrix shared by two drivers must stay alive until both are gone:
+% destroying one driver must not make the matrix look free while the other
+% still holds it.
+d1 = hypredrive_mex('create', yaml);
+d2 = hypredrive_mex('create', yaml);
+hA = hypredrive_mex('matrix_from_sparse', A);
+hypredrive_mex('set_matrix', d1, hA);
+hypredrive_mex('set_matrix', d2, hA);
+hypredrive_mex('destroy', d2);
+expect_error(@() hypredrive_mex('destroy', hA), 'hypredrive:ObjectInUse');
+hypredrive_mex('destroy', d1);
+hypredrive_mex('destroy', hA);
+
+% A handle borrowed from one driver cannot be given to another: it would dangle
+% once its own driver is destroyed.
+d1 = hypredrive_mex('create', yaml);
+d2 = hypredrive_mex('create', yaml);
+hypredrive_mex('set_matrix_csr', d1, A);
+hypredrive_mex('set_rhs_array', d1, b);
+hb = hypredrive_mex('get_rhs', d1);
+expect_error(@() hypredrive_mex('set_rhs', d2, hb), 'hypredrive:InvalidHandle');
+hypredrive_mex('destroy', d1);
+hypredrive_mex('destroy', d2);
 end
 
 function expect_error(fn, id)
