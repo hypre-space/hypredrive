@@ -1033,6 +1033,7 @@ uint32_t
 HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol)
 {
    HYPREDRV_API_ENTER();
+   HYPREDRV_CHECK_ARGS();
 
    if (!(tol >= 0.0 && tol < 1.0)) /* also rejects NaN */
    {
