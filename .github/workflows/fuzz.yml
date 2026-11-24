@@ -47,9 +47,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
@@ -104,9 +104,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu
@@ -157,9 +157,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Setup Ubuntu environment
         uses: ./.github/actions/setup-ubuntu

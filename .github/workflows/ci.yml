@@ -66,6 +66,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          restore-keys: |
+            datasets-v3-full-
+
       - name: Set up MinGW-w64
         uses: msys2/setup-msys2@v2
         with:
@@ -213,6 +221,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          restore-keys: |
+            datasets-v3-full-
+
       - *install-msmpi
 
       - name: Configure hypredrive
@@ -331,6 +347,14 @@ jobs:
           hypre_shared_libs: 'ON'
           os: ${{ matrix.os }}
           mpi_flavor: ${{ matrix.mpi_flavor }}
+
+      - name: Cache datasets
+        uses: actions/cache@v5
+        with:
+          path: data
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          restore-keys: |
+            datasets-v3-full-
 
       - name: Configure hypredrive with Python interface
         run: |
@@ -888,9 +912,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Build HYPRE
         id: build-hypre
@@ -1033,13 +1057,16 @@ jobs:
           sudo apt-get install -y autoconf automake libtool m4 make \
             libopenmpi-dev openmpi-bin gcc g++
 
-      - name: Cache datasets
-        uses: actions/cache@v5
+      # This job fetches only a subset of the datasets.  Restore the complete
+      # set saved by the full-set jobs, but never save: actions/cache entries are
+      # immutable, so a subset-only entry would shadow the complete one.
+      - name: Restore datasets (subset job; never saves)
+        uses: actions/cache/restore@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Build HYPRE
         id: build-hypre
@@ -1139,13 +1166,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.dependency.cache_key }}-
 
-      - name: Cache datasets
-        uses: actions/cache@v5
+      # This job fetches only a subset of the datasets.  Restore the complete
+      # set saved by the full-set jobs, but never save: actions/cache entries are
+      # immutable, so a subset-only entry would shadow the complete one.
+      - name: Restore datasets (subset job; never saves)
+        uses: actions/cache/restore@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Configure hypredrive with ${{ matrix.dependency.name }}
         run: |
@@ -1243,9 +1273,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: data
-          key: datasets-v2-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
+          key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
           restore-keys: |
-            datasets-v2-
+            datasets-v3-full-
 
       - name: Build HYPRE (mixedint)
         id: build-hypre
