@@ -538,6 +538,20 @@ jobs:
       - name: Set up Rust
         run: rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
 
+      # The single-precision job only runs the rejection check and finishes first;
+      # it must not save a partial registry under the shared key.
+      - name: Cache Cargo registry
+        if: matrix.hypre_mode != 'single'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-registry-${{ hashFiles('interfaces/rust/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-
+
       - name: Build HYPRE
         id: build-hypre
         uses: ./.github/actions/build-hypre
