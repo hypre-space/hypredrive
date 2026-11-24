@@ -173,7 +173,18 @@ jobs:
             export PATH="$dir:$PATH"
           done < <(find "$PWD/build" -type f -name '*.dll' -printf '%h\n' | sort -u)
           export TMPDIR="$(cygpath -m "$RUNNER_TEMP")"
-          ctest --test-dir build --output-on-failure --no-tests=error --timeout 60
+          if ctest --test-dir build --output-on-failure --no-tests=error --timeout 60; then
+            exit 0
+          else
+            ctest_status=$?
+            failed_log="$PWD/build/Testing/Temporary/LastTestsFailed.log"
+            if [[ -f "$failed_log" ]]; then
+              while IFS=: read -r _ test_name; do
+                echo "::error title=CTest failure::$test_name"
+              done < "$failed_log"
+            fi
+            exit "$ctest_status"
+          fi
 
   windows-native-build:
     if: >-
@@ -239,6 +250,17 @@ jobs:
           $env:PATH = ($dllDirs -join ';') + ";$env:PATH"
           $env:TMPDIR = $env:RUNNER_TEMP
           ctest --test-dir "$env:BUILD_DIR" -C Release --output-on-failure --no-tests=error --timeout 60
+          $ctestStatus = $LASTEXITCODE
+          if ($ctestStatus -ne 0) {
+            $failedLog = Join-Path $env:BUILD_DIR 'Testing/Temporary/LastTestsFailed.log'
+            if (Test-Path $failedLog) {
+              foreach ($line in Get-Content $failedLog) {
+                $testName = $line -replace '^\d+:', ''
+                Write-Output "::error title=CTest failure::$testName"
+              }
+            }
+            exit $ctestStatus
+          }
 
   python-interface:
     if: >-
@@ -808,7 +830,19 @@ jobs:
           OMPI_MCA_btl_vader_single_copy_mechanism: none
           OMPI_MCA_rmaps_base_oversubscribe: 1
           OMP_NUM_THREADS: 1
-        run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 60 # 60 seconds per test
+        run: |
+          if ctest --test-dir "$BUILD_DIR" --output-on-failure --timeout 60; then
+            exit 0
+          else
+            ctest_status=$?
+            failed_log="$BUILD_DIR/Testing/Temporary/LastTestsFailed.log"
+            if [[ -f "$failed_log" ]]; then
+              while IFS=: read -r _ test_name; do
+                echo "::error title=CTest failure::$test_name"
+              done < "$failed_log"
+            fi
+            exit "$ctest_status"
+          fi
 
       - name: Verify example outputs (optional)
         continue-on-error: true
