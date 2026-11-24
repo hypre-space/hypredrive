@@ -1684,13 +1684,22 @@ HYPREDRV_MatlabCmdGetRhsValues(int nlhs, mxArray *plhs[], int na, const mxArray 
 {
    (void)nlhs;
    (void)na;
-   HYPREDRV_t   drv = HYPREDRV_MatlabArgDriver(a[0]);
-   HYPRE_Vector rhs = NULL;
+   HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);
+#ifdef HYPRE_USING_GPU
    /* HYPREDRV_LinearSystemGetRHSValues returns a raw pointer with no memory
     * location, which is unsafe to read on a device build. Read the RHS vector
     * through the IJ API instead, which copies to the host. */
+   HYPRE_Vector rhs = NULL;
    HD_CHECK(HYPREDRV_LinearSystemGetRHS(drv, &rhs));
    plhs[0] = HYPREDRV_MatlabReadIJVector((HYPRE_IJVector)rhs);
+#else
+   /* Host-only build: the raw RHS pointer lives in host memory. */
+   HYPRE_Complex *data = NULL;
+   /* The RHS has the same local length as the solution. */
+   HYPRE_BigInt n = HYPREDRV_MatlabSolutionLength(drv);
+   HD_CHECK(HYPREDRV_LinearSystemGetRHSValues(drv, &data));
+   plhs[0] = HYPREDRV_MatlabColumnFromHost(data, n);
+#endif
 }
 
 static void
