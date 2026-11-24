@@ -1099,7 +1099,7 @@ jobs:
             cmake_options: -DHYPREDRV_ENABLE_CALIPER=ON
             build_shared_libs: 'ON'
             apt_packages: ''
-            required_datasets: ps3d10pt7
+            required_datasets: 'ps3d10pt7;compflow6k;poromech2k'
             ctest_regex: ''
             runtime_env: CALI_CONFIG=runtime-report
           - name: SuperLU_DIST

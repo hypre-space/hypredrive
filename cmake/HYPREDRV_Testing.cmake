@@ -1049,7 +1049,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
     hypredrv_check_hypre_version(30100 0)
     hypredrv_check_hypre_version(30200 0)
     hypredrv_check_hypre_version(30200 1)
-    hypredrv_check_hypre_version(30300 0)
+    hypredrv_check_hypre_version(30201 5)
     hypredrv_check_hypre_version(30100 5)
     hypredrv_check_hypre_version(30100 38)
     hypredrv_check_hypre_version(30100 50)
@@ -1485,12 +1485,7 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
                 string(REPLACE "|" ";" _stats_parts "${_stats_case}")
                 list(GET _stats_parts 0 _stats_name)
                 list(GET _stats_parts 1 _stats_cfg)
-                # HYPRE 3.2.0/3.2.1 can error or crash when printing MGR setup
-                # stats with reused components; its block-Jacobi MGR operators
-                # also have incompatible dimensions. These cases pass on
-                # development builds and HYPRE 3.3+.
-                if (NOT HYPREDRV_HAVE_HYPRE_DEVELOP_NUMBER AND
-                    NOT HYPREDRV_HAVE_HYPRE_30300_DEV0 AND
+                if (NOT HYPREDRV_HAVE_HYPRE_30201_DEV5 AND
                     _stats_name MATCHES "^(frelax_reuse|coarse_reuse|coarse_ilu_reuse|blk_jacobi_restriction|blk_jacobi_level1|frelax_schwarz)$")
                     continue()
                 endif()
