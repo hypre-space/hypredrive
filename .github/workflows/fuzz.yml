@@ -183,13 +183,6 @@ jobs:
       - name: Build target
         run: cmake --build build-fuzz --target hypredrv-fuzz-${{ matrix.mode }} --parallel
 
-      - name: Restore evolved corpus
-        uses: actions/cache@v5
-        with:
-          path: build-fuzz/fuzz-run
-          key: fuzz-corpus-${{ matrix.mode }}-${{ github.run_id }}
-          restore-keys: fuzz-corpus-${{ matrix.mode }}-
-
       - name: Run nightly campaign
         env:
           ASAN_OPTIONS: halt_on_error=1:abort_on_error=0:print_stacktrace=1:detect_leaks=0
@@ -200,7 +193,10 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: fuzz-${{ matrix.mode }}-${{ github.run_id }}
+          # The evolved corpus is not reused (fuzzing.sh seeds a fresh run
+          # directory every time), so keep it out of the uploaded findings.
           path: |
             build-fuzz/fuzz-run
+            !build-fuzz/fuzz-run/*/corpus
             fuzz-${{ matrix.mode }}.log
           retention-days: 14
