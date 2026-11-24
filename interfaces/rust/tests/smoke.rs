@@ -201,6 +201,14 @@ fn initial_guess_and_statistics(runtime: &Runtime<'_>) -> TestResult {
 fn solve_on_comm(runtime: &Runtime<'_>, comm: &impl Communicator) -> TestResult {
     let slab = laplacian(comm)?;
     let mut driver = HypreDrive::from_yaml(runtime, comm, YAML)?;
+    if comm.size() > 1 {
+        let differing_tol = if comm.rank() == 0 { 1.0e-12 } else { 0.1 };
+        check(
+            comm,
+            driver.set_relative_tol(differing_tol).is_err(),
+            "different relative tolerances must be rejected on every rank",
+        )?;
+    }
 
     // Leading storage is deliberately outside the consumed CSR slab.
     let mut columns = vec![-1];

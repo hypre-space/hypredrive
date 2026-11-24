@@ -54,6 +54,7 @@ typedef struct SolverOps_struct
    HYPRE_Int (*solve)(HYPRE_Solver, HYPRE_ParCSRMatrix, HYPRE_ParVector, HYPRE_ParVector);
    HYPRE_Int (*destroy)(HYPRE_Solver);
    HYPRE_Int (*set_reference)(HYPRE_Solver, HYPRE_ParVector);
+   HYPRE_Int (*set_tol)(HYPRE_Solver, HYPRE_Real);
    HYPRE_Int (*get_num_iterations)(HYPRE_Solver, HYPRE_Int *);
    HYPRE_Int (*get_converged)(HYPRE_Solver, HYPRE_Int *);
    HYPRE_Int (*get_final_rel_res_norm)(HYPRE_Solver, HYPRE_Real *);
@@ -348,6 +349,7 @@ static const SolverOps solver_ops[] = {
          .setup                  = HYPRE_ParCSRPCGSetup,
          .solve                  = HYPRE_ParCSRPCGSolve,
          .destroy                = HYPRE_ParCSRPCGDestroy,
+         .set_tol                = HYPRE_PCGSetTol,
          .get_num_iterations     = HYPRE_PCGGetNumIterations,
          .get_converged          = HYPRE_PCGGetConverged,
          .get_final_rel_res_norm = HYPRE_PCGGetFinalRelativeResidualNorm,
@@ -366,6 +368,7 @@ static const SolverOps solver_ops[] = {
 #if HYPRE_CHECK_MIN_VERSION(30000, 0)
          .set_reference = HYPRE_ParCSRGMRESSetRefSolution,
 #endif
+         .set_tol                = HYPRE_GMRESSetTol,
          .get_num_iterations     = HYPRE_GMRESGetNumIterations,
          .get_converged          = HYPRE_GMRESGetConverged,
          .get_final_rel_res_norm = HYPRE_GMRESGetFinalRelativeResidualNorm,
@@ -381,6 +384,7 @@ static const SolverOps solver_ops[] = {
          .setup                  = HYPRE_ParCSRFlexGMRESSetup,
          .solve                  = HYPRE_ParCSRFlexGMRESSolve,
          .destroy                = HYPRE_ParCSRFlexGMRESDestroy,
+         .set_tol                = HYPRE_FlexGMRESSetTol,
          .get_num_iterations     = HYPRE_FlexGMRESGetNumIterations,
          .get_converged          = HYPRE_FlexGMRESGetConverged,
          .get_final_rel_res_norm = HYPRE_FlexGMRESGetFinalRelativeResidualNorm,
@@ -396,6 +400,7 @@ static const SolverOps solver_ops[] = {
          .setup                  = HYPRE_ParCSRBiCGSTABSetup,
          .solve                  = HYPRE_ParCSRBiCGSTABSolve,
          .destroy                = HYPRE_ParCSRBiCGSTABDestroy,
+         .set_tol                = HYPRE_BiCGSTABSetTol,
          .get_num_iterations     = HYPRE_BiCGSTABGetNumIterations,
          .get_converged          = SolverBiCGSTABGetConverged,
          .get_final_rel_res_norm = HYPRE_BiCGSTABGetFinalRelativeResidualNorm,
@@ -664,27 +669,13 @@ hypredrv_SolverArgsSetRelativeTol(solver_t method, solver_args *args, HYPRE_Real
 void
 hypredrv_SolverSetRelativeTol(hypredrv_Solver *solver, HYPRE_Real tol)
 {
-   if (!solver || !solver->native) return;
-   switch (solver->method)
-   {
-      case SOLVER_PCG:
-         HYPRE_PCGSetTol(solver->native, tol);
-         break;
-      case SOLVER_GMRES:
-         HYPRE_GMRESSetTol(solver->native, tol);
-         break;
-      case SOLVER_FGMRES:
-         HYPRE_FlexGMRESSetTol(solver->native, tol);
-         break;
-      case SOLVER_BICGSTAB:
-         HYPRE_BiCGSTABSetTol(solver->native, tol);
-         break;
-      default:
-         return;
-   }
+   if (!solver) return;
+   solver->ops->set_tol(solver->native, tol);
    /* Keep the "other criteria active" sentinel (negative) untouched. */
    if (solver->convergence_tol >= 0.0) solver->convergence_tol = tol;
-   hypredrv_HypreConsumeErrors(solver->comm);
+   /* HYPRE's tolerance setters only update local state. Validation may have
+    * returned early on a peer, so consuming sticky errors must stay local. */
+   hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
 }
 
 /*-----------------------------------------------------------------------------

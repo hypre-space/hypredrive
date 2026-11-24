@@ -591,8 +591,22 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
 
     /// Set the Krylov relative tolerance used by subsequent solves.
     ///
-    /// Overrides the tolerance from the YAML configuration. `tol` must be in `[0, 1)`.
+    /// Overrides the tolerance from the YAML configuration. Every rank must
+    /// supply the same `tol` in `[0, 1)`.
     pub fn set_relative_tol(&mut self, tol: f64) -> Result<(), Error> {
+        let operation = "set_relative_tol";
+        let mut root_tol = tol;
+        self.communicator
+            .process_at_rank(0)
+            .broadcast_into(&mut root_tol);
+        let validation = if !(0.0..1.0).contains(&tol) {
+            Err(Error::invalid(operation, "tolerance must be in [0, 1)"))
+        } else if tol != root_tol {
+            Err(Error::invalid(operation, "tolerance must match on every rank"))
+        } else {
+            Ok(())
+        };
+        self.agreed(operation, validation)?;
         let status = unsafe { ffi::HYPREDRV_LinearSolverSetRelativeTol(self.handle, tol) };
         self.check("HYPREDRV_LinearSolverSetRelativeTol", status)
     }

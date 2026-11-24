@@ -2047,6 +2047,7 @@ extern "C"
     * solver and preconditioner are reused. Solvers using non-default stopping
     * criteria (minimum iterations, non-L2 norm, relative change, residual or
     * convergence-factor tolerances) keep those criteria.
+    * Use the same tolerance on every rank participating in the solve.
     *
     * @param hypredrv The HYPREDRV_t object.
     * @param tol      New relative tolerance, in [0, 1).

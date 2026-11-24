@@ -37,7 +37,7 @@ done
 [[ -n "$ROOT_DIR" && -d "$ROOT_DIR" ]] || { echo "Pass --root <repo>." >&2; exit 2; }
 cd "$ROOT_DIR"
 
-APIS=$(bash scripts/list_public_apis.sh --root "$ROOT_DIR" | grep -E '^HYPREDRV_' || true)
+APIS=$(bash scripts/list_public_apis.sh --root . | sed -n '/^HYPREDRV_/p')
 [[ -n "$APIS" ]] || { echo "No public APIs found" >&2; exit 2; }
 
 # Strip comments so that documentation mentions do not count as bindings.
@@ -45,54 +45,39 @@ strip_c()   { sed -E 's://.*$::' "$@" | perl -0pe 's:/\*.*?\*/::gs'; }
 strip_f90() { sed -E 's:![^'"'"'"]*$::' "$@"; }
 strip_hash(){ sed -E 's:(^|[^"'"'"'])#.*$:\1:' "$@"; }
 
-# interface name | source files (space separated) | how a binding for API <name> looks
-# The pattern receives the full API (HYPREDRV_Foo) and the short name (Foo).
-INTERFACES=(cpp fortran python rust julia matlab)
-sources() {
-  case "$1" in
-    cpp)     ls interfaces/cpp/include/*.hpp ;;
-    fortran) ls interfaces/fortran/src/*.f90 ;;
-    python)  ls interfaces/python/src/hypredrive/*.pxd interfaces/python/src/hypredrive/*.pyx ;;
-    rust)    ls interfaces/rust/build.rs interfaces/rust/src/*.rs ;;
-    julia)   ls interfaces/julia/src/*.c interfaces/julia/src/*.jl ;;
-    matlab)  ls interfaces/matlab-octave/src/*.c ;;
-  esac
-}
 text_of() {
-  # shellcheck disable=SC2046
   case "$1" in
-    cpp|matlab) strip_c $(sources "$1") ;;
-    fortran)    strip_f90 $(sources "$1") ;;
-    python)     strip_hash $(sources "$1") ;;
-    rust)       sed -E 's:^[[:space:]]*//.*$::' $(sources "$1") ;;
-    julia)      { strip_c $(ls interfaces/julia/src/*.c); strip_hash $(ls interfaces/julia/src/*.jl); } ;;
-  esac
-}
-pattern_for() {
-  local iface="$1" api="$2" short="${2#HYPREDRV_}"
-  case "$iface" in
-    cpp|matlab|python|fortran) echo "\\b${api}\\b" ;;
-    rust)  echo "(ffi::${api}\\b|\"${short}\")" ;;     # call site or bindgen allowlist
-    julia) echo "\\b(HYPREDRV_Julia${short}|${api})\\b" ;;
+    cpp)     strip_c interfaces/cpp/include/*.hpp ;;
+    fortran) strip_f90 interfaces/fortran/src/*.f90 ;;
+    python)  strip_c interfaces/python/src/hypredrive/*.c
+             strip_hash interfaces/python/src/hypredrive/*.pyx ;;
+    rust)    strip_c interfaces/rust/src/*.rs ;;
+    julia)   strip_c interfaces/julia/src/*.c; strip_hash interfaces/julia/src/*.jl ;;
+    matlab)  strip_c interfaces/matlab-octave/src/*.c ;;
   esac
 }
 
-CURRENT=$(mktemp); TEXTFILE=$(mktemp); trap 'rm -f "$CURRENT" "$TEXTFILE"' EXIT
+INTERFACES=(cpp fortran python rust julia matlab)
+MISSING=""
 for iface in "${INTERFACES[@]}"; do
-  # Grep a file (not a pipe): with pipefail, grep -q exiting early would SIGPIPE
-  # the writer and report spurious misses.
-  text_of "$iface" > "$TEXTFILE"
+  # Python and Rust declarations alone do not make a callable binding.
+  prefix='\b'
+  [[ "$iface" != rust ]] || prefix='ffi::'
+  bound=$(text_of "$iface" | { grep -oE "${prefix}HYPREDRV_[A-Za-z0-9_]+" || [[ $? -eq 1 ]]; } |
+    sed 's/^ffi:://' | LC_ALL=C sort -u)
+  if [[ "$iface" == julia ]]; then
+    bound=$(sed 's/^HYPREDRV_Julia/HYPREDRV_/' <<< "$bound" | LC_ALL=C sort -u)
+  fi
+  missing=$(LC_ALL=C comm -23 <(printf '%s\n' "$APIS") <(printf '%s\n' "$bound"))
+  [[ -n "$missing" ]] || continue
   while IFS= read -r api; do
-    pat=$(pattern_for "$iface" "$api")
-    grep -Eq "$pat" "$TEXTFILE" || echo "$iface $api" >> "$CURRENT"
-  done <<< "$APIS"
+    MISSING+="  $iface $api"$'\n'
+  done <<< "$missing"
 done
-LC_ALL=C sort -o "$CURRENT" "$CURRENT" 2>/dev/null || true
-touch "$CURRENT"
 
-if [[ -s "$CURRENT" ]]; then
+if [[ -n "$MISSING" ]]; then
   echo "Public APIs missing from an interface (every HYPREDRV_ API must be bound in every interface):" >&2
-  sed 's/^/  /' "$CURRENT" >&2
+  printf '%s' "$MISSING" >&2
   exit 1
 fi
 echo "Interface coverage OK: all public APIs are exposed by ${INTERFACES[*]}"

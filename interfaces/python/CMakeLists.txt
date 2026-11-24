@@ -430,6 +430,7 @@ set(_python_test_commands
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_initial_guess_serial.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_session_serial.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_dofmap_serial.py"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_full_api_serial.py"
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/darcy/test_mixed_validation.py"
 )
 

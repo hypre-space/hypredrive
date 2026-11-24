@@ -42,16 +42,42 @@ if(DEFINED CMAKE_SCRIPT_MODE_FILE AND
     endforeach()
     set(_source_dir "${CMAKE_CURRENT_LIST_DIR}/..")
 
+    # On Darwin, `nm -gU` lists every external symbol-table entry, including
+    # ones the linker's -exported_symbols_list removed from the export trie, so
+    # it reports internals that dyld cannot actually resolve. `dyld_info
+    # -exports` reads the export trie itself, which is what consumers see.
+    set(_use_dyld_info FALSE)
     if(APPLE)
+        find_program(_dyld_info dyld_info)
+        if(_dyld_info)
+            set(_use_dyld_info TRUE)
+        endif()
         set(_nm_args -gU "${LIBRARY}")
     else()
         set(_nm_args -D --defined-only "${LIBRARY}")
     endif()
-    execute_process(
-        COMMAND "${NM}" ${_nm_args}
-        RESULT_VARIABLE _nm_result
-        OUTPUT_VARIABLE _nm_output
-        ERROR_VARIABLE _nm_error)
+    if(_use_dyld_info)
+        execute_process(
+            COMMAND "${_dyld_info}" -exports "${LIBRARY}"
+            RESULT_VARIABLE _nm_result
+            OUTPUT_VARIABLE _nm_output
+            ERROR_VARIABLE _nm_error)
+        # Keep only "<offset> <symbol>" rows; drop the header lines.
+        string(REPLACE "\r\n" "\n" _nm_output "${_nm_output}")
+        string(REPLACE "\n" ";" _dyld_lines "${_nm_output}")
+        set(_nm_output "")
+        foreach(_dyld_line IN LISTS _dyld_lines)
+            if(_dyld_line MATCHES "^[ \t]*0x[0-9A-Fa-f]+[ \t]+([^ \t]+)")
+                string(APPEND _nm_output "${CMAKE_MATCH_1}\n")
+            endif()
+        endforeach()
+    else()
+        execute_process(
+            COMMAND "${NM}" ${_nm_args}
+            RESULT_VARIABLE _nm_result
+            OUTPUT_VARIABLE _nm_output
+            ERROR_VARIABLE _nm_error)
+    endif()
     if(NOT _nm_result EQUAL 0)
         message(FATAL_ERROR "Could not inspect ${LIBRARY}: ${_nm_error}")
     endif()
