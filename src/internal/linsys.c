@@ -31,6 +31,7 @@
 #include "logging.h"
 #include "object.h"
 
+#ifdef HYPRE_USING_GPU
 /* hypre_TMemcpy casts the source to (void *), dropping const on host inputs */
 static inline void
 hypredrv_CopyHostToDevice(void *dst, const void *src, size_t bytes)
@@ -38,6 +39,7 @@ hypredrv_CopyHostToDevice(void *dst, const void *src, size_t bytes)
    hypre_Memcpy(dst, (void *)(uintptr_t)src, bytes, HYPRE_MEMORY_DEVICE,
                 HYPRE_MEMORY_HOST);
 }
+#endif
 
 /* Modes whose norm shrinks below this fraction of their input norm during
    orthogonalization are considered linearly dependent */
