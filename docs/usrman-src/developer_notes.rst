@@ -268,23 +268,12 @@ CI Overview
 Workflows
 ~~~~~~~~~
 
-`hypredrive` uses these GitHub Actions workflows in ``.github/workflows``:
+GitHub Actions workflows are defined in ``.github/workflows``.
 
-- ``ci.yml`` runs on all pull requests and reports ``Required CI``. It selects jobs
-  from the files changed, including README changes because CTest compiles the C
-  example. The baseline covers Linux GCC and Clang, macOS MPICH, Windows MS-MPI,
-  and the legacy HYPRE build. The ``Run CI`` label selects the expanded matrix.
-- Source-list sync, formatting, and API checks run in one job. The Ubuntu Clang
-  build against HYPRE master checks the exported symbol prefixes in expanded CI.
-- ``docs.yml``: builds documentation (Sphinx and Doxygen jobs)
-- ``coverage.yml``: builds with coverage instrumentation and generates HTML/XML reports
-- ``analysis.yml``: Static analysis with cppcheck and clang-tidy. Dynamic analysis with ASan and UBSan.
-
-During rollout, the legacy required jobs mirror ``Required CI``. Once the
-new check has passed on the default branch, update the GitHub ``PR merge``
-ruleset to require the GitHub Actions check named ``Required CI`` and remove the
-seven previous contexts. Keep the up-to-date branch requirement. The temporary
-``legacy-required`` job can then be removed.
+- ``ci.yml`` runs build, test, and style checks.
+- ``docs.yml`` builds the documentation.
+- ``coverage.yml`` generates coverage reports.
+- ``analysis.yml`` runs static analysis and sanitizers.
 
 To reduce duplication, CI uses composite actions in ``.github/actions``:
 
