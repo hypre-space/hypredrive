@@ -31,6 +31,14 @@
 #include "logging.h"
 #include "object.h"
 
+/* hypre_TMemcpy casts the source to (void *), dropping const on host inputs */
+static inline void
+hypredrv_CopyHostToDevice(void *dst, const void *src, size_t bytes)
+{
+   hypre_Memcpy(dst, (void *)(uintptr_t)src, bytes, HYPRE_MEMORY_DEVICE,
+                HYPRE_MEMORY_HOST);
+}
+
 /* Modes whose norm shrinks below this fraction of their input norm during
    orthogonalization are considered linearly dependent */
 #define HYPREDRV_NULLSPACE_DEP_TOL 1.0e-12
@@ -787,12 +795,10 @@ LinearSystemSetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *i
          hypre_TFree(d_vals, HYPRE_MEMORY_DEVICE);
          return HYPRE_ERROR_MEMORY;
       }
-      hypre_TMemcpy(d_vals, values, HYPRE_Complex, n, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
+      hypredrv_CopyHostToDevice(d_vals, values, sizeof(HYPRE_Complex) * (size_t)(n));
       if (indices)
       {
-         hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
+         hypredrv_CopyHostToDevice(d_idx, indices, sizeof(HYPRE_BigInt) * (size_t)(n));
       }
       HYPRE_Int ierr = HYPRE_IJVectorSetValues(vec, n, d_idx, d_vals);
       hypre_TFree(d_idx, HYPRE_MEMORY_DEVICE);
@@ -817,8 +823,7 @@ LinearSystemGetHostValues(HYPRE_IJVector vec, HYPRE_Int n, const HYPRE_BigInt *i
       if (indices)
       {
          d_idx = hypre_TAlloc(HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE);
-         hypre_TMemcpy(d_idx, indices, HYPRE_BigInt, n, HYPRE_MEMORY_DEVICE,
-                       HYPRE_MEMORY_HOST);
+         hypredrv_CopyHostToDevice(d_idx, indices, sizeof(HYPRE_BigInt) * (size_t)(n));
       }
       HYPRE_Int ierr = HYPRE_IJVectorGetValues(vec, n, d_idx, d_vals);
       hypre_TMemcpy(values, d_vals, HYPRE_Complex, n, HYPRE_MEMORY_HOST,
@@ -2304,10 +2309,8 @@ CSRSetValuesDevice(HYPRE_IJMatrix matrix, HYPRE_Int nrows, HYPRE_Int nnz,
                     HYPRE_MEMORY_HOST);
       hypre_TMemcpy(d_rows, row_ids, HYPRE_BigInt, nrows, HYPRE_MEMORY_DEVICE,
                     HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_cols, cols, HYPRE_BigInt, nnz, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
-      hypre_TMemcpy(d_data, values, HYPRE_Complex, nnz, HYPRE_MEMORY_DEVICE,
-                    HYPRE_MEMORY_HOST);
+      hypredrv_CopyHostToDevice(d_cols, cols, sizeof(HYPRE_BigInt) * (size_t)(nnz));
+      hypredrv_CopyHostToDevice(d_data, values, sizeof(HYPRE_Complex) * (size_t)(nnz));
       LINSYS_HYPRE_CALL(
          "SetMatrixFromCSR",
          HYPRE_IJMatrixSetValues(matrix, nrows, d_ncols, d_rows, d_cols, d_data));
