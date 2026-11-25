@@ -50,11 +50,6 @@ include(${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_DepsPatches.cmake)
 # Umpire's own dependencies (camp, fmt) unresolved on consumers' link lines.
 # Link the Umpire target explicitly when it is available.
 function(hypredrv_link_hypre_umpire target_name)
-    get_target_property(_hypre_type HYPRE::HYPRE TYPE)
-    if(_hypre_type STREQUAL "INTERFACE_LIBRARY")
-        return()
-    endif()
-
     set(_umpire_target "")
     foreach(_candidate IN ITEMS umpire::umpire umpire)
         if(TARGET ${_candidate})
@@ -73,6 +68,9 @@ function(hypredrv_link_hypre_umpire target_name)
                 find_package(umpire CONFIG QUIET)
                 if(TARGET umpire::umpire)
                     set(_umpire_target umpire::umpire)
+                else()
+                    message(WARNING "hypre was built with Umpire, but the umpire "
+                        "package was not found; set umpire_DIR or CMAKE_PREFIX_PATH")
                 endif()
             endif()
         endif()
