@@ -98,8 +98,7 @@ The project CI builds Python wheel artifacts for Linux, macOS, and Windows.
 These wheels bundle host-only ``libHYPREDRV`` and ``libHYPRE`` inside the Python
 package, but they do not bundle an MPI runtime.
 
-Use the ``Run Python Wheels`` label to test wheels on a pull request. You can
-also dispatch the wheel workflow manually.
+Dispatch the Python Wheels workflow manually to test a wheel build.
 
 For a ``release-<version>`` pull request, ``Prepare Release`` builds and stages
 both Python wheels and Julia archives on a draft release, refreshes Julia's

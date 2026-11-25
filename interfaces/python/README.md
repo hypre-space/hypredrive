@@ -46,8 +46,8 @@ GitHub Actions builds MPI wheel artifacts for Linux, macOS, and Windows. Each
 wheel bundles host-only `libHYPREDRV` and `libHYPRE`, but it does not bundle an
 MPI runtime.
 
-Use the `Run Python Wheels` label to test wheels on a pull request. You can
-also dispatch the [Python Wheels][python-wheels-workflow] workflow manually.
+Dispatch the [Python Wheels][python-wheels-workflow] workflow manually to
+test a wheel build.
 
 On a `release-<version>` pull request, use `Prepare Release` to build and stage
 both Python wheels and Julia archives on a draft release, refresh Julia's

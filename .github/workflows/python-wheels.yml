@@ -1,17 +1,6 @@
 name: Python Wheels
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths:
-      - 'include/**'
-      - 'src/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'scripts/install_msmpi.ps1'
-      - 'interfaces/python/**'
-      - '.github/workflows/python-wheels.yml'
-      - '.github/hypre-release'
   push:
     tags:
       - 'v*'
@@ -27,18 +16,7 @@ permissions:
 
 jobs:
   wheels:
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event.action == 'labeled' &&
-          github.event.label.name == 'Run Python Wheels'
-        ) ||
-        (
-          github.event.action != 'labeled' &&
-          contains(github.event.pull_request.labels.*.name, 'Run Python Wheels')
-        )
-      }}
+    if: github.event_name == 'workflow_dispatch'
     name: ${{ matrix.os }} | ${{ matrix.arch }} | ${{ matrix.mpi_flavor }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45

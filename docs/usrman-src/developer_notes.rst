@@ -214,9 +214,7 @@ identifiable throughout the process.
    bindings and artifact tree hashes. Wait for both tag workflows to pass.
    Review the tag, source archive, Julia archives, Python wheels, and package
    versions, then publish the draft with the corresponding ``CHANGELOG`` section
-   as the release notes. The component-specific pull-request packaging labels
-   produce Actions artifacts; release binding and staging use ``Prepare
-   Release`` or the manual workflow inputs described above.
+   as the release notes.
 
 CI artifact topology
 ~~~~~~~~~~~~~~~~~~~~
@@ -228,9 +226,8 @@ jobs, with one matrix entry per runner and MPI flavor.  The Julia BinaryBuilder
 recipe may cross-build its supported target list from one Linux job.  A single
 workflow can finish with one collector job that depends on every build job,
 verifies the complete matrix, and uploads all artifacts to the GitHub Release.
-Use ``Run Python Wheels`` or ``Run Julia Artifacts`` to test one package set.
-For release preparation, use ``Prepare
-Release`` to build, bind, and stage both package sets and validate the final
+Dispatch Python Wheels or Julia Artifacts manually to test a single package set.
+For release preparation, use ``Prepare Release`` to build, bind, and stage both package sets and validate the final
 candidate. ``Run CI`` selects expanded validation. Python builds use native
 runners, while Julia cross-compiles with BinaryBuilder. The tag workflows use the
 staged artifacts from those builds.
