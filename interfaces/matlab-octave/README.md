@@ -193,9 +193,12 @@ Handle lifetime:
 - `destroy(h)` on a driver destroys it and invalidates borrowed handles issued
   from it (`get_matrix`, `get_rhs`, `get_solution`).
 - `destroy(h)` on an owned matrix/vector (`matrix_from_sparse`,
-  `vector_from_array`) that is attached to a live driver raises
-  `hypredrive:ObjectInUse`; destroy the driver first. Borrowed handles cannot be
-  destroyed individually.
+  `vector_from_array`) that a live driver currently holds raises
+  `hypredrive:ObjectInUse`; replace it in the driver or destroy the driver
+  first. Objects a driver has replaced, rejected, or only received through
+  `precon_apply` can be destroyed. Borrowed handles cannot be destroyed
+  individually.
+- `state_set` requires all state vectors to share one local length.
 - `destroy_all` releases everything (drivers first), and the same cleanup runs at
   `mexAtExit`. `clear mex` therefore does not leak. `is_valid(h)` and
   `num_handles` help with checking.
@@ -248,11 +251,6 @@ hypredrive_mex('destroy', drv);
 Only the host-memory, real-double, serial (`MPI_COMM_SELF`) case is supported.
 `get_solution_values` errors if the solution lives in device memory; use
 `copy_solution_values` instead.
-
-Note: this API has not been exercised on a real MATLAB/Octave runtime in the
-environment where it was written; it was syntax-checked against a stub `mex.h`
-only. Run `matlab-test` (which includes `test_hypredrive_api`) before relying
-on it.
 
 ## Test
 

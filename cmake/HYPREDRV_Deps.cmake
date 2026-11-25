@@ -1161,12 +1161,24 @@ if(NOT HYPRE_FOUND)
 
         find_program(_hypre_autotools_make_program NAMES gmake make REQUIRED)
 
+        # hypre's configure archives with `ar -rcu` from PATH unless AR is set.
+        # On Apple, pass the archiver hypredrv_check_toolchain() validated so a
+        # GNU ar ahead on PATH cannot write an archive Apple's linker rejects.
+        set(_hypre_autotools_tool_env "")
+        if(APPLE AND CMAKE_AR)
+            list(APPEND _hypre_autotools_tool_env "AR=${CMAKE_AR} -rcu")
+            if(CMAKE_RANLIB)
+                list(APPEND _hypre_autotools_tool_env "RANLIB=${CMAKE_RANLIB}")
+            endif()
+        endif()
+
         ExternalProject_Add(hypre_autotools
             SOURCE_DIR ${_hypre_autotools_src}
             CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
                 CC=${MPI_C_COMPILER}
                 CFLAGS=${_hypre_autotools_cflags}
                 LDFLAGS=${_hypre_autotools_ldflags}
+                ${_hypre_autotools_tool_env}
                 ${_hypre_autotools_src}/configure --prefix=${_hypre_autotools_prefix}
                 ${_hypre_autotools_configure_extra}
             BUILD_COMMAND ${CMAKE_COMMAND} -E chdir ${_hypre_autotools_src} ${_hypre_autotools_make_program}
@@ -1196,6 +1208,7 @@ if(NOT HYPRE_FOUND)
         set(HYPRE_FOUND TRUE)
 
         unset(_hypre_version_tag)
+        unset(_hypre_autotools_tool_env)
         unset(_hypre_autotools_prefix)
         unset(_hypre_autotools_src)
         unset(_hypre_autotools_cflags)

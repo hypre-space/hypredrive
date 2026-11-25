@@ -111,9 +111,16 @@ def test_set_relative_tol(laplacian_1d, base_options):
     with hd.HypreDrive(options=base_options) as drv:
         drv.set_matrix_from_csr(indptr, cols, data, row_start=0, row_end=n - 1)
         drv.set_rhs(rhs)
+        # A loose tolerance must stop early; a tight one must iterate further.
+        drv.set_relative_tol(0.5)
+        drv.solve()
+        loose_iters = drv.last_iterations
+        assert drv.last_converged is True
+        assert drv.last_final_res_norm > 1e-6
         drv.set_relative_tol(1e-12)
         drv.solve()
         assert drv.last_converged is True
+        assert drv.last_iterations > loose_iters
         assert drv.last_final_res_norm <= 1e-12 * 10
         for bad in (-1.0, 1.0, float("nan")):
             with pytest.raises(Exception):

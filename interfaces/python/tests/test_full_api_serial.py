@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 pytest.importorskip("hypredrive.driver")
 import hypredrive as hd
-from hypredrive import _core
 
 
 def _laplacian(n=20):
@@ -16,7 +17,7 @@ def _laplacian(n=20):
     return sp.diags([-1.0, 2.0, -1.0], [-1, 0, 1], shape=(n, n), format="csr")
 
 
-def test_module_level_functions(capfd):
+def test_module_level_functions():
     hd.initialize()
     hd.print_lib_info()
     hd.print_system_info()
@@ -65,6 +66,83 @@ def test_native_handles_and_values(base_options):
         drv.set_coordinates_handle(None, None, None)
         drv.set_discrete_gradient_handle(None)
         drv.set_discrete_curl_handle(None)
+
+
+def test_native_handle_setters_refresh_rows(base_options):
+    A20, A40 = _laplacian(20), _laplacian(40)
+    # ``donor`` owns the 40-row handles and must outlive ``drv``.
+    with hd.HypreDrive(options=base_options) as donor:
+        donor.set_matrix_from_csr(A40)
+        donor.set_rhs(np.arange(1.0, 41.0))
+        with hd.HypreDrive(options=base_options) as drv:
+            drv.set_matrix_from_csr(A20)
+            drv.set_rhs(np.ones(20))
+            drv.solve()
+            assert drv.get_solution().shape == (20,)
+            drv.set_matrix_handle(donor.get_matrix_handle())
+            drv.set_rhs_handle(donor.get_rhs_handle())
+            np.testing.assert_allclose(drv.get_rhs_values(), np.arange(1.0, 41.0))
+            drv.solve()
+            x = drv.get_solution()
+            assert x.shape == (40,)
+            np.testing.assert_allclose(A40 @ x, np.arange(1.0, 41.0), rtol=1e-6)
+            drv.set_matrix_handle(None)  # clearing is allowed
+            with pytest.raises(RuntimeError):
+                drv.solve()
+
+
+_PS3D = (Path(__file__).resolve().parents[3] / "data" / "ps3d10pt7" / "np1")
+
+
+@pytest.mark.skipif(not (_PS3D / "IJ.out.A.00000").exists(),
+                    reason="ps3d10pt7 dataset not downloaded")
+def test_build_linear_system_keeps_previous_guess():
+    opts = (
+        "linear_system:\n"
+        f"  matrix_filename: {_PS3D / 'IJ.out.A'}\n"
+        f"  rhs_filename: {_PS3D / 'IJ.out.b'}\n"
+        "  init_guess_mode: previous\n"
+        "solver: pcg\npreconditioner: amg\n"
+    )
+    with hd.HypreDrive(options=opts) as drv:
+        drv.build_linear_system()
+        drv.solve()
+        first = drv.last_iterations
+        assert drv.get_solution().shape == drv.get_rhs_values().shape == (1000,)
+        # The rebuilt system starts from the previous solution.
+        drv.build_linear_system()
+        drv.solve()
+        assert drv.last_converged is True
+        assert drv.last_iterations < first
+
+
+def test_state_vectors_sized_from_vectors(base_options):
+    with hd.HypreDrive(options=base_options) as small, \
+            hd.HypreDrive(options=base_options) as big:
+        small.set_matrix_from_csr(_laplacian(4))
+        small.set_rhs(np.arange(1.0, 5.0))
+        big.set_matrix_from_csr(_laplacian(16))
+        big.set_rhs(np.ones(16))
+        with hd.HypreDrive(options=base_options) as drv:
+            drv.set_matrix_from_csr(_laplacian(16))
+            drv.set_rhs(np.ones(16))
+            drv.solve()
+            with pytest.raises(ValueError):
+                drv.set_state_vectors([small.get_rhs_handle(), big.get_rhs_handle()])
+            # A state shorter than the system is read with its own length.
+            drv.set_state_vectors([small.get_rhs_handle()])
+            np.testing.assert_allclose(drv.state_vector_values(0),
+                                       np.arange(1.0, 5.0))
+
+
+def test_print_info_accepts_duplicated_comm():
+    MPI = pytest.importorskip("mpi4py.MPI")
+    comm = MPI.COMM_WORLD.Dup()
+    try:
+        hd.print_lib_info(comm=comm)
+        hd.print_system_info(comm=comm)
+    finally:
+        comm.Free()
 
 
 def test_handle_type_validation(base_options):

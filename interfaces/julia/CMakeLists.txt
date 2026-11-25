@@ -135,6 +135,7 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
     set_tests_properties(julia_build_bridge PROPERTIES
         LABELS "julia;interface;build"
         FIXTURES_SETUP julia_built
+        RESOURCE_LOCK hypredrv_build_tree
     )
 
     add_test(NAME julia_instantiate_project
@@ -305,7 +306,7 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
     set_tests_properties(julia_install_cmake_consumer PROPERTIES
         LABELS "julia;interface;cmake;install"
         FIXTURES_REQUIRED julia_built
-        RESOURCE_LOCK julia_install_consumer
+        RESOURCE_LOCK "julia_install_consumer;hypredrv_build_tree"
     )
 
     add_custom_target(julia-test

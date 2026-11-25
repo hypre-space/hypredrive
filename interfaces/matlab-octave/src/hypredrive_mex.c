@@ -314,14 +314,6 @@ HYPREDRV_MatlabConvertCscToCsrRect(const mxArray *A, HYPRE_BigInt **indptr_out,
 }
 
 static void
-HYPREDRV_MatlabConvertCscToCsr(const mxArray *A, HYPRE_BigInt **indptr_out,
-                               HYPRE_BigInt **cols_out, HYPRE_Real **data_out,
-                               mwSize *nnz_out)
-{
-   HYPREDRV_MatlabConvertCscToCsrRect(A, indptr_out, cols_out, data_out, nnz_out);
-}
-
-static void
 HYPREDRV_MatlabDestroyDriver(HYPREDRV_t *drv)
 {
    if (drv && *drv)
@@ -403,7 +395,7 @@ HYPREDRV_MatlabOneShot(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[
    mwSize        n      = mxGetM(prhs[0]);
    HYPREDRV_t    drv    = NULL;
 
-   HYPREDRV_MatlabConvertCscToCsr(prhs[0], &indptr, &cols, &data, &nnz);
+   HYPREDRV_MatlabConvertCscToCsrRect(prhs[0], &indptr, &cols, &data, &nnz);
    HYPRE_BigInt row_start = 0;
    HYPRE_BigInt row_end   = HYPREDRV_MatlabBigIntFromMwSize(n - 1, "row_end");
    (void)HYPREDRV_MatlabBigIntFromMwSize(nnz, "nnz");
@@ -597,6 +589,8 @@ typedef struct
     * so the pointer is re-read on every lookup and the handle dies if it changed. */
    uint32_t (*borrow_matrix)(HYPREDRV_t, HYPRE_Matrix *);
    uint32_t (*borrow_vector)(HYPREDRV_t, HYPRE_Vector *);
+   /* Drivers only: local length shared by the registered state vectors. */
+   HYPRE_BigInt state_length;
 } HYPREDRV_MatlabEntry;
 
 static HYPREDRV_MatlabEntry *HYPREDRV_matlab_table     = NULL;
@@ -604,14 +598,33 @@ static size_t                HYPREDRV_matlab_count     = 0;
 static size_t                HYPREDRV_matlab_capacity  = 0;
 static uint64_t              HYPREDRV_matlab_next_id   = 1;
 
-/* (object, driver) pairs: every driver a matrix/vector has been given to. An
- * object may be attached to several drivers, so a single "last driver" field is
- * not enough to know when it is safe to destroy. */
+/* (driver, slot) -> object: the matrix/vector each driver currently holds in
+ * each input slot. A slot is replaced only after the native setter succeeds, so
+ * objects a driver has replaced or rejected can be destroyed. An object may sit
+ * in several slots and drivers; it is in use while any of them holds it. */
 typedef struct
 {
    uint64_t object;
    uint64_t driver;
+   int      slot;
 } HYPREDRV_MatlabAttachment;
+
+enum
+{
+   HYPREDRV_MATLAB_SLOT_MATRIX = 1,
+   HYPREDRV_MATLAB_SLOT_PREC_MATRIX,
+   HYPREDRV_MATLAB_SLOT_GRADIENT,
+   HYPREDRV_MATLAB_SLOT_CURL,
+   HYPREDRV_MATLAB_SLOT_RHS,
+   HYPREDRV_MATLAB_SLOT_INITIAL_GUESS,
+   HYPREDRV_MATLAB_SLOT_SOLUTION,
+   HYPREDRV_MATLAB_SLOT_REFERENCE,
+   HYPREDRV_MATLAB_SLOT_COORD_X,
+   HYPREDRV_MATLAB_SLOT_COORD_Y,
+   HYPREDRV_MATLAB_SLOT_COORD_Z,
+   HYPREDRV_MATLAB_SLOT_COARSE_SCHUR = 1000,   /* + MGR level */
+   HYPREDRV_MATLAB_SLOT_STATE        = 1 << 20 /* + state index */
+};
 
 static HYPREDRV_MatlabAttachment *HYPREDRV_matlab_attach          = NULL;
 static size_t                     HYPREDRV_matlab_attach_count    = 0;
@@ -717,6 +730,7 @@ HYPREDRV_MatlabRegister(int kind, void *ptr, uint64_t owner, int owned)
    e->owned                = owned;
    e->borrow_matrix        = NULL;
    e->borrow_vector        = NULL;
+   e->state_length         = 0;
    return e->id;
 }
 
@@ -733,16 +747,33 @@ HYPREDRV_MatlabRemoveEntry(uint64_t id)
    }
 }
 
+/* Empties driver slots in [first, last]. */
 static void
-HYPREDRV_MatlabAttach(uint64_t object, uint64_t driver)
+HYPREDRV_MatlabClearSlots(uint64_t driver, int first, int last)
 {
-   for (size_t i = 0; i < HYPREDRV_matlab_attach_count; i++)
+   for (size_t i = 0; i < HYPREDRV_matlab_attach_count;)
    {
-      if (HYPREDRV_matlab_attach[i].object == object &&
-          HYPREDRV_matlab_attach[i].driver == driver)
+      HYPREDRV_MatlabAttachment *t = &HYPREDRV_matlab_attach[i];
+      if (t->driver == driver && t->slot >= first && t->slot <= last)
       {
-         return;
+         *t = HYPREDRV_matlab_attach[--HYPREDRV_matlab_attach_count];
       }
+      else
+      {
+         i++;
+      }
+   }
+}
+
+/* Records that `slot` of `driver` now holds `object` (0 empties the slot). Call
+ * only after the native setter succeeded. */
+static void
+HYPREDRV_MatlabAttach(uint64_t driver, int slot, uint64_t object)
+{
+   HYPREDRV_MatlabClearSlots(driver, slot, slot);
+   if (!object)
+   {
+      return;
    }
    if (HYPREDRV_matlab_attach_count == HYPREDRV_matlab_attach_capacity)
    {
@@ -758,6 +789,7 @@ HYPREDRV_MatlabAttach(uint64_t object, uint64_t driver)
    }
    HYPREDRV_matlab_attach[HYPREDRV_matlab_attach_count].object = object;
    HYPREDRV_matlab_attach[HYPREDRV_matlab_attach_count].driver = driver;
+   HYPREDRV_matlab_attach[HYPREDRV_matlab_attach_count].slot   = slot;
    HYPREDRV_matlab_attach_count++;
 }
 
@@ -908,28 +940,33 @@ HYPREDRV_MatlabArgDriver(const mxArray *arg)
    return (HYPREDRV_t)HYPREDRV_MatlabArgEntry(arg, HYPREDRV_MATLAB_KIND_DRIVER)->ptr;
 }
 
-/* Matrix/vector argument; marks it as attached to driver `drv_arg`. An empty
- * array means NULL when allow_null is set. Returns NULL for the empty case. */
+/* Matrix/vector argument for driver `drv_arg` (NULL: no driver). An empty array
+ * means NULL when allow_null is set. Returns NULL for the empty case and stores
+ * the handle id (0 for NULL) in *id_out when given; callers record the id in a
+ * driver slot with HYPREDRV_MatlabAttach once the native call succeeds. */
 static void *
 HYPREDRV_MatlabArgObject(const mxArray *arg, int kind, const mxArray *drv_arg,
-                         int allow_null)
+                         int allow_null, uint64_t *id_out)
 {
+   if (id_out)
+   {
+      *id_out = 0;
+   }
    if (allow_null && arg && mxIsEmpty(arg) && !mxIsUint64(arg))
    {
       return NULL;
    }
    HYPREDRV_MatlabEntry *e = HYPREDRV_MatlabArgEntry(arg, kind);
-   if (drv_arg)
+   /* A borrowed object belongs to the driver it came from and dies with it, so
+    * another driver cannot keep a pointer to it. */
+   if (drv_arg && !e->owned && e->owner != HYPREDRV_MatlabHandleId(drv_arg))
    {
-      uint64_t did = HYPREDRV_MatlabHandleId(drv_arg);
-      /* A borrowed object belongs to the driver it came from and dies with it,
-       * so another driver cannot keep a pointer to it. */
-      if (!e->owned && e->owner != did)
-      {
-         HYPREDRV_MatlabFail("hypredrive:InvalidHandle",
-                             "a handle borrowed from one driver cannot be given to another");
-      }
-      HYPREDRV_MatlabAttach(e->id, did);
+      HYPREDRV_MatlabFail("hypredrive:InvalidHandle",
+                          "a handle borrowed from one driver cannot be given to another");
+   }
+   if (id_out)
+   {
+      *id_out = e->id;
    }
    return e->ptr;
 }
@@ -1028,12 +1065,29 @@ HYPREDRV_MatlabSolutionLength(HYPREDRV_t drv)
    return len;
 }
 
+/* Local length of an IJ vector. */
+static HYPRE_BigInt
+HYPREDRV_MatlabVectorLength(HYPRE_IJVector vec)
+{
+   HYPRE_BigInt lo = 0, hi = -1;
+   if (!vec || HYPRE_IJVectorGetLocalRange(vec, &lo, &hi))
+   {
+      HYPRE_ClearAllErrors();
+      HYPREDRV_MatlabFail("hypredrive:HypreError", "failed to query the vector range");
+   }
+   return hi - lo + 1;
+}
+
 static mxArray *
 HYPREDRV_MatlabColumnFromHost(const HYPRE_Complex *data, HYPRE_BigInt n)
 {
    mxArray *out = mxCreateDoubleMatrix((mwSize)n, 1, mxREAL);
    if (n > 0)
    {
+      if (!data)
+      {
+         HYPREDRV_MatlabFail("hypredrive:HypreError", "native values are unavailable");
+      }
       memcpy(mxGetPr(out), data, (size_t)n * sizeof(double));
    }
    return out;
@@ -1115,26 +1169,30 @@ HYPREDRV_MatlabBorrowed(int kind, void *ptr, const mxArray *drv_arg,
       plhs[0] = mxCreateDoubleScalar(v);                                     \
    }
 
-/* driver, matrix-or-[] -> void */
-#define HD_DEF_DRV_MATRIX(cname, api)                                             \
-   static void cname(int nlhs, mxArray *plhs[], int na, const mxArray *a[])       \
-   {                                                                              \
-      HD_UNUSED;                                                                  \
-      HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);                            \
-      void      *m   = HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_MATRIX, \
-                                                a[0], 1);                         \
-      HD_CHECK(api(drv, (HYPRE_Matrix)m));                                        \
+/* driver, matrix-or-[] -> void; the matrix then fills driver slot `slot` */
+#define HD_DEF_DRV_MATRIX(cname, api, slot)                                         \
+   static void cname(int nlhs, mxArray *plhs[], int na, const mxArray *a[])         \
+   {                                                                                \
+      HD_UNUSED;                                                                    \
+      HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);                              \
+      uint64_t   id  = 0;                                                           \
+      void      *m =                                                                \
+         HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_MATRIX, a[0], 1, &id); \
+      HD_CHECK(api(drv, (HYPRE_Matrix)m));                                          \
+      HYPREDRV_MatlabAttach(HYPREDRV_MatlabHandleId(a[0]), (slot), id);             \
    }
 
-/* driver, vector-or-[] -> void */
-#define HD_DEF_DRV_VECTOR(cname, api)                                             \
-   static void cname(int nlhs, mxArray *plhs[], int na, const mxArray *a[])       \
-   {                                                                              \
-      HD_UNUSED;                                                                  \
-      HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);                            \
-      void      *v   = HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_VECTOR, \
-                                                a[0], 1);                         \
-      HD_CHECK(api(drv, (HYPRE_Vector)v));                                        \
+/* driver, vector-or-[] -> void; the vector then fills driver slot `slot` */
+#define HD_DEF_DRV_VECTOR(cname, api, slot)                                         \
+   static void cname(int nlhs, mxArray *plhs[], int na, const mxArray *a[])         \
+   {                                                                                \
+      HD_UNUSED;                                                                    \
+      HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);                              \
+      uint64_t   id  = 0;                                                           \
+      void      *v =                                                                \
+         HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 1, &id); \
+      HD_CHECK(api(drv, (HYPRE_Vector)v));                                          \
+      HYPREDRV_MatlabAttach(HYPREDRV_MatlabHandleId(a[0]), (slot), id);             \
    }
 
 /* driver -> borrowed matrix/vector handle */
@@ -1441,8 +1499,8 @@ HYPREDRV_MatlabCmdVectorGetValues(int nlhs, mxArray *plhs[], int na, const mxArr
 {
    (void)nlhs;
    (void)na;
-   HYPRE_IJVector vec =
-      (HYPRE_IJVector)HYPREDRV_MatlabArgObject(a[0], HYPREDRV_MATLAB_KIND_VECTOR, NULL, 0);
+   HYPRE_IJVector vec = (HYPRE_IJVector)HYPREDRV_MatlabArgObject(
+      a[0], HYPREDRV_MATLAB_KIND_VECTOR, NULL, 0, NULL);
    plhs[0] = HYPREDRV_MatlabReadIJVector(vec);
 }
 
@@ -1450,8 +1508,8 @@ static void
 HYPREDRV_MatlabCmdVectorSetValues(int nlhs, mxArray *plhs[], int na, const mxArray *a[])
 {
    HD_UNUSED;
-   HYPRE_IJVector vec =
-      (HYPRE_IJVector)HYPREDRV_MatlabArgObject(a[0], HYPREDRV_MATLAB_KIND_VECTOR, NULL, 0);
+   HYPRE_IJVector vec = (HYPRE_IJVector)HYPREDRV_MatlabArgObject(
+      a[0], HYPREDRV_MATLAB_KIND_VECTOR, NULL, 0, NULL);
    mwSize        n = 0;
    const double *v = HYPREDRV_MatlabArgDenseReal(a[1], "v", &n);
    HYPRE_BigInt  lo = 0, hi = 0;
@@ -1508,20 +1566,37 @@ HD_DEF_DRV(HYPREDRV_MatlabCmdLinearSystemComputeEigenspectrum,
 HD_DEF_DRV_STR(HYPREDRV_MatlabCmdLinearSystemPrintDofmap,
                HYPREDRV_LinearSystemPrintDofmap)
 
-HD_DEF_DRV_MATRIX(HYPREDRV_MatlabCmdLinearSystemSetMatrix, HYPREDRV_LinearSystemSetMatrix)
+/* SetMatrix installs the matrix as both the system and preconditioner matrix. */
+static void
+HYPREDRV_MatlabCmdLinearSystemSetMatrix(int nlhs, mxArray *plhs[], int na,
+                                        const mxArray *a[])
+{
+   HD_UNUSED;
+   HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);
+   uint64_t   id  = 0;
+   void *m = HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_MATRIX, a[0], 1, &id);
+   HD_CHECK(HYPREDRV_LinearSystemSetMatrix(drv, (HYPRE_Matrix)m));
+   uint64_t did = HYPREDRV_MatlabHandleId(a[0]);
+   HYPREDRV_MatlabAttach(did, HYPREDRV_MATLAB_SLOT_MATRIX, id);
+   HYPREDRV_MatlabAttach(did, HYPREDRV_MATLAB_SLOT_PREC_MATRIX, id);
+}
+
 HD_DEF_DRV_MATRIX(HYPREDRV_MatlabCmdLinearSystemSetPrecMatrix,
-                  HYPREDRV_LinearSystemSetPrecMatrix)
+                  HYPREDRV_LinearSystemSetPrecMatrix, HYPREDRV_MATLAB_SLOT_PREC_MATRIX)
 HD_DEF_DRV_MATRIX(HYPREDRV_MatlabCmdLinearSystemSetDiscreteGradient,
-                  HYPREDRV_LinearSystemSetDiscreteGradient)
+                  HYPREDRV_LinearSystemSetDiscreteGradient, HYPREDRV_MATLAB_SLOT_GRADIENT)
 HD_DEF_DRV_MATRIX(HYPREDRV_MatlabCmdLinearSystemSetDiscreteCurl,
-                  HYPREDRV_LinearSystemSetDiscreteCurl)
-HD_DEF_DRV_VECTOR(HYPREDRV_MatlabCmdLinearSystemSetRHS, HYPREDRV_LinearSystemSetRHS)
+                  HYPREDRV_LinearSystemSetDiscreteCurl, HYPREDRV_MATLAB_SLOT_CURL)
+HD_DEF_DRV_VECTOR(HYPREDRV_MatlabCmdLinearSystemSetRHS, HYPREDRV_LinearSystemSetRHS,
+                  HYPREDRV_MATLAB_SLOT_RHS)
 HD_DEF_DRV_VECTOR(HYPREDRV_MatlabCmdLinearSystemSetInitialGuess,
-                  HYPREDRV_LinearSystemSetInitialGuess)
+                  HYPREDRV_LinearSystemSetInitialGuess,
+                  HYPREDRV_MATLAB_SLOT_INITIAL_GUESS)
 HD_DEF_DRV_VECTOR(HYPREDRV_MatlabCmdLinearSystemSetSolution,
-                  HYPREDRV_LinearSystemSetSolution)
+                  HYPREDRV_LinearSystemSetSolution, HYPREDRV_MATLAB_SLOT_SOLUTION)
 HD_DEF_DRV_VECTOR(HYPREDRV_MatlabCmdLinearSystemSetReferenceSolution,
-                  HYPREDRV_LinearSystemSetReferenceSolution)
+                  HYPREDRV_LinearSystemSetReferenceSolution,
+                  HYPREDRV_MATLAB_SLOT_REFERENCE)
 
 HD_DEF_DRV_GETMATRIX(HYPREDRV_MatlabCmdLinearSystemGetMatrix, HYPREDRV_LinearSystemGetMatrix)
 HD_DEF_DRV_GETVECTOR(HYPREDRV_MatlabCmdLinearSystemGetRHS, HYPREDRV_LinearSystemGetRHS)
@@ -1541,7 +1616,7 @@ HYPREDRV_MatlabCmdSetMatrixFromCsr(int nlhs, mxArray *plhs[], int na, const mxAr
    HYPRE_BigInt *indptr = NULL, *cols = NULL;
    HYPRE_Real   *data = NULL;
    mwSize        nnz  = 0;
-   HYPREDRV_MatlabConvertCscToCsr(a[1], &indptr, &cols, &data, &nnz);
+   HYPREDRV_MatlabConvertCscToCsrRect(a[1], &indptr, &cols, &data, &nnz);
    HYPRE_BigInt row_end = HYPREDRV_MatlabBigIntFromMwSize(mxGetM(a[1]) - 1, "row_end");
    HD_CHECK(HYPREDRV_LinearSystemSetMatrixFromCSR(drv, 0, row_end, indptr, cols, data));
 }
@@ -1567,15 +1642,21 @@ HYPREDRV_MatlabCmdLinearSystemSetCoordinates(int nlhs, mxArray *plhs[], int na,
 {
    HD_UNUSED;
    HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);
-   void      *x   = HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 0);
-   void      *y   = (na > 2) ? HYPREDRV_MatlabArgObject(a[2], HYPREDRV_MATLAB_KIND_VECTOR,
-                                                        a[0], 1)
-                             : NULL;
-   void      *z   = (na > 3) ? HYPREDRV_MatlabArgObject(a[3], HYPREDRV_MATLAB_KIND_VECTOR,
-                                                        a[0], 1)
-                             : NULL;
+   uint64_t   ids[3] = {0, 0, 0};
+   void      *x =
+      HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 0, &ids[0]);
+   void *y = (na > 2) ? HYPREDRV_MatlabArgObject(a[2], HYPREDRV_MATLAB_KIND_VECTOR, a[0],
+                                                 1, &ids[1])
+                      : NULL;
+   void *z = (na > 3) ? HYPREDRV_MatlabArgObject(a[3], HYPREDRV_MATLAB_KIND_VECTOR, a[0],
+                                                 1, &ids[2])
+                      : NULL;
    HD_CHECK(HYPREDRV_LinearSystemSetCoordinates(drv, (HYPRE_Vector)x, (HYPRE_Vector)y,
                                                 (HYPRE_Vector)z));
+   uint64_t did = HYPREDRV_MatlabHandleId(a[0]);
+   HYPREDRV_MatlabAttach(did, HYPREDRV_MATLAB_SLOT_COORD_X, ids[0]);
+   HYPREDRV_MatlabAttach(did, HYPREDRV_MATLAB_SLOT_COORD_Y, ids[1]);
+   HYPREDRV_MatlabAttach(did, HYPREDRV_MATLAB_SLOT_COORD_Z, ids[2]);
 }
 
 static void
@@ -1585,8 +1666,12 @@ HYPREDRV_MatlabCmdLinearSystemSetCoarseSchur(int nlhs, mxArray *plhs[], int na,
    HD_UNUSED;
    HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);
    int        lvl = HYPREDRV_MatlabArgInt(a[1], "level");
-   void      *m   = HYPREDRV_MatlabArgObject(a[2], HYPREDRV_MATLAB_KIND_MATRIX, a[0], 1);
+   uint64_t   id  = 0;
+   void *m = HYPREDRV_MatlabArgObject(a[2], HYPREDRV_MATLAB_KIND_MATRIX, a[0], 1, &id);
    HD_CHECK(HYPREDRV_LinearSystemSetCoarseSchur(drv, lvl, (HYPRE_Matrix)m));
+   /* The native call validated lvl, so the slot index cannot overflow. */
+   HYPREDRV_MatlabAttach(HYPREDRV_MatlabHandleId(a[0]),
+                         HYPREDRV_MATLAB_SLOT_COARSE_SCHUR + lvl, id);
 }
 
 static void
@@ -1693,10 +1778,12 @@ HYPREDRV_MatlabCmdGetRhsValues(int nlhs, mxArray *plhs[], int na, const mxArray 
    HD_CHECK(HYPREDRV_LinearSystemGetRHS(drv, &rhs));
    plhs[0] = HYPREDRV_MatlabReadIJVector((HYPRE_IJVector)rhs);
 #else
-   /* Host-only build: the raw RHS pointer lives in host memory. */
+   /* Host-only build: the raw RHS pointer lives in host memory. Size the copy
+    * from the RHS itself, which exists before any solve. */
+   HYPRE_Vector rhs = NULL;
+   HD_CHECK(HYPREDRV_LinearSystemGetRHS(drv, &rhs));
+   HYPRE_BigInt   n    = HYPREDRV_MatlabVectorLength((HYPRE_IJVector)rhs);
    HYPRE_Complex *data = NULL;
-   /* The RHS has the same local length as the solution. */
-   HYPRE_BigInt n = HYPREDRV_MatlabSolutionLength(drv);
    HD_CHECK(HYPREDRV_LinearSystemGetRHSValues(drv, &data));
    plhs[0] = HYPREDRV_MatlabColumnFromHost(data, n);
 #endif
@@ -1750,6 +1837,7 @@ HYPREDRV_MatlabCmdStateVectorSet(int nlhs, mxArray *plhs[], int na, const mxArra
    const uint64_t *ids = (const uint64_t *)mxGetData(a[1]);
    HYPRE_IJVector *vecs = (HYPRE_IJVector *)mxCalloc((size_t)n, sizeof(HYPRE_IJVector));
    uint64_t        did  = HYPREDRV_MatlabHandleId(a[0]);
+   HYPRE_BigInt    len  = 0;
    for (int i = 0; i < n; i++)
    {
       HYPREDRV_MatlabEntry *e = HYPREDRV_MatlabFindEntry(ids[i]);
@@ -1764,9 +1852,24 @@ HYPREDRV_MatlabCmdStateVectorSet(int nlhs, mxArray *plhs[], int na, const mxArra
                              "a handle borrowed from one driver cannot be given to another");
       }
       vecs[i] = (HYPRE_IJVector)e->ptr;
-      HYPREDRV_MatlabAttach(e->id, did);
+      /* States only rotate afterwards, so one length sized from the vectors
+       * themselves bounds every state_get_values copy. */
+      HYPRE_BigInt vlen = HYPREDRV_MatlabVectorLength(vecs[i]);
+      if (i > 0 && vlen != len)
+      {
+         HYPREDRV_MatlabFail("hypredrive:InvalidArgument",
+                             "state vectors must share one local length");
+      }
+      len = vlen;
    }
    HD_CHECK(HYPREDRV_StateVectorSet(drv, n, vecs));
+   HYPREDRV_MatlabArgEntry(a[0], HYPREDRV_MATLAB_KIND_DRIVER)->state_length = len;
+   HYPREDRV_MatlabClearSlots(did, HYPREDRV_MATLAB_SLOT_STATE,
+                             HYPREDRV_MATLAB_SLOT_STATE + 1023);
+   for (int i = 0; i < n; i++)
+   {
+      HYPREDRV_MatlabAttach(did, HYPREDRV_MATLAB_SLOT_STATE + i, ids[i]);
+   }
 }
 
 static void
@@ -1775,12 +1878,11 @@ HYPREDRV_MatlabCmdStateVectorGetValues(int nlhs, mxArray *plhs[], int na,
 {
    (void)nlhs;
    (void)na;
-   HYPREDRV_t     drv  = HYPREDRV_MatlabArgDriver(a[0]);
-   HYPRE_Complex *data = NULL;
-   HYPRE_BigInt   n    = HYPREDRV_MatlabSolutionLength(drv);
-   HD_CHECK(HYPREDRV_StateVectorGetValues(drv, HYPREDRV_MatlabArgInt(a[1], "index"),
-                                          &data));
-   plhs[0] = HYPREDRV_MatlabColumnFromHost(data, n);
+   HYPREDRV_MatlabEntry *d = HYPREDRV_MatlabArgEntry(a[0], HYPREDRV_MATLAB_KIND_DRIVER);
+   HYPRE_Complex        *data = NULL;
+   HD_CHECK(HYPREDRV_StateVectorGetValues((HYPREDRV_t)d->ptr,
+                                          HYPREDRV_MatlabArgInt(a[1], "index"), &data));
+   plhs[0] = HYPREDRV_MatlabColumnFromHost(data, d->state_length);
 }
 
 static void
@@ -1846,8 +1948,9 @@ HYPREDRV_MatlabCmdPreconApply(int nlhs, mxArray *plhs[], int na, const mxArray *
 {
    HD_UNUSED;
    HYPREDRV_t drv = HYPREDRV_MatlabArgDriver(a[0]);
-   void *b = HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 0);
-   void *x = HYPREDRV_MatlabArgObject(a[2], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 0);
+   /* Transient arguments: the driver does not keep b or x after the call. */
+   void *b = HYPREDRV_MatlabArgObject(a[1], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 0, NULL);
+   void *x = HYPREDRV_MatlabArgObject(a[2], HYPREDRV_MATLAB_KIND_VECTOR, a[0], 0, NULL);
    HD_CHECK(HYPREDRV_PreconApply(drv, (HYPRE_Vector)b, (HYPRE_Vector)x));
 }
 

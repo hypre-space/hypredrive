@@ -20,6 +20,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "HYPREDRV_python.h"
 #include "internal/bridge_row_bounds.h"
@@ -164,33 +165,35 @@ HYPREDRV_PythonCreateFromFortranComm(int fortran_comm, HYPREDRV_t *hypredrv_ptr)
    return HYPREDRV_Create(MPI_Comm_f2c((MPI_Fint)fortran_comm), hypredrv_ptr);
 }
 
-/* A negative Fortran handle selects MPI_COMM_SELF. MPI_Comm is never exposed to
- * Cython: its representation (int, pointer, ...) depends on the MPI implementation. */
+/* MPI_Comm is never exposed to Cython: its representation (int, pointer, ...)
+ * depends on the MPI implementation. Fortran handles may be negative (MPICH sets
+ * the high bit on user communicators), so MPI_COMM_SELF is selected explicitly. */
 static MPI_Comm
-HYPREDRV_PythonComm(int fortran_comm)
+HYPREDRV_PythonComm(int use_self, int fortran_comm)
 {
-   return (fortran_comm < 0) ? MPI_COMM_SELF : MPI_Comm_f2c((MPI_Fint)fortran_comm);
+   return use_self ? MPI_COMM_SELF : MPI_Comm_f2c((MPI_Fint)fortran_comm);
 }
 
 /** @brief HYPREDRV_PrintLibInfo on a communicator given by its Fortran handle. */
 uint32_t
-HYPREDRV_PythonPrintLibInfo(int fortran_comm, int print_datetime)
+HYPREDRV_PythonPrintLibInfo(int use_self, int fortran_comm, int print_datetime)
 {
-   return HYPREDRV_PrintLibInfo(HYPREDRV_PythonComm(fortran_comm), print_datetime);
+   return HYPREDRV_PrintLibInfo(HYPREDRV_PythonComm(use_self, fortran_comm),
+                                print_datetime);
 }
 
 /** @brief HYPREDRV_PrintSystemInfo on a communicator given by its Fortran handle. */
 uint32_t
-HYPREDRV_PythonPrintSystemInfo(int fortran_comm)
+HYPREDRV_PythonPrintSystemInfo(int use_self, int fortran_comm)
 {
-   return HYPREDRV_PrintSystemInfo(HYPREDRV_PythonComm(fortran_comm));
+   return HYPREDRV_PrintSystemInfo(HYPREDRV_PythonComm(use_self, fortran_comm));
 }
 
 /** @brief HYPREDRV_PrintExitInfo on a communicator given by its Fortran handle. */
 uint32_t
-HYPREDRV_PythonPrintExitInfo(int fortran_comm, const char *argv0)
+HYPREDRV_PythonPrintExitInfo(int use_self, int fortran_comm, const char *argv0)
 {
-   return HYPREDRV_PrintExitInfo(HYPREDRV_PythonComm(fortran_comm), argv0);
+   return HYPREDRV_PrintExitInfo(HYPREDRV_PythonComm(use_self, fortran_comm), argv0);
 }
 
 /**
@@ -262,5 +265,101 @@ HYPREDRV_PythonGetSolutionLength(HYPREDRV_t hypredrv, size_t *sol_length)
    if (count < 0 || (uintmax_t)count > SIZE_MAX)
       return HYPREDRV_ErrorInvalidValue("solution length exceeds size_t range");
    *sol_length = (size_t)count;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Local length of an IJ vector using the Python bridge's size type. */
+uint32_t
+HYPREDRV_PythonVectorLocalLength(HYPRE_IJVector vec, size_t *length)
+{
+   if (!vec || !length)
+      return HYPREDRV_ErrorInvalidValue("vector or length output is NULL");
+   HYPRE_BigInt ilower = 0, iupper = -1;
+   if (HYPRE_IJVectorGetLocalRange(vec, &ilower, &iupper))
+   {
+      HYPRE_ClearAllErrors();
+      return HYPREDRV_ErrorInvalidValue("failed to query the vector local range");
+   }
+   HYPRE_BigInt count = iupper - ilower + 1;
+   if (count < 0 || (uintmax_t)count > SIZE_MAX)
+      return HYPREDRV_ErrorInvalidValue("vector length exceeds size_t range");
+   *length = (size_t)count;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Local row range of the driver's system matrix as fixed-width values. */
+uint32_t
+HYPREDRV_PythonGetMatrixRowRange(HYPREDRV_t hypredrv, int64_t *row_start,
+                                 int64_t *row_end)
+{
+   if (!row_start || !row_end)
+      return HYPREDRV_ErrorInvalidValue("row range output is NULL");
+   HYPRE_Matrix mat  = NULL;
+   uint32_t     code = HYPREDRV_LinearSystemGetMatrix(hypredrv, &mat);
+   if (code) return code;
+   HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+   if (!mat || HYPRE_IJMatrixGetLocalRange((HYPRE_IJMatrix)mat, &ilower, &iupper, &jlower,
+                                           &jupper))
+   {
+      HYPRE_ClearAllErrors();
+      return HYPREDRV_ErrorInvalidValue("failed to query the matrix local range");
+   }
+   *row_start = (int64_t)ilower;
+   *row_end   = (int64_t)iupper;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Local RHS length using the Python bridge's size type. */
+uint32_t
+HYPREDRV_PythonGetRHSLength(HYPREDRV_t hypredrv, size_t *length)
+{
+   HYPRE_Vector rhs  = NULL;
+   uint32_t     code = HYPREDRV_LinearSystemGetRHS(hypredrv, &rhs);
+   if (code) return code;
+   return HYPREDRV_PythonVectorLocalLength((HYPRE_IJVector)rhs, length);
+}
+
+/**
+ * @brief Copy the local RHS into caller-owned host storage of exactly
+ * @p length HYPRE_Complex entries (the RHS local length).
+ */
+uint32_t
+HYPREDRV_PythonCopyRHSValues(HYPREDRV_t hypredrv, void *dst, size_t length)
+{
+   size_t   n    = 0;
+   uint32_t code = HYPREDRV_PythonGetRHSLength(hypredrv, &n);
+   if (code) return code;
+   if (n != length) return HYPREDRV_ErrorInvalidValue("RHS copy length mismatch");
+#ifdef HYPRE_USING_GPU
+   /* HYPREDRV_LinearSystemGetRHSValues reports no memory location, so the raw
+    * pointer may be device memory on GPU builds. */
+   (void)dst;
+   return HYPREDRV_ErrorInvalidValue(
+      "RHS values are not readable on GPU HYPRE builds; use get_rhs_handle()");
+#else
+   HYPRE_Complex *data = NULL;
+   code                = HYPREDRV_LinearSystemGetRHSValues(hypredrv, &data);
+   if (code) return code;
+   if (n && (!data || !dst))
+      return HYPREDRV_ErrorInvalidValue("RHS data is not available");
+   if (n) memcpy(dst, data, n * sizeof(HYPRE_Complex));
+   return HYPREDRV_SUCCESS;
+#endif
+}
+
+/**
+ * @brief Copy @p length entries of state vector @p index into caller-owned host
+ * storage. The caller sizes @p length from the registered state vectors.
+ */
+uint32_t
+HYPREDRV_PythonCopyStateVectorValues(HYPREDRV_t hypredrv, int index, void *dst,
+                                     size_t length)
+{
+   HYPRE_Complex *data = NULL;
+   uint32_t       code = HYPREDRV_StateVectorGetValues(hypredrv, index, &data);
+   if (code) return code;
+   if (length && (!data || !dst))
+      return HYPREDRV_ErrorInvalidValue("state vector data is not available");
+   if (length) memcpy(dst, data, length * sizeof(HYPRE_Complex));
    return HYPREDRV_SUCCESS;
 }

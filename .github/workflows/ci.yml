@@ -916,9 +916,9 @@ jobs:
           # repository cache quota.
           save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-${{ matrix.compiler }}-${{ github.sha }}
+          # ccache-action appends '-' to each restore key itself.
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.compiler }}-
-            ${{ runner.os }}-
+            ${{ runner.os }}-${{ matrix.compiler }}
 
       - name: Install dependencies (macOS)
         timeout-minutes: 3
@@ -1191,8 +1191,9 @@ jobs:
           # repository cache quota.
           save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-${{ matrix.dependency.cache_key }}-${{ github.sha }}
+          # ccache-action appends '-' to each restore key itself.
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.dependency.cache_key }}-
+            ${{ runner.os }}-${{ matrix.dependency.cache_key }}
 
       # This job fetches only a subset of the datasets.  Restore the complete
       # set saved by the full-set jobs, but never save: actions/cache entries are
@@ -1292,8 +1293,9 @@ jobs:
           # repository cache quota.
           save: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ runner.os }}-mixedint-${{ github.sha }}
+          # ccache-action appends '-' to each restore key itself.
           restore-keys: |
-            ${{ runner.os }}-mixedint-
+            ${{ runner.os }}-mixedint
 
       - name: Cache datasets
         uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0

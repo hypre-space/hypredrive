@@ -71,9 +71,14 @@ struct hypredrv_Solver_struct
     * or convergence-factor tolerances) make the L2 residual alone an
     * insufficient convergence test. */
    HYPRE_Real convergence_tol;
-   /* Set by SolverSolve when the Krylov flag stays zero (e.g. exact start) but
-    * the verified L2 relative residual meets convergence_tol without error. */
+   /* Set by SolverSolve when the Krylov state is inconsistent (flag zero, or a
+    * final norm above tolerance, e.g. after an early exit from an exact start
+    * that leaves the previous solve's counters behind) and the verified L2
+    * relative residual meets convergence_tol without error. */
    bool converged_by_residual;
+   /* Verified L2 relative residual recorded alongside converged_by_residual,
+    * or negative when the Krylov solver's own final norm is authoritative. */
+   HYPRE_Real verified_rel_norm;
 };
 
 /* The Krylov flag stays zero when a solve ends without a converging iteration,
@@ -673,9 +678,6 @@ hypredrv_SolverSetRelativeTol(hypredrv_Solver *solver, HYPRE_Real tol)
    solver->ops->set_tol(solver->native, tol);
    /* Keep the "other criteria active" sentinel (negative) untouched. */
    if (solver->convergence_tol >= 0.0) solver->convergence_tol = tol;
-   /* HYPRE's tolerance setters only update local state. Validation may have
-    * returned early on a peer, so consuming sticky errors must stay local. */
-   hypredrv_HypreConsumeErrors(MPI_COMM_SELF);
 }
 
 /*-----------------------------------------------------------------------------
@@ -805,6 +807,7 @@ SolverSolve(hypredrv_Solver *solver, HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_I
    HYPRE_IJVectorGetObject(b, &rhs);
    HYPRE_IJVectorGetObject(x, &solution);
    solver->converged_by_residual = false;
+   solver->verified_rel_norm     = -1.0;
    SolverSetReference(solver, reference);
    solver->ops->solve(solver->native, (HYPRE_ParCSRMatrix)matrix, (HYPRE_ParVector)rhs,
                       (HYPRE_ParVector)solution);
@@ -818,10 +821,13 @@ SolverSolve(hypredrv_Solver *solver, HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_I
       HYPRE_Real norm             = 0.0;
       solver->ops->get_converged(solver->native, &native_converged);
       solver->ops->get_final_rel_res_norm(solver->native, &norm);
+      /* Krylov solvers that return early (zero initial residual, zero RHS) leave
+       * the iteration count, flag and final norm of the previous solve behind,
+       * so neither can be used to pre-filter. Verify whenever the native state
+       * does not already report convergence with a final norm within tolerance. */
       int local_flags[2] = {
          ((hypre_err & ~HYPRE_ERROR_CONV) != 0) || hypredrv_ErrorCodeActive(),
-         !native_converged &&
-            (iters == 0 || (norm >= 0.0 && norm <= solver->convergence_tol)),
+         !native_converged || !(norm >= 0.0 && norm <= solver->convergence_tol),
       };
       int global_flags[2] = {0, 0};
       MPI_Allreduce(local_flags, global_flags, 2, MPI_INT, MPI_LOR, solver->comm);
@@ -837,15 +843,19 @@ SolverSolve(hypredrv_Solver *solver, HYPRE_IJMatrix A, HYPRE_IJVector b, HYPRE_I
          if (vec_r) HYPRE_IJVectorDestroy(vec_r);
          if (!hypredrv_ErrorCodeActive() && r_norm >= 0.0)
          {
+            double rel_r = -1.0;
             if (b_norm > 0.0)
             {
-               double rel_r = r_norm / b_norm;
-               if (rel_r <= (double)solver->convergence_tol)
-                  solver->converged_by_residual = true;
+               rel_r = r_norm / b_norm;
             }
             else if (b_norm == 0.0 && r_norm == 0.0)
             {
+               rel_r = 0.0;
+            }
+            if (rel_r >= 0.0 && rel_r <= (double)solver->convergence_tol)
+            {
                solver->converged_by_residual = true;
+               solver->verified_rel_norm     = (HYPRE_Real)rel_r;
             }
          }
       }
@@ -974,7 +984,7 @@ hypredrv_SolverGetConverged(hypredrv_Solver *solver, HYPRE_Int *converged)
       return;
    }
    solver->ops->get_converged(solver->native, converged);
-   if (!*converged && solver->converged_by_residual)
+   if (solver->converged_by_residual)
    {
       *converged = 1;
    }
@@ -987,6 +997,11 @@ hypredrv_SolverGetFinalRelativeResidualNorm(hypredrv_Solver *solver, HYPRE_Real 
    {
       hypredrv_ErrorCodeSet(ERROR_UNKNOWN);
       hypredrv_ErrorMsgAdd("Residual query requires a live solver and output pointer");
+      return;
+   }
+   if (solver->converged_by_residual)
+   {
+      *norm = solver->verified_rel_norm;
       return;
    }
    solver->ops->get_final_rel_res_norm(solver->native, norm);

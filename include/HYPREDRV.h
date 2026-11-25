@@ -2199,10 +2199,9 @@ extern "C"
     * HYPREDRV_LinearSolverApply() annotate the "prec" and "solve" regions
     * internally, while HYPREDRV_PreconApply() does not, so standalone
     * preconditioner applications should be wrapped in a "solve" region by the
-    * caller. Without the "matrix" and "reset_x0" annotations the linear-system
-    * counter never advances and per-system features (statistics breakdown,
-    * preconditioner reuse policies) treat all solves as belonging to the first
-    * system.
+    * caller. Without the "matrix" annotation the linear-system counter never
+    * advances and per-system features (statistics breakdown, preconditioner
+    * reuse policies) treat all solves as belonging to the first system.
     *
     * @param hypredrv The HYPREDRV_t object whose stats context should receive
     *                 the annotation.
@@ -2403,6 +2402,9 @@ extern "C"
     *
     * The norm is read from the live Krylov solver object, so this function must be
     * called after HYPREDRV_LinearSolverApply and before the solver is destroyed.
+    * When HYPREDRV_LinearSolverGetConverged reports convergence verified from the
+    * true residual (e.g. a solve that starts at the solution), this returns that
+    * verified L2 relative residual instead of the Krylov solver's value.
     *
     * @param hypredrv The HYPREDRV_t object.
     * @param norm     Pointer to store the final relative residual norm.

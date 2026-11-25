@@ -165,6 +165,26 @@ end
             set_matrix_handle!(other, get_matrix_handle(session))
             set_rhs_handle!(other, get_rhs_handle(session))
             @test get_rhs_values(other) ≈ [4.0, 9.0]
+            # Handle setters refresh the cached system state used by solve!.
+            y = zeros(2)
+            solve!(y, other)
+            @test y ≈ [2.0, 3.0]
+            set_matrix_handle!(other, C_NULL)  # clearing is allowed
+            @test_throws ArgumentError solve!(y, other)
+
+            # State-vector copies are sized from the registered vectors.
+            three = HypreDriveSession(options=opts)
+            try
+                set_matrix_csr!(three, [0, 1, 2, 3], [0, 1, 2], [1.0, 1.0, 1.0], 0)
+                set_rhs!(three, [1.0, 2.0, 3.0])
+                @test_throws ArgumentError set_state_vectors!(
+                    other, [get_rhs_handle(session), get_rhs_handle(three)])
+                set_state_vectors!(other, [get_rhs_handle(three)])
+                @test get_state_vector_values(other, 0) ≈ [1.0, 2.0, 3.0]
+            finally
+                HypreDrive.close(other)
+                HypreDrive.close(three)
+            end
         finally
             HypreDrive.close(other)
         end
@@ -173,6 +193,35 @@ end
         HypreDrive.close(session)
     end
     @test_throws ArgumentError set_object_name!(session, "closed")
+end
+
+const ps3d_dir = joinpath(@__DIR__, "..", "..", "..", "data", "ps3d10pt7", "np1")
+if isfile(joinpath(ps3d_dir, "IJ.out.A.00000"))
+    @testset "file-built system" begin
+        hypredrive_error_clear()
+        yaml = """
+        linear_system:
+          matrix_filename: $(joinpath(ps3d_dir, "IJ.out.A"))
+          rhs_filename: $(joinpath(ps3d_dir, "IJ.out.b"))
+          init_guess_mode: previous
+        solver: pcg
+        preconditioner: amg
+        """
+        session = HypreDriveSession(options=yaml)
+        try
+            # Build refreshes the cached rows and flags that solve! checks.
+            linear_system_build!(session)
+            x = zeros(1000)
+            _, first = solve!(x, session)
+            @test first.converged
+            linear_system_build!(session)
+            _, second = solve!(x, session)
+            @test second.converged
+            @test second.iterations < first.iterations
+        finally
+            HypreDrive.close(session)
+        end
+    end
 end
 
 @testset "presets, level stats and printing" begin

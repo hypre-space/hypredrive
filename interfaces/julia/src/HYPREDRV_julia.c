@@ -455,7 +455,9 @@ HYPREDRV_JuliaLinearSystemGetSolutionLength(HYPREDRV_t hypredrv, int64_t *length
    return HYPREDRV_SUCCESS;
 }
 
-/** @brief Return the local length of the RHS vector (and of state vectors). */
+uint32_t HYPREDRV_JuliaVectorLocalLength(void *vec, int64_t *length);
+
+/** @brief Return the local length of the RHS vector. */
 uint32_t
 HYPREDRV_JuliaLinearSystemGetRHSLength(HYPREDRV_t hypredrv, int64_t *length)
 {
@@ -473,11 +475,108 @@ HYPREDRV_JuliaLinearSystemGetRHSLength(HYPREDRV_t hypredrv, int64_t *length)
    {
       return HYPREDRV_ErrorInvalidValue("no RHS vector available");
    }
-   HYPRE_BigInt lo = 0, hi = -1;
-   if (HYPRE_IJVectorGetLocalRange((HYPRE_IJVector)rhs, &lo, &hi))
+   return HYPREDRV_JuliaVectorLocalLength(rhs, length);
+}
+
+/** @brief Return the local length of an IJ vector. */
+uint32_t
+HYPREDRV_JuliaVectorLocalLength(void *vec, int64_t *length)
+{
+   if (vec == NULL || length == NULL)
    {
-      return HYPREDRV_ErrorInvalidValue("failed to query the RHS local range");
+      return HYPREDRV_ErrorInvalidValue("vector or length output pointer is NULL");
+   }
+   HYPRE_BigInt lo = 0, hi = -1;
+   if (HYPRE_IJVectorGetLocalRange((HYPRE_IJVector)vec, &lo, &hi))
+   {
+      HYPRE_ClearAllErrors();
+      return HYPREDRV_ErrorInvalidValue("failed to query the vector local range");
    }
    *length = (int64_t)(hi - lo + 1);
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Return the local row range of the system matrix. */
+uint32_t
+HYPREDRV_JuliaGetMatrixRowRange(HYPREDRV_t hypredrv, int64_t *row_start, int64_t *row_end)
+{
+   if (row_start == NULL || row_end == NULL)
+   {
+      return HYPREDRV_ErrorInvalidValue("row range output pointer is NULL");
+   }
+   HYPRE_Matrix mat  = NULL;
+   uint32_t     code = HYPREDRV_LinearSystemGetMatrix(hypredrv, &mat);
+   if (code != 0u)
+   {
+      return code;
+   }
+   HYPRE_BigInt ilower = 0, iupper = -1, jlower = 0, jupper = -1;
+   if (mat == NULL || HYPRE_IJMatrixGetLocalRange((HYPRE_IJMatrix)mat, &ilower, &iupper,
+                                                  &jlower, &jupper))
+   {
+      HYPRE_ClearAllErrors();
+      return HYPREDRV_ErrorInvalidValue("failed to query the matrix local range");
+   }
+   *row_start = (int64_t)ilower;
+   *row_end   = (int64_t)iupper;
+   return HYPREDRV_SUCCESS;
+}
+
+/** @brief Copy exactly the local RHS (length entries) into caller-owned host memory. */
+uint32_t
+HYPREDRV_JuliaCopyRHSValues(HYPREDRV_t hypredrv, void *dst, int64_t length)
+{
+   int64_t  n    = 0;
+   uint32_t code = HYPREDRV_JuliaLinearSystemGetRHSLength(hypredrv, &n);
+   if (code != 0u)
+   {
+      return code;
+   }
+   if (n != length)
+   {
+      return HYPREDRV_ErrorInvalidValue("RHS copy length mismatch");
+   }
+#ifdef HYPRE_USING_GPU
+   /* HYPREDRV_LinearSystemGetRHSValues reports no memory location, so the raw
+    * pointer may be device memory on GPU builds. */
+   (void)dst;
+   return HYPREDRV_ErrorInvalidValue(
+      "RHS values are not readable on GPU HYPRE builds; use get_rhs_handle");
+#else
+   HYPRE_Complex *data = NULL;
+   code                = HYPREDRV_LinearSystemGetRHSValues(hypredrv, &data);
+   if (code != 0u)
+   {
+      return code;
+   }
+   if (n > 0 && (data == NULL || dst == NULL))
+   {
+      return HYPREDRV_ErrorInvalidValue("RHS values are unavailable");
+   }
+   if (n > 0) memcpy(dst, data, (size_t)n * sizeof(HYPRE_Complex));
+   return HYPREDRV_SUCCESS;
+#endif
+}
+
+/** @brief Copy length entries of state vector index into caller-owned host memory. */
+uint32_t
+HYPREDRV_JuliaCopyStateVectorValues(HYPREDRV_t hypredrv, int index, void *dst,
+                                    int64_t length)
+{
+   if (length < 0)
+   {
+      return HYPREDRV_ErrorInvalidValue("state vector length is negative");
+   }
+   HYPRE_Complex *data = NULL;
+   uint32_t       code = HYPREDRV_StateVectorGetValues(hypredrv, index, &data);
+   if (code != 0u)
+   {
+      return code;
+   }
+   if (length > 0 && (data == NULL || dst == NULL))
+   {
+      return HYPREDRV_ErrorInvalidValue("state vector values are unavailable");
+   }
+   if (length > 0) memcpy(dst, data, (size_t)length * sizeof(HYPRE_Complex));
    return HYPREDRV_SUCCESS;
 }

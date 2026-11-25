@@ -174,6 +174,42 @@ expect_error(@() hypredrive_mex('destroy', hA), 'hypredrive:ObjectInUse');
 hypredrive_mex('destroy', d1);
 hypredrive_mex('destroy', hA);
 
+% Time stepping: a matrix the driver has replaced can be destroyed, while the
+% current one stays in use. The RHS is readable before any solve.
+drv = hypredrive_mex('create', yaml);
+hA1 = hypredrive_mex('matrix_from_sparse', A);
+hA2 = hypredrive_mex('matrix_from_sparse', A);
+hypredrive_mex('set_matrix', drv, hA1);
+hypredrive_mex('set_matrix', drv, hA2);
+hypredrive_mex('destroy', hA1);
+expect_error(@() hypredrive_mex('destroy', hA2), 'hypredrive:ObjectInUse');
+hypredrive_mex('set_rhs_array', drv, b);
+if norm(hypredrive_mex('get_rhs_values', drv) - b) > 0
+    error('hypredrive:test', 'get_rhs_values before a solve is wrong');
+end
+hypredrive_mex('solver_create', drv);
+hypredrive_mex('solver_setup', drv);
+hypredrive_mex('solver_apply', drv);
+x4 = hypredrive_mex('get_solution_values', drv);
+if norm(b - A * x4) / norm(b) > 1.0e-7
+    error('hypredrive:test', 'solve after destroying a replaced matrix failed');
+end
+hypredrive_mex('destroy', drv);
+hypredrive_mex('destroy', hA2);
+
+% State vectors must share one length, and copies are sized from them.
+drv = hypredrive_mex('create', yaml);
+hs1 = hypredrive_mex('vector_from_array', (1:4)');
+hs2 = hypredrive_mex('vector_from_array', ones(5, 1));
+expect_error(@() hypredrive_mex('state_set', drv, [hs1, hs2]), 'hypredrive:InvalidArgument');
+hypredrive_mex('state_set', drv, hs1);
+if norm(hypredrive_mex('state_get_values', drv, 0) - (1:4)') > 0
+    error('hypredrive:test', 'state_get_values is wrong');
+end
+hypredrive_mex('destroy', drv);
+hypredrive_mex('destroy', hs1);
+hypredrive_mex('destroy', hs2);
+
 % A handle borrowed from one driver cannot be given to another: it would dangle
 % once its own driver is destroyed.
 d1 = hypredrive_mex('create', yaml);

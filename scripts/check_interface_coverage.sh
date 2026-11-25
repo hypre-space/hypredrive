@@ -65,9 +65,6 @@ for iface in "${INTERFACES[@]}"; do
   [[ "$iface" != rust ]] || prefix='ffi::'
   bound=$(text_of "$iface" | { grep -oE "${prefix}HYPREDRV_[A-Za-z0-9_]+" || [[ $? -eq 1 ]]; } |
     sed 's/^ffi:://' | LC_ALL=C sort -u)
-  if [[ "$iface" == julia ]]; then
-    bound=$(sed 's/^HYPREDRV_Julia/HYPREDRV_/' <<< "$bound" | LC_ALL=C sort -u)
-  fi
   missing=$(LC_ALL=C comm -23 <(printf '%s\n' "$APIS") <(printf '%s\n' "$bound"))
   [[ -n "$missing" ]] || continue
   while IFS= read -r api; do

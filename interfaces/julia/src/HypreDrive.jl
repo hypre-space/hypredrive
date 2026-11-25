@@ -61,6 +61,7 @@ mutable struct HypreDriveSession
     solver_created::Bool
     closed::Bool
     last_info::SolveInfo
+    state_length::Int
 end
 
 const _state_lock = ReentrantLock()
@@ -712,7 +713,7 @@ function HypreDriveSession(; comm::Symbol=:self, options=nothing,
     try
         _parse_input_args!(drv_ref[], yaml, input_args)
         session = HypreDriveSession(drv_ref, comm, 0, -1, 0, -1, false, false,
-                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0))
+                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0), 0)
         ok = true
         return finalizer(Base.close, session)
     finally
@@ -1275,7 +1276,25 @@ function linear_system_build!(session::HypreDriveSession)
     _destroy_solver!(session)
     _check(ccall(_sym(:HYPREDRV_LinearSystemBuild), UInt32, (Ptr{Cvoid},), drv),
            "build linear system")
+    _adopt_native_matrix!(session)
+    # Build also installs the RHS and initial guess.
+    session.rhs_set = true
+    return session
+end
+
+# The matrix was replaced natively: refresh the cached row range and flags so
+# set_rhs!/solve! check against it. A new matrix needs a new RHS.
+function _adopt_native_matrix!(session::HypreDriveSession)
+    drv = _require_open(session)
+    lo = Ref{Int64}(0)
+    hi = Ref{Int64}(-1)
+    _check(ccall(_sym(:HYPREDRV_JuliaGetMatrixRowRange), UInt32,
+                 (Ptr{Cvoid}, Ref{Int64}, Ref{Int64}), drv, lo, hi), "get matrix row range")
+    session.row_start = Int(lo[])
+    session.row_end = Int(hi[])
     session.matrix_revision += 1
+    session.matrix_set = true
+    session.rhs_set = false
     return session
 end
 
@@ -1285,7 +1304,7 @@ function linear_system_read_matrix!(session::HypreDriveSession)
     _destroy_solver!(session)
     _check(ccall(_sym(:HYPREDRV_LinearSystemReadMatrix), UInt32, (Ptr{Cvoid},), drv),
            "read matrix")
-    session.matrix_revision += 1
+    _adopt_native_matrix!(session)
     return session
 end
 
@@ -1299,7 +1318,13 @@ function set_matrix_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
     _destroy_solver!(session)
     _check(ccall(_sym(:HYPREDRV_LinearSystemSetMatrix), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set matrix handle")
-    session.matrix_revision += 1
+    if mat == C_NULL  # cleared: no matrix, so no row range
+        session.matrix_revision += 1
+        session.matrix_set = false
+        session.rhs_set = false
+    else
+        _adopt_native_matrix!(session)
+    end
     return session
 end
 
@@ -1348,11 +1373,15 @@ function set_coarse_schur_handle!(session::HypreDriveSession, level::Integer,
     return session
 end
 
-"Attach an externally owned HYPRE_Vector as the right-hand side."
+"Attach an externally owned HYPRE_Vector as the right-hand side (`C_NULL` builds it from the parsed input)."
 function set_rhs_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
     drv = _require_open(session)
     _check(ccall(_sym(:HYPREDRV_LinearSystemSetRHS), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set rhs handle")
+    # Match set_rhs!: a new RHS gets a fresh initial guess sized from it.
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetInitialGuess), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, C_NULL), "set initial guess")
+    session.rhs_set = true  # C_NULL builds the RHS from the parsed input
     return session
 end
 
@@ -1490,12 +1519,13 @@ end
 function get_rhs_values(session::HypreDriveSession)
     drv = _require_open(session)
     n = _local_rows(session)
-    ptr = Ref{Ptr{Cdouble}}(C_NULL)
-    _check(ccall(_sym(:HYPREDRV_LinearSystemGetRHSValues), UInt32,
-                 (Ptr{Cvoid}, Ref{Ptr{Cdouble}}), drv, ptr), "get rhs values")
-    n == 0 && return Float64[]
-    ptr[] != C_NULL || throw(ArgumentError("rhs values are unavailable"))
-    return copy(unsafe_wrap(Array, ptr[], n))
+    out = Vector{Float64}(undef, n)
+    GC.@preserve out begin
+        _check(ccall(_sym(:HYPREDRV_JuliaCopyRHSValues), UInt32,
+                     (Ptr{Cvoid}, Ptr{Cvoid}, Int64), drv, pointer(out), Int64(n)),
+               "get rhs values")
+    end
+    return out
 end
 
 function _get_handle(session::HypreDriveSession, which::Symbol)
@@ -1524,31 +1554,46 @@ get_matrix_handle(session::HypreDriveSession) = _get_handle(session, :matrix)
 """
     set_state_vectors!(session, vecs::Vector{Ptr{Cvoid}})
 
-Register externally owned HYPRE_IJVector state vectors. The handles are copied by
-HYPREDRV; the vectors must be destroyed by the caller after the session is closed.
+Register externally owned HYPRE_IJVector state vectors, which must share one local
+length. The handles are copied by HYPREDRV; the vectors must be destroyed by the caller
+after the session is closed.
 """
 function set_state_vectors!(session::HypreDriveSession, vecs::Vector{Ptr{Cvoid}})
     drv = _require_open(session)
     n = _checked_cint(length(vecs), "number of state vectors")
+    # States only rotate afterwards, so one length sized from the vectors
+    # themselves bounds every get_state_vector_values copy.
+    state_length = 0
+    for (i, vec) in enumerate(vecs)
+        vec == C_NULL && continue  # rejected by HYPREDRV_StateVectorSet below
+        len = Ref{Int64}(0)
+        _check(ccall(_sym(:HYPREDRV_JuliaVectorLocalLength), UInt32,
+                     (Ptr{Cvoid}, Ref{Int64}), vec, len), "get state vector length")
+        if i > 1 && len[] != state_length
+            throw(ArgumentError("state vectors must share one local length"))
+        end
+        state_length = Int(len[])
+    end
     GC.@preserve vecs begin
         _check(ccall(_sym(:HYPREDRV_StateVectorSet), UInt32,
                      (Ptr{Cvoid}, Cint, Ptr{Ptr{Cvoid}}), drv, n, pointer(vecs)),
                "set state vectors")
     end
+    session.state_length = state_length
     return session
 end
 
 "Return a copy of the local values of state vector `index` (zero-based)."
 function get_state_vector_values(session::HypreDriveSession, index::Integer)
     drv = _require_open(session)
-    n = _local_rows(session)
-    ptr = Ref{Ptr{Cdouble}}(C_NULL)
-    _check(ccall(_sym(:HYPREDRV_StateVectorGetValues), UInt32,
-                 (Ptr{Cvoid}, Cint, Ref{Ptr{Cdouble}}), drv,
-                 _checked_cint(index, "index"), ptr), "get state vector values")
-    n == 0 && return Float64[]
-    ptr[] != C_NULL || throw(ArgumentError("state vector values are unavailable"))
-    return copy(unsafe_wrap(Array, ptr[], n))
+    out = Vector{Float64}(undef, session.state_length)
+    GC.@preserve out begin
+        _check(ccall(_sym(:HYPREDRV_JuliaCopyStateVectorValues), UInt32,
+                     (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Int64), drv,
+                     _checked_cint(index, "index"), pointer(out),
+                     Int64(session.state_length)), "get state vector values")
+    end
+    return out
 end
 
 "Copy state vector `index_in` into `index_out` (zero-based)."

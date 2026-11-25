@@ -566,6 +566,175 @@ test_hypredrv_SolverGetConverged_warm_start(void)
    TEST_HYPRE_FINALIZE();
 }
 
+static HYPRE_IJMatrix
+create_test_diag_2x2(double d0, double d1)
+{
+   HYPRE_IJMatrix mat = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, 1, 0, 1, &mat), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(mat, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(mat), 0);
+   HYPRE_Int    ncols[2]  = {1, 1};
+   HYPRE_BigInt rows[2]   = {0, 1};
+   double       values[2] = {d0, d1};
+   ASSERT_EQ(HYPRE_IJMatrixSetValues(mat, 2, ncols, rows, rows, values), 0);
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(mat), 0);
+   return mat;
+}
+
+static HYPRE_IJVector
+create_test_vector_2(double v0, double v1)
+{
+   HYPRE_IJVector vec = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, 1, &vec), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(vec, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(vec), 0);
+   HYPRE_BigInt idx[2] = {0, 1};
+   double       val[2] = {v0, v1};
+   ASSERT_EQ(HYPRE_IJVectorSetValues(vec, 2, idx, val), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(vec), 0);
+   return vec;
+}
+
+/* A reused solver must not trust counters left behind by the previous solve:
+ * Krylov solvers that return early (exact start, zero RHS) keep the previous
+ * iteration count, flag and final norm. A=diag(1,2), b=(1,2), max_iter=1. */
+static void
+test_hypredrv_SolverGetConverged_reuse_after_unconverged(void)
+{
+   TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   HYPRE_IJMatrix A         = create_test_diag_2x2(1.0, 2.0);
+   HYPRE_IJVector b         = create_test_vector_2(1.0, 2.0);
+   HYPRE_IJVector b_zero    = create_test_vector_2(0.0, 0.0);
+   const solver_t methods[] = {SOLVER_PCG, SOLVER_GMRES, SOLVER_FGMRES, SOLVER_BICGSTAB};
+   for (size_t i = 0; i < sizeof(methods) / sizeof(methods[0]); i++)
+   {
+      solver_args args;
+      hypredrv_SolverArgsSetDefaultsForMethod(methods[i], &args);
+      switch (methods[i]) /* solver_args is a union: set the active member only */
+      {
+         case SOLVER_PCG:
+            args.pcg.max_iter = 1;
+            break;
+         case SOLVER_GMRES:
+            args.gmres.max_iter = 1;
+            break;
+         case SOLVER_FGMRES:
+            args.fgmres.max_iter = 1;
+            break;
+         default:
+            args.bicgstab.max_iter = 1;
+            break;
+      }
+      hypredrv_Solver *solver = NULL;
+      hypredrv_SolverCreate(MPI_COMM_SELF, methods[i], &args, &solver);
+      ASSERT_NOT_NULL(solver);
+
+      HYPRE_IJVector x = create_test_vector_2(0.0, 0.0);
+      hypredrv_SolverSetupWithReuse(solver, NULL, A, b, x, NULL, NULL, 0);
+      HYPRE_Int  converged = 1;
+      HYPRE_Real norm      = -1.0;
+      if (methods[i] != SOLVER_BICGSTAB) /* BiCGSTAB may finish in one step */
+      {
+         ASSERT_TRUE(hypredrv_SolverSolveOnly(solver, A, b, x, NULL) >= 0);
+         hypredrv_SolverGetConverged(solver, &converged);
+         ASSERT_EQ(converged, 0);
+      }
+
+      /* Exact start: reported converged, with the verified (zero) norm. */
+      HYPRE_IJVectorDestroy(x);
+      x = create_test_vector_2(1.0, 1.0);
+      ASSERT_TRUE(hypredrv_SolverSolveOnly(solver, A, b, x, NULL) >= 0);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      hypredrv_SolverGetConverged(solver, &converged);
+      hypredrv_SolverGetFinalRelativeResidualNorm(solver, &norm);
+      ASSERT_EQ(converged, 1);
+      ASSERT_EQ_DOUBLE(norm, 0.0, 1e-12);
+
+      /* Zero RHS from a zero start also converges. */
+      HYPRE_IJVectorDestroy(x);
+      x = create_test_vector_2(0.0, 0.0);
+      ASSERT_TRUE(hypredrv_SolverSolveOnly(solver, A, b_zero, x, NULL) >= 0);
+      ASSERT_FALSE(hypredrv_ErrorCodeActive());
+      converged = 0;
+      hypredrv_SolverGetConverged(solver, &converged);
+      ASSERT_EQ(converged, 1);
+
+      hypredrv_SolverDestroy(&solver);
+      HYPRE_IJVectorDestroy(x);
+   }
+   HYPRE_IJVectorDestroy(b_zero);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+   TEST_HYPRE_FINALIZE();
+}
+
+/* A live solver picks up a new relative tolerance without being recreated:
+ * unpreconditioned PCG on diag(1..n) stops much earlier at a loose tolerance. */
+static void
+test_hypredrv_SolverSetRelativeTol_live_solver(void)
+{
+   TEST_HYPRE_INIT();
+   hypredrv_ErrorStateReset();
+   enum
+   {
+      n = 20
+   };
+   HYPRE_IJMatrix A = NULL;
+   HYPRE_IJVector b = NULL;
+   ASSERT_EQ(HYPRE_IJMatrixCreate(MPI_COMM_SELF, 0, n - 1, 0, n - 1, &A), 0);
+   ASSERT_EQ(HYPRE_IJMatrixSetObjectType(A, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJMatrixInitialize(A), 0);
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, n - 1, &b), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(b, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(b), 0);
+   for (HYPRE_BigInt i = 0; i < n; i++)
+   {
+      HYPRE_Int ncols = 1;
+      double    diag = (double)(i + 1), one = 1.0;
+      ASSERT_EQ(HYPRE_IJMatrixSetValues(A, 1, &ncols, &i, &i, &diag), 0);
+      ASSERT_EQ(HYPRE_IJVectorSetValues(b, 1, &i, &one), 0);
+   }
+   ASSERT_EQ(HYPRE_IJMatrixAssemble(A), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(b), 0);
+
+   solver_args args;
+   hypredrv_SolverArgsSetDefaultsForMethod(SOLVER_PCG, &args);
+   args.pcg.relative_tol   = 0.5;
+   args.pcg.max_iter       = 100;
+   hypredrv_Solver *solver = NULL;
+   hypredrv_SolverCreate(MPI_COMM_SELF, SOLVER_PCG, &args, &solver);
+   ASSERT_NOT_NULL(solver);
+   HYPRE_IJVector x = NULL;
+   ASSERT_EQ(HYPRE_IJVectorCreate(MPI_COMM_SELF, 0, n - 1, &x), 0);
+   ASSERT_EQ(HYPRE_IJVectorSetObjectType(x, HYPRE_PARCSR), 0);
+   ASSERT_EQ(HYPRE_IJVectorInitialize(x), 0);
+   ASSERT_EQ(HYPRE_IJVectorAssemble(x), 0);
+   hypredrv_SolverSetupWithReuse(solver, NULL, A, b, x, NULL, NULL, 0);
+
+   HYPRE_Int loose_iters = hypredrv_SolverSolveOnly(solver, A, b, x, NULL);
+   ASSERT_TRUE(loose_iters > 0);
+
+   hypredrv_SolverSetRelativeTol(solver, 1e-10);
+   void *x_par = NULL;
+   ASSERT_EQ(HYPRE_IJVectorGetObject(x, &x_par), 0);
+   ASSERT_EQ(HYPRE_ParVectorSetConstantValues((HYPRE_ParVector)x_par, 0.0), 0);
+   HYPRE_Int tight_iters = hypredrv_SolverSolveOnly(solver, A, b, x, NULL);
+   ASSERT_TRUE(tight_iters > loose_iters);
+   HYPRE_Int  converged = 0;
+   HYPRE_Real norm      = 1.0;
+   hypredrv_SolverGetConverged(solver, &converged);
+   hypredrv_SolverGetFinalRelativeResidualNorm(solver, &norm);
+   ASSERT_EQ(converged, 1);
+   ASSERT_TRUE(norm <= 1e-10);
+
+   hypredrv_SolverDestroy(&solver);
+   HYPRE_IJVectorDestroy(x);
+   HYPRE_IJVectorDestroy(b);
+   HYPRE_IJMatrixDestroy(A);
+   TEST_HYPRE_FINALIZE();
+}
+
 static void
 test_hypredrv_SolverCreate_default_case(void)
 {
@@ -1129,6 +1298,8 @@ main(int argc, char **argv)
    /* Solver dispatch tests */
    RUN_TEST(test_hypredrv_SolverCreate_all_cases);
    RUN_TEST(test_hypredrv_SolverGetConverged_warm_start);
+   RUN_TEST(test_hypredrv_SolverGetConverged_reuse_after_unconverged);
+   RUN_TEST(test_hypredrv_SolverSetRelativeTol_live_solver);
    RUN_TEST(test_hypredrv_SolverCreate_default_case);
    RUN_TEST(test_hypredrv_SolverDestroy_all_cases);
    RUN_TEST(test_hypredrv_SolverDestroy_null_solver);

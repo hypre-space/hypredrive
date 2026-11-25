@@ -225,6 +225,10 @@ test_Stats_ls_id_without_reset_x0(void)
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
       hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
       ASSERT_EQ(hypredrv_StatsGetLinearSystemID(s), i);
+      /* Another solve of the same system counts the system only once. */
+      hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_BEGIN, "solve");
+      hypredrv_StatsAnnotate(s, HYPREDRV_ANNOTATE_END, "solve");
+      ASSERT_EQ(hypredrv_StatsGetLinearSystemID(s), i);
    }
 
    hypredrv_StatsDestroy(&s);

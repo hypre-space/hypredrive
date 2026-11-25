@@ -22,6 +22,7 @@ The binding follows three principles:
 
 from libc.stdint cimport int64_t, uint32_t, intptr_t, uintptr_t
 from libc.stdlib cimport malloc, free
+from libc.string cimport memcpy
 
 cimport cython
 import numpy as np
@@ -125,16 +126,9 @@ cdef uint32_t _create_driver(object comm, _c.HYPREDRV_t *handle) except? 1:
     Fortran handle bridge ``Comm.py2f()``; the C shim converts it to the
     ABI-specific ``MPI_Comm`` representation.
     """
-    cdef int fortran_handle
     if comm is None:
         return _c.HYPREDRV_PythonCreateWithSelf(handle)
-    if not hasattr(comm, "py2f"):
-        raise TypeError(
-            "comm must be an mpi4py.MPI.Comm (or None for MPI_COMM_SELF); "
-            f"got {type(comm).__name__}"
-        )
-    fortran_handle = int(comm.py2f())
-    return _c.HYPREDRV_PythonCreateFromFortranComm(fortran_handle, handle)
+    return _c.HYPREDRV_PythonCreateFromFortranComm(_fortran_comm(comm), handle)
 
 
 
@@ -168,19 +162,18 @@ cdef void *_as_ptr(object handle, str name) except? NULL:
     return <void *>addr
 
 
-cdef int _fortran_comm(object comm) except -2:
-    """Fortran handle of ``comm``; -1 selects ``MPI_COMM_SELF``."""
-    cdef int fortran_handle = -1
-    if comm is not None:
-        if not hasattr(comm, "py2f"):
-            raise TypeError(
-                "comm must be an mpi4py.MPI.Comm (or None for MPI_COMM_SELF); "
-                f"got {type(comm).__name__}"
-            )
-        fortran_handle = int(comm.py2f())
-        if fortran_handle < 0:
-            raise ValueError("invalid communicator handle")
-    return fortran_handle
+cdef int _fortran_comm(object comm) except? -1:
+    """Fortran handle of a non-``None`` mpi4py ``comm``.
+
+    Handles may be negative (MPICH sets the high bit on user communicators),
+    so callers select ``MPI_COMM_SELF`` from ``comm is None`` instead.
+    """
+    if not hasattr(comm, "py2f"):
+        raise TypeError(
+            "comm must be an mpi4py.MPI.Comm (or None for MPI_COMM_SELF); "
+            f"got {type(comm).__name__}"
+        )
+    return int(comm.py2f())
 
 
 def _error_code_clear():
@@ -195,20 +188,22 @@ def _error_invalid_value(str message):
 
 
 def _print_lib_info(object comm=None, bint print_datetime=False):
-    cdef int c = _fortran_comm(comm)
-    _check(_c.HYPREDRV_PythonPrintLibInfo(c, 1 if print_datetime else 0),
+    cdef int c = 0 if comm is None else _fortran_comm(comm)
+    _check(_c.HYPREDRV_PythonPrintLibInfo(comm is None, c,
+                                          1 if print_datetime else 0),
            "HYPREDRV_PrintLibInfo")
 
 
 def _print_system_info(object comm=None):
-    cdef int c = _fortran_comm(comm)
-    _check(_c.HYPREDRV_PythonPrintSystemInfo(c), "HYPREDRV_PrintSystemInfo")
+    cdef int c = 0 if comm is None else _fortran_comm(comm)
+    _check(_c.HYPREDRV_PythonPrintSystemInfo(comm is None, c),
+           "HYPREDRV_PrintSystemInfo")
 
 
 def _print_exit_info(object comm=None, str argv0="hypredrive"):
-    cdef int c = _fortran_comm(comm)
+    cdef int c = 0 if comm is None else _fortran_comm(comm)
     cdef bytes raw = argv0.encode("utf-8")
-    _check(_c.HYPREDRV_PythonPrintExitInfo(c, <const char *>raw),
+    _check(_c.HYPREDRV_PythonPrintExitInfo(comm is None, c, <const char *>raw),
            "HYPREDRV_PrintExitInfo")
 
 
@@ -244,13 +239,13 @@ cdef class HypreDriveCore:
 
     cdef _c.HYPREDRV_t _handle
     cdef bint _solver_created
-    cdef bint _precon_created
+    cdef size_t _state_length
     cdef object __weakref__
 
     def __cinit__(self, object comm=None, bint library_mode=True):
         self._handle = NULL
         self._solver_created = False
-        self._precon_created = False
+        self._state_length = 0
 
         _check(_create_driver(comm, &self._handle), "HYPREDRV_Create")
         _live_cores.add(self)
@@ -267,13 +262,8 @@ cdef class HypreDriveCore:
         cdef uint32_t code = 0
         if self._handle == NULL:
             return 0
-        if self._precon_created:
-            first_code = _c.HYPREDRV_PreconDestroy(self._handle)
-            self._precon_created = False
         if self._solver_created:
-            code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
-            if first_code == 0:
-                first_code = code
+            first_code = _c.HYPREDRV_LinearSolverDestroy(self._handle)
             self._solver_created = False
         code = _c.HYPREDRV_Destroy(&self._handle)
         self._handle = NULL
@@ -634,10 +624,12 @@ cdef class HypreDriveCore:
                "HYPREDRV_LinearSystemReadMatrix")
 
     def set_matrix_handle(self, object mat):
+        """Attach ``mat`` (``None``/NULL clears it); return whether one is attached."""
         self._require_open()
-        _check(_c.HYPREDRV_LinearSystemSetMatrix(
-                   self._handle, <_c.HYPRE_Matrix>_as_ptr(mat, "mat")),
+        cdef void *ptr = _as_ptr(mat, "mat")
+        _check(_c.HYPREDRV_LinearSystemSetMatrix(self._handle, <_c.HYPRE_Matrix>ptr),
                "HYPREDRV_LinearSystemSetMatrix")
+        return ptr != NULL
 
     def set_prec_matrix_handle(self, object mat):
         self._require_open()
@@ -792,11 +784,21 @@ cdef class HypreDriveCore:
     cdef object _copy_host(self, const _c.HYPRE_Complex *p, Py_ssize_t n):
         cdef cnp.ndarray out = np.empty(
             n, dtype=np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_REAL_SIZE}"))
-        cdef Py_ssize_t i
-        cdef double *dst = <double *>cnp.PyArray_DATA(out)
-        for i in range(n):
-            dst[i] = p[i]
+        if n:
+            memcpy(cnp.PyArray_DATA(out), p, <size_t>n * sizeof(_c.HYPRE_Complex))
         return out
+
+    cdef cnp.ndarray _empty_real(self, size_t n):
+        return np.empty(<Py_ssize_t>n,
+                        dtype=np.dtype(f"float{8 * _HYPREDRIVE_PYTHON_REAL_SIZE}"))
+
+    def matrix_row_range(self):
+        """Local ``(row_start, row_end)`` of the native system matrix."""
+        self._require_open()
+        cdef int64_t lo = 0, hi = -1
+        _check(_c.HYPREDRV_PythonGetMatrixRowRange(self._handle, &lo, &hi),
+               "HYPREDRV_LinearSystemGetMatrix")
+        return int(lo), int(hi)
 
     def get_solution_values(self):
         """Copy of the native local solution (host memory only)."""
@@ -811,21 +813,24 @@ cdef class HypreDriveCore:
             )
         return self._copy_host(p, self._local_length())
 
-    def get_rhs_values(self, Py_ssize_t n):
-        """Copy of the native local RHS (host memory only)."""
+    def get_rhs_values(self):
+        """Copy of the native local RHS, sized from the RHS vector (host builds)."""
         self._require_open()
-        cdef _c.HYPRE_Complex *p = NULL
-        _check(_c.HYPREDRV_LinearSystemGetRHSValues(self._handle, &p),
+        cdef size_t n = 0
+        _check(_c.HYPREDRV_PythonGetRHSLength(self._handle, &n),
+               "HYPREDRV_LinearSystemGetRHS")
+        cdef cnp.ndarray out = self._empty_real(n)
+        _check(_c.HYPREDRV_PythonCopyRHSValues(self._handle,
+                                               cnp.PyArray_DATA(out), n),
                "HYPREDRV_LinearSystemGetRHSValues")
-        if p == NULL:
-            raise RuntimeError("RHS values are not available")
-        return self._copy_host(p, n)
+        return out
 
     # -- state vectors ----------------------------------------------------
 
     def state_vector_set(self, list handles):
         self._require_open()
         cdef Py_ssize_t i, n = len(handles)
+        cdef size_t length = 0, first_length = 0
         cdef _c.HYPRE_IJVector *vecs = NULL
         if n == 0 or n > 0x7fffffff:
             raise ValueError("handles must hold between 1 and INT_MAX handles")
@@ -835,20 +840,33 @@ cdef class HypreDriveCore:
         try:
             for i in range(n):
                 vecs[i] = <_c.HYPRE_IJVector>_as_ptr(handles[i], "handles[%d]" % i)
+            # State vectors only rotate afterwards, so one local length sized
+            # from the vectors themselves bounds every state_vector_get_values.
+            for i in range(n):
+                if vecs[i] == NULL:
+                    continue  # rejected by HYPREDRV_StateVectorSet below
+                _check(_c.HYPREDRV_PythonVectorLocalLength(vecs[i], &length),
+                       "HYPRE_IJVectorGetLocalRange")
+                if i and length != first_length:
+                    raise ValueError(
+                        "state vectors must share one local length; "
+                        f"handles[{i}] has {length}, handles[0] has {first_length}"
+                    )
+                first_length = length
             _check(_c.HYPREDRV_StateVectorSet(self._handle, <int>n, vecs),
                    "HYPREDRV_StateVectorSet")
+            self._state_length = first_length
         finally:
             free(vecs)
 
-    def state_vector_get_values(self, int index, Py_ssize_t n):
+    def state_vector_get_values(self, int index):
         """Copy of the local data of state vector ``index`` (host memory)."""
         self._require_open()
-        cdef _c.HYPRE_Complex *p = NULL
-        _check(_c.HYPREDRV_StateVectorGetValues(self._handle, index, &p),
+        cdef cnp.ndarray out = self._empty_real(self._state_length)
+        _check(_c.HYPREDRV_PythonCopyStateVectorValues(
+                   self._handle, index, cnp.PyArray_DATA(out), self._state_length),
                "HYPREDRV_StateVectorGetValues")
-        if p == NULL:
-            raise RuntimeError("state vector data is not available")
-        return self._copy_host(p, n)
+        return out
 
     def state_vector_copy(self, int index_in, int index_out):
         self._require_open()
@@ -870,7 +888,6 @@ cdef class HypreDriveCore:
     def precon_create(self):
         self._require_open()
         _check(_c.HYPREDRV_PreconCreate(self._handle), "HYPREDRV_PreconCreate")
-        self._precon_created = True
 
     def precon_setup(self):
         self._require_open()
@@ -887,7 +904,6 @@ cdef class HypreDriveCore:
     def precon_destroy(self):
         self._require_open()
         _check(_c.HYPREDRV_PreconDestroy(self._handle), "HYPREDRV_PreconDestroy")
-        self._precon_created = False
 
     # -- stats -------------------------------------------------------------
 

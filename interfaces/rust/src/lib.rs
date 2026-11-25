@@ -713,10 +713,14 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
 
     /// Set or clear (`None`) the display name used in statistics banners.
     pub fn set_object_name(&mut self, name: Option<&str>) -> Result<(), Error> {
-        let name = match name {
-            Some(text) => Some(self.agreed_cstring("set_object_name", text)?),
-            None => None,
-        };
+        // Agree even when some ranks pass None: per-rank names are legal, and
+        // every rank must enter the same collectives.
+        let operation = "set_object_name";
+        let name = name
+            .map(CString::new)
+            .transpose()
+            .map_err(|_| Error::invalid(operation, "text contains an embedded NUL"));
+        let name = self.agreed(operation, name)?;
         let name_ptr = name.as_ref().map_or(ptr::null(), |text| text.as_ptr());
         let status = unsafe { ffi::HYPREDRV_ObjectSetName(self.handle, name_ptr) };
         self.check("HYPREDRV_ObjectSetName", status)
@@ -791,9 +795,11 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         self.rows = None;
         self.external_matrix = true;
         self.external_rhs = true;
-        self.guess_ready = false;
-        self.reset_pending = false;
-        self.annotate(c"matrix")
+        // Native Build installs the configured guess (e.g. the previous
+        // solution) and annotates the "matrix" region itself.
+        self.guess_ready = true;
+        self.reset_pending = true;
+        Ok(())
     }
 
     /// Read only the matrix from the files configured in YAML.
@@ -809,7 +815,8 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         self.external_rhs = false;
         self.guess_ready = false;
         self.reset_pending = false;
-        self.annotate(c"matrix")
+        // Native ReadMatrix annotates the "matrix" region itself.
+        Ok(())
     }
 
     /// Attach a raw assembled ParCSR matrix as the system (and default preconditioning) matrix.
@@ -828,6 +835,9 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         self.check("HYPREDRV_LinearSystemSetMatrix", status)?;
         self.rows = None;
         self.external_matrix = !matrix.is_null();
+        // A new matrix needs a new RHS, as with the CSR and file setters.
+        self.rhs_ready = false;
+        self.external_rhs = false;
         self.guess_ready = false;
         self.reset_pending = false;
         self.annotate(c"matrix")
@@ -905,11 +915,20 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
 
     /// Attach a raw solution vector (null lets the driver allocate one from the RHS).
     ///
+    /// When the matrix and RHS are set, the configured initial guess is built
+    /// first, so the attached vector receives the next solve. Attaching it
+    /// before the RHS leaves it to be replaced by that guess.
+    ///
     /// # Safety
     ///
     /// A non-null handle must be an initialized ParCSR `HYPRE_IJVector` with the
     /// matrix's row distribution that outlives this driver.
     pub unsafe fn set_solution_vector(&mut self, solution: Vector) -> Result<(), Error> {
+        // Building a missing guess installs a fresh solution vector, which
+        // would detach this one during the next solve.
+        if !solution.is_null() && !self.guess_ready && self.system_ready() {
+            self.set_initial_guess()?;
+        }
         let status = unsafe { ffi::HYPREDRV_LinearSystemSetSolution(self.handle, solution) };
         self.check("HYPREDRV_LinearSystemSetSolution", status)
     }
@@ -1203,8 +1222,8 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
     /// # Safety
     ///
     /// Both handles must be initialized ParCSR `HYPRE_IJVector`s compatible
-    /// with the matrix. Wrap standalone applications in a `"solve"` annotation
-    /// when statistics are enabled.
+    /// with the matrix. Standalone applications are not timed in the
+    /// statistics, which record only [`Self::solve`].
     pub unsafe fn precon_apply(&mut self, b: Vector, x: Vector) -> Result<(), Error> {
         let status = unsafe { ffi::HYPREDRV_PreconApply(self.handle, b, x) };
         self.check("HYPREDRV_PreconApply", status)
@@ -1287,10 +1306,13 @@ impl<'a, C: Communicator> HypreDrive<'a, C> {
         self.check("HYPREDRV_StatsLevelPrint", status)
     }
 
+    /// Rank-consistent: every flag is updated only after a collective success.
+    fn system_ready(&self) -> bool {
+        (self.rows.is_some() || self.external_matrix) && (self.rhs_ready || self.external_rhs)
+    }
+
     fn require_system(&self, operation: &'static str) -> Result<(), Error> {
-        let validation = if (self.rows.is_some() || self.external_matrix)
-            && (self.rhs_ready || self.external_rhs)
-        {
+        let validation = if self.system_ready() {
             Ok(())
         } else {
             Err(Error::invalid(operation, "set the matrix and RHS first"))

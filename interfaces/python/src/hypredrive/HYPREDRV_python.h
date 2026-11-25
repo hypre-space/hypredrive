@@ -71,15 +71,18 @@ extern "C"
                                                  HYPREDRV_t *hypredrv_ptr);
 
    /**
-    * @brief Print library/system/exit information on the communicator given by
-    * its Fortran handle; a negative handle selects MPI_COMM_SELF.
+    * @brief Print library/system/exit information on MPI_COMM_SELF when
+    * use_self is nonzero, otherwise on the communicator given by its Fortran
+    * handle (any value, including negative ones some MPI implementations use).
     *
     * MPI_Comm is deliberately not exposed to Cython: its representation depends
     * on the MPI implementation.
     */
-   uint32_t HYPREDRV_PythonPrintLibInfo(int fortran_comm, int print_datetime);
-   uint32_t HYPREDRV_PythonPrintSystemInfo(int fortran_comm);
-   uint32_t HYPREDRV_PythonPrintExitInfo(int fortran_comm, const char *argv0);
+   uint32_t HYPREDRV_PythonPrintLibInfo(int use_self, int fortran_comm,
+                                        int print_datetime);
+   uint32_t HYPREDRV_PythonPrintSystemInfo(int use_self, int fortran_comm);
+   uint32_t HYPREDRV_PythonPrintExitInfo(int use_self, int fortran_comm,
+                                         const char *argv0);
 
    /**
     * @brief Install a CSR matrix from Python-owned opaque buffers.
@@ -112,6 +115,21 @@ extern "C"
                                               size_t sol_length);
 
    uint32_t HYPREDRV_PythonGetSolutionLength(HYPREDRV_t hypredrv, size_t *sol_length);
+
+   /** @brief Local length of an IJ vector. */
+   uint32_t HYPREDRV_PythonVectorLocalLength(HYPRE_IJVector vec, size_t *length);
+
+   /** @brief Local row range of the driver's system matrix. */
+   uint32_t HYPREDRV_PythonGetMatrixRowRange(HYPREDRV_t hypredrv, int64_t *row_start,
+                                             int64_t *row_end);
+
+   /** @brief Local RHS length, and a copy of exactly that many RHS entries. */
+   uint32_t HYPREDRV_PythonGetRHSLength(HYPREDRV_t hypredrv, size_t *length);
+   uint32_t HYPREDRV_PythonCopyRHSValues(HYPREDRV_t hypredrv, void *dst, size_t length);
+
+   /** @brief Copy @p length entries of state vector @p index into host storage. */
+   uint32_t HYPREDRV_PythonCopyStateVectorValues(HYPREDRV_t hypredrv, int index,
+                                                 void *dst, size_t length);
 
 #ifdef __cplusplus
 }

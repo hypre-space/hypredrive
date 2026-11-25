@@ -9,7 +9,11 @@
 
 Unreleased
 
-- Add HYPREDRV_LinearSolverSetRelativeTol to update the Krylov tolerance between solves
+- Add the Rust interface (#268)
+- Add HYPREDRV_LinearSolverSetRelativeTol to update the Krylov tolerance between solves (#269)
+- Expose every public HYPREDRV_ API in all language interfaces (#270)
+- Fix MGR issues (#267)
+- Improve CI caching and cache cleanup (#271)
 
 Version 0.4.0 released 2026/11/11
 

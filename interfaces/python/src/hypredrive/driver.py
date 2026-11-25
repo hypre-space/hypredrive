@@ -142,6 +142,9 @@ class HypreDrive:
         self._row_end: Optional[int] = None
         self._rhs_set: bool = False
         self._native_system: bool = False
+        # Native LinearSystemBuild installs the configured guess (e.g. the
+        # previous solution); the next solve() must not rebuild it.
+        self._guess_from_build: bool = False
         self._last_iterations: Optional[int] = None
         self._last_converged: Optional[bool] = None
         self._last_final_res_norm: Optional[float] = None
@@ -254,6 +257,7 @@ class HypreDrive:
             )
         self._row_start = row_start_i
         self._row_end = row_end_i
+        self._guess_from_build = False
 
     def set_rhs(
         self,
@@ -287,6 +291,7 @@ class HypreDrive:
         with self._annotated("rhs"):
             self._core.set_rhs_from_array(row_start_i, row_end_i, values_arr)
         self._rhs_set = True
+        self._guess_from_build = False
 
     def set_dofmap(self, labels: Any) -> None:
         """Install per-row DOF labels for MGR.
@@ -414,7 +419,10 @@ class HypreDrive:
         # from the zeroed working vector regardless of mode. ResetInitialGuess
         # annotates the "reset_x0" stats region internally (wrapping it
         # manually would count the repetition twice).
-        self._core.setup_initial_guess()
+        if self._guess_from_build:
+            self._guess_from_build = False
+        else:
+            self._core.setup_initial_guess()
         self._core.reset_initial_guess()
 
         self._core.solver_create()
@@ -565,13 +573,15 @@ class HypreDrive:
         """Build matrix/RHS/solution from the parsed ``linear_system`` input."""
         self._require_open()
         self._core.linear_system_build()
-        self._mark_native_system()
+        self._adopt_native_matrix()
+        self._guess_from_build = True
 
     def read_matrix(self) -> None:
         """Read the matrix from files named in the parsed input."""
         self._require_open()
         self._core.read_matrix()
-        self._mark_native_system()
+        self._adopt_native_matrix()
+        self._guess_from_build = False
 
     def read_dofmap(self) -> None:
         """Read the DOF map from the file named in the parsed input."""
@@ -593,9 +603,11 @@ class HypreDrive:
         self._require_open()
         self._core.compute_eigenspectrum()
 
-    def _mark_native_system(self) -> None:
-        # Systems created natively have no Python-side row range; leave
-        # solve() preconditions to the C layer by marking them satisfied.
+    def _adopt_native_matrix(self) -> None:
+        # The matrix was replaced natively: refresh the cached local row range
+        # so get_solution(), set_rhs() and set_dofmap() size against it, and
+        # leave solve() preconditions to the C layer.
+        self._row_start, self._row_end = self._core.matrix_row_range()
         self._native_system = True
 
     # ------------------------------------------------------------------
@@ -659,8 +671,15 @@ class HypreDrive:
     def set_matrix_handle(self, mat: Any) -> None:
         """Attach an assembled ``HYPRE_IJMatrix`` address as the system matrix."""
         self._require_open()
-        self._core.set_matrix_handle(mat)
-        self._native_system = True
+        # Native SetMatrix does not annotate; "matrix" starts a new stats entry.
+        with self._annotated("matrix"):
+            attached = self._core.set_matrix_handle(mat)
+        self._guess_from_build = False
+        if attached:
+            self._adopt_native_matrix()
+        else:  # cleared: no matrix, so no row range
+            self._row_start = self._row_end = None
+            self._native_system = False
 
     def set_prec_matrix_handle(self, mat: Any) -> None:
         """Attach a separate preconditioning matrix (``None`` clears it)."""
@@ -692,6 +711,7 @@ class HypreDrive:
         self._require_open()
         self._core.set_rhs_handle(vec)
         self._rhs_set = True
+        self._guess_from_build = False
 
     def set_solution_handle(self, vec: Any) -> None:
         """Attach a ``HYPRE_IJVector`` address as the solution vector."""
@@ -724,12 +744,9 @@ class HypreDrive:
         return self._core.get_solution_values()
 
     def get_rhs_values(self) -> np.ndarray:
-        """Return a copy of the native local RHS (host memory only).
-
-        Requires the local row range, i.e. :meth:`set_matrix_from_csr`.
-        """
+        """Return a copy of the native local RHS (host HYPRE builds only)."""
         self._require_open()
-        return self._core.get_rhs_values(self._local_rows())
+        return self._core.get_rhs_values()
 
     # ------------------------------------------------------------------
     # State vectors (time stepping / Newton)
@@ -738,7 +755,8 @@ class HypreDrive:
     def set_state_vectors(self, handles: Sequence[Any]) -> None:
         """Register ``HYPRE_IJVector`` addresses as state vectors.
 
-        The caller keeps ownership; destroy them after closing the driver.
+        All state vectors must share one local length. The caller keeps
+        ownership; destroy them after closing the driver.
         """
         self._require_open()
         self._core.state_vector_set(list(handles))
@@ -746,7 +764,7 @@ class HypreDrive:
     def state_vector_values(self, index: int) -> np.ndarray:
         """Return a copy of the local data of state vector ``index``."""
         self._require_open()
-        return self._core.state_vector_get_values(int(index), self._local_rows())
+        return self._core.state_vector_get_values(int(index))
 
     def state_vector_copy(self, index_in: int, index_out: int) -> None:
         """Copy state vector ``index_in`` into ``index_out``."""
@@ -831,13 +849,6 @@ class HypreDrive:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
-
-    def _local_rows(self) -> int:
-        if self._row_start is None or self._row_end is None:
-            raise RuntimeError(
-                "local row count unknown; call set_matrix_from_csr first"
-            )
-        return self._row_end - self._row_start + 1
 
     def _require_open(self) -> None:
         if self._core is None:

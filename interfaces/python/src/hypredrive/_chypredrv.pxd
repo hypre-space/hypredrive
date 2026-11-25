@@ -7,7 +7,7 @@ behind explicit feature work.
 """
 
 from libc.stddef cimport size_t
-from libc.stdint cimport int64_t, uint32_t, uintptr_t
+from libc.stdint cimport int64_t, uint32_t
 
 
 cdef extern from "HYPRE.h" nogil:
@@ -171,9 +171,11 @@ cdef extern from "HYPREDRV.h" nogil:
 
 
 cdef extern from "HYPREDRV_python.h" nogil:
-    uint32_t HYPREDRV_PythonPrintLibInfo(int fortran_comm, int print_datetime)
-    uint32_t HYPREDRV_PythonPrintSystemInfo(int fortran_comm)
-    uint32_t HYPREDRV_PythonPrintExitInfo(int fortran_comm, const char *argv0)
+    uint32_t HYPREDRV_PythonPrintLibInfo(int use_self, int fortran_comm,
+                                         int print_datetime)
+    uint32_t HYPREDRV_PythonPrintSystemInfo(int use_self, int fortran_comm)
+    uint32_t HYPREDRV_PythonPrintExitInfo(int use_self, int fortran_comm,
+                                          const char *argv0)
     size_t HYPREDRV_PythonIndexSize()
     size_t HYPREDRV_PythonRealSize()
     size_t HYPREDRV_PythonSolutionEntrySize()
@@ -205,3 +207,12 @@ cdef extern from "HYPREDRV_python.h" nogil:
         size_t sol_length)
 
     uint32_t HYPREDRV_PythonGetSolutionLength(HYPREDRV_t hypredrv, size_t *sol_length)
+    uint32_t HYPREDRV_PythonVectorLocalLength(HYPRE_IJVector vec, size_t *length)
+    uint32_t HYPREDRV_PythonGetMatrixRowRange(HYPREDRV_t hypredrv,
+                                              int64_t *row_start,
+                                              int64_t *row_end)
+    uint32_t HYPREDRV_PythonGetRHSLength(HYPREDRV_t hypredrv, size_t *length)
+    uint32_t HYPREDRV_PythonCopyRHSValues(HYPREDRV_t hypredrv, void *dst,
+                                          size_t length)
+    uint32_t HYPREDRV_PythonCopyStateVectorValues(HYPREDRV_t hypredrv, int index,
+                                                  void *dst, size_t length)
