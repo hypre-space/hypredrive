@@ -32,17 +32,11 @@ jobs:
         github.event_name == 'workflow_dispatch' ||
         (
           github.event.action == 'labeled' &&
-          (
-            github.event.label.name == 'Run Python Wheels' ||
-            github.event.label.name == 'Generate Artifacts'
-          )
+          github.event.label.name == 'Run Python Wheels'
         ) ||
         (
           github.event.action != 'labeled' &&
-          (
-            contains(github.event.pull_request.labels.*.name, 'Run Python Wheels') ||
-            contains(github.event.pull_request.labels.*.name, 'Generate Artifacts')
-          )
+          contains(github.event.pull_request.labels.*.name, 'Run Python Wheels')
         )
       }}
     name: ${{ matrix.os }} | ${{ matrix.arch }} | ${{ matrix.mpi_flavor }}
