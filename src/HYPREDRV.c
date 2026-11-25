@@ -1035,7 +1035,9 @@ HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol)
    HYPREDRV_API_ENTER();
    HYPREDRV_CHECK_ARGS();
 
-   if (!(tol >= 0.0 && tol < 1.0)) /* also rejects NaN */
+   /* Check NaN with != first: ordered comparisons with NaN raise FE_INVALID,
+    * which traps when HYPRE's floating-point exception trap is enabled. */
+   if (tol != tol || tol < 0.0 || tol >= 1.0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("relative tolerance must be in [0, 1)");
