@@ -33,6 +33,7 @@ jobs:
       expanded: ${{ steps.select.outputs.expanded }}
       docs: ${{ steps.select.outputs.docs }}
       bindings: ${{ steps.select.outputs.bindings }}
+      julia: ${{ steps.select.outputs.julia }}
       abi: ${{ steps.select.outputs.abi }}
       matrix: ${{ steps.select.outputs.matrix }}
     steps:
@@ -42,7 +43,7 @@ jobs:
           persist-credentials: false
       - id: select
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || (github.ref_name == 'ci/reliable-checks' && github.event.before) || '' }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
           EXPANDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
         run: python3 scripts/select_ci.py
 
@@ -1123,7 +1124,7 @@ jobs:
   julia-interface:
     name: Julia interface
     needs: select
-    if: needs.select.outputs.bindings == 'true'
+    if: needs.select.outputs.julia == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -1152,7 +1153,7 @@ jobs:
             -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_JULIA=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
             -DHYPREDRV_DATASETS=
-          cmake --build "$RUNNER_TEMP/julia-build" --parallel --target darcy
+          cmake --build "$RUNNER_TEMP/julia-build" --parallel
           cmake --build "$RUNNER_TEMP/julia-build" --parallel --target julia-test
 
   abi:
@@ -1220,8 +1221,8 @@ jobs:
               "expanded": {"windows-mingw-build", "build-and-test-mixedint",
                            "build-and-test-optional-deps", "autotools-build-and-test",
                            "python-interface-autofetch"},
-              "bindings": {"python-interface", "rust-interface", "native-interfaces",
-                           "julia-interface"},
+              "bindings": {"python-interface", "rust-interface", "native-interfaces"},
+              "julia": {"julia-interface"},
               "abi": {"abi"},
           }
           if os.environ["GITHUB_EVENT_NAME"] == "pull_request" or os.environ["GITHUB_REF_NAME"] == "ci/reliable-checks":

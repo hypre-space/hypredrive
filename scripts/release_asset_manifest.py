@@ -9,11 +9,13 @@ import subprocess
 
 
 def source_tree(kind, ref="HEAD"):
-    args = ["git", "ls-tree", "-r", "-z", ref]
+    tree = subprocess.check_output(["git", "ls-tree", "--full-tree", "-r", "-z", ref])
     if kind == "julia":
         # The binding commit records hashes of the tarballs we just built.
-        args += ["--", ".", ":(exclude)interfaces/julia/Artifacts.toml"]
-    return hashlib.sha256(subprocess.check_output(args)).hexdigest()
+        binding = b"interfaces/julia/Artifacts.toml"
+        tree = b"\0".join(entry for entry in tree.split(b"\0")
+                          if entry.partition(b"\t")[2] != binding)
+    return hashlib.sha256(tree).hexdigest()
 
 
 def digests(directory, kind):
