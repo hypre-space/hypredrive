@@ -248,6 +248,38 @@ target_link_libraries(HYPREDRV
     INTERFACE
         $<INSTALL_INTERFACE:HYPRE::HYPRE>)
 
+# hypre links Umpire privately, so an installed hypre built with Umpire leaves
+# Umpire's own dependencies (camp, fmt) unresolved on consumers' link lines.
+# Link the Umpire target explicitly when it is available.
+if(NOT _hypredrv_hypre_type STREQUAL "INTERFACE_LIBRARY")
+    set(_hypredrv_umpire_target "")
+    foreach(_candidate IN ITEMS umpire::umpire umpire)
+        if(TARGET ${_candidate})
+            set(_hypredrv_umpire_target ${_candidate})
+            break()
+        endif()
+    endforeach()
+    if(NOT _hypredrv_umpire_target AND HYPRE_INCLUDE_DIRS)
+        find_file(_hypredrv_hypre_config HYPRE_config.h
+                  HINTS ${HYPRE_INCLUDE_DIRS} NO_DEFAULT_PATH)
+        if(_hypredrv_hypre_config)
+            file(STRINGS "${_hypredrv_hypre_config}" _hypredrv_using_umpire
+                 REGEX "^#define HYPRE_USING_UMPIRE( |$)")
+            if(_hypredrv_using_umpire)
+                find_package(umpire CONFIG QUIET)
+                if(TARGET umpire::umpire)
+                    set(_hypredrv_umpire_target umpire::umpire)
+                endif()
+            endif()
+        endif()
+    endif()
+    if(_hypredrv_umpire_target)
+        message(STATUS "Linking Umpire for hypre: ${_hypredrv_umpire_target}")
+        target_link_libraries(HYPREDRV PUBLIC
+            $<BUILD_INTERFACE:${_hypredrv_umpire_target}>)
+    endif()
+endif()
+
 # HYPRE's static library uses the platform dynamic-loader API.
 if(CMAKE_DL_LIBS)
     target_link_libraries(HYPREDRV PUBLIC ${CMAKE_DL_LIBS})
