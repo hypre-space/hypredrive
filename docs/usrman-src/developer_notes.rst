@@ -152,29 +152,26 @@ identifiable throughout the process.
       $ ctest --test-dir build-hypre-v2.20 -L unit --output-on-failure
       $ ctest --test-dir build-hypre-v2.20 -L hypredrive --output-on-failure
 
-   Run the GitHub ``CI``, ``Docs``, ``Code Style``, ``Code Analysis``,
-   ``Code Coverage``, ``Code Portability``, and ``Fuzzing`` workflows manually
-   on the release branch, or have them run through the release pull request.
-   Include the language interface jobs when those packages are part of the
-   release.  Resolve all failures against the exact candidate commit before
+   Add the ``Run CI`` label to run the expanded validation matrix on the release
+   pull request. Resolve all failures against the candidate commit before
    continuing.
 
 5. **Prepare the release assets before tagging.**
 
    Add the ``Prepare Release`` label to the release pull request. The branch
    must be named ``release-<version>`` and its core, Python, Julia, and Rust
-   package versions must agree. This leaves ``Run CI`` with its existing behavior;
-   no additional Python or Julia labels are needed for release preparation.
+   package versions must agree. Keep the ``Run CI`` label on the release PR
+   for expanded validation.
 
    The preparation workflow builds the five Julia archives, commits their
    ``Artifacts.toml`` bindings, and stages those exact archives on a draft
    GitHub Release. It then builds and stages all 45 Python wheels and waits for
-   the seven pull-request validation workflows on the binding commit. GitHub
+   the ``Required CI`` check on the binding commit. GitHub
    requires a maintainer to review that bot commit and click **Approve workflows
    to run** on the pull request. Manually dispatched checks do not appear as PR
    checks, so preparation waits for these associated runs. Its final check
-   verifies the draft's wheel set and Julia archive digests. It creates no tag
-   and leaves publication to the release maintainer. Source changes while the
+   verifies the source tree and digests for both staged sets. The release
+   maintainer creates the tag and publishes the draft. Source changes while the
    label remains attached start preparation again; a concurrent source change
    makes the older run fail rather than certify a different candidate.
 
@@ -212,13 +209,10 @@ identifiable throughout the process.
       $ git tag -a v<version> -m "Release v<version>"
       $ git push origin v<version>
 
-   The binding workflow has already staged the five Julia archives on a
-   draft GitHub Release. The tag-triggered ``Julia Artifacts`` workflow downloads
-   those exact archives and verifies their checksums, tree hashes, and bindings;
-   it does not upload its rebuild. The tag-triggered ``Python Wheels`` workflow
-   uploads the Linux MPICH/OpenMPI, macOS MPICH/OpenMPI, and Windows Microsoft MPI
-   wheels to that same draft. Wait for both ``release-assets`` jobs to finish,
-   verify the tag, source archive, Julia archives, Python wheels, and package
+   The tag workflows verify the staged Python wheels and Julia archives against
+   their source tree and SHA-256 manifests. Julia also verifies the package
+   bindings and artifact tree hashes. Wait for both tag workflows to pass.
+   Review the tag, source archive, Julia archives, Python wheels, and package
    versions, then publish the draft with the corresponding ``CHANGELOG`` section
    as the release notes. The component-specific pull-request packaging labels
    produce Actions artifacts; release binding and staging use ``Prepare
@@ -238,13 +232,10 @@ For pull-request validation, the shared ``Generate Artifacts`` label starts
 both packaging workflows; ``Run Python Wheels`` and ``Run Julia Artifacts``
 remain available for selective reruns. For release preparation, use ``Prepare
 Release`` to build, bind, and stage both package sets and validate the final
-candidate. ``Run CI`` continues to select the ordinary validation jobs.
-The current repository keeps Python and Julia packaging workflows separate
-because their build systems differ; each tag-triggered collector uploads to the
-same release.  If they are consolidated later, use one shared collector rather
-than cross-workflow artifact lookups.  This preserves the native runners needed
-for Python testing without pretending that one job can change operating systems
-or CPU architectures between steps.
+candidate. ``Run CI`` selects expanded validation. Python builds use native
+runners, while Julia cross-compiles with BinaryBuilder. The tag workflows use the
+staged artifacts from those builds.
+
 
 Library API Ownership Semantics
 -------------------------------
@@ -279,11 +270,21 @@ Workflows
 
 `hypredrive` uses these GitHub Actions workflows in ``.github/workflows``:
 
-- ``ci.yml``: Main build and test matrix for Ubuntu and macOS. It uses GCC and Clang with Debug builds.
-- ``format.yml``: code style checks (clang-format, private/public naming prefix validation, binary symbol prefix validation)
+- ``ci.yml`` runs on all pull requests and reports ``Required CI``. It selects jobs
+  from the files changed, including README changes because CTest compiles the C
+  example. The baseline covers Linux GCC and Clang, macOS MPICH, Windows MS-MPI,
+  and the legacy HYPRE build. The ``Run CI`` label selects the expanded matrix.
+- Source-list sync, formatting, and API checks run in one job. The Ubuntu Clang
+  build checks the exported symbol prefixes.
 - ``docs.yml``: builds documentation (Sphinx and Doxygen jobs)
 - ``coverage.yml``: builds with coverage instrumentation and generates HTML/XML reports
 - ``analysis.yml``: Static analysis with cppcheck and clang-tidy. Dynamic analysis with ASan and UBSan.
+
+During rollout, the legacy required jobs mirror ``Required CI``. Once the
+new check has passed on the default branch, update the GitHub ``PR merge``
+ruleset to require the GitHub Actions check named ``Required CI`` and remove the
+seven previous contexts. Keep the up-to-date branch requirement. The temporary
+``legacy-required`` job can then be removed.
 
 To reduce duplication, CI uses composite actions in ``.github/actions``:
 
@@ -749,7 +750,7 @@ CMake options and targets
 
 - Enable instrumentation: ``-DHYPREDRV_ENABLE_COVERAGE=ON`` (Debug builds).
 - Build normally, then run: ``ctest`` and ``cmake --build <build> --target coverage``.
-- Artifacts: ``coverage.html`` and ``coverage.xml`` in the build directory.
+- Artifacts: ``coverage-html/index.html`` and ``coverage.xml`` in the build directory.
 
 Local reproduction
 ~~~~~~~~~~~~~~~~~~
@@ -766,7 +767,7 @@ Local reproduction
    cmake --build build-coverage --parallel
    ctest --test-dir build-coverage --output-on-failure
    cmake --build build-coverage --target coverage
-   # Open build-coverage/coverage.html
+   # Open build-coverage/coverage-html/index.html
 
 Performance Profiling with Caliper
 -----------------------------------

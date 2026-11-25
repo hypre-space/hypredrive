@@ -1,13 +1,7 @@
 name: Docs
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths:
-      - 'docs/**'
-      - 'Doxyfile.in'
-      - 'include/**'
-      - 'cmake/HYPREDRV_Docs.cmake'
+  workflow_call:
   push:
     branches: [ master ]
     paths:
@@ -22,12 +16,6 @@ permissions:
 
 jobs:
   sphinx:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
     name: Sphinx Documentation
     needs: doxygen
     runs-on: ubuntu-latest
@@ -59,12 +47,6 @@ jobs:
           sphinx-build -W -b html docs/usrman-src docs/_build/html
 
   doxygen:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
     name: Doxygen Documentation
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -84,7 +66,7 @@ jobs:
         id: build-hypre
         uses: ./.github/actions/build-hypre
         with:
-          hypre_version: master
+          hypre_version: v3.2.1
           compiler: 'gcc'
           build_type: 'Debug'
           hypre_shared_libs: 'ON'

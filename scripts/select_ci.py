@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""Select required checks for the pull request's tested merge tree."""
+
+import json
+import os
+import subprocess
+
+
+def matrix(expanded):
+    baseline = [
+        ("ubuntu-latest", "gcc", "Release", "v3.2.1", "OFF", "ON"),
+        ("ubuntu-latest", "clang", "Debug", "v3.2.1", "ON", "OFF"),
+        ("macos-latest", "clang", "Debug", "v3.2.1", "ON", "OFF"),
+        ("ubuntu-latest", "gcc", "Debug", "v2.20.0", "ON", "OFF"),
+    ]
+    if expanded:
+        baseline.extend(
+            (os_name, compiler, "Debug", version, "ON", "OFF")
+            for os_name, compiler in [
+                ("ubuntu-latest", "gcc"), ("ubuntu-latest", "clang"),
+                ("macos-latest", "clang"),
+            ]
+            for version in ["master", "v3.2.1", "v2.20.0"]
+            if (os_name, compiler, "Debug", version, "ON", "OFF") not in baseline
+        )
+    keys = ("os", "compiler", "build_type", "hypre_version", "shared", "cpu_features")
+    return [dict(zip(keys, entry)) for entry in baseline]
+
+
+def select(paths, expanded):
+    def documentation_only(path):
+        return path in {"LICENSE", "NOTICE", "COPYRIGHT", "CHANGELOG", ".gitignore"} or (
+            path != "README.md" and (path.startswith("docs/") or path.endswith(".md"))
+        )
+
+    def starts_with(prefixes):
+        return any(path.startswith(prefixes) for path in paths)
+
+    return {
+        "core": expanded or any(not documentation_only(path) for path in paths),
+        "expanded": expanded,
+        "docs": expanded or starts_with(("docs/", "include/", "src/", ".github/", "cmake/"))
+        or bool(paths.intersection({"Doxyfile.in", "CMakeLists.txt", ".readthedocs.yaml"})),
+        "bindings": expanded or starts_with(("interfaces/", "include/", "src/", "cmake/", ".github/"))
+        or "CMakeLists.txt" in paths,
+        "abi": expanded or starts_with(("include/", "src/", "cmake/", ".github/"))
+        or "CMakeLists.txt" in paths,
+        "matrix": matrix(expanded),
+    }
+
+
+def main():
+    base = os.environ["BASE_SHA"]
+    expanded = not base or os.environ["EXPANDED"] == "true"
+    paths = set()
+    if base:
+        diff = subprocess.check_output(["git", "diff", "--name-only", "--no-renames", "-z", base, "HEAD"])
+        paths = set(os.fsdecode(diff).split("\0")[:-1])
+    with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as outputs:
+        for key, value in select(paths, expanded).items():
+            print(f"{key}={json.dumps(value, separators=(',', ':'))}", file=outputs)
+
+
+if __name__ == "__main__":
+    main()

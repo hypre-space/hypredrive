@@ -205,7 +205,7 @@ if(HYPREDRV_ENABLE_COVERAGE)
             --merge-mode-functions=merge-use-line-0
             --xml coverage.xml --xml-pretty
             --json-summary coverage-summary.json
-            --html-details coverage.html
+            --html-details coverage-html/index.html
             --print-summary
         )
         # Restrict discovery to the active build tree.
@@ -254,12 +254,8 @@ if(HYPREDRV_ENABLE_COVERAGE)
         endif()
 
         add_custom_target(coverage
+            COMMAND ${CMAKE_COMMAND} -E make_directory coverage-html
             COMMAND ${GCOVR_EXECUTABLE} ${_gcovr_args}
-            COMMAND ${PYTHON3_EXECUTABLE}
-                    ${CMAKE_SOURCE_DIR}/scripts/analyze_coverage.py normalize
-                    --xml ${CMAKE_BINARY_DIR}/coverage.xml
-                    --summary ${CMAKE_BINARY_DIR}/coverage-summary.json
-                    --source-root ${CMAKE_SOURCE_DIR}
             WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
             COMMENT "Generating code coverage report with gcovr"
             VERBATIM

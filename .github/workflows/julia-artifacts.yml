@@ -41,7 +41,6 @@ jobs:
         ) &&
         (
           github.event_name == 'workflow_dispatch' ||
-          github.event_name == 'push' ||
           (
             github.event.action == 'labeled' &&
             (
@@ -124,7 +123,6 @@ jobs:
 
   release-assets:
     if: startsWith(github.ref, 'refs/tags/')
-    needs: julia-artifact
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -149,7 +147,8 @@ jobs:
           set -euxo pipefail
           mkdir -p release-assets
           gh release download "$RELEASE_TAG" --repo "$RELEASE_REPOSITORY" \
-            --pattern '*.tar.gz' --dir release-assets
+            --pattern '*.tar.gz' --pattern 'julia-asset-manifest.json' --dir release-assets
+          python3 scripts/release_asset_manifest.py verify julia "$RELEASE_TAG" release-assets
           tarball_count=$(find release-assets -type f -name '*.tar.gz' | wc -l)
           test "$tarball_count" -eq 5
 
@@ -229,6 +228,7 @@ jobs:
           # Earlier serialized runs may already have refreshed the bindings.
           # Bind this run's exact archives on top of the current branch tip.
           ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
       - name: Set up Julia
         uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
@@ -240,6 +240,13 @@ jobs:
         with:
           name: hypredrive-julia-artifacts
           path: julia-artifacts
+
+      - name: Record manifest for the source that built these tarballs
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          python3 scripts/release_asset_manifest.py write julia "$RELEASE_TAG" julia-artifacts \
+            --source-ref "$SOURCE_SHA"
 
       - name: Update Artifacts.toml
         run: |
@@ -287,3 +294,4 @@ jobs:
           files: |
             julia-artifacts/*.tar.gz
             julia-artifacts/*.tgz
+            julia-artifacts/julia-asset-manifest.json

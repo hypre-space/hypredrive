@@ -1,14 +1,7 @@
 name: Code Portability
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
-      - 'NOTICE'
-      - 'COPYRIGHT'
+  workflow_call:
   push:
     branches: [ master ]
     paths-ignore:
