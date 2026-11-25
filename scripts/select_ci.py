@@ -3,14 +3,20 @@
 
 import json
 import os
+from pathlib import Path
 import subprocess
+
+
+HYPRE_RELEASE = (Path(__file__).resolve().parents[1] / ".github/hypre-release").read_text(
+    encoding="utf-8"
+).strip()
 
 
 def matrix(expanded):
     baseline = [
-        ("ubuntu-latest", "gcc", "Release", "v3.2.1", "OFF", "ON"),
-        ("ubuntu-latest", "clang", "Debug", "v3.2.1", "ON", "OFF"),
-        ("macos-latest", "clang", "Debug", "v3.2.1", "ON", "OFF"),
+        ("ubuntu-latest", "gcc", "Release", HYPRE_RELEASE, "OFF", "ON"),
+        ("ubuntu-latest", "clang", "Debug", HYPRE_RELEASE, "ON", "OFF"),
+        ("macos-latest", "clang", "Debug", HYPRE_RELEASE, "ON", "OFF"),
         ("ubuntu-latest", "gcc", "Debug", "v2.20.0", "ON", "OFF"),
     ]
     if expanded:
@@ -20,7 +26,7 @@ def matrix(expanded):
                 ("ubuntu-latest", "gcc"), ("ubuntu-latest", "clang"),
                 ("macos-latest", "clang"),
             ]
-            for version in ["master", "v3.2.1", "v2.20.0"]
+            for version in ["master", HYPRE_RELEASE, "v2.20.0"]
             if (os_name, compiler, "Debug", version, "ON", "OFF") not in baseline
         )
     keys = ("os", "compiler", "build_type", "hypre_version", "shared", "cpu_features")
@@ -64,6 +70,7 @@ def main():
         diff = subprocess.check_output(["git", "diff", "--name-only", "--no-renames", "-z", base, "HEAD"])
         paths = set(os.fsdecode(diff).split("\0")[:-1])
     with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as outputs:
+        print(f"hypre_release={HYPRE_RELEASE}", file=outputs)
         for key, value in select(paths, expanded).items():
             print(f"{key}={json.dumps(value, separators=(',', ':'))}", file=outputs)
 

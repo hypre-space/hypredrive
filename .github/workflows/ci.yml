@@ -36,6 +36,7 @@ jobs:
       julia: ${{ steps.select.outputs.julia }}
       abi: ${{ steps.select.outputs.abi }}
       matrix: ${{ steps.select.outputs.matrix }}
+      hypre_release: ${{ steps.select.outputs.hypre_release }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -129,6 +130,7 @@ jobs:
         env:
           CCACHE_DIR: ${{ runner.temp }}\ccache
           CCACHE_MAXSIZE: 300M
+          HYPRE_RELEASE: ${{ needs.select.outputs.hypre_release }}
         run: |
           set -euxo pipefail
           mpi_inc="$(cygpath -m "${MSMPI_INC}")"
@@ -147,7 +149,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=g++ \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DBUILD_SHARED_LIBS=ON \
-            -DHYPRE_VERSION=v3.2.1 \
+            -DHYPRE_VERSION="$HYPRE_RELEASE" \
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=OFF \
             -DHYPRE_ENABLE_MPI=ON \
@@ -230,6 +232,8 @@ jobs:
 
       - name: Configure hypredrive
         shell: pwsh
+        env:
+          HYPRE_RELEASE: ${{ needs.select.outputs.hypre_release }}
         run: |
           $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-${{ matrix.compiler }}-build'
           Add-Content -Path $env:GITHUB_ENV -Value "BUILD_DIR=$buildDir"
@@ -238,7 +242,7 @@ jobs:
             "-DCMAKE_C_FLAGS=/std:c11 /utf-8 /DWIN32" `
             "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-${{ matrix.compiler }}-install" `
             -DBUILD_SHARED_LIBS=ON `
-            "-DHYPRE_VERSION=v3.2.1" `
+            "-DHYPRE_VERSION=$env:HYPRE_RELEASE" `
             -DHYPREDRV_ENABLE_TESTING=ON `
             -DHYPREDRV_ENABLE_EXAMPLES=OFF `
             -DHYPRE_ENABLE_MPI=ON `
@@ -1144,7 +1148,7 @@ jobs:
       - uses: ./.github/actions/build-hypre
         id: hypre
         with:
-          hypre_version: v3.2.1
+          hypre_version: ${{ needs.select.outputs.hypre_release }}
           mpi_flavor: mpich
       - name: Configure and run Julia tests
         run: |
@@ -1173,7 +1177,7 @@ jobs:
       - uses: ./.github/actions/build-hypre
         id: hypre
         with:
-          hypre_version: v3.2.1
+          hypre_version: ${{ needs.select.outputs.hypre_release }}
       - name: Compare to the latest published release
         env:
           GH_TOKEN: ${{ github.token }}

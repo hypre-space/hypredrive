@@ -295,6 +295,10 @@ To reduce duplication, CI uses composite actions in ``.github/actions``:
 HYPRE reuse and caching
 ~~~~~~~~~~~~~~~~~~~~~~~
 
+Update ``.github/hypre-release`` to advance the shared HYPRE release pin for
+the CI matrix, Windows builds, Julia interface tests, ABI comparison, and
+Python wheels.
+
 All jobs that need HYPRE call the ``build-hypre`` action and pass:
 
 - ``hypre_version`` (default: ``master``)

@@ -11,6 +11,7 @@ on:
       - 'scripts/install_msmpi.ps1'
       - 'interfaces/python/**'
       - '.github/workflows/python-wheels.yml'
+      - '.github/hypre-release'
   push:
     tags:
       - 'v*'
@@ -99,7 +100,6 @@ jobs:
       CIBW_CONFIG_SETTINGS: >-
         cmake.define.HYPREDRV_PYTHON_BUNDLE_CORE=ON
         cmake.define.BUILD_SHARED_LIBS=ON
-        cmake.define.HYPRE_VERSION=v3.2.1
         cmake.define.HYPRE_ENABLE_MPI=ON
         cmake.define.HYPRE_ENABLE_FORTRAN=OFF
         cmake.define.HYPRE_ENABLE_CUDA=OFF
@@ -167,10 +167,13 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=delvewheel repair --ignore-existing --exclude msmpi.dll -w {dest_dir} {wheel}'
 
       - name: Build wheels
-        run: >-
-          python -m cibuildwheel
-          build/python-wheel-src-${{ matrix.mpi_flavor }}/interfaces/python
-          --output-dir wheelhouse
+        shell: bash
+        run: |
+          hypre_release=$(cat .github/hypre-release)
+          export CIBW_CONFIG_SETTINGS="$CIBW_CONFIG_SETTINGS cmake.define.HYPRE_VERSION=$hypre_release"
+          python -m cibuildwheel \
+            "build/python-wheel-src-${{ matrix.mpi_flavor }}/interfaces/python" \
+            --output-dir wheelhouse
 
       - name: Inspect built wheels
         run: python -m pip install twine && python -m twine check wheelhouse/*.whl
