@@ -25,8 +25,14 @@ released_abi=$(sed -En 's/^set\(HYPREDRV_ABI_VERSION ([0-9]+)\)$/\1/p' "$baselin
 candidate_abi=$(sed -En 's/^set\(HYPREDRV_ABI_VERSION ([0-9]+)\)$/\1/p' cmake/HYPREDRV_ABI.cmake)
 [[ "$released_abi" =~ ^[0-9]+$ && "$candidate_abi" =~ ^[0-9]+$ ]]
 
+# Public headers declare opaque handles. Ignore layouts defined only in
+# implementation files while comparing exported functions and public types.
 status=0
-abidiff --no-added-syms --no-linkage-name \
+abidiff --no-added-syms --no-linkage-name --drop-private-types \
+    --header-file1 "$baseline/include/HYPREDRV.h" \
+    --header-file1 "$baseline/include/HYPREDRV_utils.h" \
+    --header-file2 "$PWD/include/HYPREDRV.h" \
+    --header-file2 "$PWD/include/HYPREDRV_utils.h" \
     "$scratch/released/lib/libHYPREDRV.so" "$scratch/candidate/lib/libHYPREDRV.so" || status=$?
 if (( status & 3 )); then
     exit "$status"
