@@ -59,6 +59,7 @@ jobs:
           cmake -S . -B build-fuzz -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DHYPREDRV_ENABLE_FUZZING=ON \
+            -DHYPREDRV_FUZZ_ENGINE=replay \
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_COMPRESSION=ON \
             -DCMAKE_C_COMPILER=mpicc \
@@ -67,8 +68,14 @@ jobs:
       - name: Build
         run: cmake --build build-fuzz --parallel
 
-      - name: Replay corpus
-        run: ctest --test-dir build-fuzz -L fuzz-replay --output-on-failure --no-tests=error
+      - name: Replay all five fuzz modes
+        shell: bash
+        run: |
+          for mode in parse solve lsseq matrix vector; do
+            echo "::group::Fuzz replay ($mode)"
+            ctest --test-dir build-fuzz -R "^fuzz_replay_${mode}_" --output-on-failure --no-tests=error
+            echo "::endgroup::"
+          done
 
   fuzz-nightly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
