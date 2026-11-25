@@ -275,7 +275,7 @@ Workflows
   example. The baseline covers Linux GCC and Clang, macOS MPICH, Windows MS-MPI,
   and the legacy HYPRE build. The ``Run CI`` label selects the expanded matrix.
 - Source-list sync, formatting, and API checks run in one job. The Ubuntu Clang
-  build checks the exported symbol prefixes.
+  build against HYPRE master checks the exported symbol prefixes in expanded CI.
 - ``docs.yml``: builds documentation (Sphinx and Doxygen jobs)
 - ``coverage.yml``: builds with coverage instrumentation and generates HTML/XML reports
 - ``analysis.yml``: Static analysis with cppcheck and clang-tidy. Dynamic analysis with ASan and UBSan.

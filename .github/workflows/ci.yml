@@ -292,7 +292,7 @@ jobs:
             compiler: clang
             mpi_flavor: mpich
     env:
-      HYPRE_VERSION: v3.2.1
+      HYPRE_VERSION: master
       BUILD_DIR: build-python
       INSTALL_PREFIX: ${{ github.workspace }}/install-python
     steps:
@@ -628,7 +628,7 @@ jobs:
       - uses: ./.github/actions/build-hypre
         id: hypre
         with:
-          hypre_version: v3.2.1
+          hypre_version: master
       - name: Configure and test
         run: |
           cmake -S . -B "$BUILD_DIR" -G Ninja \
@@ -808,7 +808,7 @@ jobs:
           ctest --test-dir "$BUILD_DIR" --no-tests=error --output-on-failure -R '^eigspec_mpi_[24]proc$'
 
       - name: Check library symbol prefixes
-        if: matrix.compiler == 'clang' && runner.os == 'Linux' && matrix.hypre_version == 'v3.2.1'
+        if: matrix.compiler == 'clang' && runner.os == 'Linux' && matrix.hypre_version == 'master'
         run: bash scripts/check_symbol_prefix.sh --build-dir "$BUILD_DIR"
 
       - name: Upload logs on failure

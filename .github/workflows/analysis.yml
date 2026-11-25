@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      HYPRE_VERSION: v3.2.1
+      HYPRE_VERSION: master
       BUILD_DIR: build-analysis
     steps:
       - uses: actions/checkout@v6
@@ -80,7 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
-      HYPRE_VERSION: v3.2.1
+      HYPRE_VERSION: master
       BUILD_DIR: build-analysis
     steps:
       - uses: actions/checkout@v6
@@ -151,7 +151,7 @@ jobs:
       matrix:
         compiler: [clang] # gcc, clang
     env:
-      HYPRE_VERSION: v3.2.1
+      HYPRE_VERSION: master
       BUILD_DIR: build-sanitizers-${{ matrix.compiler }}
     steps:
       - uses: actions/checkout@v6

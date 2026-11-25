@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  HYPRE_VERSION: v3.2.1
+  HYPRE_VERSION: master
   OMPI_ALLOW_RUN_AS_ROOT: 1
   OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
   OMPI_MCA_btl_vader_single_copy_mechanism: none

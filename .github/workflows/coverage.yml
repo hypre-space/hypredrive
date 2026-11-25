@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      HYPRE_VERSION: v3.2.1
+      HYPRE_VERSION: master
       BUILD_DIR: build-coverage
       HYPREDRV_COVERAGE_MIN_LINE: '0.90'
       # gcovr measured 81.6% on PR #272 before postprocessing.
