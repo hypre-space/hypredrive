@@ -63,6 +63,7 @@
 
 /* AMG's relaxation fields */
 #define AMGrlx_FIELDS(_prefix)                                                \
+   ADD_FIELD_OFFSET_ENTRY(_prefix, type, hypredrv_FieldTypeIntSet)            \
    ADD_FIELD_OFFSET_ENTRY(_prefix, down_type, hypredrv_FieldTypeIntSet)       \
    ADD_FIELD_OFFSET_ENTRY(_prefix, up_type, hypredrv_FieldTypeIntSet)         \
    ADD_FIELD_OFFSET_ENTRY(_prefix, coarse_type, hypredrv_FieldTypeIntSet)     \
@@ -373,7 +374,7 @@ StrIntMapArray
 hypredrv_AMGrlxGetValidValues(const char *key)
 {
    /* Pre- and post-smoothers accept the same relaxation types. */
-   if (!strcmp(key, "down_type") || !strcmp(key, "up_type"))
+   if (!strcmp(key, "type") || !strcmp(key, "down_type") || !strcmp(key, "up_type"))
    {
       static StrIntMap map[] = {{"jacobi_non_mv",  0},
                                 {"forward-hgs",    3},

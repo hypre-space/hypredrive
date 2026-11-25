@@ -219,6 +219,44 @@ test_InputArgsParsePrecon_stationary_value_only(void)
    }
 }
 
+static void
+test_InputArgsParsePrecon_amg_relaxation_type(void)
+{
+   /* The global relaxation type is accepted as an integer or by name, and keeps
+      the cycle-specific slots independent. */
+   const char numeric[] = "solver: gmres\n"
+                          "preconditioner:\n"
+                          "  amg:\n"
+                          "    relaxation:\n"
+                          "      type: 8\n"
+                          "      down_type: 13\n";
+
+   input_args *args = parse_config(numeric);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon.amg.relaxation.type, 8);
+   ASSERT_EQ(args->precon.amg.relaxation.down_type, 13);
+   hypredrv_InputArgsDestroy(&args);
+
+   const char named[] = "solver: gmres\n"
+                        "preconditioner:\n"
+                        "  amg:\n"
+                        "    relaxation:\n"
+                        "      type: l1-hsgs\n";
+
+   args = parse_config(named);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon.amg.relaxation.type, 8);
+   hypredrv_InputArgsDestroy(&args);
+
+   /* Omitted: the default leaves hypre's own setting untouched. */
+   const char omitted[] = "solver: gmres\npreconditioner: amg\n";
+
+   args = parse_config(omitted);
+   ASSERT_NOT_NULL(args);
+   ASSERT_EQ(args->precon.amg.relaxation.type, -1);
+   hypredrv_InputArgsDestroy(&args);
+}
+
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
 static void
 test_InputArgsParsePrecon_schwarz_value_only(void)
@@ -2299,6 +2337,7 @@ main(int argc, char **argv)
    RUN_TEST(test_InputArgsParseSolver_value_only);
    RUN_TEST(test_InputArgsParsePrecon_value_only);
    RUN_TEST(test_InputArgsParsePrecon_stationary_value_only);
+   RUN_TEST(test_InputArgsParsePrecon_amg_relaxation_type);
 #if HYPRE_CHECK_MIN_VERSION(30100, 55)
    RUN_TEST(test_InputArgsParsePrecon_schwarz_value_only);
    RUN_TEST(test_InputArgsParsePrecon_schwarz_typed_block);

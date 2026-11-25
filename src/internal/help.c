@@ -962,6 +962,7 @@ static const HelpKeyDoc AMGCoarseningKeyDocs[] = {
 };
 
 static const HelpKeyDoc AMGRelaxationKeyDocs[] = {
+   {"type", "Global relaxation type (down/up/coarse types override it)"},
    {"down_type", "Relaxation type on the down cycle"},
    {"up_type", "Relaxation type on the up cycle"},
    {"coarse_type", "Relaxation type on the coarsest AMG level"},

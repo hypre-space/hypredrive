@@ -1370,6 +1370,12 @@ preconditioner:
 
 - ``relaxation`` - subsection detailing relaxation options:
 
+  - ``type`` - Global relaxation method set with `HYPRE_BoomerAMGSetRelaxType
+    <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_
+    before the cycle-specific ``down_type``, ``up_type`` and ``coarse_type`` are
+    applied. It accepts the same values as ``down_type``. When omitted, hypre's
+    default is kept.
+
   - ``down_type`` - Relaxation method for the pre-smoothing stage. For detailed
     information, see `HYPRE_BoomerAMGSetRelaxType
     <https://hypre.readthedocs.io/en/latest/api-sol-parcsr.html#_CPPv427HYPRE_BoomerAMGSetRelaxType12HYPRE_Solver9HYPRE_Int>`_. Available
