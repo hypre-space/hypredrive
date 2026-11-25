@@ -248,6 +248,8 @@ target_link_libraries(HYPREDRV
     INTERFACE
         $<INSTALL_INTERFACE:HYPRE::HYPRE>)
 
+hypredrv_link_hypre_umpire(HYPREDRV)
+
 # HYPRE's static library uses the platform dynamic-loader API.
 if(CMAKE_DL_LIBS)
     target_link_libraries(HYPREDRV PUBLIC ${CMAKE_DL_LIBS})
