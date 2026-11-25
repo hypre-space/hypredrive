@@ -5,7 +5,7 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   push:
-    branches: [master]
+    branches: [master, ci/reliable-checks]
   schedule:
     - cron: '20 3 * * 0'
   workflow_dispatch:
@@ -45,7 +45,7 @@ jobs:
       - id: select
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
-          EXPANDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+          EXPANDED: ${{ github.ref_name == 'ci/reliable-checks' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
         run: python3 scripts/select_ci.py
 
   source-checks:
@@ -1103,27 +1103,27 @@ jobs:
 
   analysis:
     needs: select
-    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.ref_name == 'ci/reliable-checks') && needs.select.outputs.core == 'true'
     uses: ./.github/workflows/analysis.yml
 
   coverage:
     needs: select
-    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.ref_name == 'ci/reliable-checks') && needs.select.outputs.core == 'true'
     uses: ./.github/workflows/coverage.yml
 
   fuzz:
     needs: select
-    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.ref_name == 'ci/reliable-checks') && needs.select.outputs.core == 'true'
     uses: ./.github/workflows/fuzz.yml
 
   portability:
     needs: select
-    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    if: (github.event_name == 'pull_request' || github.ref_name == 'ci/reliable-checks') && needs.select.outputs.core == 'true'
     uses: ./.github/workflows/portability.yml
 
   docs:
     needs: select
-    if: github.event_name == 'pull_request' && needs.select.outputs.docs == 'true'
+    if: (github.event_name == 'pull_request' || github.ref_name == 'ci/reliable-checks') && needs.select.outputs.docs == 'true'
     uses: ./.github/workflows/docs.yml
 
   julia-interface:
@@ -1230,7 +1230,7 @@ jobs:
               "julia": {"julia-interface"},
               "abi": {"abi"},
           }
-          if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
+          if os.environ["GITHUB_EVENT_NAME"] == "pull_request" or os.environ["GITHUB_REF_NAME"] == "ci/reliable-checks":
               groups["core"].update({"analysis", "coverage", "fuzz", "portability"})
               groups["docs"] = {"docs"}
           for flag, names in groups.items():
