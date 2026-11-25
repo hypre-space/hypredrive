@@ -4,6 +4,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 
 
@@ -62,6 +63,8 @@ def select(paths, expanded):
 
 
 def main():
+    if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", HYPRE_RELEASE):
+        raise SystemExit(".github/hypre-release must contain one release tag in vMAJOR.MINOR.PATCH form")
     base = os.environ["BASE_SHA"].strip()
     has_base = base not in ("", "0" * 40)
     expanded = not has_base or os.environ["EXPANDED"] == "true"

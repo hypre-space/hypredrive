@@ -30,7 +30,6 @@ jobs:
     if: >-
       ${{
         github.event_name == 'workflow_dispatch' ||
-        false ||
         (
           github.event.action == 'labeled' &&
           (
@@ -170,6 +169,10 @@ jobs:
         shell: bash
         run: |
           hypre_release=$(cat .github/hypre-release)
+          if [[ ! "$hypre_release" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::.github/hypre-release must contain one release tag in vMAJOR.MINOR.PATCH form"
+            exit 1
+          fi
           export CIBW_CONFIG_SETTINGS="$CIBW_CONFIG_SETTINGS cmake.define.HYPRE_VERSION=$hypre_release"
           python -m cibuildwheel \
             "build/python-wheel-src-${{ matrix.mpi_flavor }}/interfaces/python" \
