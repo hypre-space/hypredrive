@@ -46,6 +46,45 @@ endfunction()
 
 include(${CMAKE_CURRENT_LIST_DIR}/HYPREDRV_DepsPatches.cmake)
 
+# hypre links Umpire privately, so an installed hypre built with Umpire leaves
+# Umpire's own dependencies (camp, fmt) unresolved on consumers' link lines.
+# Link the Umpire target explicitly when it is available.
+function(hypredrv_link_hypre_umpire target_name)
+    get_target_property(_hypre_type HYPRE::HYPRE TYPE)
+    if(_hypre_type STREQUAL "INTERFACE_LIBRARY")
+        return()
+    endif()
+
+    set(_umpire_target "")
+    foreach(_candidate IN ITEMS umpire::umpire umpire)
+        if(TARGET ${_candidate})
+            set(_umpire_target ${_candidate})
+            break()
+        endif()
+    endforeach()
+
+    if(NOT _umpire_target AND HYPRE_INCLUDE_DIRS)
+        find_file(_hypre_config_header HYPRE_config.h
+                  HINTS ${HYPRE_INCLUDE_DIRS} NO_DEFAULT_PATH)
+        if(_hypre_config_header)
+            file(STRINGS "${_hypre_config_header}" _hypre_using_umpire
+                 REGEX "^#define HYPRE_USING_UMPIRE( |$)")
+            if(_hypre_using_umpire)
+                find_package(umpire CONFIG QUIET)
+                if(TARGET umpire::umpire)
+                    set(_umpire_target umpire::umpire)
+                endif()
+            endif()
+        endif()
+    endif()
+
+    if(_umpire_target)
+        message(STATUS "Linking Umpire for hypre: ${_umpire_target}")
+        target_link_libraries(${target_name} PUBLIC
+            $<BUILD_INTERFACE:${_umpire_target}>)
+    endif()
+endfunction()
+
 function(_hypredrv_link_mpi_interface target_name)
     if(TARGET MPI::MPI_C)
         target_link_libraries(${target_name} INTERFACE MPI::MPI_C)
