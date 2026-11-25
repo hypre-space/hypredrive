@@ -1127,7 +1127,7 @@ jobs:
     uses: ./.github/workflows/docs.yml
 
   julia-interface:
-    name: Julia interface
+    name: Ubuntu | Julia interface
     needs: select
     if: needs.select.outputs.julia == 'true'
     runs-on: ubuntu-latest
