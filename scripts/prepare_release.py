@@ -91,31 +91,19 @@ def wait_for_runs(repo, run_ids, expected_sha, timeout=5400):
 
 
 def pr_validation_runs(repo, branch, sha, pr_number, timeout=300):
-    workflows = ("ci.yml", "format.yml", "analysis.yml", "coverage.yml",
-                 "docs.yml", "portability.yml", "fuzz.yml")
-    runs = {}
     deadline = time.monotonic() + timeout
-    while len(runs) != len(workflows):
-        for workflow in workflows:
-            if workflow in runs:
+    while time.monotonic() < deadline:
+        result = api(repo, "actions/workflows/ci.yml/runs?event=pull_request"
+                     f"&branch={branch}&head_sha={sha}&per_page=100")
+        for run in result["workflow_runs"]:
+            if not any(pr["number"] == pr_number for pr in run["pull_requests"]):
                 continue
-            result = api(repo, f"actions/workflows/{workflow}/runs?event=pull_request"
-                         f"&branch={branch}&head_sha={sha}&per_page=100")
-            candidates = [run for run in result["workflow_runs"]
-                          if run["head_sha"] == sha
-                          and any(pr["number"] == pr_number for pr in run["pull_requests"])]
-            if candidates:
-                run = candidates[0]
-                runs[workflow] = run["id"]
-                print(f"PR validation {workflow}: {run['html_url']}", flush=True)
-                if os.environ.get("GITHUB_STEP_SUMMARY"):
-                    with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
-                        summary.write(f"- [{workflow}]({run['html_url']})\n")
-        if len(runs) != len(workflows):
-            if time.monotonic() >= deadline:
-                raise RuntimeError("PR validation workflows were not created for the binding commit")
-            time.sleep(10)
-    return list(runs.values())
+            if run["display_title"] != "CI validation":
+                continue
+            print(f"PR validation: {run['html_url']}", flush=True)
+            return [run["id"]]
+        time.sleep(10)
+    raise RuntimeError("Required CI was not created for the binding commit")
 
 
 def wait_for_previous_wheel_staging(repo, branch, timeout=5400):
@@ -180,6 +168,21 @@ def verify_bindings(tag, assets):
         raise RuntimeError("Julia bindings must cover all five release platforms")
 
 
+def verify_asset_manifests(repo, tag, assets):
+    from release_asset_manifest import source_tree
+
+    for kind, suffix in (("julia", ".tar.gz"), ("python", ".whl")):
+        name = f"{kind}-asset-manifest.json"
+        raw = command("gh", "release", "download", tag, "--repo", repo,
+                      "--pattern", name, "--output", "-")
+        manifest = json.loads(raw)
+        digests = {name: asset["digest"].removeprefix("sha256:")
+                   for name, asset in assets.items() if name.endswith(suffix)}
+        if manifest != {"tag": tag, "source_tree_sha256": source_tree(kind),
+                        "assets": digests}:
+            raise RuntimeError(f"Draft asset digests or source tree differ from {name}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
@@ -219,7 +222,8 @@ def main():
     if set(changed) - {"interfaces/julia/Artifacts.toml"}:
         raise RuntimeError("Release source changed during the Julia build; rerun preparation")
     command("git", "checkout", "--detach", final_sha)
-    runs = pr_validation_runs(args.repo, args.branch, final_sha, args.pr)
+    pr_runs = pr_validation_runs(args.repo, args.branch, final_sha, args.pr)
+    runs = list(pr_runs)
     message = (f"Approve workflows to run on https://github.com/{args.repo}/pull/{args.pr} "
                "after reviewing the Julia binding commit. GitHub requires this for bot updates.")
     print(message, flush=True)
@@ -229,6 +233,11 @@ def main():
     wait_for_previous_wheel_staging(args.repo, args.branch)
     runs.append(dispatch(args.repo, "python-wheels.yml", args.branch, {"release_tag": tag}))
     wait_for_runs(args.repo, runs, final_sha)
+    for run_id in pr_runs:
+        jobs = api(args.repo, f"actions/runs/{run_id}/jobs?per_page=100")["jobs"]
+        if not any(job["name"] == "Required CI" and job["conclusion"] == "success"
+                   for job in jobs):
+            raise RuntimeError(f"CI run {run_id} is missing a successful Required CI check")
     if branch_sha(args.repo, args.branch) != final_sha:
         raise RuntimeError("Release branch changed during validation; rerun preparation")
 
@@ -239,6 +248,7 @@ def main():
     assets = api(args.repo, f"releases/{release['databaseId']}/assets?per_page=100")
     by_name = {asset["name"]: asset for asset in assets}
     verify_bindings(tag, by_name)
+    verify_asset_manifests(args.repo, tag, by_name)
     wheels = [name for name in by_name if name.endswith(".whl")]
     if len(wheels) != 45 or any(f"-{version}-" not in name for name in wheels):
         raise RuntimeError("Draft release must contain all 45 matching Python wheels")

@@ -1,14 +1,7 @@
 name: Code Analysis
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
-      - 'NOTICE'
-      - 'COPYRIGHT'
+  workflow_call:
   push:
     branches: [ master ]
     paths-ignore:
@@ -30,12 +23,6 @@ permissions:
 
 jobs:
   cppcheck:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
     name: cppcheck
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -89,12 +76,6 @@ jobs:
           retention-days: 7
 
   clang-tidy:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
     name: clang-tidy
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -162,12 +143,6 @@ jobs:
           retention-days: 7
 
   sanitizers:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
     name: ASan and UBSan
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -245,12 +220,6 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   complexity:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
     name: cyclomatic complexity
     runs-on: ubuntu-latest
     timeout-minutes: 10

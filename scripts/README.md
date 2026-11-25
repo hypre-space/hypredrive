@@ -22,7 +22,7 @@ This directory contains utility scripts for validation, data preparation, plotti
 ## Python Scripts
 
 - [analyze_caliper.py](./analyze_caliper.py): Parses Caliper runtime reports and builds an interactive hierarchical timing visualization.
-- [analyze_coverage.py](./analyze_coverage.py): Summarizes, normalizes, and checks `gcovr` coverage reports.
+- [analyze_coverage.py](./analyze_coverage.py): Summarizes and checks `gcovr` coverage reports.
 - [analyze_statistics.py](./analyze_statistics.py): Parses statistics outputs and generates plots for iterations, timings, and related solver metrics.
 - [eigplot.py](./eigplot.py): Reads eigenvalue files and plots the spectrum with summary statistics and optional histogram or inset views.
 - [generate_geos_datasets.py](./generate_geos_datasets.py): Generates small offline datasets for the GEOS MGR strategies.

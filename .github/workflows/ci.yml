@@ -1,26 +1,18 @@
 name: CI
+run-name: ${{ github.event.action == 'labeled' && github.event.label.name != 'Run CI' && 'Unrelated label' || 'CI validation' }}
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
-      - 'NOTICE'
-      - 'COPYRIGHT'
   push:
-    branches: [ master ]
-    paths-ignore:
-      - '**.md'
-      - '.gitignore'
-      - 'LICENSE'
-      - 'NOTICE'
-      - 'COPYRIGHT'
-  workflow_dispatch:    # Allow manual triggering
+    branches: [master]
+  schedule:
+    - cron: '20 3 * * 0'
+  workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Unrelated label events must neither replace real validation nor emit its check name.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'schedule' && 'scheduled' || github.event.action == 'labeled' && github.event.label.name != 'Run CI' && github.run_id || 'validation' }}
   cancel-in-progress: true
 
 permissions:
@@ -31,34 +23,71 @@ env:
   OMPI_MCA_memory: "^patcher"
 
 jobs:
-  source-list-sync:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
-    name: Source list sync
+  select:
+    name: Select CI checks
+    if: github.event.action != 'labeled' || github.event.label.name == 'Run CI'
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
+    outputs:
+      core: ${{ steps.select.outputs.core }}
+      expanded: ${{ steps.select.outputs.expanded }}
+      docs: ${{ steps.select.outputs.docs }}
+      bindings: ${{ steps.select.outputs.bindings }}
+      julia: ${{ steps.select.outputs.julia }}
+      abi: ${{ steps.select.outputs.abi }}
+      matrix: ${{ steps.select.outputs.matrix }}
+      hypre_release: ${{ steps.select.outputs.hypre_release }}
     steps:
       - uses: actions/checkout@v6
-      - name: Verify CMake and Autotools source lists are synchronized
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: select
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before || '' }}
+          EXPANDED: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'Run CI') }}
+        run: python3 scripts/select_ci.py
+
+  source-checks:
+    name: Source checks
+    needs: select
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Verify CMake and Autotools source lists
         run: python3 scripts/check_source_sync.py
+      - name: Check private symbol prefixes
+        run: bash scripts/check_private_prefix.sh
+      - name: Check public APIs and bindings
+        run: |
+          bash scripts/list_public_apis.sh --check
+          bash scripts/check_interface_coverage.sh
+      - name: Install formatters
+        timeout-minutes: 3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-18
+          python -m pip install fprettify==0.3.7
+
+      - name: clang-format check
+        run: |
+          set -euxo pipefail
+          find include src examples/src -type f \( -name "*.c" -o -name "*.h" \) | \
+            xargs clang-format-18 -n --Werror
+
+      - name: fprettify check
+        run: |
+          set -euxo pipefail
+          diff=$(find interfaces/fortran -type f -name "*.f90" -exec fprettify -i 3 --diff {} +)
+          if [[ -n "$diff" ]]; then
+            printf '%s\n' "$diff"
+            exit 1
+          fi
 
   windows-mingw-build:
-    if: >-
-      ${{
-        (
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        ) &&
-        (
-          github.event_name != 'pull_request' ||
-          (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-        )
-      }}
+    needs: select
+    if: needs.select.outputs.expanded == 'true'
     name: Windows | MinGW-w64 | MS-MPI
     runs-on: windows-latest
     timeout-minutes: 30
@@ -83,46 +112,9 @@ jobs:
             mingw-w64-x86_64-gcc
             mingw-w64-x86_64-ninja
 
-      - &install-msmpi
-        name: Install Microsoft MPI
+      - name: Install Microsoft MPI
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $msmpiRoot = Join-Path $env:RUNNER_TEMP 'msmpi'
-          New-Item -ItemType Directory -Force -Path $msmpiRoot | Out-Null
-
-          $sdkPath = Join-Path $msmpiRoot 'msmpisdk.msi'
-          $runtimePath = Join-Path $msmpiRoot 'msmpisetup.exe'
-          $baseUrl = 'https://download.microsoft.com/download/7/2/7/72731ebb-b63c-4170-ade7-836966263a8f'
-          Invoke-WebRequest -Uri "$baseUrl/msmpisdk.msi" -OutFile $sdkPath
-          Invoke-WebRequest -Uri "$baseUrl/msmpisetup.exe" -OutFile $runtimePath
-
-          $expectedSdkSha256 = '8ccbc77a0cfe1e30f7495a759886b4d99b2c494b9b9ad414dcda1da84c00d3fa'
-          $expectedRuntimeSha256 = '47443829114d8d8670f77af98939fe876d33eceb35d0ce4e0e85efeec4d87213'
-          if ((Get-FileHash -Algorithm SHA256 $sdkPath).Hash.ToLowerInvariant() -ne $expectedSdkSha256) {
-            throw 'MS-MPI SDK checksum mismatch'
-          }
-          if ((Get-FileHash -Algorithm SHA256 $runtimePath).Hash.ToLowerInvariant() -ne $expectedRuntimeSha256) {
-            throw 'MS-MPI runtime checksum mismatch'
-          }
-
-          $sdkInstall = Start-Process msiexec.exe -ArgumentList @('/quiet', '/passive', '/qn', '/i', $sdkPath) -Wait -PassThru
-          if ($sdkInstall.ExitCode -ne 0) {
-            throw "MS-MPI SDK installation failed with exit code $($sdkInstall.ExitCode)"
-          }
-          $runtimeInstall = Start-Process $runtimePath -ArgumentList @('-unattend') -Wait -PassThru
-          if ($runtimeInstall.ExitCode -ne 0) {
-            throw "MS-MPI runtime installation failed with exit code $($runtimeInstall.ExitCode)"
-          }
-
-          foreach ($name in @('MSMPI_BIN', 'MSMPI_INC', 'MSMPI_LIB64')) {
-            $value = [Environment]::GetEnvironmentVariable($name, 'Machine')
-            if ([string]::IsNullOrWhiteSpace($value)) {
-              throw "MS-MPI did not define $name"
-            }
-            Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
-          }
-          Add-Content -Path $env:GITHUB_PATH -Value ([Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine'))
+        run: ./scripts/install_msmpi.ps1
 
       - name: Restore ccache
         id: restore-ccache
@@ -138,6 +130,7 @@ jobs:
         env:
           CCACHE_DIR: ${{ runner.temp }}\ccache
           CCACHE_MAXSIZE: 300M
+          HYPRE_RELEASE: ${{ needs.select.outputs.hypre_release }}
         run: |
           set -euxo pipefail
           mpi_inc="$(cygpath -m "${MSMPI_INC}")"
@@ -156,7 +149,7 @@ jobs:
             -DCMAKE_CXX_COMPILER=g++ \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DBUILD_SHARED_LIBS=ON \
-            -DHYPRE_VERSION=v3.2.1 \
+            -DHYPRE_VERSION="$HYPRE_RELEASE" \
             -DHYPREDRV_ENABLE_TESTING=ON \
             -DHYPREDRV_ENABLE_EXAMPLES=OFF \
             -DHYPRE_ENABLE_MPI=ON \
@@ -215,29 +208,15 @@ jobs:
           key: ccache-windows-mingw-${{ github.sha }}
 
   windows-native-build:
-    if: >-
-      ${{
-        (
-          github.event_name != 'pull_request' ||
-          github.event.pull_request.head.repo.full_name == github.repository
-        ) &&
-        (
-          github.event_name != 'pull_request' ||
-          (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-          (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-        )
-      }}
+    needs: select
+    if: needs.select.outputs.core == 'true'
     name: Windows | ${{ matrix.compiler }} | MS-MPI
     runs-on: windows-2022
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - compiler: MSVC
-            toolset: v143
-          - compiler: clang-cl
-            toolset: ClangCL
+        include: ${{ fromJSON(needs.select.outputs.expanded == 'true' && '[{"compiler":"MSVC","toolset":"v143"},{"compiler":"clang-cl","toolset":"ClangCL"}]' || '[{"compiler":"MSVC","toolset":"v143"}]') }}
     steps:
       - uses: actions/checkout@v6
 
@@ -247,10 +226,14 @@ jobs:
           path: data
           key: datasets-v3-full-${{ hashFiles('cmake/HYPREDRV_Data.cmake') }}
 
-      - *install-msmpi
+      - name: Install Microsoft MPI
+        shell: pwsh
+        run: ./scripts/install_msmpi.ps1
 
       - name: Configure hypredrive
         shell: pwsh
+        env:
+          HYPRE_RELEASE: ${{ needs.select.outputs.hypre_release }}
         run: |
           $buildDir = Join-Path $env:RUNNER_TEMP 'hypredrive-${{ matrix.compiler }}-build'
           Add-Content -Path $env:GITHUB_ENV -Value "BUILD_DIR=$buildDir"
@@ -259,7 +242,7 @@ jobs:
             "-DCMAKE_C_FLAGS=/std:c11 /utf-8 /DWIN32" `
             "-DCMAKE_INSTALL_PREFIX=$env:RUNNER_TEMP/hypredrive-${{ matrix.compiler }}-install" `
             -DBUILD_SHARED_LIBS=ON `
-            "-DHYPRE_VERSION=v3.2.1" `
+            "-DHYPRE_VERSION=$env:HYPRE_RELEASE" `
             -DHYPREDRV_ENABLE_TESTING=ON `
             -DHYPREDRV_ENABLE_EXAMPLES=OFF `
             -DHYPRE_ENABLE_MPI=ON `
@@ -297,12 +280,8 @@ jobs:
           }
 
   python-interface:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.bindings == 'true'
     name: ${{ matrix.os }} | Python 3.12 | installed HYPRE
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -431,12 +410,8 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   python-interface-autofetch:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.expanded == 'true'
     name: ubuntu-latest | Python 3.12 | auto-fetch HYPRE
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -496,12 +471,8 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   rust-interface:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.bindings == 'true'
     name: ubuntu-latest | Rust 1.82 | ${{ matrix.mpi }} | ${{ matrix.hypre_mode }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -635,278 +606,75 @@ jobs:
           export LD_LIBRARY_PATH="$RUST_INSTALL/lib:$HYPRE_INSTALL/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           cargo run
 
-  fortran-interface:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
-    name: ubuntu-latest | gfortran | Fortran interface
+  native-interfaces:
+    name: Ubuntu | ${{ matrix.name }} interface
+    needs: select
+    if: needs.select.outputs.bindings == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: C++, option: CPP, target: cpp-test, packages: g++, compiler: '-DCMAKE_CXX_COMPILER=mpicxx'}
+          - {name: Fortran, option: FORTRAN, target: fortran-test, packages: gfortran, compiler: '-DCMAKE_Fortran_COMPILER=mpifort'}
+          - {name: Octave, option: MATLAB, target: matlab-test, packages: 'octave octave-dev', compiler: ''}
     env:
-      HYPRE_VERSION: master
-      BUILD_DIR: build-fortran
+      OMPI_FC: gfortran
+      OMP_NUM_THREADS: 1
+      BUILD_DIR: build-interface
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install system dependencies
+      - uses: ./.github/actions/setup-ubuntu
         timeout-minutes: 5
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++ gfortran
-          echo "OMPI_CC=gcc" >> $GITHUB_ENV
-          echo "OMPI_CXX=g++" >> $GITHUB_ENV
-          echo "OMPI_FC=gfortran" >> $GITHUB_ENV
-
-      - name: Build HYPRE
-        id: build-hypre
-        uses: ./.github/actions/build-hypre
         with:
-          hypre_version: ${{ env.HYPRE_VERSION }}
-          compiler: gcc
-          build_type: Debug
-          hypre_shared_libs: 'ON'
-          os: ubuntu-latest
-          mpi_flavor: openmpi
-
-      - name: Configure hypredrive with Fortran interface
+          extra_packages: ${{ matrix.packages }}
+      - uses: ./.github/actions/build-hypre
+        id: hypre
+        with:
+          hypre_version: master
+      - name: Configure and test
         run: |
-          set -euxo pipefail
           cmake -S . -B "$BUILD_DIR" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DHYPREDRV_ENABLE_FORTRAN=ON \
-            -DHYPREDRV_ENABLE_TESTING=ON \
-            -DHYPREDRV_ENABLE_EXAMPLES=ON \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
-            -DCMAKE_C_COMPILER=mpicc \
-            -DCMAKE_Fortran_COMPILER=mpifort
-
-      - name: Build and run Fortran tests
-        env:
-          OMPI_ALLOW_RUN_AS_ROOT: 1
-          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
-          OMPI_MCA_btl_vader_single_copy_mechanism: none
-          OMPI_MCA_rmaps_base_oversubscribe: 1
-          OMP_NUM_THREADS: 1
-        run: cmake --build "$BUILD_DIR" --target fortran-test --parallel
-
-      - name: Upload Fortran CI logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: fortran-logs
-          path: |
-            ${{ env.BUILD_DIR }}/Testing
-            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
-            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
-
-  octave-interface:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
-    name: ubuntu-latest | Octave interface
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      HYPRE_VERSION: master
-      BUILD_DIR: build-octave
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        timeout-minutes: 5
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++ octave octave-dev
-          echo "OMPI_CC=gcc" >> $GITHUB_ENV
-          echo "OMPI_CXX=g++" >> $GITHUB_ENV
-
-      - name: Build HYPRE
-        id: build-hypre
-        uses: ./.github/actions/build-hypre
-        with:
-          hypre_version: ${{ env.HYPRE_VERSION }}
-          compiler: gcc
-          build_type: Debug
-          hypre_shared_libs: 'ON'
-          os: ubuntu-latest
-          mpi_flavor: openmpi
-
-      - name: Configure hypredrive with Octave interface
-        run: |
-          set -euxo pipefail
-          cmake -S . -B "$BUILD_DIR" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DHYPREDRV_ENABLE_MATLAB=ON \
-            -DHYPREDRV_ENABLE_TESTING=ON \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
+            -DCMAKE_BUILD_TYPE=Debug -DBUILD_SHARED_LIBS=ON \
+            -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DHYPREDRV_ENABLE_${{ matrix.option }}=ON ${{ matrix.compiler }} \
+            -DCMAKE_PREFIX_PATH="${{ steps.hypre.outputs.hypre_prefix }}" \
             -DCMAKE_C_COMPILER=mpicc
-
-      - name: Build and run Octave tests
-        env:
-          OMPI_ALLOW_RUN_AS_ROOT: 1
-          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
-          OMPI_MCA_btl_vader_single_copy_mechanism: none
-          OMPI_MCA_rmaps_base_oversubscribe: 1
-          OMP_NUM_THREADS: 1
-        run: cmake --build "$BUILD_DIR" --target matlab-test --parallel
-
-      - name: Upload Octave CI logs on failure
+          cmake --build "$BUILD_DIR" --target ${{ matrix.target }} --parallel
+      - name: Upload failure logs
         if: failure()
         uses: actions/upload-artifact@v6
         with:
-          name: octave-logs
+          name: ${{ matrix.target }}-logs
           path: |
             ${{ env.BUILD_DIR }}/Testing
-            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
-            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
-
-  cpp-interface:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
-    name: ubuntu-latest | C++ interface
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    env:
-      HYPRE_VERSION: master
-      BUILD_DIR: build-cpp
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        timeout-minutes: 5
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin gcc g++
-          echo "OMPI_CC=gcc" >> $GITHUB_ENV
-          echo "OMPI_CXX=g++" >> $GITHUB_ENV
-
-      - name: Build HYPRE
-        id: build-hypre
-        uses: ./.github/actions/build-hypre
-        with:
-          hypre_version: ${{ env.HYPRE_VERSION }}
-          compiler: gcc
-          build_type: Debug
-          hypre_shared_libs: 'ON'
-          os: ubuntu-latest
-          mpi_flavor: openmpi
-
-      - name: Configure hypredrive with C++ interface
-        run: |
-          set -euxo pipefail
-          cmake -S . -B "$BUILD_DIR" -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DHYPREDRV_ENABLE_CPP=ON \
-            -DHYPREDRV_ENABLE_TESTING=ON \
-            -DHYPREDRV_ENABLE_EXAMPLES=ON \
-            -DBUILD_SHARED_LIBS=ON \
-            -DCMAKE_PREFIX_PATH="${{ steps.build-hypre.outputs.hypre_prefix }}" \
-            -DCMAKE_C_COMPILER=mpicc \
-            -DCMAKE_CXX_COMPILER=mpicxx
-
-      - name: Build and run C++ tests
-        env:
-          OMPI_ALLOW_RUN_AS_ROOT: 1
-          OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
-          OMPI_MCA_btl_vader_single_copy_mechanism: none
-          OMPI_MCA_rmaps_base_oversubscribe: 1
-          OMP_NUM_THREADS: 1
-        run: cmake --build "$BUILD_DIR" --target cpp-test --parallel
-
-      - name: Upload C++ CI logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v6
-        with:
-          name: cpp-logs
-          path: |
-            ${{ env.BUILD_DIR }}/Testing
-            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
-            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeConfigureLog.yaml
 
   build-and-test:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.core == 'true'
     name: ${{ matrix.os }} | ${{ matrix.compiler }} | ${{ matrix.build_type }} | ${{ matrix.hypre_version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        build_type: [Debug]
-        compiler: [gcc, clang]
-        # Pin the latest release explicitly and retain older-release coverage.
-        hypre_version: [master, v3.2.1, v2.20.0]
-        exclude:
-          - os: macos-latest
-            compiler: gcc
+        include: ${{ fromJSON(needs.select.outputs.matrix) }}
     env:
+      OMPI_MCA_rmaps_base_oversubscribe: 1
+      OMP_NUM_THREADS: 1
       HYPRE_VERSION: ${{ matrix.hypre_version }}
       BUILD_DIR: build
     steps:
       - uses: actions/checkout@v6
 
-      - name: Get compiler version
-        id: compiler_version
-        run: |
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            VERSION=$(gcc --version 2>/dev/null | head -n1 | awk '{print $NF}' || echo "unknown")
-          else
-            VERSION=$(clang --version 2>/dev/null | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}' || echo "unknown")
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Compiler version: $VERSION"
-          echo "::notice::Building with ${{ matrix.compiler }} version $VERSION"
-
-      - name: Install dependencies (Ubuntu)
-        timeout-minutes: 5
-        if: startsWith(runner.os, 'Linux')
-        run: |
-          sudo apt-get update
-          # Install OpenMPI instead of MPICH for better CI compatibility
-          sudo apt-get install -y cmake ninja-build libopenmpi-dev openmpi-bin ccache clang-format
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then sudo apt-get install -y gcc g++; fi
-          if [ "${{ matrix.compiler }}" = "clang" ]; then sudo apt-get install -y clang; fi
-          # Get and display compiler version
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            VERSION=$(gcc --version | head -n1 | awk '{print $NF}')
-          else
-            VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
-          fi
-          echo "::notice::Using ${{ matrix.compiler }} version $VERSION"
-
-      - name: Setup compiler environment (Ubuntu)
-        if: startsWith(runner.os, 'Linux')
-        run: |
-          if [ "${{ matrix.compiler }}" = "clang" ]; then
-            # Configure mpicc to use clang
-            export OMPI_CC=clang
-            export OMPI_CXX=clang++
-            echo "OMPI_CC=clang" >> $GITHUB_ENV
-            echo "OMPI_CXX=clang++" >> $GITHUB_ENV
-          else
-            # Configure mpicc to use gcc (default)
-            export OMPI_CC=gcc
-            export OMPI_CXX=g++
-            echo "OMPI_CC=gcc" >> $GITHUB_ENV
-            echo "OMPI_CXX=g++" >> $GITHUB_ENV
-          fi
+      - name: Set up Ubuntu
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: ${{ matrix.compiler }}
+          extra_packages: ccache liblapack-dev
 
       - name: Setup ccache (Ubuntu)
         if: startsWith(runner.os, 'Linux')
@@ -927,10 +695,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: '1'
         run: |
           brew untap --force aws/tap >/dev/null 2>&1 || true
-          brew install mpich clang-format
-          # Get and display compiler version
-          VERSION=$(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')
-          echo "::notice::Using clang version $VERSION"
+          brew install mpich
 
       - name: Setup compiler environment (macOS)
         if: startsWith(runner.os, 'macOS')
@@ -953,8 +718,8 @@ jobs:
         with:
           hypre_version: ${{ env.HYPRE_VERSION }}
           compiler: ${{ matrix.compiler }}
-          build_type: 'Debug'
-          hypre_shared_libs: 'ON'
+          build_type: ${{ matrix.build_type }}
+          hypre_shared_libs: ${{ matrix.shared }}
           os: ${{ matrix.os }}
           mpi_flavor: ${{ startsWith(matrix.os, 'macos') && 'mpich' || 'openmpi' }}
 
@@ -964,12 +729,6 @@ jobs:
           CCACHE_ARGS=""
           if [ "${{ runner.os }}" = "Linux" ]; then
             CCACHE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache"
-          fi
-          # Display compiler info in build logs
-          if [ "${{ matrix.compiler }}" = "gcc" ]; then
-            echo "::notice::Configuring with gcc $(gcc --version | head -n1 | awk '{print $NF}')"
-          else
-            echo "::notice::Configuring with clang $(clang --version | head -n1 | awk -F'version ' '{print $2}' | awk '{print $1}')"
           fi
           HYPRE_PREFIX="${{ steps.build-hypre.outputs.hypre_prefix }}"
           HYPRE_ARGS="-DCMAKE_PREFIX_PATH=${HYPRE_PREFIX} -DHYPRE_VERSION=${{ matrix.hypre_version }}"
@@ -988,9 +747,23 @@ jobs:
           cmake -S . -B $BUILD_DIR -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DHYPREDRV_ENABLE_TESTING=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
-            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_SHARED_LIBS=${{ matrix.shared }} \
+            -DCMAKE_C_COMPILER=mpicc -DCMAKE_CXX_COMPILER=mpicxx \
+            -DHYPREDRV_ENABLE_EIGSPEC=${{ matrix.cpu_features }} \
+            -DHYPREDRV_ENABLE_EXAMPLE_OMP=${{ matrix.cpu_features }} \
             ${HYPRE_ARGS} \
             $CCACHE_ARGS
+
+      - name: Verify configured compilers
+        env:
+          EXPECTED_COMPILER: ${{ matrix.compiler == 'gcc' && 'GNU' || (runner.os == 'macOS' && 'AppleClang' || 'Clang') }}
+        run: |
+          set -euo pipefail
+          for lang in C CXX; do
+            compiler_id=$(sed -n "s/^set(CMAKE_${lang}_COMPILER_ID \"\([^\"]*\)\").*/\1/p" "$BUILD_DIR"/CMakeFiles/*/CMake"${lang}"Compiler.cmake)
+            printf '%s compiler ID is %s (expected %s)\n' "$lang" "$compiler_id" "$EXPECTED_COMPILER" | tee -a "$GITHUB_STEP_SUMMARY"
+            test "$compiler_id" = "$EXPECTED_COMPILER"
+          done
 
       - name: Build
         run: cmake --build $BUILD_DIR --parallel
@@ -1012,7 +785,7 @@ jobs:
           OMPI_MCA_rmaps_base_oversubscribe: 1
           OMP_NUM_THREADS: 1
         run: |
-          if ctest --test-dir "$BUILD_DIR" --output-on-failure --timeout 60; then
+          if ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error --timeout 60; then
             exit 0
           else
             ctest_status=$?
@@ -1025,17 +798,22 @@ jobs:
             exit "$ctest_status"
           fi
 
-      - name: Verify example outputs (optional)
-        continue-on-error: true
+      - name: Check CLI numerical results
+        if: matrix.cpu_features == 'ON'
+        run: python3 scripts/check_cli_regression.py "$BUILD_DIR/hypredrive-cli" "$BUILD_DIR/cli-regression"
+
+      - name: Exercise two-thread OpenMP assembly
+        if: matrix.cpu_features == 'ON'
+        env:
+          OMP_NUM_THREADS: 2
         run: |
-          set -euxo pipefail
-          if [ -f "scripts/compare_output.sh" ] && [ -f "examples/refOutput/ex1.txt" ]; then
-            # Capture output for example 1
-            ${{ env.BUILD_DIR }}/hypredrive-cli examples/ex1.yml > ${{ env.BUILD_DIR }}/test_ex1_output.txt 2>&1 || true
-            if [ -f "${{ env.BUILD_DIR }}/test_ex1_output.txt" ]; then
-              bash scripts/compare_output.sh ${{ env.BUILD_DIR }}/test_ex1_output.txt examples/refOutput/ex1.txt || true
-            fi
-          fi
+          grep -F 'FLAGS = ' "$BUILD_DIR/build.ninja" | grep -F -- '-fopenmp'
+          ctest --test-dir "$BUILD_DIR" --no-tests=error --output-on-failure -R '^laplacian_.*1proc$'
+          ctest --test-dir "$BUILD_DIR" --no-tests=error --output-on-failure -R '^eigspec_mpi_[24]proc$'
+
+      - name: Check library symbol prefixes
+        if: matrix.compiler == 'clang' && runner.os == 'Linux' && matrix.hypre_version == 'master'
+        run: bash scripts/check_symbol_prefix.sh --build-dir "$BUILD_DIR"
 
       - name: Upload logs on failure
         if: failure()
@@ -1043,26 +821,15 @@ jobs:
         with:
           name: logs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
           path: |
+            ${{ env.BUILD_DIR }}/cli-regression
+            ${{ env.BUILD_DIR }}/CMakeFiles/CMakeConfigureLog.yaml
             ${{ env.BUILD_DIR }}/Testing
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeOutput.log
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
-      - name: Upload example outputs (optional)
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: example-outputs-${{ matrix.os }}-${{ matrix.compiler }}-${{ matrix.build_type }}-${{ matrix.hypre_version }}
-          path: |
-            ${{ env.BUILD_DIR }}/test_ex1_output.txt
-          retention-days: 1
-
   autotools-build-and-test:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.expanded == 'true'
     name: ubuntu-latest | autotools
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1131,12 +898,8 @@ jobs:
           make install
 
   build-and-test-optional-deps:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.expanded == 'true'
     name: ubuntu-latest | gcc | ${{ matrix.dependency.name }}+Debug
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -1241,7 +1004,7 @@ jobs:
             export "${OPTIONAL_DEP_RUNTIME_ENV}"
           fi
           cd $BUILD_DIR
-          CTEST_ARGS=(--output-on-failure --timeout 60)
+          CTEST_ARGS=(--output-on-failure --no-tests=error --timeout 60)
           if [ -n "${{ matrix.dependency.ctest_regex }}" ]; then
             CTEST_ARGS+=(-R "${{ matrix.dependency.ctest_regex }}")
           fi
@@ -1258,12 +1021,8 @@ jobs:
             ${{ env.BUILD_DIR }}/CMakeFiles/CMakeError.log
 
   build-and-test-mixedint:
-    if: >-
-      ${{
-        github.event_name != 'pull_request' ||
-        (github.event.action == 'labeled' && github.event.label.name == 'Run CI') ||
-        (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'Run CI'))
-      }}
+    needs: select
+    if: needs.select.outputs.expanded == 'true'
     name: ubuntu-latest | gcc | mixedint
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -1341,3 +1100,172 @@ jobs:
           OMPI_MCA_rmaps_base_oversubscribe: 1
           OMP_NUM_THREADS: 1
         run: ctest --test-dir $BUILD_DIR --output-on-failure --timeout 30
+
+  analysis:
+    needs: select
+    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    uses: ./.github/workflows/analysis.yml
+
+  coverage:
+    needs: select
+    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    uses: ./.github/workflows/coverage.yml
+
+  fuzz:
+    needs: select
+    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    uses: ./.github/workflows/fuzz.yml
+
+  portability:
+    needs: select
+    if: github.event_name == 'pull_request' && needs.select.outputs.core == 'true'
+    uses: ./.github/workflows/portability.yml
+
+  docs:
+    needs: select
+    if: github.event_name == 'pull_request' && needs.select.outputs.docs == 'true'
+    uses: ./.github/workflows/docs.yml
+
+  julia-interface:
+    name: Ubuntu | Julia interface
+    needs: select
+    if: needs.select.outputs.julia == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
+        with:
+          version: '1.10'
+      - uses: ./.github/actions/setup-ubuntu
+        with:
+          compiler: gcc
+          extra_packages: libmpich-dev mpich
+      - name: Select MPICH to match Julia's MPI default
+        run: |
+          sudo update-alternatives --set mpi /usr/bin/mpicc.mpich
+          sudo update-alternatives --set mpirun /usr/bin/mpirun.mpich
+      - uses: ./.github/actions/build-hypre
+        id: hypre
+        with:
+          hypre_version: ${{ needs.select.outputs.hypre_release }}
+          mpi_flavor: mpich
+      - name: Configure and run Julia tests
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/julia-build" -G Ninja \
+            -DCMAKE_C_COMPILER=mpicc \
+            -DCMAKE_PREFIX_PATH="${{ steps.hypre.outputs.hypre_prefix }}" \
+            -DBUILD_SHARED_LIBS=ON -DHYPREDRV_ENABLE_TESTING=ON \
+            -DHYPREDRV_ENABLE_JULIA=ON -DHYPREDRV_ENABLE_EXAMPLES=ON \
+            -DHYPREDRV_DATASETS=
+          cmake --build "$RUNNER_TEMP/julia-build" --parallel
+          cmake --build "$RUNNER_TEMP/julia-build" --parallel --target julia-test
+
+  abi:
+    name: Public ABI
+    needs: select
+    if: needs.select.outputs.abi == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ubuntu
+        with:
+          extra_packages: abigail-tools
+      - uses: ./.github/actions/build-hypre
+        id: hypre
+        with:
+          hypre_version: ${{ needs.select.outputs.hypre_release }}
+      - name: Compare to the latest published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HYPRE_PREFIX: ${{ steps.hypre.outputs.hypre_prefix }}
+        run: bash scripts/check_public_abi.sh
+
+  required:
+    name: ${{ github.event.action == 'labeled' && github.event.label.name != 'Run CI' && 'Unrelated label' || 'Required CI' }}
+    if: always() && (github.event.action != 'labeled' || github.event.label.name == 'Run CI')
+    needs:
+      - select
+      - source-checks
+      - build-and-test
+      - windows-native-build
+      - windows-mingw-build
+      - build-and-test-mixedint
+      - build-and-test-optional-deps
+      - autotools-build-and-test
+      - python-interface-autofetch
+      - python-interface
+      - rust-interface
+      - native-interfaces
+      - julia-interface
+      - analysis
+      - coverage
+      - fuzz
+      - portability
+      - docs
+      - abi
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Verify results of selected jobs
+        env:
+          JOBS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          jobs = json.loads(os.environ["JOBS"])
+          selection = jobs["select"]["outputs"]
+          expected = {"select", "source-checks"}
+          groups = {
+              "core": {"build-and-test", "windows-native-build"},
+              "expanded": {"windows-mingw-build", "build-and-test-mixedint",
+                           "build-and-test-optional-deps", "autotools-build-and-test",
+                           "python-interface-autofetch"},
+              "bindings": {"python-interface", "rust-interface", "native-interfaces"},
+              "julia": {"julia-interface"},
+              "abi": {"abi"},
+          }
+          if os.environ["GITHUB_EVENT_NAME"] == "pull_request":
+              groups["core"].update({"analysis", "coverage", "fuzz", "portability"})
+              groups["docs"] = {"docs"}
+          for flag, names in groups.items():
+              if selection.get(flag) == "true":
+                  expected.update(names)
+          failed = [
+              (name, jobs.get(name, {}).get("result", "missing"))
+              for name in sorted(expected)
+              if jobs.get(name, {}).get("result") != "success"
+          ]
+          for name, result in failed:
+              print(f"::error::{name} was expected to succeed but reported {result}")
+          raise SystemExit(bool(failed))
+          PY
+
+  # Bridge the existing required contexts during rollout. Remove this job
+  # after the default-branch ruleset requires only Required CI.
+  legacy-required:
+    name: ${{ github.event.action == 'labeled' && github.event.label.name != 'Run CI' && format('Unrelated label ({0})', matrix.context) || matrix.context }}
+    if: always() && github.event_name == 'pull_request' && (github.event.action != 'labeled' || github.event.label.name == 'Run CI')
+    needs: required
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    strategy:
+      fail-fast: false
+      matrix:
+        context:
+          - ASan and UBSan (clang)
+          - ubuntu-latest | gcc | Caliper+Debug
+          - ubuntu-latest | autotools
+          - ubuntu-latest | clang | Debug | master
+          - ubuntu-latest | gcc | Debug | master
+          - gcov
+          - code format
+    steps:
+      - env:
+          REQUIRED_CI_RESULT: ${{ needs.required.result }}
+        run: test "$REQUIRED_CI_RESULT" = success

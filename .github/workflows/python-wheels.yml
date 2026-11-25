@@ -1,14 +1,6 @@
 name: Python Wheels
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths:
-      - 'include/**'
-      - 'src/**'
-      - 'cmake/**'
-      - 'interfaces/python/**'
-      - '.github/workflows/python-wheels.yml'
   push:
     tags:
       - 'v*'
@@ -24,25 +16,7 @@ permissions:
 
 jobs:
   wheels:
-    if: >-
-      ${{
-        github.event_name == 'workflow_dispatch' ||
-        github.event_name == 'push' ||
-        (
-          github.event.action == 'labeled' &&
-          (
-            github.event.label.name == 'Run Python Wheels' ||
-            github.event.label.name == 'Generate Artifacts'
-          )
-        ) ||
-        (
-          github.event.action != 'labeled' &&
-          (
-            contains(github.event.pull_request.labels.*.name, 'Run Python Wheels') ||
-            contains(github.event.pull_request.labels.*.name, 'Generate Artifacts')
-          )
-        )
-      }}
+    if: github.event_name == 'workflow_dispatch'
     name: ${{ matrix.os }} | ${{ matrix.arch }} | ${{ matrix.mpi_flavor }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
@@ -156,43 +130,7 @@ jobs:
         if: startsWith(runner.os, 'Windows')
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $msmpiRoot = Join-Path $env:RUNNER_TEMP 'msmpi'
-          New-Item -ItemType Directory -Force -Path $msmpiRoot | Out-Null
-
-          $sdkPath = Join-Path $msmpiRoot 'msmpisdk.msi'
-          $runtimePath = Join-Path $msmpiRoot 'msmpisetup.exe'
-          $baseUrl = 'https://download.microsoft.com/download/7/2/7/72731ebb-b63c-4170-ade7-836966263a8f'
-          Invoke-WebRequest -Uri "$baseUrl/msmpisdk.msi" -OutFile $sdkPath
-          Invoke-WebRequest -Uri "$baseUrl/msmpisetup.exe" -OutFile $runtimePath
-
-          $expectedSdkSha256 = '8ccbc77a0cfe1e30f7495a759886b4d99b2c494b9b9ad414dcda1da84c00d3fa'
-          $expectedRuntimeSha256 = '47443829114d8d8670f77af98939fe876d33eceb35d0ce4e0e85efeec4d87213'
-          if ((Get-FileHash -Algorithm SHA256 $sdkPath).Hash.ToLowerInvariant() -ne $expectedSdkSha256) {
-            throw 'MS-MPI SDK checksum mismatch'
-          }
-          if ((Get-FileHash -Algorithm SHA256 $runtimePath).Hash.ToLowerInvariant() -ne $expectedRuntimeSha256) {
-            throw 'MS-MPI runtime checksum mismatch'
-          }
-
-          $sdkInstall = Start-Process msiexec.exe -ArgumentList @('/quiet', '/passive', '/qn', '/i', $sdkPath) -Wait -PassThru
-          if ($sdkInstall.ExitCode -ne 0) {
-            throw "MS-MPI SDK installation failed with exit code $($sdkInstall.ExitCode)"
-          }
-          $runtimeInstall = Start-Process $runtimePath -ArgumentList @('-unattend') -Wait -PassThru
-          if ($runtimeInstall.ExitCode -ne 0) {
-            throw "MS-MPI runtime installation failed with exit code $($runtimeInstall.ExitCode)"
-          }
-
-          foreach ($name in @('MSMPI_BIN', 'MSMPI_INC', 'MSMPI_LIB64')) {
-            $value = [Environment]::GetEnvironmentVariable($name, 'Machine')
-            if ([string]::IsNullOrWhiteSpace($value)) {
-              throw "MS-MPI did not define $name"
-            }
-            Add-Content -Path $env:GITHUB_ENV -Value "$name=$value"
-          }
-          $msmpiBin = [Environment]::GetEnvironmentVariable('MSMPI_BIN', 'Machine')
-          Add-Content -Path $env:GITHUB_PATH -Value $msmpiBin
+          ./scripts/install_msmpi.ps1
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_ENVIRONMENT_WINDOWS=HYPREDRV_WHEEL_MPI_FLAVOR=msmpi'
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_TEST_REQUIRES_WINDOWS=pytest scipy mpi4py'
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_BEFORE_TEST_WINDOWS=python -m pip install --only-binary=mpi4py mpi4py'
@@ -200,10 +138,17 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value 'CIBW_REPAIR_WHEEL_COMMAND_WINDOWS=delvewheel repair --ignore-existing --exclude msmpi.dll -w {dest_dir} {wheel}'
 
       - name: Build wheels
-        run: >-
-          python -m cibuildwheel
-          build/python-wheel-src-${{ matrix.mpi_flavor }}/interfaces/python
-          --output-dir wheelhouse
+        shell: bash
+        run: |
+          hypre_release=$(cat .github/hypre-release)
+          if [[ ! "$hypre_release" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::.github/hypre-release must contain one release tag in vMAJOR.MINOR.PATCH form"
+            exit 1
+          fi
+          export CIBW_CONFIG_SETTINGS="$CIBW_CONFIG_SETTINGS cmake.define.HYPRE_VERSION=$hypre_release"
+          python -m cibuildwheel \
+            "build/python-wheel-src-${{ matrix.mpi_flavor }}/interfaces/python" \
+            --output-dir wheelhouse
 
       - name: Inspect built wheels
         run: python -m pip install twine && python -m twine check wheelhouse/*.whl
@@ -216,7 +161,7 @@ jobs:
           if-no-files-found: error
 
   release-assets:
-    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    if: github.event_name == 'workflow_dispatch' && inputs.release_tag != ''
     needs: wheels
     runs-on: ubuntu-latest
     timeout-minutes: 75
@@ -224,6 +169,10 @@ jobs:
       contents: write
       actions: read
     steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
       - name: Download wheel artifacts
         uses: actions/download-artifact@v7
         with:
@@ -278,4 +227,26 @@ jobs:
               *) echo "Wheel version does not match $RELEASE_TAG: $wheel" >&2; exit 1 ;;
             esac
           done
+          python3 scripts/release_asset_manifest.py write python "$RELEASE_TAG" python-wheels
           gh release upload "$RELEASE_TAG" "${wheels[@]}" --repo "$GH_REPO" --clobber
+          gh release upload "$RELEASE_TAG" python-wheels/python-asset-manifest.json --repo "$GH_REPO" --clobber
+
+
+  verify-tag:
+    if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Verify staged wheels from the tagged source tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern '*.whl' --pattern 'python-asset-manifest.json' --dir staged-wheels
+          python3 scripts/release_asset_manifest.py verify python "$RELEASE_TAG" staged-wheels

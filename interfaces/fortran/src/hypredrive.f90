@@ -703,7 +703,7 @@ contains
       c_args = c_null_char
       do i = 1, n
          do j = 1, len_trim(args(i))
-            c_args(j, i) = args(i)(j:j)
+            c_args(j, i) = args(i) (j:j)
          end do
       end do
 
