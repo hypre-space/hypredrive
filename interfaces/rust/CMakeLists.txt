@@ -207,7 +207,9 @@ set(_hypredrv_rust_target_dir "${_hypredrv_rust_configuration_dir}/cargo-target"
 set(_hypredrv_rust_env
     "HYPREDRV_RUST_METADATA=${_hypredrv_rust_metadata_file}"
     "CARGO_TARGET_DIR=${_hypredrv_rust_target_dir}"
-    "MPICC=${MPI_C_COMPILER}")
+    "MPICC=${MPI_C_COMPILER}"
+    # Read at compile time by the smoke test (the staged workspace has no data/).
+    "HYPREDRV_DATA_DIR=${PROJECT_SOURCE_DIR}/data")
 if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
     list(APPEND _hypredrv_rust_env "${HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT}")
 endif()
@@ -289,7 +291,9 @@ if(HYPREDRV_ENABLE_TESTING)
         COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
             --target rust-build --config $<CONFIG>)
     set_tests_properties(rust_build PROPERTIES
-        LABELS "rust;interface;build" FIXTURES_SETUP rust_built)
+        LABELS "rust;interface;build" FIXTURES_SETUP rust_built
+        # Every test that runs `cmake --build` on this tree shares one lock.
+        RESOURCE_LOCK hypredrv_build_tree)
 
     set(_hypredrv_rust_launcher_args
         "-DTARGET_BIN=${_hypredrv_rust_test_executable}"

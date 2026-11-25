@@ -1611,33 +1611,39 @@ if(HYPREDRV_ENABLE_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DI
         add_executable_test(hypredrive_no_args hypredrive-cli 1 ARGS "" FAIL_REGULAR_EXPRESSION "^$")
         set_tests_properties(hypredrive_no_args PROPERTIES WILL_FAIL TRUE)
 
+        set(_cli_matrix "${CMAKE_CURRENT_BINARY_DIR}/cli-smoke.A")
+        set(_cli_config "${CMAKE_CURRENT_BINARY_DIR}/cli-smoke.yml")
+        file(CONFIGURE OUTPUT "${_cli_matrix}.00000" CONTENT "0 0 0 0\n0 0 2.0\n")
+        file(CONFIGURE OUTPUT "${_cli_config}" CONTENT
+            "linear_system:\n  matrix_filename: @_cli_matrix@\n  rhs_mode: ones\nsolver: pcg\npreconditioner: jacobi\n" @ONLY)
+
         # System information is hidden by default.
         add_executable_test(hypredrive_info_default hypredrive-cli 1
-            ARGS "examples/ex1.yml"
+            ARGS "${_cli_config}"
             REQUIRE_CONTAINS "HYPRE execution policy:"
             FAIL_REGULAR_EXPRESSION "${HYPREDRV_FAIL_REGEX_DEFAULT}|System Information"
         )
 
         # Exercise the long-form info flag parsing ("--info").
         add_executable_test(hypredrive_info_longflag hypredrive-cli 1
-            ARGS "--info" "examples/ex1.yml"
+            ARGS "--info" "${_cli_config}"
             REQUIRE_CONTAINS "System Information" "HYPRE execution policy:"
         )
 
         # Exercise config-file detection when override args are present
         add_executable_test(hypredrive_cli_extra hypredrive-cli 1
-            ARGS "examples/ex1.yml" "--args" "--solver:pcg:max_iter" "5"
+            ARGS "${_cli_config}" "--args" "--solver:pcg:max_iter" "5"
             FAIL_REGULAR_EXPRESSION "^$"
         )
         add_executable_test(hypredrive_cli_extra_nodash hypredrive-cli 1
-            ARGS "examples/ex1.yml" "--args" "solver:pcg:max_iter" "5"
+            ARGS "${_cli_config}" "--args" "solver:pcg:max_iter" "5"
             REQUIRE_CONTAINS "max_iter: 5"
         )
 
         # Library calls return errors; the CLI turns them into an error report
         # and a failing exit through HYPREDRV_SAFE_CALL.
         add_executable_test(hypredrive_cli_error_aborts hypredrive-cli 1
-            ARGS "examples/ex1.yml" "--args" "--linear_system:matrix_filename"
+            ARGS "${_cli_config}" "--args" "--linear_system:matrix_filename"
                  "data/no-such-dir/no-such-matrix"
             FAIL_REGULAR_EXPRESSION "^$"
         )

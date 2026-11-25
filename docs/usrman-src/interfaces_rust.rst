@@ -206,6 +206,8 @@ solve for a new matrix. A second ``set_rhs()`` preserves
 the existing guess and solution. Use ``reset_initial_guess()`` to restart from
 that guess, or ``set_initial_guess()`` to regenerate an RHS-dependent guess.
 Replacing the matrix requires another ``set_rhs()`` call.
+``set_relative_tol(tol)`` overrides the configured Krylov relative tolerance for
+subsequent solves; every rank must pass the same ``tol`` in ``[0, 1)``.
 
 ``solve()`` creates, sets up, and applies the native solver. It copies the
 solution to host storage through the public C API and returns a ``SolveResult``.
@@ -223,7 +225,8 @@ solution to host storage through the public C API and returns a ``SolveResult``.
      - Whether the solver converged. A repeated or warm-started solve that
        already satisfies the relative tolerance counts as converged.
    * - ``final_res_norm: f64``
-     - Final relative residual norm reported by the native solver.
+     - Final relative residual norm reported by the native solver, or the
+       true relative residual when convergence was verified from it.
    * - ``setup_time: f64``
      - Native solver setup time.
    * - ``solve_time: f64``
@@ -274,6 +277,8 @@ must outlive the driver.
      - ``set_state_vectors`` (``unsafe``), ``state_vector_values_ptr``
        (``unsafe``), ``state_vector_copy``, ``state_vector_update_all``,
        ``state_vector_apply_correction``
+   * - Solver control
+     - ``set_relative_tol``
    * - Preconditioner
      - ``precon_create``, ``precon_setup``, ``precon_apply`` (``unsafe``),
        ``precon_destroy``

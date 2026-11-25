@@ -5,7 +5,6 @@
  * SPDX-License-Identifier: MIT
  ******************************************************************************/
 
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1036,7 +1035,9 @@ HYPREDRV_LinearSolverSetRelativeTol(HYPREDRV_t hypredrv, double tol)
    HYPREDRV_API_ENTER();
    HYPREDRV_CHECK_ARGS();
 
-   if (!isfinite(tol) || tol < 0.0 || tol >= 1.0)
+   /* Check NaN with != first: ordered comparisons with NaN raise FE_INVALID,
+    * which traps when HYPRE's floating-point exception trap is enabled. */
+   if (tol != tol || tol < 0.0 || tol >= 1.0)
    {
       hypredrv_ErrorCodeSet(ERROR_INVALID_VAL);
       hypredrv_ErrorMsgAdd("relative tolerance must be in [0, 1)");

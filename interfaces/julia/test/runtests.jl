@@ -139,10 +139,10 @@ end
         set_object_name!(session, "julia-test")
         set_object_name!(session, nothing)
 
-        @test input_warmup(session) >= 0
-        @test input_num_repetitions(session) >= 0
-        @test input_num_linear_systems(session) >= 0
-        @test input_num_precon_variants(session) >= 0
+        @test input_warmup(session) isa Integer
+        @test input_num_repetitions(session) >= 1
+        @test input_num_linear_systems(session) >= 1
+        @test input_num_precon_variants(session) >= 1
 
         set_matrix_csr!(session, [0, 1, 2], [0, 1], [2.0, 3.0], 0)
         set_rhs!(session, [4.0, 9.0])
@@ -157,8 +157,121 @@ end
         @test get_solution_values(session) ≈ [2.0, 3.0]
         @test get_solution_handle(session) != C_NULL
 
+        # The row count comes from the driver, not from a cached range: a
+        # second session that only receives handles (no set_matrix_csr!) must
+        # still report the right local length.
+        other = HypreDriveSession(options=opts)
+        try
+            set_matrix_handle!(other, get_matrix_handle(session))
+            set_rhs_handle!(other, get_rhs_handle(session))
+            @test get_rhs_values(other) ≈ [4.0, 9.0]
+            # Handle setters refresh the cached system state used by solve!.
+            y = zeros(2)
+            solve!(y, other)
+            @test y ≈ [2.0, 3.0]
+            set_matrix_handle!(other, C_NULL)  # clearing is allowed
+            @test_throws ArgumentError solve!(y, other)
+
+            # State-vector copies are sized from the registered vectors.
+            three = HypreDriveSession(options=opts)
+            try
+                set_matrix_csr!(three, [0, 1, 2, 3], [0, 1, 2], [1.0, 1.0, 1.0], 0)
+                set_rhs!(three, [1.0, 2.0, 3.0])
+                @test_throws ArgumentError set_state_vectors!(
+                    other, [get_rhs_handle(session), get_rhs_handle(three)])
+                set_state_vectors!(other, [get_rhs_handle(three)])
+                @test get_state_vector_values(other, 0) ≈ [1.0, 2.0, 3.0]
+            finally
+                HypreDrive.close(other)
+                HypreDrive.close(three)
+            end
+        finally
+            HypreDrive.close(other)
+        end
+
     finally
         HypreDrive.close(session)
     end
     @test_throws ArgumentError set_object_name!(session, "closed")
+end
+
+const ps3d_dir = joinpath(@__DIR__, "..", "..", "..", "data", "ps3d10pt7", "np1")
+if isfile(joinpath(ps3d_dir, "IJ.out.A.00000"))
+    @testset "file-built system" begin
+        hypredrive_error_clear()
+        yaml = """
+        linear_system:
+          matrix_filename: $(joinpath(ps3d_dir, "IJ.out.A"))
+          rhs_filename: $(joinpath(ps3d_dir, "IJ.out.b"))
+          init_guess_mode: previous
+        solver: pcg
+        preconditioner: amg
+        """
+        session = HypreDriveSession(options=yaml)
+        try
+            # Build refreshes the cached rows and flags that solve! checks.
+            linear_system_build!(session)
+            x = zeros(1000)
+            _, first = solve!(x, session)
+            @test first.converged
+            linear_system_build!(session)
+            _, second = solve!(x, session)
+            @test second.converged
+            @test second.iterations < first.iterations
+        finally
+            HypreDrive.close(session)
+        end
+    end
+end
+
+@testset "presets, level stats and printing" begin
+    hypredrive_error_clear()
+    register_solver_preset("julia_pcg", "pcg:\n  max_iter: 50\n  relative_tol: 1.0e-8\n", "julia test")
+    register_precon_preset("julia_amg", "amg:\n  print_level: 0\n", "julia test")
+
+    opts = hypredrive_options(solver=:pcg, preconditioner=:amg,
+                              pcg=(max_iter=30, relative_tol=1.0e-12),
+                              amg=(print_level=0,))
+    session = HypreDriveSession(options=opts)
+    try
+        set_solver_preset!(session, "julia_pcg")
+        set_precon_preset!(session, "julia_amg")
+        @test_throws Exception set_solver_preset!(session, "no_such_preset_xyz")
+        hypredrive_error_clear()
+
+        set_matrix_csr!(session, [0, 1, 2], [0, 1], [2.0, 3.0], 0)
+        set_rhs!(session, [4.0, 9.0])
+
+        annotate_level_begin(session, 0, "timestep", 1)
+        solve!(zeros(2), session)
+        annotate_level_end(session, 0, "timestep", 1)
+
+        @test stats_level_count(session, 0) == 1
+        entry = stats_level_entry(session, 0, 0)
+        @test keys(entry) == (:entry_id, :num_solves, :linear_iters, :setup_time, :solve_time)
+        @test entry.entry_id >= 1
+        @test entry.num_solves >= 1
+        @test_throws Exception stats_level_count(session, 999)
+        hypredrive_error_clear()
+
+        mktempdir() do dir
+            print_dofmap_file = joinpath(dir, "dofmap")
+            set_matrix_csr!(session, [0, 1, 2], [0, 1], [2.0, 3.0], 0; dofmap=[0, 1])
+            print_dofmap(session, print_dofmap_file)
+            @test any(startswith("dofmap"), readdir(dir))
+        end
+
+        redirect_stdout(devnull) do
+            print_stats_level(session, 0)
+            print_stats(session)
+            print_linear_system(session)
+        end
+    finally
+        HypreDrive.close(session)
+    end
+
+    redirect_stdout(devnull) do
+        print_system_info(:self)
+        print_exit_info("julia-test", :self)
+    end
 end

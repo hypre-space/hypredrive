@@ -222,6 +222,12 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
                         list(APPEND _hypredrv_octave_link_inputs
                              "-L${_hypredrv_octave_hypre_library_dir}"
                              "-l${CMAKE_MATCH_1}")
+                        # A shared HYPRE must also be found when the MEX is
+                        # loaded, not only when it is linked.
+                        if(_hypredrv_octave_hypre_library_name MATCHES "\\.(so|dylib)")
+                            list(APPEND _hypredrv_octave_rpath_flags
+                                 "-Wl,-rpath,${_hypredrv_octave_hypre_library_dir}")
+                        endif()
                     else()
                         list(APPEND _hypredrv_octave_link_inputs
                              "${_hypredrv_octave_hypre_location}")
@@ -231,6 +237,12 @@ if(OCTAVE_MKOCTFILE_EXECUTABLE)
                 list(APPEND _hypredrv_octave_link_inputs
                      "-L$<TARGET_LINKER_FILE_DIR:HYPRE::HYPRE>"
                      "-l$<TARGET_LINKER_FILE_BASE_NAME:HYPRE::HYPRE>")
+                # The MEX loads this HYPRE at run time from its build directory
+                # (a shared HYPRE is not copied next to libHYPREDRV).
+                if(_hypredrv_octave_hypre_type STREQUAL "SHARED_LIBRARY")
+                    list(APPEND _hypredrv_octave_rpath_flags
+                         "-Wl,-rpath,$<TARGET_FILE_DIR:HYPRE::HYPRE>")
+                endif()
             endif()
         endif()
     endif()
@@ -290,11 +302,21 @@ if(HYPREDRV_ENABLE_TESTING)
         "elasticity|2d|elasticity(32, 32)"
         "elasticity|3d|elasticity(16, 16, 16)")
     if(Matlab_FOUND)
+        # Build the MEX on demand, as the other interfaces do, so a plain `ctest`
+        # works without first running the matlab-test target.
+        add_test(NAME matlab_build_mex
+                 COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                         --target hypredrive_matlab_mex --config $<CONFIG>)
+        set_tests_properties(matlab_build_mex PROPERTIES
+            LABELS "matlab;interface;build"
+            FIXTURES_SETUP matlab_mex_built
+            RESOURCE_LOCK hypredrv_build_tree)
         add_test(NAME matlab_laplacian_serial
                  COMMAND ${Matlab_MAIN_PROGRAM} -batch
                          "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex; test_hypredrive_api")
         set_tests_properties(matlab_laplacian_serial PROPERTIES
             LABELS "matlab;interface"
+            FIXTURES_REQUIRED matlab_mex_built
             RUN_SERIAL TRUE)
         if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
             set_tests_properties(matlab_laplacian_serial PROPERTIES
@@ -310,6 +332,7 @@ if(HYPREDRV_ENABLE_TESTING)
                              "addpath('$<TARGET_FILE_DIR:hypredrive_matlab_mex>'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); ${_case_call}")
             set_tests_properties(matlab_${_case_name}_example_${_case_tag} PROPERTIES
                 LABELS "matlab;interface;example"
+                FIXTURES_REQUIRED matlab_mex_built
                 RUN_SERIAL TRUE)
             if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
                 set_tests_properties(matlab_${_case_name}_example_${_case_tag} PROPERTIES
@@ -319,11 +342,19 @@ if(HYPREDRV_ENABLE_TESTING)
         list(APPEND _hypredrv_matlab_test_deps hypredrive_matlab_mex)
     endif()
     if(OCTAVE_EXECUTABLE AND OCTAVE_MKOCTFILE_EXECUTABLE)
+        add_test(NAME octave_build_mex
+                 COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+                         --target hypredrive-octave --config $<CONFIG>)
+        set_tests_properties(octave_build_mex PROPERTIES
+            LABELS "octave;matlab;interface;build"
+            FIXTURES_SETUP octave_mex_built
+            RESOURCE_LOCK hypredrv_build_tree)
         add_test(NAME octave_laplacian_serial
                  COMMAND ${OCTAVE_EXECUTABLE} --quiet --eval
                          "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/tests'); test_hypredrive_mex; test_hypredrive_api")
         set_tests_properties(octave_laplacian_serial PROPERTIES
             LABELS "octave;matlab;interface"
+            FIXTURES_REQUIRED octave_mex_built
             RUN_SERIAL TRUE)
         if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
             set_tests_properties(octave_laplacian_serial PROPERTIES
@@ -339,6 +370,7 @@ if(HYPREDRV_ENABLE_TESTING)
                              "addpath('${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/octave'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/src'); addpath('${CMAKE_CURRENT_SOURCE_DIR}/examples'); ${_case_call}")
             set_tests_properties(octave_${_case_name}_example_${_case_tag} PROPERTIES
                 LABELS "octave;matlab;interface;example"
+                FIXTURES_REQUIRED octave_mex_built
                 RUN_SERIAL TRUE)
             if(HYPREDRV_TEST_RUNTIME_ENV_ASSIGNMENT)
                 set_tests_properties(octave_${_case_name}_example_${_case_tag} PROPERTIES

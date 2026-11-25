@@ -181,8 +181,8 @@ the available commands.
 
 Lifetime rules: ``destroy`` on a driver also invalidates borrowed handles issued
 from it (``get_matrix``, ``get_rhs``, ``get_solution``). Destroying an owned
-matrix or vector that is still attached to a live driver raises
-``hypredrive:ObjectInUse``. ``destroy_all`` and the ``mexAtExit`` hook release
+matrix or vector that a live driver currently holds raises
+``hypredrive:ObjectInUse``; objects a driver has since replaced can be destroyed. ``destroy_all`` and the ``mexAtExit`` hook release
 every handle, drivers first.
 
 The full command-to-C-function table is in ``interfaces/matlab-octave/README.md``.
@@ -190,9 +190,7 @@ Commands cover input arguments and presets, linear-system setters and getters
 (sparse matrices and dense vectors in MATLAB-native form, or raw IJ handles for
 the ``HYPRE_Matrix``/``HYPRE_Vector`` APIs), dof maps, null spaces, state vectors,
 preconditioner and solver control, solver status queries, statistics, and
-annotations. Only real-double, host-memory, serial use is supported. The
-interface was syntax-checked but not run on MATLAB or Octave when it was added;
-run ``matlab-test`` to validate it.
+annotations. Only real-double, host-memory, serial use is supported.
 
 Information struct
 ------------------

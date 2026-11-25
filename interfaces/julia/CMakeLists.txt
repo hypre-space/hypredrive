@@ -26,6 +26,16 @@ if(UNIX AND DEFINED HYPRE_LIBRARY AND HYPRE_LIBRARY MATCHES "\\.a$")
         "compiled with -fPIC, otherwise the bridge link will fail.")
 endif()
 
+# Resolve public C functions through the bridge even when HYPREDRV is static.
+set(_hypredrv_public_header "${PROJECT_SOURCE_DIR}/include/HYPREDRV.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_hypredrv_public_header}")
+hypredrv_collect_public_api_names(_hypredrv_julia_apis "${_hypredrv_public_header}")
+set(_hypredrv_julia_symbols "")
+foreach(_api IN LISTS _hypredrv_julia_apis)
+    string(APPEND _hypredrv_julia_symbols "HYPREDRV_JULIA_SYMBOL(${_api})\n")
+endforeach()
+file(CONFIGURE OUTPUT HYPREDRV_julia_symbols.inc CONTENT "${_hypredrv_julia_symbols}")
+
 add_library(HYPREDRV_Julia SHARED
     src/HYPREDRV_julia.c
 )
@@ -41,6 +51,7 @@ target_link_libraries(HYPREDRV_Julia
 
 target_include_directories(HYPREDRV_Julia
     PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/src
         ${PROJECT_SOURCE_DIR}/include/internal
 )
@@ -124,6 +135,7 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
     set_tests_properties(julia_build_bridge PROPERTIES
         LABELS "julia;interface;build"
         FIXTURES_SETUP julia_built
+        RESOURCE_LOCK hypredrv_build_tree
     )
 
     add_test(NAME julia_instantiate_project
@@ -294,7 +306,7 @@ if(HYPREDRV_ENABLE_TESTING AND Julia_EXECUTABLE)
     set_tests_properties(julia_install_cmake_consumer PROPERTIES
         LABELS "julia;interface;cmake;install"
         FIXTURES_REQUIRED julia_built
-        RESOURCE_LOCK julia_install_consumer
+        RESOURCE_LOCK "julia_install_consumer;hypredrv_build_tree"
     )
 
     add_custom_target(julia-test

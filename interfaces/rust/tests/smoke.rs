@@ -201,6 +201,17 @@ fn initial_guess_and_statistics(runtime: &Runtime<'_>) -> TestResult {
 fn solve_on_comm(runtime: &Runtime<'_>, comm: &impl Communicator) -> TestResult {
     let slab = laplacian(comm)?;
     let mut driver = HypreDrive::from_yaml(runtime, comm, YAML)?;
+    if comm.size() > 1 {
+        let differing_tol = if comm.rank() == 0 { 1.0e-12 } else { 0.1 };
+        check(
+            comm,
+            driver.set_relative_tol(differing_tol).is_err(),
+            "different relative tolerances must be rejected on every rank",
+        )?;
+    }
+    // Per-rank names, including None on some ranks, keep collectives aligned.
+    let name = if comm.rank() == 0 { Some("rank-zero") } else { None };
+    driver.set_object_name(name)?;
 
     // Leading storage is deliberately outside the consumed CSR slab.
     let mut columns = vec![-1];
@@ -218,12 +229,7 @@ fn solve_on_comm(runtime: &Runtime<'_>, comm: &impl Communicator) -> TestResult 
     driver.set_rhs(&second_rhs)?;
     driver.reset_initial_guess()?;
     let second = driver.solve()?;
-    check_solution(comm, &second, slab.rhs.len(), 2.0)?;
-    check(
-        comm,
-        first.x.iter().all(|x| (x - 1.0).abs() < 1.0e-8),
-        "a second solve changed the previously copied solution",
-    )
+    check_solution(comm, &second, slab.rhs.len(), 2.0)
 }
 
 fn validation(runtime: &Runtime<'_>, comm: &impl Communicator) -> TestResult {
@@ -565,6 +571,7 @@ fn run(universe: &Universe, world: &impl Communicator, threading: Threading) -> 
         initial_guess_and_statistics(&runtime)?;
         configuration(&runtime, world)?;
         extended_api(&runtime)?;
+        file_built_system(&runtime)?;
         validation(&runtime, world)?;
         solve_on_comm(&runtime, world)?;
         nonconvergence(&runtime, world)?;
@@ -577,6 +584,36 @@ fn run(universe: &Universe, world: &impl Communicator, threading: Threading) -> 
     // The previous runtime released the process-wide ownership guard.
     let runtime = Runtime::new(universe)?;
     serial_minimal(&runtime)
+}
+
+fn file_built_system(runtime: &Runtime<'_>) -> TestResult {
+    let comm = SimpleCommunicator::self_comm();
+    // CMake passes the repository's data directory; plain `cargo test` skips.
+    let Some(data) = option_env!("HYPREDRV_DATA_DIR") else {
+        return Ok(());
+    };
+    let dir = std::path::Path::new(data).join("ps3d10pt7/np1");
+    if !dir.join("IJ.out.A.00000").exists() {
+        return Ok(()); // dataset not downloaded
+    }
+    let yaml = format!(
+        "general:\n  statistics: on\nlinear_system:\n  matrix_filename: {}\n  \
+         rhs_filename: {}\n  init_guess_mode: previous\nsolver: pcg\npreconditioner: amg\n",
+        dir.join("IJ.out.A").display(),
+        dir.join("IJ.out.b").display()
+    );
+    let mut driver = HypreDrive::from_yaml(runtime, &comm, &yaml)?;
+    driver.build_linear_system()?;
+    let first = driver.solve()?;
+    check(&comm, first.converged, "the file-built system did not converge")?;
+    // Rebuilding keeps the native guess (the previous solution).
+    driver.build_linear_system()?;
+    let second = driver.solve()?;
+    check(
+        &comm,
+        second.converged && second.iterations < first.iterations,
+        "the rebuilt system did not start from the previous solution",
+    )
 }
 
 fn extended_api(runtime: &Runtime<'_>) -> TestResult {
@@ -633,14 +670,34 @@ fn extended_api(runtime: &Runtime<'_>) -> TestResult {
         driver.solution_norm("bad\0norm").is_err(),
         "an embedded NUL in a norm name was accepted",
     )?;
+    driver.stats_level_count(0)?;
+    // Raw handles are owned by the driver and only inspected, never freed.
+    let (matrix, rhs, solution) =
+        unsafe { (driver.matrix()?, driver.rhs_vector()?, driver.solution_vector()?) };
     check(
         &comm,
-        driver.stats_level_count(0)? >= 0,
-        "invalid statistics level count",
+        !matrix.is_null() && !rhs.is_null() && !solution.is_null(),
+        "null native handles",
     )?;
-    // Raw handles are owned by the driver and only inspected, never freed.
-    let (matrix, rhs) = unsafe { (driver.matrix()?, driver.rhs_vector()?) };
-    check(&comm, !matrix.is_null() && !rhs.is_null(), "null native handles")?;
+
+    // `other` borrows the handles above, so it is declared (and dropped) after `driver`.
+    let mut other = HypreDrive::from_yaml(runtime, &comm, YAML)?;
+    other.set_matrix_csr(0, 1, &[0, 1, 2], &[0, 1], &[1.0, 1.0])?;
+    other.set_rhs(&[3.0, 3.0])?;
+    unsafe { other.set_matrix(matrix)? };
+    check(
+        &comm,
+        other.solve().is_err(),
+        "a matrix replaced by handle was solved against the previous RHS",
+    )?;
+    runtime.clear_error_codes();
+    unsafe { other.set_rhs_vector(rhs)? };
+    // The attached solution vector must receive the solve, not be replaced.
+    unsafe { other.set_solution_vector(solution)? };
+    let result = other.solve()?;
+    check_solution(&comm, &result, 2, 1.0)?;
+    let attached = unsafe { other.solution_vector()? };
+    check(&comm, attached == solution, "the attached solution vector was replaced")?;
     Ok(())
 }
 

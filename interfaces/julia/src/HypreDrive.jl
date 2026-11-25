@@ -61,10 +61,15 @@ mutable struct HypreDriveSession
     solver_created::Bool
     closed::Bool
     last_info::SolveInfo
+    state_length::Int
 end
 
 const _state_lock = ReentrantLock()
 const _library = Ref{String}("")
+# Julia 1.13 requires a constant library expression in ccall. Resolve function
+# pointers from the bridge, whose path is selected at runtime.
+const _library_handle = Ref{Ptr{Cvoid}}(C_NULL)
+const _symbol_cache = Dict{Symbol,Ptr{Cvoid}}()
 const _initialized = Ref(false)
 const _atexit_registered = Ref(false)
 const _scalar_abi_checked = Ref(false)
@@ -170,10 +175,36 @@ function hypredrive_library_path()
     end
 end
 
-_lib() = hypredrive_library_path()
+function _library_handle_open()
+    if _library_handle[] == C_NULL
+        _library_handle[] = Libdl.dlopen(hypredrive_library_path(), Libdl.RTLD_LAZY | Libdl.RTLD_GLOBAL)
+    end
+    return _library_handle[]
+end
+
+"""
+    _sym(name::Symbol) -> Ptr{Cvoid}
+
+Address of a bridge or public C API function, resolved once and cached.
+"""
+function _sym(name::Symbol)
+    return lock(_state_lock) do
+        get!(_symbol_cache, name) do
+            handle = _library_handle_open()
+            if !startswith(String(name), "HYPREDRV_Julia")
+                resolver = Libdl.dlsym_e(handle, :HYPREDRV_JuliaGetSymbol)
+                if resolver != C_NULL
+                    ptr = ccall(resolver, Ptr{Cvoid}, (Cstring,), String(name))
+                    ptr != C_NULL && return ptr
+                end
+            end
+            return Libdl.dlsym(handle, name)
+        end
+    end
+end
 
 function _describe(code::UInt32)
-    ccall((:HYPREDRV_JuliaErrorCodeDescribe, _lib()), Cvoid, (UInt32,), code)
+    ccall(_sym(:HYPREDRV_ErrorCodeDescribe), Cvoid, (UInt32,), code)
 end
 
 function _check(code::UInt32, operation::AbstractString)
@@ -205,19 +236,19 @@ function hypredrive_initialize()
             mpi_started = false
             runtime_started = false
             try
-                _check(ccall((:HYPREDRV_JuliaMPIInitialize, _lib()), UInt32, ()), "MPI initialize")
+                _check(ccall(_sym(:HYPREDRV_JuliaMPIInitialize), UInt32, ()), "MPI initialize")
                 mpi_started = true
-                _check(ccall((:HYPREDRV_JuliaInitialize, _lib()), UInt32, ()), "HYPREDRV initialize")
+                _check(ccall(_sym(:HYPREDRV_Initialize), UInt32, ()), "HYPREDRV initialize")
                 runtime_started = true
                 _check_scalar_abi()
                 _initialized[] = true
             catch
                 if runtime_started
-                    _warn_shutdown_failure(ccall((:HYPREDRV_JuliaFinalize, _lib()), UInt32, ()),
+                    _warn_shutdown_failure(ccall(_sym(:HYPREDRV_Finalize), UInt32, ()),
                                            "HYPREDRV finalize after failed initialize")
                 end
                 if mpi_started
-                    _warn_shutdown_failure(ccall((:HYPREDRV_JuliaMPIFinalize, _lib()), UInt32, ()),
+                    _warn_shutdown_failure(ccall(_sym(:HYPREDRV_JuliaMPIFinalize), UInt32, ()),
                                            "MPI finalize after failed initialize")
                 end
                 rethrow()
@@ -233,8 +264,8 @@ function _hypredrive_shutdown(throw_errors::Bool)
     lock(_state_lock)
     try
         if _initialized[] && !isempty(_library[])
-            code1 = ccall((:HYPREDRV_JuliaFinalize, _lib()), UInt32, ())
-            code2 = ccall((:HYPREDRV_JuliaMPIFinalize, _lib()), UInt32, ())
+            code1 = ccall(_sym(:HYPREDRV_Finalize), UInt32, ())
+            code2 = ccall(_sym(:HYPREDRV_JuliaMPIFinalize), UInt32, ())
             ok = code1 == 0x00000000 && code2 == 0x00000000
             if ok
                 _initialized[] = false
@@ -260,14 +291,14 @@ hypredrive_shutdown() = _hypredrive_shutdown(true)
 function hypredrive_mpi_world_rank()
     hypredrive_initialize()
     rank = Ref{Cint}(0)
-    _check(ccall((:HYPREDRV_JuliaWorldCommRank, _lib()), UInt32, (Ref{Cint},), rank), "MPI rank")
+    _check(ccall(_sym(:HYPREDRV_JuliaWorldCommRank), UInt32, (Ref{Cint},), rank), "MPI rank")
     return Int(rank[])
 end
 
 function hypredrive_mpi_world_size()
     hypredrive_initialize()
     size = Ref{Cint}(1)
-    _check(ccall((:HYPREDRV_JuliaWorldCommSize, _lib()), UInt32, (Ref{Cint},), size), "MPI size")
+    _check(ccall(_sym(:HYPREDRV_JuliaWorldCommSize), UInt32, (Ref{Cint},), size), "MPI size")
     return Int(size[])
 end
 
@@ -292,7 +323,7 @@ end
 function hypredrive_mpi_world_sum(value::Real)
     hypredrive_initialize()
     total_ref = Ref{Cdouble}(0)
-    _check(ccall((:HYPREDRV_JuliaWorldAllreduceDoubleSum, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_JuliaWorldAllreduceDoubleSum), UInt32,
                  (Cdouble, Ref{Cdouble}), Cdouble(value), total_ref), "MPI allreduce")
     return Float64(total_ref[])
 end
@@ -308,7 +339,7 @@ function _mpi_world_allgatherv(values::Vector{Float64}, counts::Vector{Cint},
     total = isempty(counts) ? 0 : maximum(Int.(displs) .+ Int.(counts))
     gathered = Vector{Float64}(undef, total)
     GC.@preserve values counts displs gathered begin
-        _check(ccall((:HYPREDRV_JuliaWorldAllgathervDouble, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaWorldAllgathervDouble), UInt32,
                      (Ptr{Float64}, Cint, Ptr{Float64}, Ptr{Cint}, Ptr{Cint}),
                      pointer(values), Cint(length(values)), pointer(gathered),
                      pointer(counts), pointer(displs)), "MPI allgatherv")
@@ -320,7 +351,7 @@ function _index_type()
     lock(_state_lock)
     try
         _index_type_cache[] !== nothing && return _index_type_cache[]::DataType
-        n = ccall((:HYPREDRV_JuliaBigIntSize, _lib()), Csize_t, ())
+        n = ccall(_sym(:HYPREDRV_JuliaBigIntSize), Csize_t, ())
         T = n == 4 ? Int32 : n == 8 ? Int64 : nothing
         T === nothing && error("Unsupported HYPRE_BigInt size: $n bytes")
         _index_type_cache[] = T
@@ -334,8 +365,8 @@ function _check_scalar_abi()
     lock(_state_lock)
     try
         _scalar_abi_checked[] && return nothing
-        real_size = ccall((:HYPREDRV_JuliaRealSize, _lib()), Csize_t, ())
-        entry_size = ccall((:HYPREDRV_JuliaSolutionEntrySize, _lib()), Csize_t, ())
+        real_size = ccall(_sym(:HYPREDRV_JuliaRealSize), Csize_t, ())
+        entry_size = ccall(_sym(:HYPREDRV_JuliaSolutionEntrySize), Csize_t, ())
         real_size == sizeof(Float64) || error("Julia interface requires HYPRE_Real to be double precision; got $real_size bytes")
         entry_size == sizeof(Float64) || error("Julia interface does not support complex HYPRE builds; solution entries are $entry_size bytes")
         _scalar_abi_checked[] = true
@@ -611,7 +642,7 @@ end
 function _parse_input_args!(drv::Ptr{Cvoid}, yaml::AbstractString,
                             input_args::Union{Nothing,Vector{String}})
     if input_args === nothing
-        _check(ccall((:HYPREDRV_JuliaInputArgsParseYaml, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaInputArgsParseYaml), UInt32,
                      (Ptr{Cvoid}, Cstring), drv, yaml), "parse options")
         return nothing
     end
@@ -629,7 +660,7 @@ function _parse_input_args!(drv::Ptr{Cvoid}, yaml::AbstractString,
         for i in eachindex(args)
             cargs[i] = Base.unsafe_convert(Cstring, args[i])
         end
-        _check(ccall((:HYPREDRV_JuliaInputArgsParseArgv, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaInputArgsParseArgv), UInt32,
                      (Ptr{Cvoid}, Cint, Ptr{Cstring}), drv, Cint(length(args)),
                      pointer(cargs)), "parse options")
     end
@@ -641,20 +672,20 @@ function _create_driver(comm::Symbol)
     hypredrive_initialize()
     drv_ref = Ref{Ptr{Cvoid}}(C_NULL)
     if comm === :world
-        _check(ccall((:HYPREDRV_JuliaCreateWithWorld, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaCreateWithWorld), UInt32,
                      (Ref{Ptr{Cvoid}},), drv_ref), "create driver")
     else
-        _check(ccall((:HYPREDRV_JuliaCreateWithSelf, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaCreateWithSelf), UInt32,
                      (Ref{Ptr{Cvoid}},), drv_ref), "create driver")
     end
-    _check(ccall((:HYPREDRV_JuliaSetLibraryMode, _lib()), UInt32, (Ptr{Cvoid},),
+    _check(ccall(_sym(:HYPREDRV_SetLibraryMode), UInt32, (Ptr{Cvoid},),
                  drv_ref[]), "set library mode")
     return drv_ref
 end
 
 function _destroy_solver!(session::HypreDriveSession; warn_only::Bool=false)
     if session.solver_created && session.drv_ref[] != C_NULL
-        code = ccall((:HYPREDRV_JuliaLinearSolverDestroy, _lib()), UInt32,
+        code = ccall(_sym(:HYPREDRV_LinearSolverDestroy), UInt32,
                      (Ptr{Cvoid},), session.drv_ref[])
         session.solver_created = false
         session.setup_revision = -1
@@ -682,12 +713,12 @@ function HypreDriveSession(; comm::Symbol=:self, options=nothing,
     try
         _parse_input_args!(drv_ref[], yaml, input_args)
         session = HypreDriveSession(drv_ref, comm, 0, -1, 0, -1, false, false,
-                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0))
+                                    false, false, SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0), 0)
         ok = true
         return finalizer(Base.close, session)
     finally
         if !ok && drv_ref[] != C_NULL
-            code = ccall((:HYPREDRV_JuliaDestroy, _lib()), UInt32,
+            code = ccall(_sym(:HYPREDRV_JuliaDestroy), UInt32,
                          (Ref{Ptr{Cvoid}},), drv_ref)
             _warn_shutdown_failure(code, "destroy driver")
         end
@@ -702,7 +733,7 @@ function Base.close(session::HypreDriveSession)
     if session.drv_ref[] != C_NULL
         if _initialized[]
             _destroy_solver!(session, warn_only=true)
-            code = ccall((:HYPREDRV_JuliaDestroy, _lib()), UInt32,
+            code = ccall(_sym(:HYPREDRV_JuliaDestroy), UInt32,
                          (Ref{Ptr{Cvoid}},), session.drv_ref)
             _warn_shutdown_failure(code, "destroy driver")
         end
@@ -721,7 +752,7 @@ function _set_matrix_from_csr!(drv::Ptr{Cvoid}, row_start::Integer, row_end::Int
                                indptr::Vector{T}, cols::Vector{T},
                                data::Vector{Float64}) where {T<:Union{Int32,Int64}}
     GC.@preserve indptr cols data begin
-        _check(ccall((:HYPREDRV_JuliaSetMatrixFromCSR, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaSetMatrixFromCSR), UInt32,
                      (Ptr{Cvoid}, Int64, Int64, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Float64}),
                      drv, Int64(row_start), Int64(row_end),
                      Base.unsafe_convert(Ptr{Cvoid}, pointer(indptr)),
@@ -755,7 +786,7 @@ function set_matrix_csr!(session::HypreDriveSession, indptr, col_indices, data,
     _set_matrix_from_csr!(drv, row_start, row_end, indptr_t, cols_t, data64)
     if dofmap_cint !== nothing
         GC.@preserve dofmap_cint begin
-            _check(ccall((:HYPREDRV_JuliaSetDofmap, _lib()), UInt32,
+            _check(ccall(_sym(:HYPREDRV_LinearSystemSetDofmap), UInt32,
                          (Ptr{Cvoid}, Cint, Ptr{Cint}), drv,
                          Cint(length(dofmap_cint)), pointer(dofmap_cint)),
                    "set dofmap")
@@ -783,13 +814,13 @@ function set_rhs!(session::HypreDriveSession, rhs, row_start::Integer=session.ro
     Int(row_start) == session.row_start ||
         throw(ArgumentError("rhs row_start does not match matrix row_start"))
     GC.@preserve rhs64 begin
-        _check(ccall((:HYPREDRV_JuliaSetRHSFromArray, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaSetRHSFromArray), UInt32,
                      (Ptr{Cvoid}, Int64, Int64, Ptr{Float64}), drv,
                      Int64(session.row_start), Int64(session.row_end),
                      pointer(rhs64)), "set rhs")
     end
-    _check(ccall((:HYPREDRV_JuliaSetInitialGuessZero, _lib()), UInt32,
-                 (Ptr{Cvoid},), drv), "set initial guess")
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetInitialGuess), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, C_NULL), "set initial guess")
     session.rhs_set = true
     return session
 end
@@ -799,12 +830,12 @@ function setup!(session::HypreDriveSession)
     session.matrix_set || throw(ArgumentError("matrix has not been set"))
     session.rhs_set || throw(ArgumentError("rhs has not been set"))
     if !session.solver_created
-        _check(ccall((:HYPREDRV_JuliaLinearSolverCreate, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSolverCreate), UInt32,
                      (Ptr{Cvoid},), drv), "create solver")
         session.solver_created = true
     end
     if session.setup_revision != session.matrix_revision
-        _check(ccall((:HYPREDRV_JuliaLinearSolverSetup, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSolverSetup), UInt32,
                      (Ptr{Cvoid},), drv), "setup solver")
         session.setup_revision = session.matrix_revision
     end
@@ -816,7 +847,7 @@ function _read_solution!(x::AbstractVector{Float64}, session::HypreDriveSession)
     local_n = session.row_end - session.row_start + 1
     length(x) == local_n || throw(ArgumentError("solution output length does not match row range"))
     GC.@preserve x begin
-        _check(ccall((:HYPREDRV_JuliaCopySolutionValues, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_JuliaCopySolutionValues), UInt32,
                      (Ptr{Cvoid}, Ptr{Cvoid}, Int64), drv, pointer(x), Int64(local_n)),
                "copy solution")
     end
@@ -831,18 +862,18 @@ function _get_info(session::HypreDriveSession)
     solution_norm = Ref{Cdouble}(0)
     converged = Ref{Cint}(0)
     final_res_norm = Ref{Cdouble}(0)
-    _check(ccall((:HYPREDRV_JuliaLinearSolverGetNumIter, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSolverGetNumIter), UInt32,
                  (Ptr{Cvoid}, Ref{Cint}), drv, iterations), "get iterations")
-    _check(ccall((:HYPREDRV_JuliaLinearSolverGetConverged, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSolverGetConverged), UInt32,
                  (Ptr{Cvoid}, Ref{Cint}), drv, converged), "get convergence flag")
-    _check(ccall((:HYPREDRV_JuliaLinearSolverGetFinalRelativeResidualNorm, _lib()),
+    _check(ccall(_sym(:HYPREDRV_LinearSolverGetFinalRelativeResidualNorm),
                  UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, final_res_norm),
            "get final relative residual norm")
-    _check(ccall((:HYPREDRV_JuliaLinearSolverGetSetupTime, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSolverGetSetupTime), UInt32,
                  (Ptr{Cvoid}, Ref{Cdouble}), drv, setup_time), "get setup time")
-    _check(ccall((:HYPREDRV_JuliaLinearSolverGetSolveTime, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSolverGetSolveTime), UInt32,
                  (Ptr{Cvoid}, Ref{Cdouble}), drv, solve_time), "get solve time")
-    _check(ccall((:HYPREDRV_JuliaGetSolutionNorm, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemGetSolutionNorm), UInt32,
                  (Ptr{Cvoid}, Cstring, Ref{Cdouble}), drv, "L2", solution_norm),
            "get solution norm")
     return SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[],
@@ -857,17 +888,17 @@ overriding the tolerance from the options. The solver and preconditioner are reu
 """
 function set_relative_tol!(session::HypreDriveSession, tol::Real)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSolverSetRelativeTol, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSolverSetRelativeTol), UInt32,
                  (Ptr{Cvoid}, Cdouble), drv, Float64(tol)), "set relative tolerance")
     return session
 end
 
 function solve!(x::AbstractVector{Float64}, session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaResetInitialGuess, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemResetInitialGuess), UInt32,
                  (Ptr{Cvoid},), drv), "reset initial guess")
     setup!(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSolverApply, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSolverApply), UInt32,
                  (Ptr{Cvoid},), drv), "apply solver")
     _read_solution!(x, session)
     session.last_info = _get_info(session)
@@ -912,27 +943,27 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
     solver_created = false
     try
         if comm === :world
-            _check(ccall((:HYPREDRV_JuliaCreateWithWorld, _lib()), UInt32,
+            _check(ccall(_sym(:HYPREDRV_JuliaCreateWithWorld), UInt32,
                          (Ref{Ptr{Cvoid}},), drv_ref), "create driver")
         else
-            _check(ccall((:HYPREDRV_JuliaCreateWithSelf, _lib()), UInt32,
+            _check(ccall(_sym(:HYPREDRV_JuliaCreateWithSelf), UInt32,
                          (Ref{Ptr{Cvoid}},), drv_ref), "create driver")
         end
         drv = drv_ref[]
-        _check(ccall((:HYPREDRV_JuliaSetLibraryMode, _lib()), UInt32, (Ptr{Cvoid},), drv), "set library mode")
+        _check(ccall(_sym(:HYPREDRV_SetLibraryMode), UInt32, (Ptr{Cvoid},), drv), "set library mode")
         _parse_input_args!(drv, yaml, input_args)
         GC.@preserve indptr col_indices data rhs begin
-            _check(ccall((:HYPREDRV_JuliaSetMatrixFromCSR, _lib()), UInt32,
+            _check(ccall(_sym(:HYPREDRV_JuliaSetMatrixFromCSR), UInt32,
                          (Ptr{Cvoid}, Int64, Int64, Ptr{T}, Ptr{T}, Ptr{Float64}),
                          drv, Int64(row_start), Int64(row_end), pointer(indptr),
                          pointer(col_indices), pointer(data)), "set matrix")
-            _check(ccall((:HYPREDRV_JuliaSetRHSFromArray, _lib()), UInt32,
+            _check(ccall(_sym(:HYPREDRV_JuliaSetRHSFromArray), UInt32,
                          (Ptr{Cvoid}, Int64, Int64, Ptr{Float64}),
                          drv, Int64(row_start), Int64(row_end), pointer(rhs)), "set rhs")
         end
         if dofmap !== nothing
             GC.@preserve dofmap begin
-                _check(ccall((:HYPREDRV_JuliaSetDofmap, _lib()), UInt32,
+                _check(ccall(_sym(:HYPREDRV_LinearSystemSetDofmap), UInt32,
                              (Ptr{Cvoid}, Cint, Ptr{Cint}), drv, Cint(length(dofmap)),
                              pointer(dofmap)), "set dofmap")
             end
@@ -941,16 +972,16 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
         local_n = length(rhs)
         x = Vector{Float64}(undef, local_n)
         info = SolveInfo(0, 0.0, 0.0, 0.0, false, 0.0)
-        _check(ccall((:HYPREDRV_JuliaSetInitialGuessZero, _lib()), UInt32, (Ptr{Cvoid},), drv), "set initial guess")
-        _check(ccall((:HYPREDRV_JuliaLinearSolverCreate, _lib()), UInt32, (Ptr{Cvoid},), drv), "create solver")
+        _check(ccall(_sym(:HYPREDRV_LinearSystemSetInitialGuess), UInt32, (Ptr{Cvoid}, Ptr{Cvoid}), drv, C_NULL), "set initial guess")
+        _check(ccall(_sym(:HYPREDRV_LinearSolverCreate), UInt32, (Ptr{Cvoid},), drv), "create solver")
         solver_created = true
-        _check(ccall((:HYPREDRV_JuliaLinearSolverSetup, _lib()), UInt32, (Ptr{Cvoid},), drv), "setup solver")
+        _check(ccall(_sym(:HYPREDRV_LinearSolverSetup), UInt32, (Ptr{Cvoid},), drv), "setup solver")
         for _ in 1:nsolve
-            _check(ccall((:HYPREDRV_JuliaResetInitialGuess, _lib()), UInt32, (Ptr{Cvoid},), drv), "reset initial guess")
-            _check(ccall((:HYPREDRV_JuliaLinearSolverApply, _lib()), UInt32, (Ptr{Cvoid},), drv), "apply solver")
+            _check(ccall(_sym(:HYPREDRV_LinearSystemResetInitialGuess), UInt32, (Ptr{Cvoid},), drv), "reset initial guess")
+            _check(ccall(_sym(:HYPREDRV_LinearSolverApply), UInt32, (Ptr{Cvoid},), drv), "apply solver")
 
             GC.@preserve x begin
-                _check(ccall((:HYPREDRV_JuliaCopySolutionValues, _lib()), UInt32,
+                _check(ccall(_sym(:HYPREDRV_JuliaCopySolutionValues), UInt32,
                              (Ptr{Cvoid}, Ptr{Cvoid}, Int64), drv, pointer(x), Int64(local_n)),
                        "copy solution")
             end
@@ -961,22 +992,22 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
             solution_norm = Ref{Cdouble}(0)
             converged = Ref{Cint}(0)
             final_res_norm = Ref{Cdouble}(0)
-            _check(ccall((:HYPREDRV_JuliaLinearSolverGetNumIter, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cint}), drv, iterations), "get iterations")
-            _check(ccall((:HYPREDRV_JuliaLinearSolverGetConverged, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cint}), drv, converged), "get convergence flag")
-            _check(ccall((:HYPREDRV_JuliaLinearSolverGetFinalRelativeResidualNorm, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, final_res_norm), "get final relative residual norm")
-            _check(ccall((:HYPREDRV_JuliaLinearSolverGetSetupTime, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, setup_time), "get setup time")
-            _check(ccall((:HYPREDRV_JuliaLinearSolverGetSolveTime, _lib()), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, solve_time), "get solve time")
-            _check(ccall((:HYPREDRV_JuliaGetSolutionNorm, _lib()), UInt32, (Ptr{Cvoid}, Cstring, Ref{Cdouble}), drv, "L2", solution_norm), "get solution norm")
+            _check(ccall(_sym(:HYPREDRV_LinearSolverGetNumIter), UInt32, (Ptr{Cvoid}, Ref{Cint}), drv, iterations), "get iterations")
+            _check(ccall(_sym(:HYPREDRV_LinearSolverGetConverged), UInt32, (Ptr{Cvoid}, Ref{Cint}), drv, converged), "get convergence flag")
+            _check(ccall(_sym(:HYPREDRV_LinearSolverGetFinalRelativeResidualNorm), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, final_res_norm), "get final relative residual norm")
+            _check(ccall(_sym(:HYPREDRV_LinearSolverGetSetupTime), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, setup_time), "get setup time")
+            _check(ccall(_sym(:HYPREDRV_LinearSolverGetSolveTime), UInt32, (Ptr{Cvoid}, Ref{Cdouble}), drv, solve_time), "get solve time")
+            _check(ccall(_sym(:HYPREDRV_LinearSystemGetSolutionNorm), UInt32, (Ptr{Cvoid}, Cstring, Ref{Cdouble}), drv, "L2", solution_norm), "get solution norm")
             info = SolveInfo(Int(iterations[]), setup_time[], solve_time[], solution_norm[], converged[] != 0, final_res_norm[])
 
         end
-        _check(ccall((:HYPREDRV_JuliaLinearSolverDestroy, _lib()), UInt32, (Ptr{Cvoid},), drv), "destroy solver")
+        _check(ccall(_sym(:HYPREDRV_LinearSolverDestroy), UInt32, (Ptr{Cvoid},), drv), "destroy solver")
         solver_created = false
         return x, info
     finally
         if drv_ref[] != C_NULL
             if solver_created
-                code = ccall((:HYPREDRV_JuliaLinearSolverDestroy, _lib()), UInt32, (Ptr{Cvoid},), drv_ref[])
+                code = ccall(_sym(:HYPREDRV_LinearSolverDestroy), UInt32, (Ptr{Cvoid},), drv_ref[])
                 _warn_shutdown_failure(code, "destroy solver")
                 if code != 0x00000000
                     @warn "Skipping driver destroy because solver destroy failed; driver handle intentionally leaked to avoid cascading cleanup through inconsistent HYPRE state"
@@ -984,7 +1015,7 @@ function _solve_csr_impl(indptr::Vector{T}, col_indices::Vector{T}, data::Vector
                 end
             end
             if drv_ref[] != C_NULL
-                code = ccall((:HYPREDRV_JuliaDestroy, _lib()), UInt32, (Ref{Ptr{Cvoid}},), drv_ref)
+                code = ccall(_sym(:HYPREDRV_JuliaDestroy), UInt32, (Ref{Ptr{Cvoid}},), drv_ref)
                 _warn_shutdown_failure(code, "destroy driver")
                 drv_ref[] = C_NULL
             end
@@ -1078,8 +1109,11 @@ function _checked_cint(value::Integer, name::AbstractString)
 end
 
 function _local_rows(session::HypreDriveSession)
-    session.matrix_set || throw(ArgumentError("matrix has not been set"))
-    return session.row_end - session.row_start + 1
+    drv = _require_open(session)
+    out = Ref{Int64}(0)
+    _check(ccall(_sym(:HYPREDRV_JuliaLinearSystemGetRHSLength), UInt32,
+                 (Ptr{Cvoid}, Ref{Int64}), drv, out), "get local row count")
+    return Int(out[])
 end
 
 """
@@ -1089,7 +1123,7 @@ Clear the process-global HYPREDRV error state.
 """
 function hypredrive_error_clear()
     hypredrive_initialize()
-    ccall((:HYPREDRV_JuliaErrorCodeClear, _lib()), Cvoid, ())
+    ccall(_sym(:HYPREDRV_ErrorCodeClear), Cvoid, ())
     return nothing
 end
 
@@ -1100,7 +1134,7 @@ Print HYPREDRV library information.
 """
 function print_lib_info(comm::Symbol=:world; print_datetime::Bool=true)
     hypredrive_initialize()
-    _check(ccall((:HYPREDRV_JuliaPrintLibInfo, _lib()), UInt32, (Cint, Cint),
+    _check(ccall(_sym(:HYPREDRV_JuliaPrintLibInfo), UInt32, (Cint, Cint),
                  _comm_flag(comm), Cint(print_datetime)), "print library info")
     return nothing
 end
@@ -1112,7 +1146,7 @@ Print system information.
 """
 function print_system_info(comm::Symbol=:world)
     hypredrive_initialize()
-    _check(ccall((:HYPREDRV_JuliaPrintSystemInfo, _lib()), UInt32, (Cint,),
+    _check(ccall(_sym(:HYPREDRV_JuliaPrintSystemInfo), UInt32, (Cint,),
                  _comm_flag(comm)), "print system info")
     return nothing
 end
@@ -1124,7 +1158,7 @@ Print exit information.
 """
 function print_exit_info(argv0::AbstractString, comm::Symbol=:world)
     hypredrive_initialize()
-    _check(ccall((:HYPREDRV_JuliaPrintExitInfo, _lib()), UInt32, (Cint, Cstring),
+    _check(ccall(_sym(:HYPREDRV_JuliaPrintExitInfo), UInt32, (Cint, Cstring),
                  _comm_flag(comm), String(argv0)), "print exit info")
     return nothing
 end
@@ -1137,7 +1171,7 @@ Register a named solver preset usable with `set_solver_preset!`.
 function register_solver_preset(name::AbstractString, yaml_text::AbstractString,
                                 help::AbstractString="")
     hypredrive_initialize()
-    _check(ccall((:HYPREDRV_JuliaSolverPresetRegister, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_SolverPresetRegister), UInt32,
                  (Cstring, Cstring, Cstring), String(name), String(yaml_text),
                  String(help)), "register solver preset")
     return nothing
@@ -1151,7 +1185,7 @@ Register a named preconditioner preset usable with `set_precon_preset!`.
 function register_precon_preset(name::AbstractString, yaml_text::AbstractString,
                                 help::AbstractString="")
     hypredrive_initialize()
-    _check(ccall((:HYPREDRV_JuliaPreconPresetRegister, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_PreconPresetRegister), UInt32,
                  (Cstring, Cstring, Cstring), String(name), String(yaml_text),
                  String(help)), "register preconditioner preset")
     return nothing
@@ -1165,11 +1199,11 @@ Set the display name of the session's HYPREDRV object (`nothing` clears it).
 function set_object_name!(session::HypreDriveSession, name::Union{Nothing,AbstractString})
     drv = _require_open(session)
     if name === nothing
-        _check(ccall((:HYPREDRV_JuliaObjectSetName, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_ObjectSetName), UInt32,
                      (Ptr{Cvoid}, Ptr{Cchar}), drv, Ptr{Cchar}(C_NULL)),
                "set object name")
     else
-        _check(ccall((:HYPREDRV_JuliaObjectSetName, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_ObjectSetName), UInt32,
                      (Ptr{Cvoid}, Cstring), drv, String(name)), "set object name")
     end
     return session
@@ -1179,16 +1213,16 @@ function _get_input_int(session::HypreDriveSession, which::Symbol)
     drv = _require_open(session)
     out = Ref{Cint}(0)
     if which === :warmup
-        _check(ccall((:HYPREDRV_JuliaInputArgsGetWarmup, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_InputArgsGetWarmup), UInt32,
                      (Ptr{Cvoid}, Ref{Cint}), drv, out), "get warmup")
     elseif which === :reps
-        _check(ccall((:HYPREDRV_JuliaInputArgsGetNumRepetitions, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_InputArgsGetNumRepetitions), UInt32,
                      (Ptr{Cvoid}, Ref{Cint}), drv, out), "get number of repetitions")
     elseif which === :systems
-        _check(ccall((:HYPREDRV_JuliaInputArgsGetNumLinearSystems, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_InputArgsGetNumLinearSystems), UInt32,
                      (Ptr{Cvoid}, Ref{Cint}), drv, out), "get number of linear systems")
     else
-        _check(ccall((:HYPREDRV_JuliaInputArgsGetNumPreconVariants, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_InputArgsGetNumPreconVariants), UInt32,
                      (Ptr{Cvoid}, Ref{Cint}), drv, out),
                "get number of preconditioner variants")
     end
@@ -1212,7 +1246,7 @@ Select the active preconditioner variant (zero-based index).
 function set_precon_variant!(session::HypreDriveSession, variant_idx::Integer)
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaInputArgsSetPreconVariant, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_InputArgsSetPreconVariant), UInt32,
                  (Ptr{Cvoid}, Cint), drv, _checked_cint(variant_idx, "variant_idx")),
            "set preconditioner variant")
     return session
@@ -1222,7 +1256,7 @@ end
 function set_precon_preset!(session::HypreDriveSession, preset::AbstractString)
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaInputArgsSetPreconPreset, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_InputArgsSetPreconPreset), UInt32,
                  (Ptr{Cvoid}, Cstring), drv, String(preset)), "set preconditioner preset")
     return session
 end
@@ -1231,7 +1265,7 @@ end
 function set_solver_preset!(session::HypreDriveSession, preset::AbstractString)
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaInputArgsSetSolverPreset, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_InputArgsSetSolverPreset), UInt32,
                  (Ptr{Cvoid}, Cstring), drv, String(preset)), "set solver preset")
     return session
 end
@@ -1240,9 +1274,27 @@ end
 function linear_system_build!(session::HypreDriveSession)
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemBuild, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_LinearSystemBuild), UInt32, (Ptr{Cvoid},), drv),
            "build linear system")
+    _adopt_native_matrix!(session)
+    # Build also installs the RHS and initial guess.
+    session.rhs_set = true
+    return session
+end
+
+# The matrix was replaced natively: refresh the cached row range and flags so
+# set_rhs!/solve! check against it. A new matrix needs a new RHS.
+function _adopt_native_matrix!(session::HypreDriveSession)
+    drv = _require_open(session)
+    lo = Ref{Int64}(0)
+    hi = Ref{Int64}(-1)
+    _check(ccall(_sym(:HYPREDRV_JuliaGetMatrixRowRange), UInt32,
+                 (Ptr{Cvoid}, Ref{Int64}, Ref{Int64}), drv, lo, hi), "get matrix row range")
+    session.row_start = Int(lo[])
+    session.row_end = Int(hi[])
     session.matrix_revision += 1
+    session.matrix_set = true
+    session.rhs_set = false
     return session
 end
 
@@ -1250,9 +1302,9 @@ end
 function linear_system_read_matrix!(session::HypreDriveSession)
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemReadMatrix, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_LinearSystemReadMatrix), UInt32, (Ptr{Cvoid},), drv),
            "read matrix")
-    session.matrix_revision += 1
+    _adopt_native_matrix!(session)
     return session
 end
 
@@ -1264,9 +1316,15 @@ Attach an externally owned HYPRE_Matrix. The object must outlive the session.
 function set_matrix_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetMatrix, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetMatrix), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set matrix handle")
-    session.matrix_revision += 1
+    if mat == C_NULL  # cleared: no matrix, so no row range
+        session.matrix_revision += 1
+        session.matrix_set = false
+        session.rhs_set = false
+    else
+        _adopt_native_matrix!(session)
+    end
     return session
 end
 
@@ -1274,7 +1332,7 @@ end
 function set_prec_matrix_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
     drv = _require_open(session)
     _destroy_solver!(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetPrecMatrix, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetPrecMatrix), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set preconditioner matrix handle")
     return session
 end
@@ -1282,7 +1340,7 @@ end
 "Attach an externally owned discrete gradient HYPRE_Matrix."
 function set_discrete_gradient_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetDiscreteGradient, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetDiscreteGradient), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set discrete gradient handle")
     return session
 end
@@ -1290,7 +1348,7 @@ end
 "Attach an externally owned discrete curl HYPRE_Matrix."
 function set_discrete_curl_handle!(session::HypreDriveSession, mat::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetDiscreteCurl, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetDiscreteCurl), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, mat), "set discrete curl handle")
     return session
 end
@@ -1299,7 +1357,7 @@ end
 function set_coordinates_handles!(session::HypreDriveSession, x::Ptr{Cvoid},
                                   y::Ptr{Cvoid}=C_NULL, z::Ptr{Cvoid}=C_NULL)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetCoordinates, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetCoordinates), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), drv, x, y, z),
            "set coordinates handles")
     return session
@@ -1309,24 +1367,28 @@ end
 function set_coarse_schur_handle!(session::HypreDriveSession, level::Integer,
                                   mat::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetCoarseSchur, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetCoarseSchur), UInt32,
                  (Ptr{Cvoid}, Cint, Ptr{Cvoid}), drv, _checked_cint(level, "level"), mat),
            "set coarse Schur handle")
     return session
 end
 
-"Attach an externally owned HYPRE_Vector as the right-hand side."
+"Attach an externally owned HYPRE_Vector as the right-hand side (`C_NULL` builds it from the parsed input)."
 function set_rhs_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetRHS, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetRHS), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set rhs handle")
+    # Match set_rhs!: a new RHS gets a fresh initial guess sized from it.
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetInitialGuess), UInt32,
+                 (Ptr{Cvoid}, Ptr{Cvoid}), drv, C_NULL), "set initial guess")
+    session.rhs_set = true  # C_NULL builds the RHS from the parsed input
     return session
 end
 
 "Attach an externally owned HYPRE_Vector as the solution vector."
 function set_solution_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetSolution, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetSolution), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set solution handle")
     return session
 end
@@ -1334,7 +1396,7 @@ end
 "Attach an externally owned HYPRE_Vector as the reference solution."
 function set_reference_solution_handle!(session::HypreDriveSession, vec::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetReferenceSolution, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetReferenceSolution), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}), drv, vec), "set reference solution handle")
     return session
 end
@@ -1343,7 +1405,7 @@ end
 function set_interleaved_dofmap!(session::HypreDriveSession, num_local_blocks::Integer,
                                  num_dof_types::Integer)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetInterleavedDofmap, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetInterleavedDofmap), UInt32,
                  (Ptr{Cvoid}, Cint, Cint), drv,
                  _checked_cint(num_local_blocks, "num_local_blocks"),
                  _checked_cint(num_dof_types, "num_dof_types")),
@@ -1355,7 +1417,7 @@ end
 function set_contiguous_dofmap!(session::HypreDriveSession, num_local_blocks::Integer,
                                 num_dof_types::Integer)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemSetContiguousDofmap, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemSetContiguousDofmap), UInt32,
                  (Ptr{Cvoid}, Cint, Cint), drv,
                  _checked_cint(num_local_blocks, "num_local_blocks"),
                  _checked_cint(num_dof_types, "num_dof_types")),
@@ -1366,7 +1428,7 @@ end
 "Read the dofmap from the parsed options."
 function read_dofmap!(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemReadDofmap, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_LinearSystemReadDofmap), UInt32, (Ptr{Cvoid},), drv),
            "read dofmap")
     return session
 end
@@ -1374,7 +1436,7 @@ end
 "Print the dofmap to `filename`."
 function print_dofmap(session::HypreDriveSession, filename::AbstractString)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemPrintDofmap, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemPrintDofmap), UInt32,
                  (Ptr{Cvoid}, Cstring), drv, String(filename)), "print dofmap")
     return nothing
 end
@@ -1382,7 +1444,7 @@ end
 "Print the linear system."
 function print_linear_system(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemPrint, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_LinearSystemPrint), UInt32, (Ptr{Cvoid},), drv),
            "print linear system")
     return nothing
 end
@@ -1390,7 +1452,7 @@ end
 "Compute the eigenspectrum of the linear system."
 function compute_eigenspectrum!(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemComputeEigenspectrum, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_LinearSystemComputeEigenspectrum), UInt32,
                  (Ptr{Cvoid},), drv), "compute eigenspectrum")
     return nothing
 end
@@ -1406,7 +1468,7 @@ function set_near_null_space!(session::HypreDriveSession, modes::AbstractMatrix{
     drv = _require_open(session)
     vals = Matrix{Float64}(modes)
     GC.@preserve vals begin
-        _check(ccall((:HYPREDRV_JuliaLinearSystemSetNearNullSpace, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSystemSetNearNullSpace), UInt32,
                      (Ptr{Cvoid}, Cint, Cint, Ptr{Float64}), drv,
                      _checked_cint(size(vals, 1), "num_entries"),
                      _checked_cint(size(vals, 2), "num_components"), pointer(vals)),
@@ -1420,7 +1482,7 @@ function set_null_space!(session::HypreDriveSession, modes::AbstractMatrix{<:Rea
     drv = _require_open(session)
     vals = Matrix{Float64}(modes)
     GC.@preserve vals begin
-        _check(ccall((:HYPREDRV_JuliaLinearSystemSetNullSpace, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSystemSetNullSpace), UInt32,
                      (Ptr{Cvoid}, Cint, Cint, Ptr{Float64}), drv,
                      _checked_cint(size(vals, 1), "num_entries"),
                      _checked_cint(size(vals, 2), "num_components"), pointer(vals)),
@@ -1433,7 +1495,7 @@ end
 function get_solution_length(session::HypreDriveSession)
     drv = _require_open(session)
     out = Ref{Int64}(0)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemGetSolutionLength, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_JuliaLinearSystemGetSolutionLength), UInt32,
                  (Ptr{Cvoid}, Ref{Int64}), drv, out), "get solution length")
     return Int(out[])
 end
@@ -1444,7 +1506,7 @@ function get_solution_values(session::HypreDriveSession)
     n = get_solution_length(session)
     ptr = Ref{Ptr{Cdouble}}(C_NULL)
     is_host = Ref{Cint}(0)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemGetSolutionValues, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_JuliaLinearSystemGetSolutionValues), UInt32,
                  (Ptr{Cvoid}, Ref{Ptr{Cdouble}}, Ref{Cint}), drv, ptr, is_host),
            "get solution values")
     is_host[] != 0 || throw(ArgumentError("solution values are in device memory"))
@@ -1457,24 +1519,26 @@ end
 function get_rhs_values(session::HypreDriveSession)
     drv = _require_open(session)
     n = _local_rows(session)
-    ptr = Ref{Ptr{Cdouble}}(C_NULL)
-    _check(ccall((:HYPREDRV_JuliaLinearSystemGetRHSValues, _lib()), UInt32,
-                 (Ptr{Cvoid}, Ref{Ptr{Cdouble}}), drv, ptr), "get rhs values")
-    ptr[] != C_NULL || throw(ArgumentError("rhs values are unavailable"))
-    return copy(unsafe_wrap(Array, ptr[], n))
+    out = Vector{Float64}(undef, n)
+    GC.@preserve out begin
+        _check(ccall(_sym(:HYPREDRV_JuliaCopyRHSValues), UInt32,
+                     (Ptr{Cvoid}, Ptr{Cvoid}, Int64), drv, pointer(out), Int64(n)),
+               "get rhs values")
+    end
+    return out
 end
 
 function _get_handle(session::HypreDriveSession, which::Symbol)
     drv = _require_open(session)
     out = Ref{Ptr{Cvoid}}(C_NULL)
     if which === :solution
-        _check(ccall((:HYPREDRV_JuliaLinearSystemGetSolution, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSystemGetSolution), UInt32,
                      (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), drv, out), "get solution handle")
     elseif which === :rhs
-        _check(ccall((:HYPREDRV_JuliaLinearSystemGetRHS, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSystemGetRHS), UInt32,
                      (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), drv, out), "get rhs handle")
     else
-        _check(ccall((:HYPREDRV_JuliaLinearSystemGetMatrix, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_LinearSystemGetMatrix), UInt32,
                      (Ptr{Cvoid}, Ref{Ptr{Cvoid}}), drv, out), "get matrix handle")
     end
     return out[]
@@ -1490,36 +1554,52 @@ get_matrix_handle(session::HypreDriveSession) = _get_handle(session, :matrix)
 """
     set_state_vectors!(session, vecs::Vector{Ptr{Cvoid}})
 
-Register externally owned HYPRE_IJVector state vectors. The handles are copied by
-HYPREDRV; the vectors must be destroyed by the caller after the session is closed.
+Register externally owned HYPRE_IJVector state vectors, which must share one local
+length. The handles are copied by HYPREDRV; the vectors must be destroyed by the caller
+after the session is closed.
 """
 function set_state_vectors!(session::HypreDriveSession, vecs::Vector{Ptr{Cvoid}})
     drv = _require_open(session)
     n = _checked_cint(length(vecs), "number of state vectors")
+    # States only rotate afterwards, so one length sized from the vectors
+    # themselves bounds every get_state_vector_values copy.
+    state_length = 0
+    for (i, vec) in enumerate(vecs)
+        vec == C_NULL && continue  # rejected by HYPREDRV_StateVectorSet below
+        len = Ref{Int64}(0)
+        _check(ccall(_sym(:HYPREDRV_JuliaVectorLocalLength), UInt32,
+                     (Ptr{Cvoid}, Ref{Int64}), vec, len), "get state vector length")
+        if i > 1 && len[] != state_length
+            throw(ArgumentError("state vectors must share one local length"))
+        end
+        state_length = Int(len[])
+    end
     GC.@preserve vecs begin
-        _check(ccall((:HYPREDRV_JuliaStateVectorSet, _lib()), UInt32,
+        _check(ccall(_sym(:HYPREDRV_StateVectorSet), UInt32,
                      (Ptr{Cvoid}, Cint, Ptr{Ptr{Cvoid}}), drv, n, pointer(vecs)),
                "set state vectors")
     end
+    session.state_length = state_length
     return session
 end
 
 "Return a copy of the local values of state vector `index` (zero-based)."
 function get_state_vector_values(session::HypreDriveSession, index::Integer)
     drv = _require_open(session)
-    n = _local_rows(session)
-    ptr = Ref{Ptr{Cdouble}}(C_NULL)
-    _check(ccall((:HYPREDRV_JuliaStateVectorGetValues, _lib()), UInt32,
-                 (Ptr{Cvoid}, Cint, Ref{Ptr{Cdouble}}), drv,
-                 _checked_cint(index, "index"), ptr), "get state vector values")
-    ptr[] != C_NULL || throw(ArgumentError("state vector values are unavailable"))
-    return copy(unsafe_wrap(Array, ptr[], n))
+    out = Vector{Float64}(undef, session.state_length)
+    GC.@preserve out begin
+        _check(ccall(_sym(:HYPREDRV_JuliaCopyStateVectorValues), UInt32,
+                     (Ptr{Cvoid}, Cint, Ptr{Cvoid}, Int64), drv,
+                     _checked_cint(index, "index"), pointer(out),
+                     Int64(session.state_length)), "get state vector values")
+    end
+    return out
 end
 
 "Copy state vector `index_in` into `index_out` (zero-based)."
 function copy_state_vector!(session::HypreDriveSession, index_in::Integer, index_out::Integer)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaStateVectorCopy, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_StateVectorCopy), UInt32,
                  (Ptr{Cvoid}, Cint, Cint), drv, _checked_cint(index_in, "index_in"),
                  _checked_cint(index_out, "index_out")), "copy state vector")
     return session
@@ -1528,7 +1608,7 @@ end
 "Cycle all state vectors."
 function update_state_vectors!(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaStateVectorUpdateAll, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_StateVectorUpdateAll), UInt32, (Ptr{Cvoid},), drv),
            "update state vectors")
     return session
 end
@@ -1536,7 +1616,7 @@ end
 "Apply the solution correction to state vector `state_idx` (zero-based)."
 function apply_state_correction!(session::HypreDriveSession, state_idx::Integer)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaStateVectorApplyCorrection, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_StateVectorApplyCorrection), UInt32,
                  (Ptr{Cvoid}, Cint), drv, _checked_cint(state_idx, "state_idx")),
            "apply state correction")
     return session
@@ -1545,7 +1625,7 @@ end
 "Create the standalone preconditioner."
 function precon_create!(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaPreconCreate, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_PreconCreate), UInt32, (Ptr{Cvoid},), drv),
            "create preconditioner")
     return session
 end
@@ -1553,7 +1633,7 @@ end
 "Set up the standalone preconditioner."
 function precon_setup!(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaPreconSetup, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_PreconSetup), UInt32, (Ptr{Cvoid},), drv),
            "setup preconditioner")
     return session
 end
@@ -1561,7 +1641,7 @@ end
 "Apply the preconditioner to externally owned HYPRE_Vector handles (`x = M^-1 b`)."
 function precon_apply!(session::HypreDriveSession, vec_b::Ptr{Cvoid}, vec_x::Ptr{Cvoid})
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaPreconApply, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_PreconApply), UInt32,
                  (Ptr{Cvoid}, Ptr{Cvoid}, Ptr{Cvoid}), drv, vec_b, vec_x),
            "apply preconditioner")
     return session
@@ -1570,7 +1650,7 @@ end
 "Destroy the standalone preconditioner."
 function precon_destroy!(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaPreconDestroy, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_PreconDestroy), UInt32, (Ptr{Cvoid},), drv),
            "destroy preconditioner")
     return session
 end
@@ -1578,7 +1658,7 @@ end
 "Print the statistics summary."
 function print_stats(session::HypreDriveSession)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaStatsPrint, _lib()), UInt32, (Ptr{Cvoid},), drv),
+    _check(ccall(_sym(:HYPREDRV_StatsPrint), UInt32, (Ptr{Cvoid},), drv),
            "print stats")
     return nothing
 end
@@ -1587,7 +1667,7 @@ end
 function annotate_level_begin(session::HypreDriveSession, level::Integer,
                               name::AbstractString, id::Integer=-1)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaAnnotateLevelBegin, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_AnnotateLevelBegin), UInt32,
                  (Ptr{Cvoid}, Cint, Cstring, Cint), drv, _checked_cint(level, "level"),
                  String(name), _checked_cint(id, "id")), "annotate level begin")
     return session
@@ -1597,7 +1677,7 @@ end
 function annotate_level_end(session::HypreDriveSession, level::Integer,
                             name::AbstractString, id::Integer=-1)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaAnnotateLevelEnd, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_AnnotateLevelEnd), UInt32,
                  (Ptr{Cvoid}, Cint, Cstring, Cint), drv, _checked_cint(level, "level"),
                  String(name), _checked_cint(id, "id")), "annotate level end")
     return session
@@ -1607,7 +1687,7 @@ end
 function stats_level_count(session::HypreDriveSession, level::Integer)
     drv = _require_open(session)
     out = Ref{Cint}(0)
-    _check(ccall((:HYPREDRV_JuliaStatsLevelGetCount, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_StatsLevelGetCount), UInt32,
                  (Ptr{Cvoid}, Cint, Ref{Cint}), drv, _checked_cint(level, "level"), out),
            "get stats level count")
     return Int(out[])
@@ -1626,7 +1706,7 @@ function stats_level_entry(session::HypreDriveSession, level::Integer, index::In
     linear_iters = Ref{Cint}(0)
     setup_time = Ref{Cdouble}(0)
     solve_time = Ref{Cdouble}(0)
-    _check(ccall((:HYPREDRV_JuliaStatsLevelGetEntry, _lib()), UInt32,
+    _check(ccall(_sym(:HYPREDRV_StatsLevelGetEntry), UInt32,
                  (Ptr{Cvoid}, Cint, Cint, Ref{Cint}, Ref{Cint}, Ref{Cint}, Ref{Cdouble},
                   Ref{Cdouble}), drv, _checked_cint(level, "level"),
                  _checked_cint(index, "index"), entry_id, num_solves, linear_iters,
@@ -1639,7 +1719,7 @@ end
 "Print the statistics summary for `level`."
 function print_stats_level(session::HypreDriveSession, level::Integer)
     drv = _require_open(session)
-    _check(ccall((:HYPREDRV_JuliaStatsLevelPrint, _lib()), UInt32, (Ptr{Cvoid}, Cint),
+    _check(ccall(_sym(:HYPREDRV_StatsLevelPrint), UInt32, (Ptr{Cvoid}, Cint),
                  drv, _checked_cint(level, "level")), "print stats level")
     return nothing
 end

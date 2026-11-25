@@ -1148,12 +1148,12 @@ test_HYPREDRV_LinearSolverSetRelativeTol(void)
 
    /* Before any solver exists: stored for the solver created next */
    ASSERT_EQ(HYPREDRV_LinearSolverSetRelativeTol(obj, 1e-3), ERROR_NONE);
-   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, 1e-3, 0.0);
+   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, (HYPRE_Real)1e-3, 0.0);
    run_library_linear_solve(obj, NULL);
 
    /* With a live solver: applied without recreating it, then persisted */
    ASSERT_EQ(HYPREDRV_LinearSolverSetRelativeTol(obj, 1e-9), ERROR_NONE);
-   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, 1e-9, 0.0);
+   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, (HYPRE_Real)1e-9, 0.0);
    ASSERT_EQ(HYPREDRV_LinearSystemResetInitialGuess(obj), ERROR_NONE);
    ASSERT_EQ(HYPREDRV_LinearSolverApply(obj), ERROR_NONE);
    ASSERT_EQ_DOUBLE(get_test_ijvector_1x1(obj->vec_x.handle), 0.5, 1e-12);
@@ -1165,7 +1165,7 @@ test_HYPREDRV_LinearSolverSetRelativeTol(void)
    hypredrv_ErrorCodeResetAll();
    ASSERT_NE(HYPREDRV_LinearSolverSetRelativeTol(obj, NAN), ERROR_NONE);
    hypredrv_ErrorCodeResetAll();
-   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, 1e-9, 0.0);
+   ASSERT_EQ_DOUBLE(obj->iargs->solver.pcg.relative_tol, (HYPRE_Real)1e-9, 0.0);
 
    ASSERT_EQ(HYPREDRV_Destroy(&obj), ERROR_NONE);
    ASSERT_EQ(HYPRE_IJVectorDestroy(b), 0);
